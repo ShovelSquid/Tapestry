@@ -1,0 +1,15 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "magnetic-web",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": [
+        "-c",
+        "exec python3 -m http.server \"$PORT\" --directory /Users/kaelencook/Projects/Tapestry/chrono_magnetic_particles/web"
+      ],
+      "autoPort": true,
+      "port": 8000
+    }
+  ]
+}

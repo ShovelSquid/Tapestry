@@ -1,0 +1,6 @@
+#include "living_field/spherical_shape.hpp"
+namespace living_field { static double assoc_legendre(int l,int m,double x){m=std::abs(m);if(l<m)return 0;double pmm=1;if(m){double somx2=std::sqrt(std::max(0.0,1-x*x)),fact=1;for(int i=1;i<=m;++i){pmm*=-(fact)*somx2;fact+=2;}}if(l==m)return pmm;double pmmp1=x*(2*m+1)*pmm;if(l==m+1)return pmmp1;double pll=0;for(int ll=m+2;ll<=l;++ll){pll=((2*ll-1)*x*pmmp1-(ll+m-1)*pmm)/(ll-m);pmm=pmmp1;pmmp1=pll;}return pll;}
+double real_spherical_harmonic(int l,int m,double th,double ph){double p=assoc_legendre(l,m,std::cos(th));if(m>0)return std::sqrt(2.0)*p*std::cos(m*ph);if(m<0)return std::sqrt(2.0)*p*std::sin(-m*ph);return p;}
+double radial_shape(double th,double ph,double t,double base,const std::vector<HarmonicTerm>&ts){double r=base;for(auto&a:ts)r+=a.amplitude*std::cos(2*pi*a.temporal_hz*t+a.phase)*real_spherical_harmonic(a.l,a.m,th,ph);return std::max(0.01*base,r);}
+std::vector<Vec3> sample_shape(int nt,int np,double t,double base,const std::vector<HarmonicTerm>&ts){std::vector<Vec3>o;for(int i=0;i<nt;++i){double th=pi*(i+.5)/nt;for(int j=0;j<np;++j){double ph=2*pi*j/np,r=radial_shape(th,ph,t,base,ts);o.push_back({r*std::sin(th)*std::cos(ph),r*std::cos(th),r*std::sin(th)*std::sin(ph)});}}return o;}
+}

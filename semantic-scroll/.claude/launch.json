@@ -4,7 +4,8 @@
     {
       "name": "semantic-scroll",
       "runtimeExecutable": "sh",
-      "runtimeArgs": ["-c", "STRICT_PORT=1 PORT=3001 node server.js"],
+      "runtimeArgs": ["-c", "cd /Users/kaelencook/Projects/Tapestry/semantic-scroll && STRICT_PORT=1 PORT=$PORT exec node server.js"],
+      "autoPort": true,
       "port": 3001
     }
   ]

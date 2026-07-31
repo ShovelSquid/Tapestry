@@ -54,7 +54,8 @@ static void integrateNodes(std::vector<Node>& nodes, float dt) {
         float inv4=1.0f/(d2*d2);
         glm::vec3 f=forceScale*nodes[i].strength*nodes[j].strength*inv4 *
           ((glm::dot(mi,rh))*mj + (glm::dot(mj,rh))*mi + glm::dot(mi,mj)*rh - 5.0f*glm::dot(mi,rh)*glm::dot(mj,rh)*rh);
-        force[i]+=f; force[j]-=f;
+        // rh points i->j, so the bracket above is the force on j; i takes the reaction.
+        force[j]+=f; force[i]-=f;
         glm::vec3 Bi=nodes[j].strength*(3.0f*rh*glm::dot(mj,rh)-mj)/(d2*d);
         glm::vec3 Bj=nodes[i].strength*(3.0f*(-rh)*glm::dot(mi,-rh)-mi)/(d2*d);
         torque[i]+=torqueScale*glm::cross(mi,Bi); torque[j]+=torqueScale*glm::cross(mj,Bj);

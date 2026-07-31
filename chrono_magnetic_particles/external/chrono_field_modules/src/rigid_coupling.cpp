@@ -1,0 +1,5 @@
+#include "living_field/rigid_coupling.hpp"
+namespace living_field {
+void step_rigid_nodes(std::vector<MagneticNode>& ns,double dt,const RigidSettings&s){std::vector<ForceTorque> ft(ns.size());for(size_t i=0;i<ns.size();++i)for(size_t j=i+1;j<ns.size();++j){auto x=DipoleField::interaction(ns[i],ns[j]);ft[i].force+=x.force;ft[j].force-=x.force;ft[i].torque+=x.torque;auto y=DipoleField::interaction(ns[j],ns[i]);ft[j].torque+=y.torque;}
+for(size_t i=0;i<ns.size();++i){auto&n=ns[i];n.velocity+=ft[i].force/std::max(n.mass,1e-9)*dt;n.velocity*=std::exp(-s.linear_damping*dt);n.velocity=clamp_length(n.velocity,s.max_speed);n.position+=n.velocity*dt;if(!n.externally_driven||s.integrate_driven_rotation){double I=0.4*n.mass*n.radius*n.radius;n.angular_velocity+=ft[i].torque/std::max(I,1e-12)*dt;n.angular_velocity*=std::exp(-s.angular_damping*dt);n.angular_velocity=clamp_length(n.angular_velocity,s.max_spin_rad_s);n.magnetic_axis=normalized(n.magnetic_axis+cross(n.angular_velocity,n.magnetic_axis)*dt);}}}
+}
