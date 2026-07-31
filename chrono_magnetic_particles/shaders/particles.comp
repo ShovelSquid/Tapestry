@@ -1,0 +1,53 @@
+#version 430 core
+layout(local_size_x = 256) in;
+
+struct Particle { vec4 pos; vec4 vel; };
+struct Node { vec4 posRadius; vec4 dipoleStrength; };
+layout(std430, binding=0) buffer Particles { Particle p[]; };
+layout(std430, binding=1) readonly buffer Nodes { Node nodes[]; };
+
+uniform uint uParticleCount;
+uniform uint uNodeCount;
+uniform float uDt;
+uniform float uBounds;
+uniform float uDrag;
+
+void main() {
+    uint i = gl_GlobalInvocationID.x;
+    if (i >= uParticleCount) return;
+
+    vec3 x = p[i].pos.xyz;
+    vec3 v = p[i].vel.xyz;
+    vec3 a = vec3(0.0);
+
+    for (uint n = 0; n < uNodeCount; ++n) {
+        vec3 r = x - nodes[n].posRadius.xyz;
+        float radius = nodes[n].posRadius.w;
+        float r2 = max(dot(r, r), radius * radius * 0.35);
+        float invR = inversesqrt(r2);
+        vec3 rhat = r * invR;
+        vec3 m = normalize(nodes[n].dipoleStrength.xyz);
+        float strength = nodes[n].dipoleStrength.w;
+
+        // Dipole field, with softened distance for numerical stability.
+        vec3 B = strength * (3.0 * rhat * dot(m, rhat) - m) * invR * invR * invR;
+        a += B * 0.35;
+
+        // Soft exclusion from the visible node sphere.
+        float d = sqrt(r2);
+        if (d < radius) a += rhat * (radius - d) * 40.0;
+    }
+
+    v += a * uDt;
+    v *= exp(-uDrag * uDt);
+    x += v * uDt;
+
+    // Reflective cube bounds.
+    for (int axis = 0; axis < 3; ++axis) {
+        if (x[axis] > uBounds) { x[axis] = uBounds; v[axis] *= -0.8; }
+        if (x[axis] < -uBounds) { x[axis] = -uBounds; v[axis] *= -0.8; }
+    }
+
+    p[i].pos = vec4(x, 1.0);
+    p[i].vel = vec4(v, 0.0);
+}

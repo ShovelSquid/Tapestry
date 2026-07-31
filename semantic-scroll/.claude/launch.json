@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "semantic-scroll",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": ["-c", "STRICT_PORT=1 PORT=3001 node server.js"],
+      "port": 3001
+    }
+  ]
+}

@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>Semantic Scroll</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="grid" aria-hidden="true"></div>
+  <canvas id="energy"></canvas>
+
+  <div id="stage">
+    <div id="scene">
+      <svg id="links" aria-hidden="true" viewBox="-50000 -50000 100000 100000">
+        <defs>
+          <filter id="glow"><feGaussianBlur stdDeviation="2.5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+        </defs>
+        <g id="link-layer"></g>
+      </svg>
+
+      <div id="objects">
+        <article class="note transcript" data-note-id="root">
+          <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+          <div class="note-body" id="root-body"></div>
+          <div class="wave"></div>
+        </article>
+      </div>
+    </div>
+  </div>
+
+  <aside id="neural-orb" title="Drag me">
+    <canvas id="orb-canvas" width="220" height="220"></canvas>
+    <div class="orb-label"><span>MODEL FIELD</span><b id="hz">60 Hz</b></div>
+  </aside>
+
+  <header class="topbar">
+    <div class="brand">Semantic Scroll <b id="instance"></b></div>
+    <div id="status">Select text, then connect it.</div>
+  </header>
+
+  <aside id="side-panel">
+    <button id="orient" class="orient">Orient: Reset</button>
+
+    <div class="panel-block">
+      <div class="panel-head"><span>View</span><b id="zoom-readout">100%</b></div>
+      <div class="row">
+        <button id="zoom-out" title="Zoom out">−</button>
+        <button id="zoom-in" title="Zoom in">+</button>
+        <button id="wheel-mode" title="What the scroll wheel does">Wheel: Zoom</button>
+      </div>
+    </div>
+
+    <div class="panel-block">
+      <div class="panel-head"><span>Layers</span><button id="add-layer" class="mini">+</button></div>
+      <ul id="layer-list"></ul>
+    </div>
+
+    <div class="panel-block">
+      <div class="panel-head"><span>Create</span></div>
+      <div class="row">
+        <button id="add-blob">Blob</button>
+        <button id="add-note">Note</button>
+      </div>
+    </div>
+  </aside>
+
+  <section id="composer" class="composer">
+    <textarea id="input" rows="1" placeholder="Continue the scroll…"></textarea>
+    <button id="append">Add note</button>
+    <button id="connect" class="blue">Connect selection</button>
+    <button id="cancel" hidden>Cancel</button>
+  </section>
+
+  <template id="note-template">
+    <article class="note free-note">
+      <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+      <div class="drag-handle">⋮⋮</div>
+      <div class="note-body" contenteditable="true" spellcheck="true"></div>
+      <div class="wave"></div>
+      <div class="resize-handle" title="Resize"></div>
+    </article>
+  </template>
+
+  <template id="blob-template">
+    <div class="blob">
+      <svg class="blob-svg" viewBox="-100 -100 200 200">
+        <path class="blob-halo"></path>
+        <path class="blob-path"></path>
+        <path class="blob-inner"></path>
+      </svg>
+    </div>
+  </template>
+
+  <script src="app.js"></script>
+</body>
+</html>
