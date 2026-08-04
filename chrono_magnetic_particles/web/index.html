@@ -131,6 +131,52 @@
   .seg button + button { border-left: 1px solid var(--line); }
   .check { display: flex; align-items: center; gap: 8px; margin-bottom: 9px; cursor: pointer; font-size: 11.5px; color: #aab5cd; }
   .check input { accent-color: var(--accent); width: 14px; height: 14px; cursor: pointer; margin: 0; }
+
+  /* ---- colour controls ---- */
+  .swatches { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 13px; }
+  .swatch {
+    display: flex; flex-direction: column; gap: 5px;
+    min-width: 0; padding: 5px 6px 6px; font-size: 10.5px; text-align: center;
+  }
+  .swatch { position: relative; }
+  .swatch i { display: block; height: 9px; border-radius: 3px; }
+  .swatch .del {
+    position: absolute; top: -5px; right: -5px;
+    width: 15px; height: 15px; border-radius: 50%;
+    background: var(--panel-2); border: 1px solid var(--line); color: #8b96ae;
+    font-size: 11px; line-height: 13px; text-align: center;
+    opacity: 0; transition: opacity .12s;
+  }
+  .swatch:hover .del, .swatch.on .del { opacity: 1; }
+  .swatch .del:hover { color: #fff; border-color: #55617f; }
+
+  .sub-h { font-size: 10.5px; color: #5d6a86; margin: 0 0 7px; letter-spacing: .06em; }
+  /* The eight buckets the renderer actually samples, drawn discretely — a smooth
+     CSS gradient here would imply a resolution the particle colouring doesn't have. */
+  .ramp-prev {
+    display: flex; height: 16px; border-radius: 4px; overflow: hidden;
+    border: 1px solid var(--line); margin-bottom: 9px;
+  }
+  .ramp-prev span { flex: 1; }
+  .stops { display: flex; flex-wrap: wrap; gap: 9px 10px; margin-bottom: 11px; }
+  .stop { position: relative; line-height: 0; }
+  .stop .del {
+    position: absolute; top: -6px; right: -6px;
+    width: 14px; height: 14px; border-radius: 50%;
+    background: var(--panel-2); border: 1px solid var(--line); color: #8b96ae;
+    font-size: 10px; line-height: 12px; text-align: center; cursor: pointer;
+  }
+  .stop .del:hover { color: #fff; border-color: #55617f; }
+  .crow { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 9px; }
+  .crow label { font-size: 11.5px; color: #aab5cd; }
+  input[type=color] {
+    -webkit-appearance: none; appearance: none;
+    flex: none; width: 36px; height: 21px; padding: 0; margin: 0;
+    background: none; border: 1px solid var(--line); border-radius: 4px; cursor: pointer;
+  }
+  input[type=color]::-webkit-color-swatch-wrapper { padding: 2px; }
+  input[type=color]::-webkit-color-swatch { border: none; border-radius: 2px; }
+  input[type=color]::-moz-color-swatch { border: none; border-radius: 2px; }
   .note { font-size: 10.5px; color: #59647e; line-height: 1.55; margin: 10px 0 0; }
   .note code { font-family: ui-monospace, Menlo, monospace; color: #7f8caa; }
 
@@ -243,6 +289,32 @@
     </div>
 
     <div class="group">
+      <h2>Selected node</h2>
+      <p class="note" id="sel-none" style="margin:0 0 10px">
+        Click a dipole on the stage to drive it individually.
+      </p>
+      <div id="sel-body" style="display:none">
+        <div class="ctl">
+          <div class="row"><label>Spin rate</label><span class="val" id="v-hz"></span></div>
+          <input type="range" id="s-hz" min="-400" max="400" step="1">
+        </div>
+        <div class="ctl">
+          <div class="row"><label>Phase &phi;</label><span class="val" id="v-phase"></span></div>
+          <input type="range" id="s-phase" min="0" max="360" step="1">
+        </div>
+        <div class="ctl">
+          <div class="row"><label>Torque response</label><span class="val" id="v-ntq"></span></div>
+          <input type="range" id="s-ntq" min="0" max="300" step="1">
+        </div>
+        <div class="btns">
+          <button id="b-free" title="Return this node to free rotation">Free</button>
+          <button id="b-flip" title="Flip the moment direction">Flip poles</button>
+        </div>
+        <p class="note" id="sel-mode"></p>
+      </div>
+    </div>
+
+    <div class="group">
       <h2>Display</h2>
       <label class="check"><input type="checkbox" id="c-lines" checked> Field lines</label>
       <label class="check"><input type="checkbox" id="c-nodes" checked> Node bodies &amp; poles</label>
@@ -254,6 +326,31 @@
       <div class="btns">
         <button id="b-pause">Pause</button>
         <button id="b-reset">Reset</button>
+      </div>
+    </div>
+
+    <div class="group">
+      <h2>Colour</h2>
+      <div class="swatches" id="palettes"></div>
+
+      <p class="sub-h">Custom gradient &mdash; keyframes blend left (slow) to right (fast)</p>
+      <div class="ramp-prev" id="ramp-prev"></div>
+      <div class="stops" id="stops"></div>
+      <div class="btns" style="margin-bottom:13px">
+        <button id="b-stop-add">+ Keyframe</button>
+        <button id="b-ramp-save">Save as swatch</button>
+      </div>
+
+      <div class="crow"><label for="k-bg">Background</label><input type="color" id="k-bg"></div>
+      <div class="crow"><label for="k-line">Field lines</label><input type="color" id="k-line"></div>
+      <div class="ctl">
+        <div class="row"><label>Line opacity</label><span class="val" id="v-linea"></span></div>
+        <input type="range" id="s-linea" min="5" max="100" step="1">
+      </div>
+      <div class="crow"><label for="k-north">North pole</label><input type="color" id="k-north"></div>
+      <div class="crow"><label for="k-south">South pole</label><input type="color" id="k-south"></div>
+      <div class="btns">
+        <button id="b-colors">Reset colours</button>
       </div>
     </div>
 
@@ -277,6 +374,16 @@ const P = {
   mobile: true, spin: true,
   lines: true, drawNodes: true, colorBySpeed: true,
   timeScale: 1.0,
+  palette: "ice", bg: "#05070d", lineColor: "#8cbeff", lineAlpha: 0.42,
+  north: "#ff5470", south: "#4f8dff",
+  customStops: ["#0b1026", "#4fd1ff", "#ffffff"],
+};
+// Snapshot of the colour keys so "Reset colours" can restore them without
+// disturbing anything else the user has dialled in. customStops is deliberately
+// left out: resetting the palette shouldn't throw away a gradient the user built.
+const COLOR_DEFAULTS = {
+  palette: P.palette, bg: P.bg, lineColor: P.lineColor, lineAlpha: P.lineAlpha,
+  north: P.north, south: P.south,
 };
 let paused = false;
 
@@ -306,8 +413,7 @@ function resize() {
   }
   fx.setTransform(DPR, 0, 0, DPR, 0, 0);
   ox.setTransform(DPR, 0, 0, DPR, 0, 0);
-  fx.fillStyle = "#05070d";
-  fx.fillRect(0, 0, W, H);
+  clearField();
 }
 
 // ---------------------------------------------------------------- nodes
@@ -319,11 +425,23 @@ class Node {
     this.a = angle; this.av = 0;
     this.sign = sign;              // +1 / -1 flips the moment direction
     this.pinned = false;
+    // Per-node spin control. hz = 0 leaves the node free, so torque from the
+    // other dipoles decides its angle (the original behaviour). Any other value
+    // makes it a motor held at exactly that frequency: θ(t) = a0 + 2πf·t + φ,
+    // which is the "exact hertz, phase" node the roadmap calls for. `torque`
+    // scales how hard *this* node responds while free.
+    this.hz = 0;
+    this.phase = 0;
+    this.a0 = angle;               // reference angle the motor sweeps from
+    this.torque = 1;
   }
+  get driven() { return this.hz !== 0; }
   get mx() { return this.sign * Math.cos(this.a); }
   get my() { return this.sign * Math.sin(this.a); }
 }
 let nodes = [];
+let selected = null;               // node whose per-node controls are shown
+let simTime = 0;                   // advances only while running, so motors pause cleanly
 
 // ---------------------------------------------------------------- particles
 let px, py, pvx, pvy, page, pmax, N = 0;
@@ -458,8 +576,15 @@ function stepNodes(dt) {
   const lin = P.nodeDamp, ang = 0.5 + 0.5 * P.nodeDamp;
   for (let i = 0; i < n; i++) {
     const nd = nodes[i];
-    if (P.spin && !nd.pinned) {
-      nd.av = (nd.av + tq[i] * dt) * Math.pow(ang, dt * 60);
+    if (nd.driven) {
+      // Motor: hold the exact frequency regardless of what the field wants.
+      // Solved in closed form off simTime rather than integrated, so the phase
+      // relationship between two motors never drifts — that exactness is the
+      // whole point of driving a node by frequency.
+      nd.av = 2 * Math.PI * nd.hz;
+      nd.a  = nd.a0 + nd.av * simTime + nd.phase;
+    } else if (P.spin && !nd.pinned) {
+      nd.av = (nd.av + tq[i] * nd.torque * dt) * Math.pow(ang, dt * 60);
       nd.av = Math.max(-24, Math.min(24, nd.av));
       nd.a += nd.av * dt;
     }
@@ -532,25 +657,94 @@ function stepParticles(dt) {
 }
 
 // ---------------------------------------------------------------- rendering
-const SPEED_BUCKETS = [
-  "#1b3a6b", "#22578f", "#2a79b4", "#37a0d4",
-  "#59c8ec", "#8fe3f7", "#c7f2fc", "#ffffff",
-];
+// Speed ramps: eight buckets from slowest to fastest. Explicit stops rather than
+// an interpolated gradient so each ramp can be tuned by eye against the additive
+// ("lighter") blend, where a naive linear ramp washes out at the bright end.
+const PALETTES = {
+  ice:    { label: "Ice",    ramp: ["#1b3a6b", "#22578f", "#2a79b4", "#37a0d4",
+                                    "#59c8ec", "#8fe3f7", "#c7f2fc", "#ffffff"] },
+  ember:  { label: "Ember",  ramp: ["#3a1206", "#63220a", "#8f3a0d", "#c25c12",
+                                    "#e8891f", "#f7b64b", "#fde08d", "#fffbe8"] },
+  aurora: { label: "Aurora", ramp: ["#0b3b2e", "#0f5c46", "#12805a", "#1fa870",
+                                    "#4cd18e", "#8ff0b6", "#c9fbdc", "#ffffff"] },
+  magma:  { label: "Magma",  ramp: ["#2a0a3d", "#521061", "#7d1a7a", "#a92a7b",
+                                    "#d2456c", "#ef6f52", "#fba848", "#fde08a"] },
+  bloom:  { label: "Bloom",  ramp: ["#1d1030", "#3a1a5e", "#5c2490", "#8b34b8",
+                                    "#b74fd1", "#dd7ae4", "#f3aef0", "#fff0ff"] },
+  mono:   { label: "Mono",   ramp: ["#2b2f38", "#3f4550", "#565d6b", "#727a88",
+                                    "#939ba8", "#b8bfc9", "#dde1e7", "#ffffff"] },
+};
+
+// User gradients live alongside the built-ins: `custom` is the live editor ramp,
+// and saving freezes a copy under a generated key. Both are keyed the same way
+// the built-ins are, so nothing downstream has to know the difference.
+const RAMP_STEPS = 8;
+const MAX_STOPS = 8;
+const BUILTIN_KEYS = Object.keys(PALETTES);
+let userPalettes = [];             // [{ key, label, stops }] — persisted
+
+// Canvas wants "r,g,b" fragments to build rgba() strings with a live alpha;
+// recomputed on change rather than per frame.
+let bgRGB = "5,7,13", lineRGB = "140,190,255";
+
+function hexRGB(h) {
+  const v = parseInt(h.slice(1), 16);
+  return [(v >> 16) & 255, (v >> 8) & 255, v & 255];
+}
+
+function rgbHex(r, g, b) {
+  return "#" + (((1 << 24) | (r << 16) | (g << 8) | b).toString(16).slice(1));
+}
+
+// Sample N keyframes into the RAMP_STEPS buckets the renderer uses. Interpolation
+// is linear in sRGB, which is what the CSS gradient in the swatch does too — so
+// the preview and the particles agree, rather than being "more correct" apart.
+function rampFromStops(stops) {
+  if (stops.length < 2) return new Array(RAMP_STEPS).fill(stops[0] || "#ffffff");
+  const out = [];
+  for (let i = 0; i < RAMP_STEPS; i++) {
+    const t = (i / (RAMP_STEPS - 1)) * (stops.length - 1);
+    const k = Math.min(Math.floor(t), stops.length - 2);
+    const f = t - k;
+    const a = hexRGB(stops[k]), b = hexRGB(stops[k + 1]);
+    out.push(rgbHex(Math.round(a[0] + (b[0] - a[0]) * f),
+                    Math.round(a[1] + (b[1] - a[1]) * f),
+                    Math.round(a[2] + (b[2] - a[2]) * f)));
+  }
+  return out;
+}
+
+function applyColors() {
+  bgRGB   = hexRGB(P.bg).join(",");
+  lineRGB = hexRGB(P.lineColor).join(",");
+  const root = document.documentElement.style;
+  root.setProperty("--bg", P.bg);
+  root.setProperty("--north", P.north);
+  root.setProperty("--south", P.south);
+}
+
+function clearField() {
+  fx.fillStyle = P.bg;
+  fx.fillRect(0, 0, W, H);
+}
 
 function drawParticles() {
   // Fade the previous frame instead of clearing — this is the particle trail.
   fx.globalCompositeOperation = "source-over";
-  fx.fillStyle = `rgba(5,7,13,${1 - P.trail})`;
+  fx.fillStyle = `rgba(${bgRGB},${1 - P.trail})`;
   fx.fillRect(0, 0, W, H);
 
   fx.globalCompositeOperation = "lighter";
 
+  // Fall back if the selected palette went away (deleted, or dropped from storage).
+  const ramp = (PALETTES[P.palette] || PALETTES.ice).ramp;
   if (!P.colorBySpeed) {
-    fx.fillStyle = "#6fd8f5";
+    // Upper-middle of the ramp: bright enough to read, not the blown-out top.
+    fx.fillStyle = ramp[5];
     for (let i = 0; i < activeN; i++) fx.fillRect(px[i], py[i], 1.4, 1.4);
   } else {
     // Bucket by speed and batch each colour to minimise fillStyle churn.
-    const nb = SPEED_BUCKETS.length;
+    const nb = ramp.length;
     const buckets = [];
     for (let b = 0; b < nb; b++) buckets.push([]);
     const scale = P.motion === "advect" ? 1 / (P.response + 1) : 1 / 900;
@@ -564,7 +758,7 @@ function drawParticles() {
     for (let b = 0; b < nb; b++) {
       const arr = buckets[b];
       if (!arr.length) continue;
-      fx.fillStyle = SPEED_BUCKETS[b];
+      fx.fillStyle = ramp[b];
       const sz = 1.1 + b * 0.12;
       for (let j = 0; j < arr.length; j += 2) fx.fillRect(arr[j], arr[j + 1], sz, sz);
     }
@@ -598,7 +792,7 @@ function drawOverlay() {
   ox.clearRect(0, 0, W, H);
 
   if (P.lines && lineSeeds > 0) {
-    ox.strokeStyle = "rgba(140,190,255,0.42)";
+    ox.strokeStyle = `rgba(${lineRGB},${P.lineAlpha})`;
     ox.lineWidth = 1.1;
     ox.beginPath();
     const seeds = lineSeeds;
@@ -630,9 +824,9 @@ function drawOverlay() {
     ox.beginPath(); ox.arc(0, 0, 16, 0, Math.PI * 2); ox.stroke();
 
     // North / south poles
-    ox.fillStyle = "#ff5470";
+    ox.fillStyle = P.north;
     ox.beginPath(); ox.arc(c * 9.5, s * 9.5, 5.6, 0, Math.PI * 2); ox.fill();
-    ox.fillStyle = "#4f8dff";
+    ox.fillStyle = P.south;
     ox.beginPath(); ox.arc(-c * 9.5, -s * 9.5, 5.6, 0, Math.PI * 2); ox.fill();
 
     // Moment arrow
@@ -663,6 +857,7 @@ function frame(now) {
   updateBudget();
   if (!paused && P.timeScale > 0) {
     const sdt = dt * P.timeScale;
+    simTime += sdt;                 // motors read this, so pausing holds their phase
     stepNodes(sdt);
     stepParticles(sdt);
   }
@@ -742,7 +937,7 @@ function applyPreset(name) {
   document.querySelectorAll("#presets button")
     .forEach(b => b.classList.toggle("on", b.dataset.preset === name));
   allocParticles(P.count);
-  fx.fillStyle = "#05070d"; fx.fillRect(0, 0, W, H);
+  clearField();
   syncUI();
 }
 
@@ -762,8 +957,21 @@ function toSlider(id, val) {
     case "s-ndamp": return val * 1000;
     case "s-trail": return val * 100;
     case "s-time":  return val * 100;
+    case "s-linea": return val * 100;
     default:        return val;
   }
+}
+
+function bindColor(inputId, key) {
+  const el = $(inputId);
+  el.addEventListener("input", () => {
+    P[key] = el.value;
+    applyColors();
+    // Repaint the backdrop immediately — otherwise the old background lingers
+    // in the trail buffer and only fades out over the next several frames.
+    if (key === "bg") clearField();
+  });
+  return () => { el.value = P[key]; };
 }
 
 const syncers = [
@@ -789,7 +997,195 @@ const syncers = [
              v => P.nodeDamp = v / 1000, v => v.toFixed(3)),
   bindSlider("s-time",    "v-time",   () => P.timeScale,
              v => P.timeScale = v / 100, v => v.toFixed(2) + "×"),
+  bindSlider("s-linea",   "v-linea",  () => P.lineAlpha,
+             v => P.lineAlpha = v / 100, v => v.toFixed(2)),
+  bindColor("k-bg",    "bg"),
+  bindColor("k-line",  "lineColor"),
+  bindColor("k-north", "north"),
+  bindColor("k-south", "south"),
 ];
+
+// ---------------------------------------------------------------- palettes
+const palWrap   = $("palettes");
+const stopsWrap = $("stops");
+const rampPrev  = $("ramp-prev");
+
+const gradCSS = ramp => `linear-gradient(90deg,${ramp.join(",")})`;
+
+function renderSwatches() {
+  palWrap.textContent = "";
+  // Explicit order — insertion order would put a swatch saved this session after
+  // "Custom" but before it on the next load, since loading runs first.
+  const order = [...BUILTIN_KEYS, ...userPalettes.map(u => u.key), "custom"];
+  for (const key of order) {
+    const pal = PALETTES[key];
+    if (!pal) continue;
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "swatch";
+    b.dataset.palette = key;
+
+    const bar = document.createElement("i");
+    bar.style.background = gradCSS(pal.ramp);
+    b.append(bar, pal.label);
+    b.addEventListener("click", () => { P.palette = key; syncPalette(); });
+
+    // Saved gradients get a delete affordance; built-ins and the live editor
+    // swatch don't. A <span> rather than a nested <button>, which would be
+    // invalid inside the swatch button.
+    if (pal.userKey) {
+      const del = document.createElement("span");
+      del.className = "del";
+      del.textContent = "×";
+      del.title = `Delete "${pal.label}"`;
+      del.addEventListener("click", e => { e.stopPropagation(); deletePalette(key); });
+      b.appendChild(del);
+    }
+    palWrap.appendChild(b);
+  }
+  syncPalette();
+}
+
+function syncPalette() {
+  palWrap.querySelectorAll("button")
+    .forEach(b => b.classList.toggle("on", b.dataset.palette === P.palette));
+}
+
+// ---------------------------------------------------------------- gradient editor
+function renderStops() {
+  stopsWrap.textContent = "";
+  P.customStops.forEach((c, i) => {
+    const cell = document.createElement("div");
+    cell.className = "stop";
+
+    const inp = document.createElement("input");
+    inp.type = "color";
+    inp.value = c;
+    inp.title = `Keyframe ${i + 1}`;
+    inp.addEventListener("input", () => { P.customStops[i] = inp.value; refreshCustom(); });
+    cell.appendChild(inp);
+
+    if (P.customStops.length > 2) {          // a gradient needs at least two ends
+      const del = document.createElement("span");
+      del.className = "del";
+      del.textContent = "×";
+      del.title = "Remove keyframe";
+      del.addEventListener("click", () => {
+        P.customStops.splice(i, 1);
+        renderStops();
+        refreshCustom();
+      });
+      cell.appendChild(del);
+    }
+    stopsWrap.appendChild(cell);
+  });
+  $("b-stop-add").disabled = P.customStops.length >= MAX_STOPS;
+}
+
+// Recompute the live ramp and show it everywhere it appears. Selecting `custom`
+// as a side effect is deliberate: touching a keyframe should show its result.
+function paintRampPrev(ramp) {
+  rampPrev.textContent = "";
+  for (const c of ramp) {
+    const cell = document.createElement("span");
+    cell.style.background = c;
+    rampPrev.appendChild(cell);
+  }
+}
+
+function refreshCustom() {
+  const ramp = PALETTES.custom.ramp = rampFromStops(P.customStops);
+  paintRampPrev(ramp);
+  const bar = palWrap.querySelector('[data-palette="custom"] i');
+  if (bar) bar.style.background = gradCSS(ramp);
+  P.palette = "custom";
+  syncPalette();
+  queueSave();
+}
+
+$("b-stop-add").addEventListener("click", () => {
+  if (P.customStops.length >= MAX_STOPS) return;
+  // Extend from the bright end, which is where a ramp usually wants more detail.
+  P.customStops.push(P.customStops[P.customStops.length - 1]);
+  renderStops();
+  refreshCustom();
+});
+
+$("b-ramp-save").addEventListener("click", () => {
+  // Lowest unused number rather than a running count, so deleting #1 and saving
+  // again doesn't produce two swatches both called "Mine 2".
+  const used = new Set(userPalettes.map(u => u.label));
+  let n = 1;
+  while (used.has("Mine " + n)) n++;
+  const entry = { key: "u" + Date.now().toString(36), label: "Mine " + n,
+                  stops: P.customStops.slice() };
+  userPalettes.push(entry);
+  addUserPalette(entry);
+  P.palette = entry.key;
+  renderSwatches();
+  saveStore();
+});
+
+function addUserPalette(entry) {
+  PALETTES[entry.key] = { label: entry.label, ramp: rampFromStops(entry.stops),
+                          userKey: entry.key };
+}
+
+function deletePalette(key) {
+  delete PALETTES[key];
+  userPalettes = userPalettes.filter(u => u.key !== key);
+  if (P.palette === key) P.palette = "ice";
+  renderSwatches();
+  saveStore();
+}
+
+// ---------------------------------------------------------------- persistence
+const STORE_KEY = "magfield.gradients.v1";
+let saveTimer = null;
+
+function queueSave() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(saveStore, 250);   // colour inputs fire continuously while dragging
+}
+
+function saveStore() {
+  clearTimeout(saveTimer);
+  try {
+    localStorage.setItem(STORE_KEY, JSON.stringify({
+      stops: P.customStops, saved: userPalettes,
+    }));
+  } catch (e) { /* private mode / quota — the editor still works, it just won't persist */ }
+}
+
+const isHex = c => typeof c === "string" && /^#[0-9a-f]{6}$/i.test(c);
+const cleanStops = s =>
+  Array.isArray(s) ? s.filter(isHex).slice(0, MAX_STOPS) : [];
+
+function loadStore() {
+  let d;
+  try { d = JSON.parse(localStorage.getItem(STORE_KEY) || "null"); } catch (e) { return; }
+  if (!d || typeof d !== "object") return;
+
+  const stops = cleanStops(d.stops);
+  if (stops.length >= 2) P.customStops = stops;
+
+  if (Array.isArray(d.saved)) {
+    for (const u of d.saved.slice(0, 24)) {
+      const s = cleanStops(u && u.stops);
+      if (s.length < 2 || typeof u.key !== "string" || PALETTES[u.key]) continue;
+      const entry = { key: u.key, label: String(u.label || "Mine").slice(0, 16), stops: s };
+      userPalettes.push(entry);
+      addUserPalette(entry);
+    }
+  }
+}
+
+loadStore();
+// The live editor swatch sits last, after any saved ones.
+PALETTES.custom = { label: "Custom", ramp: rampFromStops(P.customStops) };
+renderSwatches();
+renderStops();
+paintRampPrev(PALETTES.custom.ramp);
 
 function syncUI() {
   syncers.forEach(f => f());
@@ -800,6 +1196,7 @@ function syncUI() {
   $("c-lines").checked  = P.lines;
   $("c-nodes").checked  = P.drawNodes;
   $("c-speed").checked  = P.colorBySpeed;
+  syncPalette();
 }
 
 document.querySelectorAll("#presets button").forEach(b =>
@@ -821,6 +1218,13 @@ $("b-add").addEventListener("click", () => {
 });
 $("b-del").addEventListener("click", () => { if (nodes.length > 1) nodes.pop(); });
 
+$("b-colors").addEventListener("click", () => {
+  Object.assign(P, COLOR_DEFAULTS);
+  applyColors();
+  clearField();
+  syncUI();
+});
+
 const pauseBtn = $("b-pause");
 pauseBtn.addEventListener("click", () => {
   paused = !paused;
@@ -830,7 +1234,7 @@ pauseBtn.addEventListener("click", () => {
 $("b-reset").addEventListener("click", () => {
   allocParticles(P.count);
   for (const n of nodes) { n.vx = n.vy = n.av = 0; }
-  fx.fillStyle = "#05070d"; fx.fillRect(0, 0, W, H);
+  clearField();
 });
 
 // ---------------------------------------------------------------- pointer
@@ -849,14 +1253,71 @@ function localPos(e) {
   return [e.clientX - r.left, e.clientY - r.top];
 }
 
+// ------------------------------------------------------------ per-node controls
+function selectNode(n) {
+  selected = n;
+  $("sel-none").style.display = n ? "none" : "";
+  $("sel-body").style.display = n ? "" : "none";
+  if (!n) return;
+  $("s-hz").value    = Math.round(n.hz * 10);
+  $("s-phase").value = Math.round(n.phase * 180 / Math.PI);
+  $("s-ntq").value   = Math.round(n.torque * 100);
+  syncSelected();
+}
+
+function syncSelected() {
+  const n = selected;
+  if (!n) return;
+  $("v-hz").textContent    = n.hz ? `${n.hz.toFixed(1)} Hz` : "free";
+  $("v-phase").textContent = `${Math.round(n.phase * 180 / Math.PI)}°`;
+  $("v-ntq").textContent   = n.torque.toFixed(2) + "×";
+  $("sel-mode").textContent = n.driven
+    ? `Driven: θ = a₀ + 2π·${n.hz.toFixed(1)}·t + φ. Field torque no longer turns it.`
+    : "Free: the other dipoles' torque sets this node's angle.";
+}
+
+// Re-base a0 off the current angle so changing hz mid-run doesn't snap the node.
+function rebase(n) { n.a0 = n.a - 2 * Math.PI * n.hz * simTime - n.phase; }
+
+$("s-hz").addEventListener("input", e => {
+  if (!selected) return;
+  selected.hz = (+e.target.value) / 10;
+  rebase(selected);
+  if (!selected.driven) selected.av = 0;
+  syncSelected();
+});
+$("s-phase").addEventListener("input", e => {
+  if (!selected) return;
+  selected.phase = (+e.target.value) * Math.PI / 180;
+  syncSelected();
+});
+$("s-ntq").addEventListener("input", e => {
+  if (!selected) return;
+  selected.torque = (+e.target.value) / 100;
+  syncSelected();
+});
+$("b-free").addEventListener("click", () => {
+  if (!selected) return;
+  selected.hz = 0; selected.av = 0;
+  $("s-hz").value = 0;
+  syncSelected();
+});
+$("b-flip").addEventListener("click", () => {
+  if (!selected) return;
+  selected.sign *= -1;
+  syncSelected();
+});
+
 stage.addEventListener("pointerdown", e => {
   const [x, y] = localPos(e);
   const n = pickNode(x, y);
   if (!n) return;
   if (e.altKey) {
     if (nodes.length > 1) nodes.splice(nodes.indexOf(n), 1);
+    if (selected === n) selectNode(null);
     return;
   }
+  selectNode(n);
   dragging = n;
   rotating = e.shiftKey;
   n.pinned = true;
@@ -976,6 +1437,7 @@ const ro = new ResizeObserver(() => {
 });
 ro.observe(stage);
 
+applyColors();
 resize();
 applyPreset("attract");
 requestAnimationFrame(frame);

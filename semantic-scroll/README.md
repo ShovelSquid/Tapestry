@@ -93,3 +93,71 @@ itself is a layer object, so it can be dimmed or hidden, but nothing pushes it.
 This is a front-end simulation. The bridge-note text is currently generated locally from a template. To use a real language model, add a server endpoint that calls your chosen model and return the bridge interpretation as JSON. Do not put API keys in `public/app.js`.
 
 The UI is inspired by a dark conversational interface but does not copy ChatGPT's proprietary source code, assets, or exact implementation.
+
+## Deterministic updates and replay
+
+This version adds an append-only history layer for continuity, model tracking,
+and reproducible semantic-state replay.
+
+### What is logged
+
+Meaningful actions produce immutable events containing:
+
+- **what** changed (`note.created`, `object.moved`, `connection.created`, etc.)
+- **when** it changed (ISO timestamp and monotonic performance time)
+- **why** it changed (a human-readable cause)
+- **where** it changed (object, layer, coordinates, or screen location)
+- **who** caused it (`human`, `system`, or later an AI/model actor)
+
+Events are stored locally in the browser under `semantic-scroll-history-v1`.
+Use **Updates → Export** to save the complete JSON history outside the browser.
+
+### Significant updates
+
+After three significant mutations, or at the selected timer interval, the app:
+
+1. captures a deterministic semantic checkpoint;
+2. summarizes events since the previous checkpoint;
+3. creates an update note on the **Updates** layer;
+4. records the checkpoint-to-note relationship in the event log.
+
+The threshold is kept in `history.js` as `significanceThreshold` and can later
+be exposed as another UI control.
+
+### Replay boundary
+
+**Replay latest** restores:
+
+- transcript content;
+- notes, blobs, layers and positions;
+- note dimensions and text;
+- object-to-object links;
+- camera transform;
+- model-orb screen location;
+- seeded procedural geometry state.
+
+Decorative energy particles and exact animation frames are intentionally not
+checkpointed because they depend on display timing. The replay is deterministic
+at the semantic/model-state layer, not a video recording. For stricter physical
+replay, the next step is a fixed-timestep simulation whose inputs are recorded
+as events and whose state hashes are validated at checkpoints.
+
+### Model events
+
+The schema already accepts `actor: "model"`. A future model runner should log:
+
+```js
+semanticHistory.record('model.decision', {
+  modelId: 'mimic-research',
+  promptId: 'prompt-42',
+  action: 'create_connection',
+  confidence: 0.78
+}, {
+  actor: 'model',
+  where: { layerId: 'layer-2', x: 120, y: -80 },
+  why: 'The two notes share a causal dependency.'
+});
+```
+
+That makes mimic branches, merges, movement, prompts, and decisions replayable
+through the same event stream.

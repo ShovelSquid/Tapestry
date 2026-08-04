@@ -58,6 +58,19 @@ const state = {
 let idN = 0;
 const uid = p => `${p}-${++idN}`;
 
+/* Seeded random keeps generated geometry reproducible across checkpoints.
+   Frame-time-dependent decorative particles are not part of semantic replay. */
+let rngState = 0x51f15e;
+function seededRandom(){
+  rngState |= 0; rngState = (rngState + 0x6D2B79F5) | 0;
+  let t = rngState; t = Math.imul(t ^ t >>> 15, t | 1);
+  t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+  return ((t ^ t >>> 14) >>> 0) / 4294967296;
+}
+const history = window.semanticHistory;
+const logEvent = (type, payload={}, options={}) => history?.record(type, payload, options);
+
+
 /* ------------------------------------------------------------------ view */
 const MIN_K = 0.05, MAX_K = 6;
 
@@ -175,6 +188,7 @@ function addLayer(name, activate = true){
   state.layers.push(layer);
   if (activate) state.activeLayer = layer.id;
   renderLayers();
+  logEvent('layer.created', {layer:{...layer}}, {where:{layerId:layer.id}, why:'A new semantic plane was created.'});
   return layer;
 }
 const layerById = id => state.layers.find(l => l.id === id);
@@ -196,11 +210,14 @@ function renderLayers(){
       if (act === 'vis')       l.visible = !l.visible;
       else if (act === 'lock') l.locked  = !l.locked;
       else                     state.activeLayer = l.id;
+      logEvent('layer.changed', {id:l.id, visible:l.visible, locked:l.locked, active:state.activeLayer}, {
+        where:{layerId:l.id}, why:act === 'vis' ? 'Layer visibility changed.' : act === 'lock' ? 'Layer mobility changed.' : 'Active semantic plane changed.'
+      });
       renderLayers(); syncLayerStyles();
     };
     li.querySelector('.lname').ondblclick = e => {
       e.stopPropagation();
-      const v = prompt('Layer name', l.name); if (v) { l.name = v; renderLayers(); }
+      const v = prompt('Layer name', l.name); if (v) { const before=l.name; l.name = v; logEvent('layer.renamed',{id:l.id,before,after:v},{where:{layerId:l.id},why:'The layer identity was edited.'}); renderLayers(); }
     };
     li.style.order = String(-i);
     list.append(li);
@@ -252,14 +269,18 @@ function createNote(text, wx, wy, layer = state.activeLayer){
   makeDraggable(o, el.querySelector('.drag-handle'));
   makeResizable(o, el.querySelector('.resize-handle'));
   pulse(el);
-  return register(o);
+  const registered = register(o);
+  logEvent('note.created', {note:{id:o.id,text,x:wx,y:wy,layer,width:o.w,height:o.h}}, {
+    where:{objectId:o.id,layerId:layer,x:wx,y:wy}, why:'A note entered the idea space.'
+  });
+  return registered;
 }
 
 function createBlob(wx, wy, {ghost = false, R = 46, layer = state.activeLayer} = {}){
   const el = document.querySelector('#blob-template').content.firstElementChild.cloneNode(true);
   const amp = R * 0.16;
   const o = {id:uid('blob'), el, kind:'blob', x:wx, y:wy, R, amp, span:R+amp*2+6,
-             seed:Math.random()*100, ghost, layer,
+             seed:seededRandom()*100, ghost, layer,
              svg:el.querySelector('.blob-svg'),
              path:el.querySelector('.blob-path'),
              inner:el.querySelector('.blob-inner'),
@@ -272,10 +293,14 @@ function createBlob(wx, wy, {ghost = false, R = 46, layer = state.activeLayer} =
     makeDraggable(o, el);
     el.addEventListener('click', e => { if (!el._moved) { e.stopPropagation(); onBlobClick(o); } });
   }
-  return register(o);
+  const registered = register(o);
+  if (!ghost) logEvent('blob.created', {blob:{id:o.id,x:wx,y:wy,R,layer,seed:o.seed}}, {
+    where:{objectId:o.id,layerId:layer,x:wx,y:wy}, why:'A generative field node entered the idea space.'
+  });
+  return registered;
 }
 
-function removeObj(o){ o.el.remove(); state.objs.delete(o.id); renderLayers(); }
+function removeObj(o){ logEvent('object.removed',{id:o.id,kind:o.kind},{where:{objectId:o.id,layerId:o.layer},why:'The object was removed from the active state.'}); o.el.remove(); state.objs.delete(o.id); renderLayers(); }
 
 /* the wavy circumference: several harmonics riding on a circle */
 function blobPath(R, amp, seed, t, pts = 120){
@@ -378,6 +403,9 @@ function makeDraggable(o, handle){
       handle.removeEventListener('pointermove', move);
       handle.removeEventListener('pointerup', up);
       state.dragging = null;
+      if (o.el._moved) logEvent('object.moved', {id:o.id,kind:o.kind,from:{x:start.x,y:start.y},to:{x:o.x,y:o.y}}, {
+        where:{objectId:o.id,layerId:o.layer,x:o.x,y:o.y}, why:'The user repositioned an idea or field node.'
+      });
     };
     handle.addEventListener('pointermove', move);
     handle.addEventListener('pointerup', up);
@@ -393,7 +421,12 @@ function makeResizable(o, handle){
       o.el.style.height = `${Math.max(90,  start.h + (ev.clientY-start.sy)/state.view.k)}px`;
       measure(o); positionOf(o);
     };
-    const up = () => { handle.removeEventListener('pointermove', move); handle.removeEventListener('pointerup', up); };
+    const up = () => {
+      handle.removeEventListener('pointermove', move); handle.removeEventListener('pointerup', up);
+      logEvent('note.resized', {id:o.id,from:{width:start.w,height:start.h},to:{width:o.w,height:o.h}}, {
+        where:{objectId:o.id,layerId:o.layer,x:o.x,y:o.y}, why:'The note boundary was reshaped.'
+      });
+    };
     handle.addEventListener('pointermove', move);
     handle.addEventListener('pointerup', up);
   });
@@ -493,6 +526,9 @@ function finishConnect(){
   if (a.mark === b.mark) return;
   const link = {a:a.anchor, b:b.anchor, strength:Math.min(1, .25 + (a.text.length+b.text.length)/80)};
   state.links.push(link);
+  logEvent('connection.created', {strength:link.strength,fromText:a.text,toText:b.text}, {
+    where:{from:a.note?.dataset?.noteId || 'root',to:b.note?.dataset?.noteId || 'root'}, why:'The user declared a semantic relationship.'
+  });
   pulse(b.note); spawnInterpretation(a, b);
   const pa = anchorPoint(a.anchor), pb = anchorPoint(b.anchor);
   if (pa) emitBurst(pa, 18); if (pb) emitBurst(pb, 18);
@@ -524,6 +560,7 @@ document.querySelector('#append').onclick = () => {
   el.innerHTML = '<span class="role">user</span><div class="text"></div>';
   el.querySelector('.text').textContent = v;
   rootBody.append(el); input.value = ''; input.style.height = 'auto';
+  logEvent('transcript.appended', {role:'user',text:v}, {where:{objectId:'root',layerId:rootObj.layer},why:'The conversation scroll was extended.'});
   pulse(rootEl); measure(rootObj);              // the transcript just grew
   const r = el.getBoundingClientRect();
   panBy(0, innerHeight*0.62 - (r.top + r.height/2));
@@ -547,11 +584,136 @@ addEventListener('pointermove', e => {
 });
 addEventListener('resize', applyView);
 
+
+/* ------------------------------------------------ deterministic state history */
+function semanticSnapshot(){
+  const objs = [...state.objs.values()].filter(o => !o.ghost).map(o => ({
+    id:o.id, kind:o.kind, x:o.x, y:o.y, layer:o.layer,
+    width:o.w, height:o.h, R:o.R, seed:o.seed,
+    text:o.kind === 'note' ? o.el.querySelector('.note-body')?.innerText || '' : null
+  }));
+  return {
+    schema:1,
+    rngState,
+    idN,
+    view:{...state.view},
+    wheelMode:state.wheelMode,
+    activeLayer:state.activeLayer,
+    layers:state.layers.map(l => ({...l})),
+    objects:objs,
+    transcript:[...rootBody.querySelectorAll('.message')].map(m => ({
+      role:m.classList.contains('user')?'user':'assistant',
+      text:m.querySelector('.text')?.innerText || ''
+    })),
+    links:state.links.filter(l => !l.temp).map(l => ({
+      strength:l.strength, faint:!!l.faint,
+      a:l.a.kind === 'obj' ? {kind:'obj',id:l.a.id} : null,
+      b:l.b.kind === 'obj' ? {kind:'obj',id:l.b.id} : null
+    })).filter(l => l.a && l.b),
+    model:{left:orb.offsetLeft,top:orb.offsetTop,tick},
+    capturedAt:new Date().toISOString()
+  };
+}
+
+function clearReplayObjects(){
+  for (const o of [...state.objs.values()]) if (o.kind !== 'root') { o.el.remove(); state.objs.delete(o.id); }
+  state.links = [];
+}
+
+function restoreSemanticSnapshot(snap){
+  if (!snap?.schema) return;
+  clearReplayObjects();
+  rngState = snap.rngState ?? rngState; idN = snap.idN ?? idN;
+  state.layers = (snap.layers || []).map(l => ({...l}));
+  state.activeLayer = snap.activeLayer || state.layers[0]?.id;
+  rootObj.layer = (snap.objects || []).find(o => o.id === 'root')?.layer || state.layers[0]?.id;
+  rootBody.replaceChildren();
+  for (const m of snap.transcript || []) {
+    const el=document.createElement('section'); el.className=`message ${m.role}`;
+    const role=document.createElement('span'); role.className='role'; role.textContent=m.role;
+    const text=document.createElement('div'); text.className='text'; text.textContent=m.text;
+    el.append(role,text); rootBody.append(el);
+  }
+  measure(rootObj);
+  for (const item of snap.objects || []) {
+    if (item.kind === 'root') continue;
+    let o;
+    if (item.kind === 'blob') {
+      o=createBlob(item.x,item.y,{R:item.R||46,layer:item.layer}); o.seed=item.seed ?? o.seed;
+    } else {
+      o=createNote(item.text||'',item.x,item.y,item.layer);
+      if (item.width) o.el.style.width=`${item.width}px`;
+      if (item.height) o.el.style.height=`${item.height}px`;
+      measure(o); positionOf(o);
+      if ((item.text||'').startsWith('Update ·')) o.el.classList.add('update-note');
+    }
+    const generated=o.id; state.objs.delete(generated); o.id=item.id; o.el.dataset.noteId=item.id; state.objs.set(item.id,o);
+  }
+  state.links=(snap.links||[]).map(l=>({a:l.a,b:l.b,strength:l.strength,faint:l.faint}));
+  state.view={...snap.view}; state.wheelMode=snap.wheelMode||'zoom';
+  orb.style.left=`${snap.model?.left ?? 18}px`; orb.style.top=`${snap.model?.top ?? 62}px`; tick=snap.model?.tick ?? tick;
+  renderLayers(); syncLayerStyles(); applyView();
+  status.textContent=`Replayed checkpoint from ${new Date(snap.capturedAt).toLocaleString()}.`;
+}
+
+history?.setSnapshotProvider(semanticSnapshot);
+history?.setReplayHandler(restoreSemanticSnapshot);
+
+let noteEditBefore = '';
+objects.addEventListener('focusin', e => {
+  const body=e.target.closest('.free-note .note-body'); if (body) noteEditBefore=body.innerText;
+});
+objects.addEventListener('focusout', e => {
+  const body=e.target.closest('.free-note .note-body');
+  if (!body || body.innerText===noteEditBefore) return;
+  const note=body.closest('.note');
+  logEvent('note.edited',{id:note.dataset.noteId,before:noteEditBefore,after:body.innerText},{
+    where:{objectId:note.dataset.noteId},why:'The meaning carried by a note changed.'
+  });
+});
+
+addEventListener('semantic-checkpoint', e => {
+  if (!e.detail.createUpdate) return;
+  const narrative=history.updateNarrative(e.detail.checkpoint);
+  const updateLayer=state.layers.find(l=>l.name==='Updates') || addLayer('Updates',false);
+  const idx=history.data.checkpoints.length;
+  const x=980 + (idx%3)*390, y=160 + Math.floor(idx/3)*280;
+  const note=createNote(`${narrative.title}\n\n${narrative.text}`,x,y,updateLayer.id);
+  note.el.classList.add('update-note');
+  logEvent('update.generated',{checkpointId:e.detail.checkpoint.id,noteId:note.id,eventIds:narrative.eventIds},{
+    actor:'system',where:{objectId:note.id,layerId:updateLayer.id,x,y},why:'A continuity summary was generated after meaningful change.',significant:false
+  });
+});
+
+const historyCount=document.querySelector('#history-count');
+const historyLatest=document.querySelector('#history-latest');
+const timerSelect=document.querySelector('#history-timer');
+function renderHistory(summary=history.summary()){
+  historyCount.textContent=`${summary.events} / ${summary.checkpoints}`;
+  historyLatest.textContent=summary.latest ? `${summary.latest.type}\n${new Date(summary.latest.at).toLocaleTimeString()}` : 'No updates yet.';
+  timerSelect.value=String(summary.timerMinutes);
+}
+history?.onChange(renderHistory); renderHistory(); history.startTimer(history.timerMinutes);
+timerSelect.addEventListener('change',()=>history.startTimer(Number(timerSelect.value)));
+document.querySelector('#history-snapshot').onclick=()=>history.checkpoint('manual',{createUpdate:true});
+document.querySelector('#history-replay').onclick=()=>history.replayCheckpoint();
+document.querySelector('#history-export').onclick=()=>{
+  const a=document.createElement('a'); a.href=URL.createObjectURL(history.exportBlob());
+  a.download=`semantic-scroll-history-${new Date().toISOString().replace(/[:.]/g,'-')}.json`; a.click(); URL.revokeObjectURL(a.href);
+};
+document.querySelector('#history-import').onclick=()=>document.querySelector('#history-file').click();
+document.querySelector('#history-file').addEventListener('change',async e=>{
+  const file=e.target.files[0]; if(!file)return;
+  try{history.importData(JSON.parse(await file.text())); renderHistory(); status.textContent='History imported. Replay latest to restore it.';}
+  catch(err){status.textContent=err.message;}
+  e.target.value='';
+});
+
 /* -------------------------------------------------------------- energy */
 const ec = document.querySelector('#energy'), ectx = ec.getContext('2d');
 function emitBurst(p, n){
   for (let i = 0; i < n; i++)
-    state.particles.push({x:p.x, y:p.y, a:Math.random()*Math.PI*2, s:0.3+Math.random()*1.2, l:50+Math.random()*80});
+    state.particles.push({x:p.x, y:p.y, a:seededRandom()*Math.PI*2, s:0.3+seededRandom()*1.2, l:50+seededRandom()*80});
 }
 function drawEnergy(){
   ec.width = innerWidth*devicePixelRatio; ec.height = innerHeight*devicePixelRatio;
@@ -570,8 +732,8 @@ function drawEnergy(){
 /* ----------------------------------------------------------------- orb */
 const orb = document.querySelector('#neural-orb'), oc = document.querySelector('#orb-canvas'), ctx = oc.getContext('2d');
 const nodes = Array.from({length:52}, () => {
-  const a = Math.random()*Math.PI*2, z = Math.random()*2-1, r = Math.sqrt(1-z*z);
-  return {x:r*Math.cos(a), y:r*Math.sin(a), z, phase:Math.random()*6.28};
+  const a = seededRandom()*Math.PI*2, z = seededRandom()*2-1, r = Math.sqrt(1-z*z);
+  return {x:r*Math.cos(a), y:r*Math.sin(a), z, phase:seededRandom()*6.28};
 });
 let tick = 0;
 function drawOrb(){
@@ -592,10 +754,15 @@ function drawOrb(){
 let od = null;
 orb.onpointerdown = e => { od = {x:e.clientX, y:e.clientY, l:orb.offsetLeft, t:orb.offsetTop}; orb.setPointerCapture(e.pointerId); };
 orb.onpointermove = e => { if (!od) return; orb.style.left = od.l+e.clientX-od.x+'px'; orb.style.top = od.t+e.clientY-od.y+'px'; };
-orb.onpointerup = () => od = null;
+orb.onpointerup = () => {
+  if (od) logEvent('model.moved', {modelId:'model-field',from:{left:od.l,top:od.t},to:{left:orb.offsetLeft,top:orb.offsetTop}}, {
+    actor:'human', where:{surface:'screen',left:orb.offsetLeft,top:orb.offsetTop}, why:'The model visualization was repositioned.'
+  });
+  od = null;
+};
 
 /* ---------------------------------------------------------------- boot */
-const [LTranscript, LNotes, LField] = [addLayer('Transcript'), addLayer('Notes'), addLayer('Field')];
+const [LTranscript, LNotes, LField, LUpdates] = [addLayer('Transcript'), addLayer('Notes'), addLayer('Field'), addLayer('Updates', false)];
 rootObj.layer = LTranscript.id;
 register(rootObj);
 
@@ -608,6 +775,8 @@ renderLayers(); syncLayerStyles();
 /* open at reading zoom on the head of the transcript; Orient: Reset frames all */
 state.view = {k:1, x:(innerWidth - (innerWidth > 760 ? 230 : 0))/2, y:64};
 applyView();
+if (!history.data.checkpoints.length) history.checkpoint('initial',{createUpdate:false});
+logEvent('session.opened',{port:location.port||null},{actor:'system',where:{surface:'browser'},why:'The Semantic Scroll session became active.',significant:false});
 
 let last = performance.now(), frames = 0, t = 0;
 function loop(now){

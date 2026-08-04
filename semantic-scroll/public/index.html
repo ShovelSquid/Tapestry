@@ -56,6 +56,27 @@
       <ul id="layer-list"></ul>
     </div>
 
+    <div class="panel-block history-panel">
+      <div class="panel-head"><span>Updates</span><b id="history-count">0</b></div>
+      <div id="history-latest" class="history-latest">No updates yet.</div>
+      <label class="history-label" for="history-timer">Checkpoint timer</label>
+      <select id="history-timer">
+        <option value="0">Off</option>
+        <option value="1">Every minute</option>
+        <option value="5" selected>Every 5 minutes</option>
+        <option value="15">Every 15 minutes</option>
+      </select>
+      <div class="row history-actions">
+        <button id="history-snapshot">Snapshot</button>
+        <button id="history-replay">Replay latest</button>
+      </div>
+      <div class="row history-actions">
+        <button id="history-export">Export</button>
+        <button id="history-import">Import</button>
+      </div>
+      <input id="history-file" type="file" accept="application/json" hidden />
+    </div>
+
     <div class="panel-block">
       <div class="panel-head"><span>Create</span></div>
       <div class="row">
@@ -92,6 +113,7 @@
     </div>
   </template>
 
+  <script src="history.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
