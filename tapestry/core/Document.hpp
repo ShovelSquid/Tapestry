@@ -45,6 +45,9 @@ struct DocumentState {
 //   pbody <text, newlines escaped as \n>
 //   drop <id>                                     (page removed)
 //   order <id> <id> …                             (draw order changed)
+//   strokes <count>                               (vector stroke set changed)
+//   stroke <id> <point-count>
+//   spoint <x> <y> <pressure>
 //
 // Strings are single-line with backslash escapes; doubles round-trip at full
 // precision.

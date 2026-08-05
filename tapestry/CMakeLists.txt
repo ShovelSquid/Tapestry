@@ -69,6 +69,7 @@ add_library(tapestry_core STATIC
     render/Fonts.cpp
     render/Grid.cpp
     render/Pages.cpp)
+target_sources(tapestry_core PRIVATE render/Strokes.cpp)
 
 target_include_directories(tapestry_core PUBLIC ${PROJECT_SOURCE_DIR})
 target_link_libraries(tapestry_core
@@ -106,11 +107,25 @@ if(TAPESTRY_BUILD_APP)
     endif()
 
     if(SDL2_FOUND)
-        add_executable(tapestry app/main.cpp)
+        set(TAPESTRY_APP_SOURCES app/main.cpp)
+        if(APPLE)
+            enable_language(OBJCXX)
+            list(APPEND TAPESTRY_APP_SOURCES app/FileDialog_mac.mm)
+        else()
+            list(APPEND TAPESTRY_APP_SOURCES app/FileDialog.cpp)
+        endif()
+
+        add_executable(tapestry ${TAPESTRY_APP_SOURCES})
 
         target_link_libraries(tapestry PRIVATE tapestry_core stb_image_write)
         target_compile_definitions(tapestry PRIVATE
             TAPESTRY_ASSET_DIR="${PROJECT_SOURCE_DIR}/assets")
+
+        if(APPLE)
+            target_link_libraries(tapestry PRIVATE "-framework AppKit")
+        elseif(WIN32)
+            target_link_libraries(tapestry PRIVATE comdlg32)
+        endif()
 
         if(TARGET SDL2::SDL2)
             target_link_libraries(tapestry PRIVATE SDL2::SDL2)

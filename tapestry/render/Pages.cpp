@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <vector>
 
 namespace tapestry {
 namespace {
@@ -203,6 +204,79 @@ void drawSettingsBody(NVGcontext* vg, const Page& page, const Camera& camera,
     }
 }
 
+void strokeCaret(NVGcontext* vg, float x, float top, float height) {
+    nvgBeginPath(vg);
+    nvgMoveTo(vg, x, top);
+    nvgLineTo(vg, x, top + height);
+    nvgStrokeColor(vg, nvgRGBA(222, 229, 244, 245));
+    nvgStrokeWidth(vg, 1.5f);
+    nvgStroke(vg);
+}
+
+void drawPageCaret(NVGcontext* vg, const Page& page, const Camera& camera,
+                   const FontSet& fonts, const PageUiState& ui,
+                   PageTextRegion region) {
+    if (ui.editingPageId != page.id || ui.editingRegion != region || !fonts.ok()) {
+        return;
+    }
+    const double zoom = camera.zoom();
+    const ScreenRect card = project(camera, page.rect);
+    if (region == PageTextRegion::Title) {
+        const float dotR = std::max(1.5f, static_cast<float>(4.0 * zoom));
+        const float x = card.x + static_cast<float>(kPadding * zoom)
+            + dotR * 3.0f;
+        const float midY = card.y
+            + static_cast<float>(kPageTitleBarHeight * zoom * 0.5);
+        const std::size_t caret = std::min(ui.caret, page.title.size());
+        nvgFontFaceId(vg, fonts.bold);
+        nvgFontSize(vg, static_cast<float>(kTitleSize * zoom));
+        nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+        const float advance = nvgTextBounds(vg, x, midY, page.title.c_str(),
+                                             page.title.c_str() + caret, nullptr);
+        const float height = std::max(8.0f, static_cast<float>(18.0 * zoom));
+        strokeCaret(vg, x + advance, midY - height * 0.5f, height);
+        return;
+    }
+
+    const float bodyX = card.x + static_cast<float>(kPadding * zoom);
+    const float bodyY = card.y + static_cast<float>(
+        (kPageTitleBarHeight + kPadding * 0.5) * zoom);
+    const float bodyW = card.w - static_cast<float>(kPadding * 2.0 * zoom);
+    const float fontSize = static_cast<float>(kBodySize * zoom);
+    const float lineStep = fontSize * static_cast<float>(kBodyLineHeight);
+    nvgFontFaceId(vg, fonts.regular);
+    nvgFontSize(vg, fontSize);
+    nvgTextLineHeight(vg, static_cast<float>(kBodyLineHeight));
+    nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
+
+    const std::size_t caret = std::min(ui.caret, page.body.size());
+    const char* base = page.body.c_str();
+    const char* end = base + page.body.size();
+    const char* cursor = base;
+    int line = 0;
+    while (cursor < end) {
+        NVGtextRow rows[32];
+        const int count = nvgTextBreakLines(vg, cursor, end, bodyW, rows, 32);
+        if (count <= 0) break;
+        for (int i = 0; i < count; ++i, ++line) {
+            const std::size_t rowEnd = static_cast<std::size_t>(rows[i].next - base);
+            if (caret <= rowEnd) {
+                const char* caretPtr = base + std::min(
+                    caret, static_cast<std::size_t>(rows[i].end - base));
+                const float advance = nvgTextBounds(vg, bodyX, bodyY,
+                    rows[i].start, caretPtr, nullptr);
+                strokeCaret(vg, bodyX + advance,
+                    bodyY + lineStep * static_cast<float>(line),
+                    std::max(8.0f, fontSize * 1.25f));
+                return;
+            }
+        }
+        cursor = rows[count - 1].next;
+    }
+    strokeCaret(vg, bodyX, bodyY + lineStep * static_cast<float>(line),
+                std::max(8.0f, fontSize * 1.25f));
+}
+
 void drawPage(NVGcontext* vg, const Page& page, const Camera& camera,
               const FontSet& fonts, const PageUiState& ui) {
     const bool selected = page.id == ui.selectedId;
@@ -266,6 +340,7 @@ void drawPage(NVGcontext* vg, const Page& page, const Camera& camera,
     }
 
     drawMinimizeButton(vg, camera, page);
+    drawPageCaret(vg, page, camera, fonts, ui, PageTextRegion::Title);
 
     if (page.minimized) {
         return; // the title bar is the whole card
@@ -309,9 +384,125 @@ void drawPage(NVGcontext* vg, const Page& page, const Camera& camera,
         }
     }
     nvgRestore(vg);
+    drawPageCaret(vg, page, camera, fonts, ui, PageTextRegion::Body);
+}
+
+void drawResizeHandles(NVGcontext* vg, const Page& page, const Camera& camera) {
+    if (page.minimized) {
+        return;
+    }
+    const ScreenRect card = project(camera, page.rect);
+    constexpr float size = 9.0f;
+    const float half = size * 0.5f;
+    const float points[4][2] = {
+        {card.x, card.y}, {card.x + card.w, card.y},
+        {card.x, card.y + card.h}, {card.x + card.w, card.y + card.h},
+    };
+    for (const auto& point : points) {
+        nvgBeginPath(vg);
+        nvgRoundedRect(vg, point[0] - half, point[1] - half, size, size, 2.0f);
+        nvgFillColor(vg, nvgRGBA(222, 229, 244, 245));
+        nvgFill(vg);
+        nvgStrokeColor(vg, nvgRGBA(92, 112, 175, 240));
+        nvgStrokeWidth(vg, 1.5f);
+        nvgStroke(vg);
+    }
 }
 
 } // namespace
+
+PageTextRegion pageTextRegionAt(const Page& page, Vec2 worldPoint) {
+    if (!page.displayRect().contains(worldPoint)) {
+        return PageTextRegion::None;
+    }
+    if (worldPoint.y < page.rect.y + kPageTitleBarHeight
+        && !page.minimizeButtonRect().contains(worldPoint)) {
+        return PageTextRegion::Title;
+    }
+    if (!page.minimized && page.kind != PageKind::Settings
+        && worldPoint.y >= page.rect.y + kPageTitleBarHeight) {
+        return PageTextRegion::Body;
+    }
+    return PageTextRegion::None;
+}
+
+std::size_t pageTextIndexAt(NVGcontext* vg, const Page& page,
+                            const Camera& camera, const FontSet& fonts,
+                            PageTextRegion region, Vec2 screenPoint) {
+    if (vg == nullptr || !fonts.ok() || region == PageTextRegion::None) {
+        return 0;
+    }
+    const double zoom = camera.zoom();
+    const ScreenRect card = project(camera, page.rect);
+    const auto indexOnLine = [&](const char* start, const char* end,
+                                 float x, float y) {
+        if (start == end) {
+            return static_cast<std::size_t>(start - (region == PageTextRegion::Title
+                ? page.title.c_str() : page.body.c_str()));
+        }
+        std::vector<NVGglyphPosition> glyphs(
+            static_cast<std::size_t>(end - start) + 1u);
+        const int count = nvgTextGlyphPositions(vg, x, y, start, end,
+                                                glyphs.data(),
+                                                static_cast<int>(glyphs.size()));
+        for (int i = 0; i < count; ++i) {
+            const float midpoint = (glyphs[static_cast<std::size_t>(i)].x
+                + glyphs[static_cast<std::size_t>(i)].maxx) * 0.5f;
+            if (screenPoint.x < midpoint) {
+                const char* base = region == PageTextRegion::Title
+                    ? page.title.c_str() : page.body.c_str();
+                return static_cast<std::size_t>(
+                    glyphs[static_cast<std::size_t>(i)].str - base);
+            }
+        }
+        const char* base = region == PageTextRegion::Title
+            ? page.title.c_str() : page.body.c_str();
+        return static_cast<std::size_t>(end - base);
+    };
+
+    if (region == PageTextRegion::Title) {
+        const float dotR = std::max(1.5f, static_cast<float>(4.0 * zoom));
+        const float x = card.x + static_cast<float>(kPadding * zoom)
+            + dotR * 3.0f;
+        const float y = card.y
+            + static_cast<float>(kPageTitleBarHeight * zoom * 0.5);
+        nvgFontFaceId(vg, fonts.bold);
+        nvgFontSize(vg, static_cast<float>(kTitleSize * zoom));
+        nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+        return indexOnLine(page.title.c_str(),
+                           page.title.c_str() + page.title.size(), x, y);
+    }
+
+    const float bodyX = card.x + static_cast<float>(kPadding * zoom);
+    const float bodyY = card.y + static_cast<float>(
+        (kPageTitleBarHeight + kPadding * 0.5) * zoom);
+    const float bodyW = card.w - static_cast<float>(kPadding * 2.0 * zoom);
+    const float fontSize = static_cast<float>(kBodySize * zoom);
+    const float lineStep = fontSize * static_cast<float>(kBodyLineHeight);
+    const int targetLine = std::max(0, static_cast<int>(
+        std::floor((screenPoint.y - bodyY) / std::max(lineStep, 1.0f))));
+    nvgFontFaceId(vg, fonts.regular);
+    nvgFontSize(vg, fontSize);
+    nvgTextLineHeight(vg, static_cast<float>(kBodyLineHeight));
+    nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
+
+    const char* cursor = page.body.c_str();
+    const char* end = cursor + page.body.size();
+    int line = 0;
+    while (cursor < end) {
+        NVGtextRow rows[32];
+        const int count = nvgTextBreakLines(vg, cursor, end, bodyW, rows, 32);
+        if (count <= 0) break;
+        for (int i = 0; i < count; ++i, ++line) {
+            if (line == targetLine) {
+                return indexOnLine(rows[i].start, rows[i].end, bodyX,
+                                   bodyY + lineStep * static_cast<float>(line));
+            }
+        }
+        cursor = rows[count - 1].next;
+    }
+    return page.body.size();
+}
 
 SettingsLayout settingsLayout(const Page& page) {
     const double rowStartY = page.rect.y + kPageTitleBarHeight + 12.0;
@@ -354,6 +545,9 @@ void drawPages(NVGcontext* vg, const World& world, const Camera& camera,
     for (const Page& page : world.pages()) {
         if (page.displayRect().intersects(visible)) {
             drawPage(vg, page, camera, fonts, ui);
+            if (page.id == ui.selectedId) {
+                drawResizeHandles(vg, page, camera);
+            }
         }
     }
 }

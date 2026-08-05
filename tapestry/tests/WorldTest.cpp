@@ -6,6 +6,7 @@
 // any of that lands on top.
 
 #include "core/World.hpp"
+#include "render/Pages.hpp"
 
 #include <cstdio>
 
@@ -14,6 +15,7 @@ namespace {
 using tapestry::Page;
 using tapestry::PageKind;
 using tapestry::Rect;
+using tapestry::ResizeCorner;
 using tapestry::Vec2;
 using tapestry::World;
 
@@ -188,6 +190,52 @@ void minimizedPagesHitOnlyTheTitleBar() {
         "restoring a page makes its body clickable again");
 }
 
+void resizeCornersHaveStableHitRegions() {
+    Page page;
+    page.rect = {100.0, 200.0, 300.0, 180.0};
+
+    check(page.resizeCornerAt({96.0, 204.0}, 6.0) == ResizeCorner::TopLeft,
+        "top-left resize handle includes its outside hit region");
+    check(page.resizeCornerAt({404.0, 196.0}, 6.0) == ResizeCorner::TopRight,
+        "top-right resize handle includes its outside hit region");
+    check(page.resizeCornerAt({96.0, 384.0}, 6.0) == ResizeCorner::BottomLeft,
+        "bottom-left resize handle includes its outside hit region");
+    check(page.resizeCornerAt({404.0, 384.0}, 6.0) == ResizeCorner::BottomRight,
+        "bottom-right resize handle includes its outside hit region");
+    check(page.resizeCornerAt({250.0, 200.0}, 6.0) == ResizeCorner::None,
+        "page edges away from corners are not resize handles");
+
+    page.minimized = true;
+    check(page.resizeCornerAt({100.0, 200.0}, 6.0) == ResizeCorner::None,
+        "minimized pages do not expose resize handles");
+}
+
+void pageTextRegionsIncludeBlankDocumentSpace() {
+    Page page;
+    page.kind = PageKind::Note;
+    page.rect = {100.0, 200.0, 300.0, 180.0};
+
+    check(tapestry::pageTextRegionAt(page, {160.0, 220.0})
+            == tapestry::PageTextRegion::Title,
+        "page title bars expose editable title text");
+    check(tapestry::pageTextRegionAt(page, {160.0, 300.0})
+            == tapestry::PageTextRegion::Body,
+        "blank page body space remains editable");
+    const Rect minimize = page.minimizeButtonRect();
+    check(tapestry::pageTextRegionAt(page, {minimize.x + 1.0, minimize.y + 1.0})
+            == tapestry::PageTextRegion::None,
+        "minimize control is not treated as editable title text");
+
+    page.kind = PageKind::Settings;
+    check(tapestry::pageTextRegionAt(page, {160.0, 300.0})
+            == tapestry::PageTextRegion::None,
+        "settings controls are not treated as document text");
+    page.minimized = true;
+    check(tapestry::pageTextRegionAt(page, {160.0, 300.0})
+            == tapestry::PageTextRegion::None,
+        "hidden bodies are not editable");
+}
+
 void stepDoesNotMovePages() {
     World world;
     const auto id = world.addPage(PageKind::Note, "a", "", {12.5, -7.25, 90.0, 60.0});
@@ -200,6 +248,19 @@ void stepDoesNotMovePages() {
     checkNear(page->rect.y, -7.25, 0.0, "step leaves page y untouched");
 }
 
+void strokesKeepWorldCoordinatesAndPressure() {
+    World world;
+    const auto id = world.beginStroke({{10.0, -5.0}, 0.2});
+    world.appendStrokePoint(id, {{30.0, 40.0}, 0.9});
+    const auto* stroke = world.strokeById(id);
+    check(stroke != nullptr && stroke->points.size() == 2,
+        "stroke samples append to one persistent vector path");
+    checkNear(stroke->points[0].pressure, 0.2, 0.0,
+        "stroke preserves initial pressure");
+    checkNear(stroke->points[1].position.y, 40.0, 0.0,
+        "stroke preserves world-space coordinates");
+}
+
 } // namespace
 
 int main() {
@@ -209,8 +270,11 @@ int main() {
     pageByIdSurvivesReordering();
     contentBoundsUnionsAllPages();
     minimizedPagesHitOnlyTheTitleBar();
+    resizeCornersHaveStableHitRegions();
+    pageTextRegionsIncludeBlankDocumentSpace();
     steppingIsDeterministic();
     stepDoesNotMovePages();
+    strokesKeepWorldCoordinatesAndPressure();
 
     if (g_failures != 0) {
         std::fprintf(stderr, "%d world check(s) failed\n", g_failures);

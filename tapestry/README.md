@@ -124,15 +124,39 @@ can be verified without capturing the whole desktop.
 
 | Action | Input |
 | --- | --- |
-| Pan | Drag empty space, middle-drag, two-finger scroll, or arrow keys |
-| Zoom | Pinch, `Ctrl`/`Cmd` + scroll, or `+` / `-` |
-| Move a page | Drag it (also selects and raises it) |
+| Select / move pages | `A` tool in the top-right, then drag a page |
+| Resize a page | Select it, then drag any corner handle |
+| Edit a page title | Choose the `A` tool and click in its title text |
+| Edit page text | Choose the `A` tool and click anywhere in the body; `Enter` inserts a new line |
+| Pan | `H` hand tool and drag; also middle-drag, two-finger scroll, or arrow keys |
+| Zoom | `Z` tool (click, `Option`-click out, or drag vertically); also pinch, `Ctrl`/`Cmd` + scroll, or `+` / `-` |
+| Draw | Brush icon in the top-right, then drag in world space |
 | Minimize / restore a page | The button at the page's top right |
 | New note | Double-click empty space, or `N` at the cursor |
 | Frame all pages | `F` |
 | Reset view | `0` |
 | Rename the document | Click the title top-left; `Enter` commits, `Esc` cancels |
-| Save / open the document | `Cmd`/`Ctrl`+`S` / `Cmd`/`Ctrl`+`O` |
+| Open / Save / Save As | File menu; `Cmd`/`Ctrl`+`O`, `Cmd`/`Ctrl`+`S`, or `Cmd`/`Ctrl`+`Shift`+`S` |
+| Reset / frame the view | View menu; `0` or `F` |
+| Reveal settings | `S` button in the top-right |
+
+The File menu uses the platform file chooser on macOS and Windows. Linux uses
+`zenity` when available. Save As changes the active document path, so later
+Save operations continue writing to the chosen `.tapestry` file.
+
+Page titles and bodies are direct UTF-8 text fields. Clicking uses the same
+wrapped NanoVG glyph layout as rendering to place the caret, including clicks
+in blank body space. Arrow-left/right, Home, End, Backspace, Delete, Enter, and
+Escape provide the initial editing controls. Text selection, clipboard actions,
+and undo/redo will build on the event/history layer rather than a separate UI-
+local history.
+
+Brush gestures are persistent vector strokes in world coordinates. Each point
+stores normalized pressure, and rendering reconstructs a variable-width round
+stroke as the camera moves or zooms. SDL touch/pen events supply real pressure;
+ordinary SDL mouse events have no pressure channel and use a constant 55%
+fallback. Strokes save inside the `.tapestry` event history and reload with
+their original coordinates and pressure samples.
 | Deselect, then quit | `Esc` |
 
 Zoom is cursor-pinned: the world point under the pointer stays under it.
@@ -141,8 +165,8 @@ Zoom is cursor-pinned: the world point under the pointer stays under it.
 
 ```
 app/          entry point, event loop, input → world/camera
-core/         camera, geometry, pages, world — no windowing, no SDL
-render/       drawing built on nanovg: grid, pages, fonts
+core/         camera, geometry, pages, vector strokes, world — no windowing, no SDL
+render/       drawing built on nanovg: grid, pages, strokes, fonts
 tests/        invariants over core/, no display required
 third_party/  vendored nanovg (zlib) and stb_image_write (public domain)
 assets/       fonts (drop ui.ttf / ui-bold.ttf in fonts/ to override the

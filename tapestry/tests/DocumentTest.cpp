@@ -61,6 +61,8 @@ World sampleWorld() {
     const auto minimizedId = world.addPage(PageKind::Note, "Folded", "hidden body",
         {10.5, -20.25, 300.0, 200.0});
     world.pageById(minimizedId)->minimized = true;
+    const auto stroke = world.beginStroke({{-20.5, 30.25}, 0.125});
+    world.appendStrokePoint(stroke, {{4.0, 80.0}, 0.875});
     for (int i = 0; i < 100; ++i) {
         world.step(16);
     }
@@ -73,7 +75,8 @@ bool statesEqual(const DocumentState& a, const DocumentState& b) {
 }
 
 bool worldsEqual(const World& a, const World& b) {
-    if (a.ticks() != b.ticks() || a.pages().size() != b.pages().size()) {
+    if (a.ticks() != b.ticks() || a.pages().size() != b.pages().size()
+        || a.strokes().size() != b.strokes().size()) {
         return false;
     }
     for (size_t i = 0; i < a.pages().size(); ++i) {
@@ -84,6 +87,16 @@ bool worldsEqual(const World& a, const World& b) {
             || p.rect.x != q.rect.x || p.rect.y != q.rect.y
             || p.rect.w != q.rect.w || p.rect.h != q.rect.h) {
             return false;
+        }
+    }
+    for (size_t i = 0; i < a.strokes().size(); ++i) {
+        const auto& p = a.strokes()[i];
+        const auto& q = b.strokes()[i];
+        if (p.id != q.id || p.points.size() != q.points.size()) return false;
+        for (size_t j = 0; j < p.points.size(); ++j) {
+            if (p.points[j].position.x != q.points[j].position.x
+                || p.points[j].position.y != q.points[j].position.y
+                || p.points[j].pressure != q.points[j].pressure) return false;
         }
     }
     return true;
@@ -102,7 +115,7 @@ void roundTripsExactly() {
     check(statesEqual(saved, loaded),
         "title, camera, and settings round-trip exactly");
     check(worldsEqual(savedWorld, loadedWorld),
-        "pages, ticks, and minimized flags round-trip exactly");
+        "pages, strokes, pressure, ticks, and minimized flags round-trip exactly");
 
     // Ids keep counting from where the loaded world left off.
     const auto nextId = loadedWorld.addPage(PageKind::Note, "new", "", {0, 0, 1, 1});
@@ -134,6 +147,8 @@ void savesAppendAndLoadsTakeNewest() {
     // Mutate and save again — the file gains a version, keeps the old one.
     state.title = "Renamed";
     world.pageById(1)->rect.x = 999.0;
+    const auto addedStroke = world.beginStroke({{500.0, -50.0}, 0.4});
+    world.appendStrokePoint(addedStroke, {{510.0, -45.0}, 1.0});
     world.step(16);
     check(tapestry::saveDocument(path, state, world), "second save succeeds");
     check(tapestry::countSnapshots(path) == 2, "second save appends");
@@ -148,6 +163,9 @@ void savesAppendAndLoadsTakeNewest() {
     check(loadedWorld.pageById(2) != nullptr
               && loadedWorld.pageById(2)->title == "Settings",
         "pages untouched by the delta survive intact");
+    check(loadedWorld.strokes().size() == 2
+              && loadedWorld.strokes().back().points.back().pressure == 1.0,
+        "stroke deltas restore vector points and pressure");
 
     std::remove(path.c_str());
 }

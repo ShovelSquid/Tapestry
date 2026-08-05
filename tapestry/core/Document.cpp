@@ -77,9 +77,39 @@ bool valueAfter(const std::string& line, const char* key, std::string& value) {
 struct Accumulated {
     DocumentState state;
     std::vector<Page> pages;
+    std::vector<Stroke> strokes;
     std::uint64_t ticks = 0;
     bool hasBaseline = false;
 };
+
+bool sameStrokes(const std::vector<Stroke>& a, const std::vector<Stroke>& b) {
+    if (a.size() != b.size()) return false;
+    for (std::size_t i = 0; i < a.size(); ++i) {
+        if (a[i].id != b[i].id || a[i].points.size() != b[i].points.size()) {
+            return false;
+        }
+        for (std::size_t j = 0; j < a[i].points.size(); ++j) {
+            const StrokePoint& p = a[i].points[j];
+            const StrokePoint& q = b[i].points[j];
+            if (p.position.x != q.position.x || p.position.y != q.position.y
+                || p.pressure != q.pressure) return false;
+        }
+    }
+    return true;
+}
+
+void writeStrokes(std::ostream& out, const std::vector<Stroke>& strokes) {
+    out << "strokes " << strokes.size() << '\n';
+    char buffer[192];
+    for (const Stroke& stroke : strokes) {
+        out << "stroke " << stroke.id << ' ' << stroke.points.size() << '\n';
+        for (const StrokePoint& point : stroke.points) {
+            std::snprintf(buffer, sizeof(buffer), "spoint %.17g %.17g %.17g",
+                          point.position.x, point.position.y, point.pressure);
+            out << buffer << '\n';
+        }
+    }
+}
 
 bool sameCamera(const DocumentState& a, const DocumentState& b) {
     return a.panX == b.panX && a.panY == b.panY && a.zoom == b.zoom;
@@ -131,6 +161,7 @@ void writeBaseline(std::ostream& out, const DocumentState& state,
     for (const Page& page : world.pages()) {
         writePage(out, page);
     }
+    writeStrokes(out, world.strokes());
     out << "end\n";
 }
 
@@ -201,6 +232,10 @@ bool writeDelta(std::ostream& out, const Accumulated& previous,
         body << '\n';
     }
 
+    if (!sameStrokes(previous.strokes, world.strokes())) {
+        writeStrokes(body, world.strokes());
+    }
+
     const std::string text = body.str();
     if (text.empty() && world.ticks() == previous.ticks) {
         return false; // nothing to record
@@ -216,6 +251,7 @@ bool applyBlock(std::istream& in, std::uint64_t tick, bool baseline,
                 Accumulated& acc) {
     if (baseline) {
         acc.pages.clear();
+        acc.strokes.clear();
         acc.state = DocumentState {};
     }
     acc.ticks = tick;
@@ -345,6 +381,40 @@ bool applyBlock(std::istream& in, std::uint64_t tick, bool baseline,
                 return false;
             }
             acc.pages = std::move(reordered);
+        } else if (valueAfter(line, "strokes", value)) {
+            unsigned long long strokeCount = 0;
+            if (std::sscanf(value.c_str(), "%llu", &strokeCount) != 1) {
+                return false;
+            }
+            std::vector<Stroke> strokes;
+            strokes.reserve(static_cast<std::size_t>(strokeCount));
+            for (unsigned long long s = 0; s < strokeCount; ++s) {
+                std::string strokeLine;
+                unsigned long long id = 0;
+                unsigned long long pointCount = 0;
+                if (!std::getline(in, strokeLine)
+                    || std::sscanf(strokeLine.c_str(), "stroke %llu %llu",
+                                   &id, &pointCount) != 2) {
+                    return false;
+                }
+                Stroke stroke;
+                stroke.id = id;
+                stroke.points.reserve(static_cast<std::size_t>(pointCount));
+                for (unsigned long long p = 0; p < pointCount; ++p) {
+                    std::string pointLine;
+                    StrokePoint point;
+                    if (!std::getline(in, pointLine)
+                        || std::sscanf(pointLine.c_str(), "spoint %lf %lf %lf",
+                            &point.position.x, &point.position.y,
+                            &point.pressure) != 3) {
+                        return false;
+                    }
+                    point.pressure = std::clamp(point.pressure, 0.0, 1.0);
+                    stroke.points.push_back(point);
+                }
+                strokes.push_back(std::move(stroke));
+            }
+            acc.strokes = std::move(strokes);
         } else {
             return false; // unknown key — refuse rather than silently drop
         }
@@ -390,6 +460,9 @@ World toWorld(const Accumulated& acc) {
     world.setTicks(acc.ticks);
     for (const Page& page : acc.pages) {
         world.adopt(page);
+    }
+    for (const Stroke& stroke : acc.strokes) {
+        world.adoptStroke(stroke);
     }
     return world;
 }

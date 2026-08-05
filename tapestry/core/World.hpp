@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/Page.hpp"
+#include "core/Stroke.hpp"
 
 #include <cstdint>
 #include <string>
@@ -27,9 +28,17 @@ public:
     // only until the next addPage/bringToFront — hold ids across frames, not
     // pointers.
     Page* pageAt(Vec2 worldPoint);
+    const Page* pageAt(Vec2 worldPoint) const;
     Page* pageById(std::uint64_t id);
+    const Page* pageById(std::uint64_t id) const;
 
     void bringToFront(std::uint64_t id);
+
+    std::uint64_t beginStroke(StrokePoint first);
+    void appendStrokePoint(std::uint64_t id, StrokePoint point);
+    Stroke* strokeById(std::uint64_t id);
+    const Stroke* strokeById(std::uint64_t id) const;
+    void adoptStroke(Stroke stroke);
 
     // Union of every page rect. Zero-size when there are no pages; check
     // empty() before framing.
@@ -46,12 +55,15 @@ public:
     void setTicks(std::uint64_t ticks);
 
     const std::vector<Page>& pages() const { return m_pages; }
+    const std::vector<Stroke>& strokes() const { return m_strokes; }
     std::uint64_t ticks() const { return m_ticks; }
-    bool empty() const { return m_pages.empty(); }
+    bool empty() const { return m_pages.empty() && m_strokes.empty(); }
 
 private:
     std::vector<Page> m_pages;
+    std::vector<Stroke> m_strokes;
     std::uint64_t m_nextId = 1;
+    std::uint64_t m_nextStrokeId = 1;
     std::uint64_t m_ticks = 0;
 };
 

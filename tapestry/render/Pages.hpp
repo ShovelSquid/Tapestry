@@ -4,9 +4,20 @@
 #include "core/World.hpp"
 #include "render/Fonts.hpp"
 
+#include <cstddef>
+
 struct NVGcontext;
 
 namespace tapestry {
+
+enum class PageTextRegion { None, Title, Body };
+
+// Editable text geometry shared by input and rendering. The coarse region hit
+// includes blank body space; textIndexAt refines a click to a UTF-8 byte caret.
+PageTextRegion pageTextRegionAt(const Page& page, Vec2 worldPoint);
+std::size_t pageTextIndexAt(NVGcontext* vg, const Page& page,
+                            const Camera& camera, const FontSet& fonts,
+                            PageTextRegion region, Vec2 screenPoint);
 
 // Where the settings page's controls sit, in world space. Computed from the
 // page's rect so the controls travel with the page; the renderer draws these
@@ -36,6 +47,9 @@ struct PageUiState {
     bool invertScroll = false;
     bool editingZoom = false;
     std::string zoomDraft;     // text in the zoom field while editing
+    std::uint64_t editingPageId = 0;
+    PageTextRegion editingRegion = PageTextRegion::None;
+    std::size_t caret = 0;      // UTF-8 byte offset
 };
 
 // Draws every page that intersects the view, back to front, matching World's

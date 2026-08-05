@@ -25,6 +25,16 @@ enum class PageKind : std::uint8_t {
 constexpr double kPageTitleBarHeight = 40.0;
 constexpr double kMinimizeButtonSize = 20.0;
 constexpr double kMinimizeButtonMargin = 10.0;
+constexpr double kMinimumPageWidth = 180.0;
+constexpr double kMinimumPageHeight = 120.0;
+
+enum class ResizeCorner : std::uint8_t {
+    None,
+    TopLeft,
+    TopRight,
+    BottomLeft,
+    BottomRight,
+};
 
 // A page in world space. The rectangle is in world units, and 1 world unit is
 // 1 logical pixel at 100% zoom — that is what "real reading size" means: at
@@ -56,6 +66,23 @@ struct Page {
                 rect.y + (kPageTitleBarHeight - kMinimizeButtonSize) * 0.5,
                 kMinimizeButtonSize,
                 kMinimizeButtonSize};
+    }
+
+    // Corner handles retain a stable screen-space hit size by passing a
+    // world-space radius derived from the camera zoom.
+    ResizeCorner resizeCornerAt(Vec2 point, double radius) const {
+        if (minimized) {
+            return ResizeCorner::None;
+        }
+        const auto near = [&](double x, double y) {
+            return point.x >= x - radius && point.x <= x + radius
+                && point.y >= y - radius && point.y <= y + radius;
+        };
+        if (near(rect.x, rect.y)) return ResizeCorner::TopLeft;
+        if (near(rect.right(), rect.y)) return ResizeCorner::TopRight;
+        if (near(rect.x, rect.bottom())) return ResizeCorner::BottomLeft;
+        if (near(rect.right(), rect.bottom())) return ResizeCorner::BottomRight;
+        return ResizeCorner::None;
     }
 };
 

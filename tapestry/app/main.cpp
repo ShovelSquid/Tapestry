@@ -21,9 +21,11 @@
 #include "core/Camera.hpp"
 #include "core/Document.hpp"
 #include "core/World.hpp"
+#include "app/FileDialog.hpp"
 #include "render/Fonts.hpp"
 #include "render/Grid.hpp"
 #include "render/Pages.hpp"
+#include "render/Strokes.hpp"
 
 // glad must precede nanovg_gl.h — see third_party/nanovg/nanovg_gl_impl.c.
 #include <glad/gl.h>
@@ -35,6 +37,7 @@
 
 #include <SDL.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -48,6 +51,7 @@ using tapestry::Camera;
 using tapestry::DocumentState;
 using tapestry::PageKind;
 using tapestry::Rect;
+using tapestry::ResizeCorner;
 using tapestry::Vec2;
 using tapestry::World;
 
@@ -77,8 +81,15 @@ constexpr double kFrameMarginPx = 60.0;
 constexpr double kNewNoteWidth = 320.0;
 constexpr double kNewNoteHeight = 220.0;
 
-// The document title's clickable header region, top-left, in screen pixels.
-constexpr Rect kTitleHeaderRect {12.0, 6.0, 380.0, 28.0};
+constexpr double kHeaderHeight = 42.0;
+constexpr Rect kFileMenuRect {12.0, 7.0, 46.0, 28.0};
+constexpr Rect kEditMenuRect {60.0, 7.0, 46.0, 28.0};
+constexpr Rect kViewMenuRect {108.0, 7.0, 52.0, 28.0};
+constexpr Rect kTitleHeaderRect {176.0, 7.0, 390.0, 28.0};
+constexpr double kMenuItemHeight = 30.0;
+constexpr double kMenuWidth = 210.0;
+constexpr double kToolButtonSize = 32.0;
+constexpr double kToolButtonGap = 6.0;
 
 // How long a status line ("saved …") stays on screen.
 constexpr int kStatusFrames = 240;
@@ -97,6 +108,7 @@ struct Options {
     int height = kDefaultHeight;
     const char* screenshotPath = nullptr;
     const char* documentPath = kDefaultDocumentPath;
+    bool documentPathExplicit = false;
     double initialZoom = 1.0;
     double initialPanX = 0.0;
     double initialPanY = 0.0;
@@ -129,6 +141,7 @@ Options parseOptions(int argc, char** argv) {
             options.headless = true;
         } else if (std::strcmp(argv[i], "--file") == 0 && i + 1 < argc) {
             options.documentPath = argv[++i];
+            options.documentPathExplicit = true;
         } else if (std::strcmp(argv[i], "--size") == 0 && i + 1 < argc) {
             int w = 0;
             int h = 0;
@@ -302,7 +315,7 @@ void destroyGraphics(Graphics& gfx) {
 // What the left button is currently doing. A press on a page starts a page
 // drag; a press on empty space starts a pan. Both share the click dead zone.
 struct DragState {
-    enum class Mode { None, Pan, Page };
+    enum class Mode { None, Pan, Page, Resize, Zoom, Brush };
 
     Mode mode = Mode::None;
     bool moved = false;
@@ -315,15 +328,23 @@ struct DragState {
     // bringToFront both invalidate pointers into the world.
     Uint64 pageId = 0;
     Vec2 grabOffsetWorld {0.0, 0.0}; // cursor-to-page-origin, in world units
+    ResizeCorner resizeCorner = ResizeCorner::None;
+    Rect initialPageRect;
+    Uint64 strokeId = 0;
 };
 
 // Which text field, if any, is capturing the keyboard.
 struct EditState {
-    enum class Target { None, Zoom, Title };
+    enum class Target { None, Zoom, DocumentTitle, PageTitle, PageBody };
 
     Target target = Target::None;
     std::string draft;
+    Uint64 pageId = 0;
+    std::size_t caret = 0;
 };
+
+enum class OpenMenu { None, File, Edit, View };
+enum class ActiveTool { Select, Hand, Zoom, Brush };
 
 // Interaction state that outlives a single event.
 struct Session {
@@ -332,7 +353,11 @@ struct Session {
 
     std::string documentTitle = "Untitled tapestry";
     std::string documentPath = kDefaultDocumentPath;
+    bool hasDocumentPath = false;
     bool invertScroll = false;
+
+    OpenMenu openMenu = OpenMenu::None;
+    ActiveTool activeTool = ActiveTool::Select;
 
     std::string status;
     int statusFramesLeft = 0;
@@ -352,7 +377,47 @@ void beginEdit(EditState& edit, EditState::Target target, std::string draft) {
 void endEdit(EditState& edit) {
     edit.target = EditState::Target::None;
     edit.draft.clear();
+    edit.pageId = 0;
+    edit.caret = 0;
     SDL_StopTextInput();
+}
+
+void beginPageEdit(EditState& edit, Uint64 pageId,
+                   tapestry::PageTextRegion region, std::size_t caret) {
+    edit.target = region == tapestry::PageTextRegion::Title
+        ? EditState::Target::PageTitle : EditState::Target::PageBody;
+    edit.pageId = pageId;
+    edit.caret = caret;
+    edit.draft.clear();
+    SDL_StartTextInput();
+}
+
+std::string* editedPageText(EditState& edit, Session& session) {
+    tapestry::Page* page = session.world.pageById(edit.pageId);
+    if (page == nullptr) return nullptr;
+    if (edit.target == EditState::Target::PageTitle) return &page->title;
+    if (edit.target == EditState::Target::PageBody) return &page->body;
+    return nullptr;
+}
+
+std::size_t previousUtf8(const std::string& text, std::size_t at) {
+    if (at == 0) return 0;
+    --at;
+    while (at > 0
+        && (static_cast<unsigned char>(text[at]) & 0xC0u) == 0x80u) {
+        --at;
+    }
+    return at;
+}
+
+std::size_t nextUtf8(const std::string& text, std::size_t at) {
+    if (at >= text.size()) return text.size();
+    ++at;
+    while (at < text.size()
+        && (static_cast<unsigned char>(text[at]) & 0xC0u) == 0x80u) {
+        ++at;
+    }
+    return at;
 }
 
 // Applies whatever is in the draft, then leaves edit mode. A zoom draft that
@@ -365,7 +430,7 @@ void commitEdit(EditState& edit, Session& session, Camera& camera,
         if (parseEnd != edit.draft.c_str() && percent > 0.0) {
             camera.setZoom(percent / 100.0, viewW * 0.5, viewH * 0.5);
         }
-    } else if (edit.target == EditState::Target::Title) {
+    } else if (edit.target == EditState::Target::DocumentTitle) {
         if (!edit.draft.empty()) {
             session.documentTitle = edit.draft;
         }
@@ -373,7 +438,7 @@ void commitEdit(EditState& edit, Session& session, Camera& camera,
     endEdit(edit);
 }
 
-void saveSession(Session& session, const Camera& camera) {
+bool saveSession(Session& session, const Camera& camera) {
     DocumentState state;
     state.title = session.documentTitle;
     state.invertScroll = session.invertScroll;
@@ -382,7 +447,8 @@ void saveSession(Session& session, const Camera& camera) {
     state.zoom = camera.zoom();
 
     char message[512];
-    if (tapestry::saveDocument(session.documentPath, state, session.world)) {
+    const bool saved = tapestry::saveDocument(session.documentPath, state, session.world);
+    if (saved) {
         std::snprintf(message, sizeof(message), "saved %s (version %d)",
             session.documentPath.c_str(),
             tapestry::countSnapshots(session.documentPath));
@@ -391,6 +457,31 @@ void saveSession(Session& session, const Camera& camera) {
             session.documentPath.c_str());
     }
     showStatus(session, message);
+    return saved;
+}
+
+void saveSessionAs(Session& session, const Camera& camera) {
+    const auto path = tapestry::chooseDocumentToSave(session.documentPath);
+    if (!path) {
+        return;
+    }
+    const std::string previousPath = session.documentPath;
+    const bool previouslyHadPath = session.hasDocumentPath;
+    session.documentPath = *path;
+    if (saveSession(session, camera)) {
+        session.hasDocumentPath = true;
+    } else {
+        session.documentPath = previousPath;
+        session.hasDocumentPath = previouslyHadPath;
+    }
+}
+
+void saveSessionNormally(Session& session, const Camera& camera) {
+    if (session.hasDocumentPath) {
+        saveSession(session, camera);
+    } else {
+        saveSessionAs(session, camera);
+    }
 }
 
 // Applies a loaded document. The camera is rebuilt from reset so the saved
@@ -414,6 +505,83 @@ bool loadSession(Session& session, Camera& camera) {
     }
     applyDocument(session, camera, state, std::move(world));
     return true;
+}
+
+void openSessionFromDialog(Session& session, Camera& camera) {
+    const auto path = tapestry::chooseDocumentToOpen();
+    if (!path) {
+        return;
+    }
+    DocumentState state;
+    World world;
+    if (!tapestry::loadDocument(*path, state, world)) {
+        showStatus(session, "could not open " + *path);
+        return;
+    }
+    session.documentPath = *path;
+    session.hasDocumentPath = true;
+    applyDocument(session, camera, state, std::move(world));
+    showStatus(session, "opened " + session.documentPath);
+}
+
+Rect toolRect(double viewW, int slotFromRight) {
+    return {viewW - 12.0 - kToolButtonSize
+                - static_cast<double>(slotFromRight)
+                    * (kToolButtonSize + kToolButtonGap),
+            5.0, kToolButtonSize, kToolButtonSize};
+}
+
+Rect menuPanelRect(OpenMenu menu) {
+    double x = kFileMenuRect.x;
+    int items = 3;
+    if (menu == OpenMenu::Edit) {
+        x = kEditMenuRect.x;
+        items = 2;
+    } else if (menu == OpenMenu::View) {
+        x = kViewMenuRect.x;
+        items = 2;
+    }
+    return {x, kHeaderHeight, kMenuWidth,
+            static_cast<double>(items) * kMenuItemHeight + 8.0};
+}
+
+int menuItemAt(OpenMenu menu, Vec2 point) {
+    if (menu == OpenMenu::None) {
+        return -1;
+    }
+    const Rect panel = menuPanelRect(menu);
+    if (!panel.contains(point)) {
+        return -1;
+    }
+    const int item = static_cast<int>((point.y - panel.y - 4.0) / kMenuItemHeight);
+    const int count = menu == OpenMenu::File ? 3 : 2;
+    return item >= 0 && item < count ? item : -1;
+}
+
+void revealSettings(Session& session) {
+    for (const tapestry::Page& page : session.world.pages()) {
+        if (page.kind == PageKind::Settings) {
+            const Uint64 id = page.id;
+            session.world.bringToFront(id);
+            if (tapestry::Page* settings = session.world.pageById(id)) {
+                settings->minimized = false;
+            }
+            session.selectedId = id;
+            return;
+        }
+    }
+}
+
+bool hoveringEditableText(const Session& session, const Camera& camera,
+                          double x, double y) {
+    if (kTitleHeaderRect.contains({x, y})) {
+        return true;
+    }
+    const Vec2 worldPoint = camera.screenToWorld(x, y);
+    const tapestry::Page* page = session.world.pageAt(worldPoint);
+    return page != nullptr
+        && tapestry::pageTextRegionAt(*page, worldPoint)
+            != tapestry::PageTextRegion::None;
 }
 
 void createNoteAt(Session& session, const Camera& camera, double sx, double sy) {
@@ -466,6 +634,8 @@ void handleEvent(const SDL_Event& event,
                  Camera& camera,
                  DragState& drag,
                  EditState& edit,
+                 NVGcontext* vg,
+                 const tapestry::FontSet& fonts,
                  double viewW,
                  double viewH,
                  bool& running) {
@@ -478,6 +648,12 @@ void handleEvent(const SDL_Event& event,
 
     case SDL_TEXTINPUT:
         if (editing) {
+            if (std::string* text = editedPageText(edit, session)) {
+                edit.caret = std::min(edit.caret, text->size());
+                text->insert(edit.caret, event.text.text);
+                edit.caret += std::strlen(event.text.text);
+                break;
+            }
             // The zoom field only accepts number-shaped input; the title
             // takes anything.
             if (edit.target == EditState::Target::Zoom) {
@@ -501,22 +677,65 @@ void handleEvent(const SDL_Event& event,
             if (editing) {
                 commitEdit(edit, session, camera, viewW, viewH);
             }
-            saveSession(session, camera);
+            if ((mods & KMOD_SHIFT) != 0) {
+                saveSessionAs(session, camera);
+            } else {
+                saveSessionNormally(session, camera);
+            }
             break;
         }
         if (command && event.key.keysym.sym == SDLK_o) {
             if (editing) {
                 endEdit(edit);
             }
-            if (loadSession(session, camera)) {
-                showStatus(session, "opened " + session.documentPath);
-            } else {
-                showStatus(session, "could not open " + session.documentPath);
-            }
+            openSessionFromDialog(session, camera);
             break;
         }
 
         if (editing) {
+            if (std::string* text = editedPageText(edit, session)) {
+                edit.caret = std::min(edit.caret, text->size());
+                switch (event.key.keysym.sym) {
+                case SDLK_ESCAPE:
+                    endEdit(edit);
+                    break;
+                case SDLK_RETURN:
+                case SDLK_KP_ENTER:
+                    if (edit.target == EditState::Target::PageBody) {
+                        text->insert(edit.caret, "\n");
+                        ++edit.caret;
+                    } else {
+                        endEdit(edit);
+                    }
+                    break;
+                case SDLK_BACKSPACE:
+                    if (edit.caret > 0) {
+                        const std::size_t previous = previousUtf8(*text, edit.caret);
+                        text->erase(previous, edit.caret - previous);
+                        edit.caret = previous;
+                    }
+                    break;
+                case SDLK_DELETE:
+                    if (edit.caret < text->size()) {
+                        text->erase(edit.caret, nextUtf8(*text, edit.caret) - edit.caret);
+                    }
+                    break;
+                case SDLK_LEFT:
+                    edit.caret = previousUtf8(*text, edit.caret);
+                    break;
+                case SDLK_RIGHT:
+                    edit.caret = nextUtf8(*text, edit.caret);
+                    break;
+                case SDLK_HOME:
+                    edit.caret = 0;
+                    break;
+                case SDLK_END:
+                    edit.caret = text->size();
+                    break;
+                default: break;
+                }
+                break;
+            }
             switch (event.key.keysym.sym) {
             case SDLK_RETURN:
             case SDLK_KP_ENTER:
@@ -593,11 +812,79 @@ void handleEvent(const SDL_Event& event,
                 commitEdit(edit, session, camera, viewW, viewH);
             }
 
+            const Vec2 screenPoint {x, y};
+            OpenMenu clickedMenu = OpenMenu::None;
+            if (kFileMenuRect.contains(screenPoint)) clickedMenu = OpenMenu::File;
+            else if (kEditMenuRect.contains(screenPoint)) clickedMenu = OpenMenu::Edit;
+            else if (kViewMenuRect.contains(screenPoint)) clickedMenu = OpenMenu::View;
+            if (event.button.button == SDL_BUTTON_LEFT
+                && clickedMenu != OpenMenu::None) {
+                session.openMenu = session.openMenu == clickedMenu
+                    ? OpenMenu::None : clickedMenu;
+                break;
+            }
+
+            if (event.button.button == SDL_BUTTON_LEFT
+                && session.openMenu != OpenMenu::None) {
+                const OpenMenu menu = session.openMenu;
+                const int item = menuItemAt(menu, screenPoint);
+                session.openMenu = OpenMenu::None;
+                if (item >= 0) {
+                    if (menu == OpenMenu::File) {
+                        if (item == 0) openSessionFromDialog(session, camera);
+                        else if (item == 1) saveSessionNormally(session, camera);
+                        else saveSessionAs(session, camera);
+                    } else if (menu == OpenMenu::View) {
+                        if (item == 0) camera.reset();
+                        else if (!session.world.empty()) {
+                            camera.frame(session.world.contentBounds(), viewW,
+                                         viewH, kFrameMarginPx);
+                        }
+                    }
+                    break;
+                }
+            }
+
+            if (event.button.button == SDL_BUTTON_LEFT) {
+                if (toolRect(viewW, 0).contains(screenPoint)) {
+                    revealSettings(session);
+                    session.openMenu = OpenMenu::None;
+                    break;
+                }
+                if (toolRect(viewW, 1).contains(screenPoint)) {
+                    session.activeTool = ActiveTool::Brush;
+                    session.openMenu = OpenMenu::None;
+                    break;
+                }
+                if (toolRect(viewW, 2).contains(screenPoint)) {
+                    session.activeTool = ActiveTool::Zoom;
+                    session.openMenu = OpenMenu::None;
+                    break;
+                }
+                if (toolRect(viewW, 3).contains(screenPoint)) {
+                    session.activeTool = ActiveTool::Hand;
+                    session.openMenu = OpenMenu::None;
+                    break;
+                }
+                if (toolRect(viewW, 4).contains(screenPoint)) {
+                    session.activeTool = ActiveTool::Select;
+                    session.openMenu = OpenMenu::None;
+                    break;
+                }
+            }
+
             // The document title header is screen-space and sits above the
             // world.
             if (event.button.button == SDL_BUTTON_LEFT
                 && kTitleHeaderRect.contains({x, y})) {
-                beginEdit(edit, EditState::Target::Title, session.documentTitle);
+                beginEdit(edit, EditState::Target::DocumentTitle,
+                          session.documentTitle);
+                break;
+            }
+
+            // The rest of the header is inert chrome. Never let a click fall
+            // through to a page that happens to be underneath it.
+            if (y < kHeaderHeight) {
                 break;
             }
 
@@ -605,9 +892,50 @@ void handleEvent(const SDL_Event& event,
             drag.startX = drag.lastX = x;
             drag.startY = drag.lastY = y;
 
+            if (event.button.button == SDL_BUTTON_LEFT
+                && event.button.which != SDL_TOUCH_MOUSEID
+                && session.activeTool == ActiveTool::Brush) {
+                drag.mode = DragState::Mode::Brush;
+                drag.strokeId = session.world.beginStroke(
+                    {camera.screenToWorld(x, y), 0.55});
+                break;
+            }
+
+            if (event.button.button == SDL_BUTTON_LEFT
+                && session.activeTool == ActiveTool::Zoom) {
+                drag.mode = DragState::Mode::Zoom;
+                break;
+            }
+
+            if (event.button.button == SDL_BUTTON_LEFT
+                && session.activeTool == ActiveTool::Hand) {
+                drag.mode = DragState::Mode::Pan;
+                break;
+            }
+
             // Middle button always pans; the left button pans only when it
             // misses every page.
             const Vec2 worldPoint = camera.screenToWorld(x, y);
+
+            // Resize handles extend slightly outside the page, so test the
+            // selected page before ordinary pageAt hit-testing.
+            if (event.button.button == SDL_BUTTON_LEFT
+                && session.selectedId != 0) {
+                tapestry::Page* selected =
+                    session.world.pageById(session.selectedId);
+                if (selected != nullptr) {
+                    const ResizeCorner corner = selected->resizeCornerAt(
+                        worldPoint, 10.0 / camera.zoom());
+                    if (corner != ResizeCorner::None) {
+                        drag.mode = DragState::Mode::Resize;
+                        drag.pageId = selected->id;
+                        drag.resizeCorner = corner;
+                        drag.initialPageRect = selected->rect;
+                        break;
+                    }
+                }
+            }
+
             tapestry::Page* hit = (event.button.button == SDL_BUTTON_LEFT)
                 ? session.world.pageAt(worldPoint)
                 : nullptr;
@@ -617,6 +945,17 @@ void handleEvent(const SDL_Event& event,
                 if (routePagePress(hit, worldPoint, session, camera, edit,
                                    viewW, viewH)) {
                     break; // a control consumed the press; no drag
+                }
+                const tapestry::PageTextRegion textRegion =
+                    tapestry::pageTextRegionAt(*hit, worldPoint);
+                if (textRegion != tapestry::PageTextRegion::None
+                    && vg != nullptr && fonts.ok()) {
+                    const std::size_t caret = tapestry::pageTextIndexAt(
+                        vg, *hit, camera, fonts, textRegion, {x, y});
+                    const Uint64 id = hit->id;
+                    beginPageEdit(edit, id, textRegion, caret);
+                    session.world.bringToFront(id);
+                    break;
                 }
                 drag.mode = DragState::Mode::Page;
                 drag.pageId = hit->id;
@@ -636,11 +975,28 @@ void handleEvent(const SDL_Event& event,
         break;
 
     case SDL_MOUSEBUTTONUP:
+        if (event.button.which == SDL_TOUCH_MOUSEID
+            && drag.mode == DragState::Mode::Brush) {
+            break;
+        }
+        if (drag.mode == DragState::Mode::Zoom && !drag.moved) {
+            const SDL_Keymod mods = SDL_GetModState();
+            const double factor = (mods & KMOD_ALT) != 0
+                ? 1.0 / kKeyZoomFactor : kKeyZoomFactor;
+            camera.zoomAt(static_cast<double>(event.button.x),
+                          static_cast<double>(event.button.y), factor);
+        }
         drag.mode = DragState::Mode::None;
         drag.pageId = 0;
+        drag.resizeCorner = ResizeCorner::None;
+        drag.strokeId = 0;
         break;
 
     case SDL_MOUSEMOTION: {
+        if (event.motion.which == SDL_TOUCH_MOUSEID
+            && drag.mode == DragState::Mode::Brush) {
+            break;
+        }
         if (drag.mode == DragState::Mode::None) {
             break;
         }
@@ -653,6 +1009,49 @@ void handleEvent(const SDL_Event& event,
         if (drag.moved) {
             if (drag.mode == DragState::Mode::Pan) {
                 camera.panBy(x - drag.lastX, y - drag.lastY);
+            } else if (drag.mode == DragState::Mode::Zoom) {
+                camera.zoomAt(drag.startX, drag.startY,
+                              std::exp((drag.lastY - y) * 0.012));
+            } else if (drag.mode == DragState::Mode::Resize) {
+                tapestry::Page* page = session.world.pageById(drag.pageId);
+                if (page != nullptr) {
+                    const Vec2 point = camera.screenToWorld(x, y);
+                    const Rect before = drag.initialPageRect;
+                    const bool left = drag.resizeCorner == ResizeCorner::TopLeft
+                        || drag.resizeCorner == ResizeCorner::BottomLeft;
+                    const bool top = drag.resizeCorner == ResizeCorner::TopLeft
+                        || drag.resizeCorner == ResizeCorner::TopRight;
+
+                    if (left) {
+                        const double right = before.right();
+                        page->rect.x = std::min(point.x,
+                            right - tapestry::kMinimumPageWidth);
+                        page->rect.w = right - page->rect.x;
+                    } else {
+                        page->rect.x = before.x;
+                        page->rect.w = std::max(tapestry::kMinimumPageWidth,
+                                               point.x - before.x);
+                    }
+                    if (top) {
+                        const double bottom = before.bottom();
+                        page->rect.y = std::min(point.y,
+                            bottom - tapestry::kMinimumPageHeight);
+                        page->rect.h = bottom - page->rect.y;
+                    } else {
+                        page->rect.y = before.y;
+                        page->rect.h = std::max(tapestry::kMinimumPageHeight,
+                                               point.y - before.y);
+                    }
+                }
+            } else if (drag.mode == DragState::Mode::Brush) {
+                tapestry::Stroke* stroke = session.world.strokeById(drag.strokeId);
+                const Vec2 point = camera.screenToWorld(x, y);
+                if (stroke != nullptr && (stroke->points.empty()
+                    || std::hypot(point.x - stroke->points.back().position.x,
+                                  point.y - stroke->points.back().position.y)
+                        >= 0.75 / camera.zoom())) {
+                    session.world.appendStrokePoint(drag.strokeId, {point, 0.55});
+                }
             } else {
                 tapestry::Page* page = session.world.pageById(drag.pageId);
                 if (page != nullptr) {
@@ -666,6 +1065,45 @@ void handleEvent(const SDL_Event& event,
         drag.lastY = y;
         break;
     }
+
+    case SDL_FINGERDOWN:
+        if (session.activeTool == ActiveTool::Brush) {
+            const double x = static_cast<double>(event.tfinger.x) * viewW;
+            const double y = static_cast<double>(event.tfinger.y) * viewH;
+            if (y >= kHeaderHeight) {
+                if (editing) endEdit(edit);
+                drag.mode = DragState::Mode::Brush;
+                drag.strokeId = session.world.beginStroke({
+                    camera.screenToWorld(x, y),
+                    std::clamp(static_cast<double>(event.tfinger.pressure),
+                               0.0, 1.0)});
+            }
+        }
+        break;
+
+    case SDL_FINGERMOTION:
+        if (drag.mode == DragState::Mode::Brush && drag.strokeId != 0) {
+            const double x = static_cast<double>(event.tfinger.x) * viewW;
+            const double y = static_cast<double>(event.tfinger.y) * viewH;
+            const Vec2 point = camera.screenToWorld(x, y);
+            tapestry::Stroke* stroke = session.world.strokeById(drag.strokeId);
+            if (stroke != nullptr && (stroke->points.empty()
+                || std::hypot(point.x - stroke->points.back().position.x,
+                              point.y - stroke->points.back().position.y)
+                    >= 0.75 / camera.zoom())) {
+                session.world.appendStrokePoint(drag.strokeId, {
+                    point, std::clamp(
+                        static_cast<double>(event.tfinger.pressure), 0.0, 1.0)});
+            }
+        }
+        break;
+
+    case SDL_FINGERUP:
+        if (drag.mode == DragState::Mode::Brush) {
+            drag.mode = DragState::Mode::None;
+            drag.strokeId = 0;
+        }
+        break;
 
     case SDL_MOUSEWHEEL: {
         // SDL 2.0.18+ reports fractional trackpad deltas; the integer fields
@@ -719,12 +1157,45 @@ void handleEvent(const SDL_Event& event,
 // The document header: title top-left, editable in place. Screen-space, like
 // the readout — it belongs to the window, not the world.
 void drawHeader(NVGcontext* vg, const tapestry::FontSet& fonts,
-                const Session& session, const EditState& edit) {
+                const Session& session, const EditState& edit, double viewW) {
     if (!fonts.ok()) {
         return;
     }
 
-    const bool editing = edit.target == EditState::Target::Title;
+    nvgBeginPath(vg);
+    nvgRect(vg, 0.0f, 0.0f, static_cast<float>(viewW),
+            static_cast<float>(kHeaderHeight));
+    nvgFillColor(vg, nvgRGBA(18, 20, 27, 238));
+    nvgFill(vg);
+    nvgBeginPath(vg);
+    nvgMoveTo(vg, 0.0f, static_cast<float>(kHeaderHeight - 0.5));
+    nvgLineTo(vg, static_cast<float>(viewW),
+              static_cast<float>(kHeaderHeight - 0.5));
+    nvgStrokeColor(vg, nvgRGBA(100, 115, 150, 70));
+    nvgStrokeWidth(vg, 1.0f);
+    nvgStroke(vg);
+
+    const auto drawMenuLabel = [&](const Rect& rect, const char* label,
+                                   OpenMenu menu) {
+        if (session.openMenu == menu) {
+            nvgBeginPath(vg);
+            nvgRoundedRect(vg, static_cast<float>(rect.x), static_cast<float>(rect.y),
+                           static_cast<float>(rect.w), static_cast<float>(rect.h), 5.0f);
+            nvgFillColor(vg, nvgRGBA(75, 88, 120, 155));
+            nvgFill(vg);
+        }
+        nvgFontFaceId(vg, fonts.regular);
+        nvgFontSize(vg, 13.0f);
+        nvgTextAlign(vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+        nvgFillColor(vg, nvgRGBA(214, 221, 238, 225));
+        nvgText(vg, static_cast<float>(rect.x + rect.w * 0.5),
+                static_cast<float>(rect.y + rect.h * 0.5), label, nullptr);
+    };
+    drawMenuLabel(kFileMenuRect, "File", OpenMenu::File);
+    drawMenuLabel(kEditMenuRect, "Edit", OpenMenu::Edit);
+    drawMenuLabel(kViewMenuRect, "View", OpenMenu::View);
+
+    const bool editing = edit.target == EditState::Target::DocumentTitle;
     const std::string& text = editing ? edit.draft : session.documentTitle;
 
     nvgFontFaceId(vg, fonts.bold);
@@ -746,6 +1217,97 @@ void drawHeader(NVGcontext* vg, const tapestry::FontSet& fonts,
         nvgStrokeColor(vg, nvgRGBA(168, 142, 235, 220));
         nvgStrokeWidth(vg, 1.5f);
         nvgStroke(vg);
+    }
+
+    const auto drawTool = [&](int slot, ActiveTool tool, const char* label) {
+        const Rect rect = toolRect(viewW, slot);
+        const bool active = session.activeTool == tool;
+        nvgBeginPath(vg);
+        nvgRoundedRect(vg, static_cast<float>(rect.x), static_cast<float>(rect.y),
+                       static_cast<float>(rect.w), static_cast<float>(rect.h), 7.0f);
+        nvgFillColor(vg, active ? nvgRGBA(92, 112, 175, 210)
+                               : nvgRGBA(48, 54, 70, 175));
+        nvgFill(vg);
+        nvgFontFaceId(vg, fonts.bold);
+        nvgFontSize(vg, 13.0f);
+        nvgTextAlign(vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+        nvgFillColor(vg, nvgRGBA(225, 231, 245, 235));
+        nvgText(vg, static_cast<float>(rect.x + rect.w * 0.5),
+                static_cast<float>(rect.y + rect.h * 0.5), label, nullptr);
+    };
+    drawTool(4, ActiveTool::Select, "A");
+    drawTool(3, ActiveTool::Hand, "H");
+    drawTool(2, ActiveTool::Zoom, "Z");
+    drawTool(1, ActiveTool::Brush, "");
+    const Rect brushRect = toolRect(viewW, 1);
+    const float brushCx = static_cast<float>(brushRect.x + brushRect.w * 0.5);
+    const float brushCy = static_cast<float>(brushRect.y + brushRect.h * 0.5);
+    nvgBeginPath(vg);
+    nvgMoveTo(vg, brushCx - 7.0f, brushCy + 7.0f);
+    nvgBezierTo(vg, brushCx - 8.0f, brushCy + 2.0f,
+                brushCx - 4.0f, brushCy + 1.0f,
+                brushCx - 2.0f, brushCy + 3.0f);
+    nvgLineTo(vg, brushCx + 8.0f, brushCy - 7.0f);
+    nvgStrokeColor(vg, nvgRGBA(225, 231, 245, 235));
+    nvgStrokeWidth(vg, 3.0f);
+    nvgLineCap(vg, NVG_ROUND);
+    nvgStroke(vg);
+    const Rect settingsRect = toolRect(viewW, 0);
+    nvgBeginPath(vg);
+    nvgRoundedRect(vg, static_cast<float>(settingsRect.x),
+                   static_cast<float>(settingsRect.y),
+                   static_cast<float>(settingsRect.w),
+                   static_cast<float>(settingsRect.h), 7.0f);
+    nvgFillColor(vg, nvgRGBA(48, 54, 70, 175));
+    nvgFill(vg);
+    nvgFontFaceId(vg, fonts.bold);
+    nvgFontSize(vg, 14.0f);
+    nvgTextAlign(vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+    nvgFillColor(vg, nvgRGBA(225, 231, 245, 235));
+    nvgText(vg, static_cast<float>(settingsRect.x + settingsRect.w * 0.5),
+            static_cast<float>(settingsRect.y + settingsRect.h * 0.5), "S", nullptr);
+
+    if (session.openMenu != OpenMenu::None) {
+        const Rect panel = menuPanelRect(session.openMenu);
+        nvgBeginPath(vg);
+        nvgRoundedRect(vg, static_cast<float>(panel.x), static_cast<float>(panel.y),
+                       static_cast<float>(panel.w), static_cast<float>(panel.h), 7.0f);
+        nvgFillColor(vg, nvgRGBA(27, 30, 39, 250));
+        nvgFill(vg);
+        nvgStrokeColor(vg, nvgRGBA(110, 126, 165, 100));
+        nvgStrokeWidth(vg, 1.0f);
+        nvgStroke(vg);
+
+        const char* labels[3] = {nullptr, nullptr, nullptr};
+        const char* shortcuts[3] = {nullptr, nullptr, nullptr};
+        int count = 2;
+        bool disabled = false;
+        if (session.openMenu == OpenMenu::File) {
+            labels[0] = "Open..."; labels[1] = "Save"; labels[2] = "Save As...";
+            shortcuts[0] = "Cmd+O"; shortcuts[1] = "Cmd+S"; shortcuts[2] = "Cmd+Shift+S";
+            count = 3;
+        } else if (session.openMenu == OpenMenu::Edit) {
+            labels[0] = "Undo"; labels[1] = "Redo";
+            shortcuts[0] = "Cmd+Z"; shortcuts[1] = "Cmd+Shift+Z";
+            disabled = true;
+        } else {
+            labels[0] = "Reset View"; labels[1] = "Frame All";
+            shortcuts[0] = "0"; shortcuts[1] = "F";
+        }
+        nvgFontFaceId(vg, fonts.regular);
+        nvgFontSize(vg, 13.0f);
+        for (int i = 0; i < count; ++i) {
+            const float y = static_cast<float>(panel.y + 4.0
+                + (static_cast<double>(i) + 0.5) * kMenuItemHeight);
+            nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+            nvgFillColor(vg, disabled ? nvgRGBA(145, 151, 168, 100)
+                                     : nvgRGBA(225, 230, 241, 235));
+            nvgText(vg, static_cast<float>(panel.x + 13.0), y, labels[i], nullptr);
+            nvgTextAlign(vg, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+            nvgFillColor(vg, nvgRGBA(150, 160, 184, disabled ? 70 : 160));
+            nvgText(vg, static_cast<float>(panel.x + panel.w - 12.0), y,
+                    shortcuts[i], nullptr);
+        }
     }
 }
 
@@ -786,7 +1348,8 @@ void drawReadout(NVGcontext* vg,
     nvgFontSize(vg, 13.0f);
     nvgTextAlign(vg, NVG_ALIGN_RIGHT | NVG_ALIGN_TOP);
     nvgFillColor(vg, nvgRGBA(190, 205, 235, 150));
-    nvgText(vg, static_cast<float>(viewW - 16.0), 14.0f, line, nullptr);
+    nvgText(vg, static_cast<float>(viewW - 16.0),
+            static_cast<float>(kHeaderHeight + 10.0), line, nullptr);
 }
 
 } // namespace
@@ -819,6 +1382,10 @@ int main(int argc, char** argv) {
     const tapestry::FontSet fonts = (gfx.vg != nullptr)
         ? tapestry::loadFonts(gfx.vg, TAPESTRY_ASSET_DIR)
         : tapestry::FontSet {};
+    SDL_Cursor* arrowCursor = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_ARROW);
+    SDL_Cursor* textCursor = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_IBEAM);
+    SDL_Cursor* handCursor = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_HAND);
+    SDL_Cursor* zoomCursor = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_CROSSHAIR);
 
     if (gfx.vg != nullptr) {
         std::printf("tapestry: OpenGL %d.%d core, video driver %s\n",
@@ -830,9 +1397,11 @@ int main(int argc, char** argv) {
 
     Session session;
     session.documentPath = options.documentPath;
+    session.hasDocumentPath = options.documentPathExplicit;
 
     Camera camera;
     if (loadSession(session, camera)) {
+        session.hasDocumentPath = true;
         std::printf("tapestry: opened %s (%d snapshot(s))\n",
             session.documentPath.c_str(),
             tapestry::countSnapshots(session.documentPath));
@@ -870,8 +1439,27 @@ int main(int argc, char** argv) {
 
         SDL_Event event;
         while (SDL_PollEvent(&event) != 0) {
-            handleEvent(event, session, camera, drag, edit, viewW, viewH,
-                        running);
+            handleEvent(event, session, camera, drag, edit, gfx.vg, fonts,
+                        viewW, viewH, running);
+        }
+
+        if (gfx.window != nullptr) {
+            int mouseX = 0;
+            int mouseY = 0;
+            SDL_GetMouseState(&mouseX, &mouseY);
+            SDL_Cursor* cursor = arrowCursor;
+            if (session.activeTool == ActiveTool::Hand) {
+                cursor = handCursor;
+            } else if (session.activeTool == ActiveTool::Zoom
+                       || session.activeTool == ActiveTool::Brush) {
+                cursor = zoomCursor;
+            } else if (hoveringEditableText(session, camera,
+                       static_cast<double>(mouseX), static_cast<double>(mouseY))) {
+                cursor = textCursor;
+            }
+            if (cursor != nullptr) {
+                SDL_SetCursor(cursor);
+            }
         }
 
         const Uint32 nowMs = SDL_GetTicks();
@@ -912,6 +1500,7 @@ int main(int argc, char** argv) {
             nvgBeginFrame(gfx.vg, static_cast<float>(viewW),
                           static_cast<float>(viewH), pxRatio);
             tapestry::drawGrid(gfx.vg, camera, viewW, viewH, fonts.regular);
+            tapestry::drawStrokes(gfx.vg, session.world, camera);
 
             tapestry::PageUiState ui;
             ui.selectedId = session.selectedId;
@@ -921,10 +1510,18 @@ int main(int argc, char** argv) {
             if (ui.editingZoom) {
                 ui.zoomDraft = edit.draft;
             }
+            if (edit.target == EditState::Target::PageTitle
+                || edit.target == EditState::Target::PageBody) {
+                ui.editingPageId = edit.pageId;
+                ui.editingRegion = edit.target == EditState::Target::PageTitle
+                    ? tapestry::PageTextRegion::Title
+                    : tapestry::PageTextRegion::Body;
+                ui.caret = edit.caret;
+            }
             tapestry::drawPages(gfx.vg, session.world, camera, viewW, viewH,
                                 fonts, ui);
 
-            drawHeader(gfx.vg, fonts, session, edit);
+            drawHeader(gfx.vg, fonts, session, edit, viewW);
             drawStatus(gfx.vg, fonts, session, viewH);
             drawReadout(gfx.vg, fonts, camera, session.world, viewW, fps,
                         gfx.glMajor, gfx.glMinor);
@@ -967,6 +1564,10 @@ int main(int argc, char** argv) {
     std::printf("tapestry: closed after %ld frames, %llu ticks\n",
         frames, static_cast<unsigned long long>(session.world.ticks()));
 
+    SDL_FreeCursor(zoomCursor);
+    SDL_FreeCursor(handCursor);
+    SDL_FreeCursor(textCursor);
+    SDL_FreeCursor(arrowCursor);
     destroyGraphics(gfx);
     SDL_Quit();
     return 0;

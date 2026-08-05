@@ -29,8 +29,26 @@ Page* World::pageAt(Vec2 worldPoint) {
     return nullptr;
 }
 
+const Page* World::pageAt(Vec2 worldPoint) const {
+    for (auto it = m_pages.rbegin(); it != m_pages.rend(); ++it) {
+        if (it->displayRect().contains(worldPoint)) {
+            return &*it;
+        }
+    }
+    return nullptr;
+}
+
 Page* World::pageById(std::uint64_t id) {
     for (Page& page : m_pages) {
+        if (page.id == id) {
+            return &page;
+        }
+    }
+    return nullptr;
+}
+
+const Page* World::pageById(std::uint64_t id) const {
+    for (const Page& page : m_pages) {
         if (page.id == id) {
             return &page;
         }
@@ -48,15 +66,55 @@ void World::bringToFront(std::uint64_t id) {
     }
 }
 
+std::uint64_t World::beginStroke(StrokePoint first) {
+    Stroke stroke;
+    stroke.id = m_nextStrokeId++;
+    stroke.points.push_back(first);
+    m_strokes.push_back(std::move(stroke));
+    return m_strokes.back().id;
+}
+
+void World::appendStrokePoint(std::uint64_t id, StrokePoint point) {
+    Stroke* stroke = strokeById(id);
+    if (stroke != nullptr) {
+        stroke->points.push_back(point);
+    }
+}
+
+Stroke* World::strokeById(std::uint64_t id) {
+    for (Stroke& stroke : m_strokes) {
+        if (stroke.id == id) return &stroke;
+    }
+    return nullptr;
+}
+
+const Stroke* World::strokeById(std::uint64_t id) const {
+    for (const Stroke& stroke : m_strokes) {
+        if (stroke.id == id) return &stroke;
+    }
+    return nullptr;
+}
+
+void World::adoptStroke(Stroke stroke) {
+    m_nextStrokeId = std::max(m_nextStrokeId, stroke.id + 1);
+    m_strokes.push_back(std::move(stroke));
+}
+
 Rect World::contentBounds() const {
-    if (m_pages.empty()) {
-        return {};
-    }
-    Rect bounds = m_pages.front().displayRect();
+    Rect bounds;
+    bool found = false;
     for (const Page& page : m_pages) {
-        bounds = bounds.unionWith(page.displayRect());
+        bounds = found ? bounds.unionWith(page.displayRect()) : page.displayRect();
+        found = true;
     }
-    return bounds;
+    for (const Stroke& stroke : m_strokes) {
+        for (const StrokePoint& point : stroke.points) {
+            const Rect mark {point.position.x, point.position.y, 0.001, 0.001};
+            bounds = found ? bounds.unionWith(mark) : mark;
+            found = true;
+        }
+    }
+    return found ? bounds : Rect {};
 }
 
 void World::adopt(Page page) {
