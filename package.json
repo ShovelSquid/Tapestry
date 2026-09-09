@@ -1,0 +1,9 @@
+{
+  "name": "tapestry-workspace",
+  "private": true,
+  "workspaces": [
+    "app",
+    "sdk",
+    "plugins/*"
+  ]
+}
