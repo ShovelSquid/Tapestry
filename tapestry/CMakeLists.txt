@@ -16,6 +16,7 @@ endif()
 
 option(TAPESTRY_BUILD_APP "Build the SDL2 application" ON)
 option(TAPESTRY_BUILD_TESTS "Build the test suite" ON)
+option(TAPESTRY_BUILD_RENDER "Build glad/nanovg, the legacy tapestry_core and its tests" ON)
 
 # ---------------------------------------------------------------------------
 # Shared compile settings.
@@ -35,6 +36,65 @@ else()
         -Wall -Wextra -Wpedantic -Wshadow -Wconversion
         -ffp-contract=off)
 endif()
+
+# ---------------------------------------------------------------------------
+# Kernel dependencies — vendored rather than fetched, so the kernel configures
+# and builds with no network, no Python, and no renderer.
+#
+# doctest — single-header test framework plus its two CTest discovery scripts.
+# Upstream https://github.com/doctest/doctest, pinned to tag v2.5.3
+# (doctest/doctest.h, scripts/cmake/doctest.cmake,
+# scripts/cmake/doctestAddTests.cmake, LICENSE.txt).
+# MIT license — see third_party/doctest/LICENSE.txt.
+#
+# PicoSHA2 — single-header SHA-256 for record digests and the parent chain.
+# Upstream https://github.com/okdshin/PicoSHA2, pinned to master commit
+# 161cb3fc4170fa7a3eca9e582cebd27cc4d1fe29 (2025-05-04).
+# MIT license — see third_party/picosha2/LICENSE.
+#
+# Both are SYSTEM includes: their code is not ours to keep warning-clean.
+# ---------------------------------------------------------------------------
+add_library(doctest INTERFACE)
+target_include_directories(doctest SYSTEM INTERFACE ${PROJECT_SOURCE_DIR}/third_party/doctest)
+add_library(doctest::doctest ALIAS doctest)
+
+# ---------------------------------------------------------------------------
+# Kernel library — typed values, identifiers, time, the generic world, and the
+# .tree journal. No glad, no nanovg, no SDL, no display: it links only the
+# shared settings so it builds offline and headless anywhere a C++20 compiler
+# exists. Sources are globbed with CONFIGURE_DEPENDS so adding a kernel file
+# never requires editing this list.
+# ---------------------------------------------------------------------------
+file(GLOB_RECURSE TAPESTRY_KERNEL_SOURCES CONFIGURE_DEPENDS ${PROJECT_SOURCE_DIR}/kernel/*.cpp)
+add_library(tapestry_kernel STATIC ${TAPESTRY_KERNEL_SOURCES})
+target_include_directories(tapestry_kernel PUBLIC ${PROJECT_SOURCE_DIR})
+target_include_directories(tapestry_kernel SYSTEM PRIVATE ${PROJECT_SOURCE_DIR}/third_party/picosha2)
+target_link_libraries(tapestry_kernel PUBLIC tapestry_settings)
+
+# ---------------------------------------------------------------------------
+# Kernel tests. One doctest binary; every TEST_CASE is registered with CTest
+# individually so a single case can be run from ctest as well as via the
+# binary's own -ts= / -tc= filters.
+# ---------------------------------------------------------------------------
+if(TAPESTRY_BUILD_TESTS)
+    enable_testing()
+
+    file(GLOB TAPESTRY_KERNEL_TEST_SOURCES CONFIGURE_DEPENDS ${PROJECT_SOURCE_DIR}/kernel_tests/*.cpp)
+    add_executable(tapestry_kernel_tests ${TAPESTRY_KERNEL_TEST_SOURCES})
+    target_link_libraries(tapestry_kernel_tests PRIVATE tapestry_kernel doctest::doctest)
+    target_compile_definitions(tapestry_kernel_tests PRIVATE
+        TAPESTRY_FIXTURE_DIR="${PROJECT_SOURCE_DIR}/docs/tree")
+
+    include(${PROJECT_SOURCE_DIR}/third_party/doctest/doctest.cmake)
+    doctest_discover_tests(tapestry_kernel_tests)
+endif()
+
+# ---------------------------------------------------------------------------
+# Render stack. Everything below needs an OpenGL loader generated at configure
+# time (Python + Jinja2 + network) and the vendored nanovg, so it is gated:
+# a kernel-only configure must never touch FetchContent or the display stack.
+# ---------------------------------------------------------------------------
+if(TAPESTRY_BUILD_RENDER)
 
 # ---------------------------------------------------------------------------
 # glad — OpenGL 3.3 core loader.
@@ -147,12 +207,10 @@ if(TAPESTRY_BUILD_APP)
 endif()
 
 # ---------------------------------------------------------------------------
-# Tests. No framework: these are pure-arithmetic invariants over the core
-# library, and they run with no window, no GL context, and no display.
+# Legacy tests. No framework: these are pure-arithmetic invariants over the
+# core library, and they run with no window, no GL context, and no display.
 # ---------------------------------------------------------------------------
 if(TAPESTRY_BUILD_TESTS)
-    enable_testing()
-
     add_executable(tapestry_tests tests/CameraTest.cpp)
     target_link_libraries(tapestry_tests PRIVATE tapestry_core)
 
@@ -166,3 +224,5 @@ if(TAPESTRY_BUILD_TESTS)
     add_test(NAME world COMMAND tapestry_world_tests)
     add_test(NAME document COMMAND tapestry_document_tests)
 endif()
+
+endif() # TAPESTRY_BUILD_RENDER
