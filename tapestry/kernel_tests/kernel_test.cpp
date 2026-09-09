@@ -3,10 +3,19 @@
 // Alongside it, the three properties that make the path trustworthy:
 // a rejection changes nothing, every commit is written then synced before
 // submit returns, and open() never creates or touches a file it refuses.
+//
+// Then the guarantees that let plugins own meaning while the kernel stays
+// small (TREE-02): a node of a type the kernel has never seen loads as
+// readable typed data, x- extension lines survive reopen verbatim, an op
+// verb the kernel does not know stops the load loudly, ids stay stable and
+// are never reused after a delete, tick lines follow advance, and text is
+// bytes — non-ASCII round-trips and byte counts are UTF-8 lengths.
 
 #include "kernel/Digest.hpp"
 #include "kernel/Ids.hpp"
 #include "kernel/Kernel.hpp"
+#include "kernel/Ops.hpp"
+#include "kernel/Record.hpp"
 #include "kernel/Time.hpp"
 #include "kernel/Value.hpp"
 #include "kernel/journal/Journal.hpp"
@@ -16,26 +25,38 @@
 
 #include <doctest.h>
 
+#include <cstddef>
 #include <cstdio>
 #include <cstdlib>
 #include <memory>
 #include <string>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace {
 
 using tapestry::kernel::Actor;
+using tapestry::kernel::Advance;
 using tapestry::kernel::Clock;
+using tapestry::kernel::CommitRecord;
 using tapestry::kernel::CommitResult;
+using tapestry::kernel::CommitSeq;
+using tapestry::kernel::CreateEdge;
 using tapestry::kernel::CreateNode;
+using tapestry::kernel::DeleteNode;
+using tapestry::kernel::Digest;
+using tapestry::kernel::Edge;
+using tapestry::kernel::EdgeId;
 using tapestry::kernel::Expected;
 using tapestry::kernel::FixedClock;
+using tapestry::kernel::formatInline;
 using tapestry::kernel::IoError;
 using tapestry::kernel::JournalStatus;
 using tapestry::kernel::Kernel;
 using tapestry::kernel::Node;
 using tapestry::kernel::NodeId;
+using tapestry::kernel::Op;
 using tapestry::kernel::OpenFailure;
 using tapestry::kernel::OpenPolicy;
 using tapestry::kernel::Proposal;
@@ -44,7 +65,9 @@ using tapestry::kernel::Rejection;
 using tapestry::kernel::SetProperty;
 using tapestry::kernel::sha256;
 using tapestry::kernel::Sink;
+using tapestry::kernel::Tick;
 using tapestry::kernel::Value;
+namespace tree = tapestry::kernel::tree;
 using tapestry::kernel::test::fileExists;
 using tapestry::kernel::test::fileSize;
 using tapestry::kernel::test::readFile;
@@ -129,6 +152,84 @@ void checkTracerNode(const Node* node) {
     REQUIRE(node->props.size() == 2);
     CHECK(node->props.at("title") == Value::ofText("Sam"));
     CHECK(node->props.at("body") == Value::ofText(kTracerBody));
+}
+
+const char* const kClockStamp = "2026-09-08T21:15:07Z";
+constexpr std::size_t kEndLineBytes = 12 + 64 + 1; // "@end sha256:" + hex + LF
+
+Proposal proposalOf(std::vector<Op> ops, const char* message = "") {
+    Proposal proposal;
+    proposal.actor = Actor{"human", "kaelen"};
+    proposal.message = message;
+    proposal.ops = std::move(ops);
+    return proposal;
+}
+
+CommitResult submitOk(Kernel& kernel, const Proposal& proposal) {
+    auto result = kernel.submit(proposal);
+    REQUIRE_MESSAGE(result.ok(), detailOf(result));
+    return result.value();
+}
+
+std::unique_ptr<Kernel> createOk(const std::string& path, const char* world) {
+    auto created = Kernel::create(path, world, fixedClock(kClockStamp));
+    REQUIRE_MESSAGE(created.ok(), detailOf(created));
+    return std::move(created.value());
+}
+
+std::unique_ptr<Kernel> openOk(const std::string& path, OpenPolicy policy) {
+    auto opened = Kernel::open(path, policy);
+    REQUIRE_MESSAGE(opened.ok(), detailOf(opened));
+    return std::move(opened.value());
+}
+
+// Every commit record of a journal, decoded with the pure codec alone (the
+// chain, seqs and ticks are tracked here, independently of the Journal), so
+// a test can locate and rewrite one record's bytes.
+std::vector<tree::DecodedCommit> decodeAll(const std::string& bytes) {
+    auto header = tree::decodeHeader(bytes);
+    REQUIRE_MESSAGE(header.ok(), detailOf(header));
+    std::vector<tree::DecodedCommit> commits;
+    Digest parent = header.value().digest;
+    std::size_t position = header.value().end;
+    CommitSeq seq = 1;
+    Tick tick = 0;
+    while (position < bytes.size()) {
+        auto commit = tree::decodeCommit(bytes, position, parent, seq, tick);
+        REQUIRE_MESSAGE(commit.ok(), detailOf(commit));
+        for (const Op& op : commit.value().record.ops) {
+            if (const auto* advance = std::get_if<Advance>(&op)) {
+                tick += advance->ticks;
+            }
+        }
+        parent = commit.value().digest;
+        position = commit.value().end;
+        seq += 1;
+        commits.push_back(std::move(commit.value()));
+    }
+    return commits;
+}
+
+// The counted body of a decoded record: the bytes between its head line and
+// its @end line.
+std::string bodyOf(const std::string& bytes, const tree::DecodedCommit& commit) {
+    const std::size_t bodyStart = bytes.find('\n', commit.begin) + 1;
+    return bytes.substr(bodyStart, commit.end - kEndLineBytes - bodyStart);
+}
+
+// Seals a hand-edited body into a record — head line and @end digest
+// recomputed here with sha256, no encoder involved.
+std::string frame(CommitSeq seq, const std::string& body) {
+    std::string record = "@commit " + std::to_string(seq) + ' ' + std::to_string(body.size()) + '\n' + body;
+    const Digest digest = sha256(record);
+    record += "@end sha256:" + digest.hex + '\n';
+    return record;
+}
+
+// The journal bytes with one commit's record swapped for `replacement`.
+std::string withRecordReplaced(const std::string& bytes, const tree::DecodedCommit& commit,
+    const std::string& replacement) {
+    return bytes.substr(0, commit.begin) + replacement + bytes.substr(commit.end);
 }
 
 } // namespace
@@ -357,6 +458,282 @@ TEST_CASE("kernel: opening a missing path reports Missing and a foreign file rep
 
     std::remove(foreign.c_str());
     std::remove(empty.c_str());
+}
+
+TEST_CASE("kernel: an unknown node type loads with readable typed fallback values") {
+    const std::string path = scratchPath("unknown-type");
+    const char* const type = "acme.widgets/gizmo@7"; // no kernel source knows this type
+    const char* const body = "A gizmo.\nIt has three lines of description.\nNobody in the kernel knows what it is.";
+    {
+        std::unique_ptr<Kernel> kernel = createOk(path, "widgets");
+        CreateNode gizmo;
+        gizmo.type = type;
+        gizmo.props["title"] = Value::ofText("Gizmo");
+        gizmo.props["body"] = Value::ofText(body);
+        gizmo.props["anger"] = Value::ofInt(3);
+        gizmo.props["position.x"] = Value::ofReal(12.5);
+        gizmo.props["position.y"] = Value::ofReal(-3);
+        gizmo.props["pinned"] = Value::ofBool(true);
+        gizmo.props["event"] = Value::ofTime("2026-09-07");
+        const CommitResult committed = submitOk(*kernel, proposalOf({gizmo}, "a widget"));
+        REQUIRE(committed.nodeIds.size() == 1);
+        CHECK(committed.nodeIds[0] == NodeId{1});
+    }
+
+    std::unique_ptr<Kernel> kernel = openOk(path, OpenPolicy::ReadOnly);
+    CHECK(kernel->status().kind == JournalStatus::Kind::Ok);
+    REQUIRE(kernel->world().nodeCount() == 1);
+    const Node* node = kernel->world().node(NodeId{1});
+    REQUIRE(node != nullptr);
+    CHECK(node->id == NodeId{1});
+    CHECK(node->type == type);
+    REQUIRE(node->props.size() == 7);
+    CHECK(node->props.at("title") == Value::ofText("Gizmo"));
+    CHECK(node->props.at("body") == Value::ofText(body));
+    CHECK(node->props.at("anger") == Value::ofInt(3));
+    CHECK(node->props.at("position.x") == Value::ofReal(12.5));
+    CHECK(node->props.at("position.y") == Value::ofReal(-3));
+    CHECK(node->props.at("pinned") == Value::ofBool(true));
+    CHECK(node->props.at("event") == Value::ofTime("2026-09-07"));
+
+    // Every value has a readable fallback form without any plugin present.
+    CHECK(formatInline(node->props.at("title")) == "\"Gizmo\"");
+    CHECK(formatInline(node->props.at("anger")) == "3");
+    CHECK(formatInline(node->props.at("position.x")) == "12.5");
+    CHECK(formatInline(node->props.at("position.y")) == "-3");
+    CHECK(formatInline(node->props.at("pinned")) == "true");
+    CHECK(formatInline(node->props.at("event")) == "2026-09-07");
+
+    // And the file says the same, in plain lines.
+    const std::string text = readFile(path);
+    for (const char* needle : {"create-node n1 acme.widgets/gizmo@7\n", "set n1 anger int 3\n",
+             "set n1 body text <<TEXT\nA gizmo.\nIt has three lines of description.\nNobody in the kernel knows what it is.\nTEXT\n",
+             "set n1 event time 2026-09-07\n", "set n1 pinned bool true\n", "set n1 position.x real 12.5\n",
+             "set n1 position.y real -3\n", "set n1 title text \"Gizmo\"\n"}) {
+        CHECK_MESSAGE(text.find(needle) != std::string::npos, needle);
+    }
+    std::remove(path.c_str());
+}
+
+TEST_CASE("kernel: ids are stable across reopen and never reused after delete") {
+    const std::string path = scratchPath("ids");
+    {
+        std::unique_ptr<Kernel> kernel = createOk(path, "ids");
+        const CommitResult created = submitOk(*kernel,
+            proposalOf({CreateNode{NodeId{}, "example.people/person@1", {{"name", Value::ofText("Sam")}}},
+                           CreateNode{NodeId{}, "example.people/person@1", {{"name", Value::ofText("Alex")}}},
+                           CreateEdge{EdgeId{}, NodeId{1}, NodeId{2}, "knows", {}}},
+                "two people"));
+        CHECK(created.nodeIds == std::vector<NodeId>{NodeId{1}, NodeId{2}});
+        CHECK(created.edgeIds == std::vector<EdgeId>{EdgeId{1}});
+        CHECK(kernel->world().edgeCount() == 1);
+
+        submitOk(*kernel, proposalOf({DeleteNode{NodeId{2}}}, "Alex leaves"));
+        CHECK(kernel->world().node(NodeId{2}) == nullptr);
+        CHECK(kernel->world().edge(EdgeId{1}) == nullptr);
+        CHECK(kernel->world().wasDeleted(NodeId{2}));
+        CHECK(kernel->world().wasDeleted(EdgeId{1}));
+    }
+
+    std::unique_ptr<Kernel> kernel = openOk(path, OpenPolicy::Existing);
+    CHECK(kernel->status().kind == JournalStatus::Kind::Ok);
+    CHECK(kernel->journal().commitCount() == 2);
+    REQUIRE(kernel->world().node(NodeId{1}) != nullptr);
+    CHECK(kernel->world().node(NodeId{1})->props.at("name") == Value::ofText("Sam"));
+    CHECK(kernel->world().node(NodeId{2}) == nullptr);
+    CHECK(kernel->world().edge(EdgeId{1}) == nullptr);
+    CHECK(kernel->world().nodeCount() == 1);
+    CHECK(kernel->world().edgeCount() == 0);
+    CHECK(kernel->world().wasDeleted(NodeId{2}));
+    CHECK(kernel->world().wasDeleted(EdgeId{1}));
+    CHECK_FALSE(kernel->world().wasDeleted(NodeId{1}));
+    CHECK(kernel->world().nextNodeId() == NodeId{3});
+    CHECK(kernel->world().nextEdgeId() == EdgeId{2});
+
+    // New ids continue above every id ever used; the deleted ones stay dead.
+    const CommitResult third = submitOk(*kernel,
+        proposalOf({CreateNode{NodeId{}, "example.people/person@1", {{"name", Value::ofText("Kim")}}}}, "Kim"));
+    CHECK(third.nodeIds == std::vector<NodeId>{NodeId{3}});
+    const CommitResult link = submitOk(*kernel, proposalOf({CreateEdge{EdgeId{}, NodeId{1}, NodeId{3}, "knows", {}}}));
+    CHECK(link.edgeIds == std::vector<EdgeId>{EdgeId{2}});
+    const Edge* e2 = kernel->world().edge(EdgeId{2});
+    REQUIRE(e2 != nullptr);
+    CHECK(e2->from == NodeId{1});
+    CHECK(e2->to == NodeId{3});
+
+    auto onDeleted = kernel->submit(proposalOf({SetProperty{NodeId{2}, "name", Value::ofText("ghost")}}));
+    REQUIRE_FALSE(onDeleted.ok());
+    CHECK(onDeleted.error().kind == Rejection::Kind::UnknownTarget);
+    auto toDeleted = kernel->submit(proposalOf({CreateEdge{EdgeId{}, NodeId{1}, NodeId{2}, "knows", {}}}));
+    REQUIRE_FALSE(toDeleted.ok());
+    CHECK(toDeleted.error().kind == Rejection::Kind::RefMissing);
+    auto refDeleted = kernel->submit(proposalOf({SetProperty{NodeId{1}, "friend", Value::ofRef(NodeId{2})}}));
+    REQUIRE_FALSE(refDeleted.ok());
+    CHECK(refDeleted.error().kind == Rejection::Kind::RefMissing);
+
+    const std::string text = readFile(path);
+    for (const char* needle : {"create-edge e1 n1 n2 knows\n", "delete-node n2\n", "create-node n3 ",
+             "create-edge e2 n1 n3 knows\n"}) {
+        CHECK_MESSAGE(text.find(needle) != std::string::npos, needle);
+    }
+    std::remove(path.c_str());
+}
+
+TEST_CASE("kernel: x- extension lines survive reopen verbatim and in order") {
+    const std::string path = scratchPath("extension");
+    {
+        std::unique_ptr<Kernel> kernel = createOk(path, "extension");
+        submitOk(*kernel, firstNote());
+        submitOk(*kernel, proposalOf({SetProperty{NodeId{1}, "title", Value::ofText("Sam again")}}, "rename"));
+    }
+
+    // Plant two plugin-owned lines in commit 2, re-sealed by the same codec.
+    std::string bytes = readFile(path);
+    const std::vector<tree::DecodedCommit> commits = decodeAll(bytes);
+    REQUIRE(commits.size() == 2);
+    CommitRecord edited = commits[1].record;
+    edited.extensionLines = {"x-example.people mood curious", "x-acme.widgets flag 1"};
+    bytes = withRecordReplaced(bytes, commits[1], tree::encodeCommit(edited).bytes);
+    writeFile(path, bytes);
+
+    {
+        std::unique_ptr<Kernel> kernel = openOk(path, OpenPolicy::Existing);
+        CHECK(kernel->status().kind == JournalStatus::Kind::Ok);
+        REQUIRE(kernel->journal().commitCount() == 2);
+        CHECK(kernel->journal().commits()[0].extensionLines.empty());
+        CHECK(kernel->journal().commits()[1].extensionLines
+            == std::vector<std::string>{"x-example.people mood curious", "x-acme.widgets flag 1"});
+        CHECK(kernel->world().node(NodeId{1})->props.at("title") == Value::ofText("Sam again"));
+        // The kernel keeps working on top of lines it does not understand.
+        CHECK(submitOk(*kernel, proposalOf({SetProperty{NodeId{1}, "title", Value::ofText("Sam once more")}})).seq == 3);
+    }
+
+    const std::string text = readFile(path);
+    CHECK(text.find("set n1 title text \"Sam again\"\nx-example.people mood curious\nx-acme.widgets flag 1\n@end sha256:")
+        != std::string::npos);
+    std::unique_ptr<Kernel> again = openOk(path, OpenPolicy::ReadOnly);
+    CHECK(again->status().kind == JournalStatus::Kind::Ok);
+    REQUIRE(again->journal().commitCount() == 3);
+    CHECK(again->journal().commits()[1].extensionLines
+        == std::vector<std::string>{"x-example.people mood curious", "x-acme.widgets flag 1"});
+    std::remove(path.c_str());
+}
+
+TEST_CASE("kernel: an unsupported op verb stops the load with the verb and seq named") {
+    const std::string path = scratchPath("frobnicate");
+    {
+        std::unique_ptr<Kernel> kernel = createOk(path, "frobnicate");
+        submitOk(*kernel, firstNote());
+        submitOk(*kernel, proposalOf({CreateNode{NodeId{}, kTracerType, {{"title", Value::ofText("second")}}}}, "second"));
+        CHECK(kernel->world().nodeCount() == 2);
+    }
+
+    // A verb a newer Tapestry might write, planted in commit 2 and re-sealed
+    // by hand so only the grammar, not the digest, is at fault.
+    std::string bytes = readFile(path);
+    const std::vector<tree::DecodedCommit> commits = decodeAll(bytes);
+    REQUIRE(commits.size() == 2);
+    bytes = withRecordReplaced(bytes, commits[1], frame(2, bodyOf(bytes, commits[1]) + "frobnicate n1 7\n"));
+    writeFile(path, bytes);
+
+    std::unique_ptr<Kernel> kernel = openOk(path, OpenPolicy::ReadOnly);
+    const JournalStatus& status = kernel->status();
+    CHECK(status.kind == JournalStatus::Kind::Corrupt);
+    CHECK_MESSAGE(status.reason.find("frobnicate") != std::string::npos, status.reason);
+    CHECK_MESSAGE(status.reason.find("commit 2") != std::string::npos, status.reason);
+    CHECK(status.lastGoodSeq == 1);
+    CHECK(status.offset == bytes.find("frobnicate n1 7\n"));
+    // Only the verified prefix is loaded: commit 1's node, not commit 2's.
+    CHECK(kernel->journal().commitCount() == 1);
+    CHECK(kernel->world().nodeCount() == 1);
+    checkTracerNode(kernel->world().node(NodeId{1}));
+    CHECK(kernel->world().node(NodeId{2}) == nullptr);
+
+    auto refused = kernel->submit(proposalOf({SetProperty{NodeId{1}, "title", Value::ofText("no")}}));
+    REQUIRE_FALSE(refused.ok());
+    CHECK(refused.error().kind == Rejection::Kind::JournalNotClean);
+    CHECK(readFile(path) == bytes);
+    std::remove(path.c_str());
+}
+
+TEST_CASE("kernel: tick lines follow advance") {
+    const std::string path = scratchPath("ticks");
+    {
+        std::unique_ptr<Kernel> kernel = createOk(path, "ticks");
+        submitOk(*kernel, firstNote());
+        CHECK(kernel->world().tick() == 0);
+        submitOk(*kernel, proposalOf({Advance{3}}, "three ticks"));
+        CHECK(kernel->world().tick() == 3);
+        submitOk(*kernel, proposalOf({SetProperty{NodeId{1}, "title", Value::ofText("later")}}, "at tick 3"));
+    }
+
+    std::string bytes = readFile(path);
+    const std::vector<tree::DecodedCommit> commits = decodeAll(bytes);
+    REQUIRE(commits.size() == 3);
+    CHECK(commits[0].record.tick == 0);
+    CHECK(commits[1].record.tick == 0); // the commit carrying the advance applies before it
+    CHECK(commits[2].record.tick == 3);
+    CHECK(bodyOf(bytes, commits[1]).find("tick 0\n") != std::string::npos);
+    CHECK(bodyOf(bytes, commits[1]).find("advance 3\n") != std::string::npos);
+    CHECK(bodyOf(bytes, commits[2]).find("tick 3\n") != std::string::npos);
+    {
+        std::unique_ptr<Kernel> kernel = openOk(path, OpenPolicy::ReadOnly);
+        CHECK(kernel->status().kind == JournalStatus::Kind::Ok);
+        CHECK(kernel->world().tick() == 3);
+        CHECK(kernel->journal().commits()[2].tick == 3);
+    }
+
+    // A tick line that disagrees with the replayed world is corruption of
+    // the history, even with a valid digest.
+    std::string body = bodyOf(bytes, commits[2]);
+    const std::size_t tickLine = body.find("tick 3\n");
+    REQUIRE(tickLine != std::string::npos);
+    body.replace(tickLine, 7, "tick 2\n");
+    writeFile(path, withRecordReplaced(bytes, commits[2], frame(3, body)));
+
+    std::unique_ptr<Kernel> kernel = openOk(path, OpenPolicy::ReadOnly);
+    CHECK(kernel->status().kind == JournalStatus::Kind::Corrupt);
+    CHECK_MESSAGE(kernel->status().reason.find("TickMismatch") != std::string::npos, kernel->status().reason);
+    CHECK(kernel->status().lastGoodSeq == 2);
+    CHECK(kernel->journal().commitCount() == 2);
+    CHECK(kernel->world().tick() == 3);
+    CHECK(kernel->world().node(NodeId{1})->props.at("title") == Value::ofText("Sam"));
+    std::remove(path.c_str());
+}
+
+TEST_CASE("kernel: text is bytes — non-ASCII round-trips and the byte count is UTF-8 length") {
+    const std::string path = scratchPath("utf8");
+    const std::string title = "café ☕"; // 6 code points, 9 bytes
+    REQUIRE(title.size() == 9);
+    {
+        std::unique_ptr<Kernel> kernel = createOk(path, "utf8");
+        submitOk(*kernel,
+            proposalOf({CreateNode{NodeId{}, kTracerType, {{"title", Value::ofText(title)}}}}, "a hot drink"));
+    }
+
+    const std::string bytes = readFile(path);
+    CHECK(bytes.find("set n1 title text \"" + title + "\"\n") != std::string::npos);
+    CHECK(bytes.find("\\u") == std::string::npos);
+
+    // The counted body is exactly these bytes, and the count is their
+    // UTF-8 length — not a character count, not a normalized form.
+    auto header = tree::decodeHeader(bytes);
+    REQUIRE_MESSAGE(header.ok(), detailOf(header));
+    const std::string body = "parent sha256:" + header.value().digest.hex + "\nbranch main\nrecorded " + kClockStamp
+        + "\ntick 0\nactor human kaelen\nmessage \"a hot drink\"\ncreate-node n1 " + kTracerType
+        + "\nset n1 title text \"" + title + "\"\n";
+    const std::string head = "@commit 1 " + std::to_string(body.size()) + "\n";
+    const std::size_t begin = header.value().end;
+    CHECK(bytes.compare(begin, head.size(), head) == 0);
+    CHECK(bytes.compare(begin + head.size(), body.size(), body) == 0);
+    CHECK(bytes.size() == begin + head.size() + body.size() + kEndLineBytes);
+
+    std::unique_ptr<Kernel> kernel = openOk(path, OpenPolicy::ReadOnly);
+    CHECK(kernel->status().kind == JournalStatus::Kind::Ok);
+    REQUIRE(kernel->world().node(NodeId{1}) != nullptr);
+    CHECK(kernel->world().node(NodeId{1})->props.at("title") == Value::ofText(title));
+    CHECK(kernel->world().node(NodeId{1})->props.at("title").text.size() == 9);
+    std::remove(path.c_str());
 }
 
 } // TEST_SUITE("kernel")

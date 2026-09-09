@@ -108,7 +108,7 @@ inline bool isValidActorKind(std::string_view kind) {
 // A single token as the file grammar uses it: non-empty, no space, no tab,
 // no line break, no other control byte. Everything else — including
 // non-ASCII UTF-8 — is allowed, so a plugin type such as
-// `acme.widgets/gizmo@7` or a user name in any script is one token.
+// `example.widgets/gizmo@7` or a user name in any script is one token.
 inline bool isToken(std::string_view text) {
     if (text.empty()) {
         return false;
