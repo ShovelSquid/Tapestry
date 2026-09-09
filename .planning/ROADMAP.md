@@ -36,7 +36,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. After an interrupted write (simulated crash mid-save), reopening recovers the last complete committed history with no silent loss and no silent acceptance of partial changes
   4. Every recorded change carries a distinguishable domain event time, recorded/corrected time, and simulation tick, and a reader can tell the three apart in the journal
 
-**Plans**: 1/5 plans executed
+**Plans**: 2/5 plans executed
 
 Plans:
 **Wave 1**
@@ -45,7 +45,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 01-02-PLAN.md — Tracer: create a node → durable @commit record → reopen → read back (contracts + single end-to-end path)
+- [x] 01-02-PLAN.md — Tracer: create a node → durable @commit record → reopen → read back (contracts + single end-to-end path)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -162,7 +162,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Deterministic Core & Readable Format | 1/5 | In Progress|  |
+| 1. Deterministic Core & Readable Format | 2/5 | In Progress|  |
 | 2. Plugin Host, SDK & Feasibility Gate | 0/TBD | Not started | - |
 | 3. Branching History & Deterministic Replay | 0/TBD | Not started | - |
 | 4. Spatial Notebook | 0/TBD | Not started | - |
