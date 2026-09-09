@@ -116,10 +116,17 @@ Expected<std::unique_ptr<Journal>, OpenFailure> Journal::create(const std::files
         return fromIo(sink.error());
     }
     auto journal = createWithSink(std::move(sink.value()), header);
-    if (journal) {
-        journal.value()->m_path = path;
+    if (!journal) {
+        OpenFailure failure = journal.error();
+        std::error_code cleanup;
+        std::filesystem::remove(path, cleanup);
+        if (cleanup) {
+            failure.detail += "; could not remove failed creation: " + cleanup.message();
+        }
+        return failure;
     }
-    return journal;
+    journal.value()->m_path = path;
+    return std::move(journal.value());
 }
 
 Expected<std::unique_ptr<Journal>, OpenFailure> Journal::createWithSink(std::unique_ptr<Sink> sink,
@@ -363,11 +370,23 @@ RepairResult Journal::repair(RecordedAt now) {
     if (auto failure = sidecar.value()->writeAll(tail)) {
         result.detail = "write sidecar " + result.sidecar.string() + ": " + failure->what + ": "
             + errnoText(failure->errnoValue);
+        sidecar.value().reset();
+        std::error_code cleanup;
+        std::filesystem::remove(result.sidecar, cleanup);
+        if (cleanup) {
+            result.detail += "; could not remove failed sidecar: " + cleanup.message();
+        }
         return result;
     }
     if (auto failure = sidecar.value()->sync()) {
         result.detail = "sync sidecar " + result.sidecar.string() + ": " + failure->what + ": "
             + errnoText(failure->errnoValue);
+        sidecar.value().reset();
+        std::error_code cleanup;
+        std::filesystem::remove(result.sidecar, cleanup);
+        if (cleanup) {
+            result.detail += "; could not remove failed sidecar: " + cleanup.message();
+        }
         return result;
     }
     sidecar.value().reset();
@@ -397,9 +416,24 @@ std::optional<IoError> Journal::saveAs(const std::filesystem::path& path) const 
     }
     const std::string_view prefix = std::string_view(m_bytes).substr(0, static_cast<std::size_t>(m_verifiedBytes));
     if (auto failure = sink.value()->writeAll(prefix)) {
+        sink.value().reset();
+        std::error_code cleanup;
+        std::filesystem::remove(path, cleanup);
+        if (cleanup) {
+            failure->what += "; could not remove failed copy: " + cleanup.message();
+        }
         return failure;
     }
-    return sink.value()->sync();
+    if (auto failure = sink.value()->sync()) {
+        sink.value().reset();
+        std::error_code cleanup;
+        std::filesystem::remove(path, cleanup);
+        if (cleanup) {
+            failure->what += "; could not remove failed copy: " + cleanup.message();
+        }
+        return failure;
+    }
+    return std::nullopt;
 }
 
 } // namespace tapestry::kernel

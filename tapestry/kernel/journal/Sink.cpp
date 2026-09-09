@@ -133,6 +133,8 @@ Expected<std::unique_ptr<Sink>, IoError> openPosixSink(const std::filesystem::pa
     auto sink = std::make_unique<PosixSink>(fd);
     if (mode == SinkMode::CreateNew) {
         if (auto failure = syncDirectory(path.parent_path())) {
+            sink.reset();
+            ::unlink(path.c_str());
             return *failure;
         }
     }

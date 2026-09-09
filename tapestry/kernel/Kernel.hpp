@@ -38,7 +38,8 @@ struct CommitResult {
 class Kernel {
 public:
     // A new world in a new file: writes the @tree header durably. The world
-    // name is one token. A null clock means SystemClock.
+    // name is one token. A null clock means SystemClock. If creation cannot
+    // finish, the newly-created path is removed before the error is returned.
     static Expected<std::unique_ptr<Kernel>, OpenFailure> create(const std::filesystem::path& path,
         std::string worldName, std::unique_ptr<Clock> clock = nullptr);
     static Expected<std::unique_ptr<Kernel>, OpenFailure> createWithSink(std::unique_ptr<Sink> sink,

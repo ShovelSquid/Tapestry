@@ -60,7 +60,8 @@ struct RepairResult {
 // returns, never before, so a crash can lose only what was never acknowledged.
 class Journal {
 public:
-    // Writes the @tree header record durably into a new file.
+    // Writes the @tree header record durably into a new file. If writing or
+    // syncing the header fails, the newly-created path is removed.
     static Expected<std::unique_ptr<Journal>, OpenFailure> create(const std::filesystem::path& path,
         const HeaderRecord& header);
     static Expected<std::unique_ptr<Journal>, OpenFailure> createWithSink(std::unique_ptr<Sink> sink,
@@ -114,7 +115,8 @@ public:
     // Writes exactly the verified prefix bytes into a new file at `path`
     // (an existing file is refused with EEXIST) and syncs it. Never touches
     // the source. Byte-identical: the copy's records and digests are the
-    // original's, whatever the kernel did or did not understand in them.
+    // original's, whatever the kernel did or did not understand in them. A
+    // failed write or sync removes the incomplete destination.
     std::optional<IoError> saveAs(const std::filesystem::path& path) const;
 
 private:
