@@ -1,0 +1,10 @@
+{
+  "name": "tapestry-notes",
+  "version": "1",
+  "displayName": "Notes",
+  "main": "index.ts",
+  "api": "1",
+  "contributions": {
+    "nodeTypes": ["tapestry.notes/note@1"]
+  }
+}

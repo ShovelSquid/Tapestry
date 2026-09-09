@@ -5,5 +5,8 @@
     "app",
     "sdk",
     "plugins/*"
-  ]
+  ],
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.7.0"
+  }
 }
