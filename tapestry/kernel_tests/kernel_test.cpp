@@ -387,6 +387,29 @@ TEST_CASE("kernel: a rejected proposal writes nothing and leaves the world untou
     badActor.ops.push_back(SetProperty{NodeId{1}, "title", Value::ofText("x")});
     expectRejected(badActor, Rejection::Kind::BadActor);
 
+    Proposal longActor = proposalOf({SetProperty{NodeId{1}, "title", Value::ofText("x")}});
+    longActor.actor.id.assign(tree::kMaxLineBytes + 1, 'a');
+    expectRejected(longActor, Rejection::Kind::BadActor);
+
+    Proposal longMessage = proposalOf({SetProperty{NodeId{1}, "title", Value::ofText("x")}});
+    longMessage.message.assign(tree::kMaxLineBytes + 1, 'm');
+    expectRejected(longMessage, Rejection::Kind::BadValue);
+
+    Proposal longType = proposalOf({CreateNode{NodeId{}, std::string(tree::kMaxLineBytes + 1, 't'), {}}});
+    expectRejected(longType, Rejection::Kind::BadType);
+
+    std::string oversizedBody;
+    oversizedBody.reserve(tree::kMaxRecordBytes + 128);
+    const std::string line(tree::kMaxLineBytes, 'x');
+    while (oversizedBody.size() <= tree::kMaxRecordBytes) {
+        if (!oversizedBody.empty()) {
+            oversizedBody += '\n';
+        }
+        oversizedBody += line;
+    }
+    Proposal longRecord = proposalOf({SetProperty{NodeId{1}, "body", Value::ofText(std::move(oversizedBody))}});
+    expectRejected(longRecord, Rejection::Kind::BadValue);
+
     Proposal badTime;
     badTime.actor = Actor{"plugin", "tapestry.timeline"};
     badTime.ops.push_back(SetProperty{NodeId{1}, "event", Value::ofTime("yesterday")});

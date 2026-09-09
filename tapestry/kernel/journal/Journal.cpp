@@ -131,6 +131,10 @@ Expected<std::unique_ptr<Journal>, OpenFailure> Journal::createWithSink(std::uni
         return *failure;
     }
     const tree::Encoded encoded = tree::encodeHeader(header);
+    auto check = tree::decodeHeader(encoded.bytes);
+    if (!check) {
+        return OpenFailure{OpenKind::Io, "header would not decode: " + check.error().detail};
+    }
     if (auto failure = sink->writeAll(encoded.bytes)) {
         return fromIo(*failure);
     }

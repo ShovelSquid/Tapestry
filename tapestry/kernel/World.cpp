@@ -179,6 +179,10 @@ std::optional<Rejection> World::prepare(Op& op) const {
             if (!isToken(create.type) || !isValidText(create.type)) {
                 return Rejection{Kind::BadType, create.type};
             }
+            if (create.type.size() > tree::kMaxLineBytes) {
+                return Rejection{Kind::BadType,
+                    "node type exceeds " + std::to_string(tree::kMaxLineBytes) + " bytes"};
+            }
             return checkProps(create.props);
         },
         [&](const SetProperty& set) -> std::optional<Rejection> {
@@ -221,6 +225,10 @@ std::optional<Rejection> World::prepare(Op& op) const {
             }
             if (!isToken(create.label) || !isValidText(create.label)) {
                 return Rejection{Kind::BadValue, "edge label is not one token: " + create.label};
+            }
+            if (create.label.size() > tree::kMaxLineBytes) {
+                return Rejection{Kind::BadValue,
+                    "edge label exceeds " + std::to_string(tree::kMaxLineBytes) + " bytes"};
             }
             return checkProps(create.props);
         },

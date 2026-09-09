@@ -24,6 +24,10 @@ std::optional<OpenFailure> checkWorldName(const std::string& name) {
     if (!isToken(name) || !isValidText(name)) {
         return OpenFailure{OpenFailure::Kind::Io, "world name is not one token: " + name};
     }
+    if (name.size() > tree::kMaxLineBytes) {
+        return OpenFailure{OpenFailure::Kind::Io,
+            "world name exceeds " + std::to_string(tree::kMaxLineBytes) + " bytes"};
+    }
     return std::nullopt;
 }
 
@@ -112,8 +116,14 @@ Expected<CommitResult, Rejection> Kernel::submit(const Proposal& proposal) {
     if (!isValidActorKind(proposal.actor.kind) || !isToken(proposal.actor.id) || !isValidText(proposal.actor.id)) {
         return Rejection{Kind::BadActor, proposal.actor.kind + " " + proposal.actor.id};
     }
+    if (proposal.actor.id.size() > tree::kMaxLineBytes) {
+        return Rejection{Kind::BadActor, "actor id exceeds " + std::to_string(tree::kMaxLineBytes) + " bytes"};
+    }
     if (!isValidText(proposal.message)) {
         return Rejection{Kind::BadValue, "message is not valid UTF-8"};
+    }
+    if (proposal.message.size() > tree::kMaxLineBytes) {
+        return Rejection{Kind::BadValue, "message exceeds " + std::to_string(tree::kMaxLineBytes) + " bytes"};
     }
 
     // 1. Validate every op on a scratch copy; ids are assigned here.
@@ -143,6 +153,10 @@ Expected<CommitResult, Rejection> Kernel::submit(const Proposal& proposal) {
     record.actor = proposal.actor;
     record.message = proposal.message;
     const tree::Encoded encoded = tree::encodeCommit(record);
+    auto check = tree::decodeCommit(encoded.bytes, 0, record.parent, record.seq, record.tick);
+    if (!check) {
+        return Rejection{Kind::BadValue, "record would not decode: " + check.error().detail};
+    }
 
     // 3. Durable write, then sync. A failure here changes nothing.
     if (auto failure = m_journal->append(encoded, record)) {
