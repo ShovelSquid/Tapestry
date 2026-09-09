@@ -71,24 +71,28 @@ Plans:
   4. A plugin with an unavailable API/schema/artifact version produces a clear compatibility result; recorded behavior is never silently substituted
   5. Every plugin-originated durable change passes through a validated, recorded core transaction, and a failed transaction leaves the prior state intact
 
-**Plans**: 4 plans
+**Plans**: 5 plans
 
 Plans:
 **Wave 1**
 
-- [ ] 02-01-PLAN.md — Tracer: Electron + C++ bridge + note plugin + autosave + reopen
+- [ ] 02-01-PLAN.md — Tracer (layer 1): native addon + C++ kernel bridge + SDK types
 
 **Wave 2**
 
-- [ ] 02-02-PLAN.md — Spatial canvas: pan/zoom, drag, connections, hover controls
+- [ ] 02-02-PLAN.md — Tracer (layer 2): Electron shell + renderer + note plugin + autosave + reopen
 
 **Wave 3**
 
-- [ ] 02-03-PLAN.md — Plugin SDK contribution surface, lifecycle safety, third-party example
+- [ ] 02-03-PLAN.md — Spatial canvas: pan/zoom, drag, connections, hover controls
 
 **Wave 4**
 
-- [ ] 02-04-PLAN.md — Deletion, undo, basic rich text, packaged app + feasibility evidence
+- [ ] 02-04-PLAN.md — Plugin SDK contribution surface, lifecycle safety, third-party example
+
+**Wave 5**
+
+- [ ] 02-05-PLAN.md — Deletion, undo, basic rich text, packaged app + feasibility evidence
 
 **UI hint**: yes
 
