@@ -369,21 +369,24 @@ std::optional<Value> parseValue(ValueType type, std::string_view token) {
         if (!text) {
             return std::nullopt;
         }
-        return Value::ofText(std::move(*text));
+        Value value = Value::ofText(std::move(*text));
+        return formatInline(value) == token ? std::optional<Value>(std::move(value)) : std::nullopt;
     }
     case ValueType::Int: {
         const auto integer = parseInt64(token);
         if (!integer) {
             return std::nullopt;
         }
-        return Value::ofInt(*integer);
+        Value value = Value::ofInt(*integer);
+        return formatInline(value) == token ? std::optional<Value>(std::move(value)) : std::nullopt;
     }
     case ValueType::Real: {
         const auto real = parseReal(token);
         if (!real) {
             return std::nullopt;
         }
-        return Value::ofReal(*real);
+        Value value = Value::ofReal(*real);
+        return formatInline(value) == token ? std::optional<Value>(std::move(value)) : std::nullopt;
     }
     case ValueType::Bool:
         if (token == "true") {

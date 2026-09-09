@@ -351,7 +351,7 @@ TEST_CASE("codec: a line over kMaxLineBytes or a count over kMaxRecordBytes is L
 
 TEST_CASE("codec: x- lines survive verbatim, unknown verbs stop the load, malformed lines are named") {
     const std::string withExtension =
-        frame(7, headerLines() + "create-node n1 t\nx-example.people mood curious\nset n1 a int 1\n");
+        frame(7, headerLines() + "create-node n1 t\nset n1 a int 1\nx-example.people mood curious\n");
     auto decoded = decode(withExtension, 7);
     REQUIRE_MESSAGE(decoded.ok(), detailOf(decoded));
     CHECK(decoded.value().record.extensionLines == std::vector<std::string>{"x-example.people mood curious"});
@@ -362,6 +362,10 @@ TEST_CASE("codec: x- lines survive verbatim, unknown verbs stop the load, malfor
     CHECK(tree::encodeCommit(decoded.value().record).bytes.find(
               "create-node n1 t\nset n1 a int 1\nx-example.people mood curious\n@end sha256:")
         != std::string::npos);
+
+    const std::string misplacedExtension =
+        frame(7, headerLines() + "create-node n1 t\nx-example.people mood curious\nset n1 a int 1\n");
+    expectFailure(decode(misplacedExtension, 7), Reason::BadLine, 0);
 
     const std::string unknownVerb = frame(7, headerLines() + "create-node n1 t\nfrobnicate n1\nset n1 a int 1\n");
     auto unsupported = decode(unknownVerb, 7);
@@ -378,6 +382,34 @@ TEST_CASE("codec: x- lines survive verbatim, unknown verbs stop the load, malfor
     const std::string badTick = frame(7,
         "parent sha256:" + kParent.hex + "\nbranch main\nrecorded " + kStamp + "\ntick abc\nactor human kaelen\n");
     expectFailure(decode(badTick, 7), Reason::BadLine, offsetOfLine(badTick, "tick abc"));
+}
+
+TEST_CASE("codec: decoder refuses forms the encoder would normalize") {
+    for (const std::string& op : {std::string("set n1 a int -0\n"), std::string("set n1 a int 007\n"),
+             std::string("set n1 a real .5\n"), std::string("set n1 a real 5.\n"),
+             std::string("set n1 a real 1E5\n"), std::string(R"(set n1 a text "\/")") + "\n",
+             std::string(R"(set n1 a text "\u0041")") + "\n"}) {
+        const std::string bytes = frame(1, headerLines() + op);
+        expectFailure(decode(bytes, 1), Reason::BadValue, offsetOfLine(bytes, "set n1 a"));
+    }
+
+    const std::string shortBlock = frame(1, headerLines() + "set n1 a text <<TEXT\nshort\nTEXT\n");
+    expectFailure(decode(shortBlock, 1), Reason::BadValue, offsetOfLine(shortBlock, "set n1 a"));
+
+    const std::string longInline = frame(1,
+        headerLines() + "set n1 a text \"" + std::string(81, 'a') + "\"\n");
+    expectFailure(decode(longInline, 1), Reason::BadValue, offsetOfLine(longInline, "set n1 a"));
+
+    const std::string emptyMessage = frame(1, headerLines() + "message \"\"\n");
+    expectFailure(decode(emptyMessage, 1), Reason::BadValue, offsetOfLine(emptyMessage, "message"));
+
+    const std::string otherBranch = frame(1,
+        "parent sha256:" + kParent.hex + "\nbranch other\nrecorded " + kStamp + "\ntick 0\nactor human kaelen\n");
+    expectFailure(decode(otherBranch, 1), Reason::BadLine, offsetOfLine(otherBranch, "branch"));
+
+    const std::string nonCanonicalDelimiter =
+        frame(1, headerLines() + "set n1 a text <<END\nline one\nline two\nEND\n");
+    expectFailure(decode(nonCanonicalDelimiter, 1), Reason::BadLine, 0);
 }
 
 TEST_CASE("codec: seq gaps, chain breaks and any flipped body byte are refused") {

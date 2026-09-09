@@ -326,6 +326,9 @@ std::optional<DecodeFailure> parseOp(const std::vector<Line>& lines, std::size_t
                 return fail(Reason::BadValue, line.offset,
                     "block is not closed by a line equal to " + std::string(delimiter) + " inside the record");
             }
+            if (!textNeedsBlock(text)) {
+                return fail(Reason::BadValue, line.offset, "short single-line text must use the inline form");
+            }
             ops.push_back(SetProperty{*target, std::string(fields->key), Value::ofText(std::move(text))});
             index = cursor + 1;
             return std::nullopt;
@@ -334,6 +337,9 @@ std::optional<DecodeFailure> parseOp(const std::vector<Line>& lines, std::size_t
         if (!value) {
             return fail(Reason::BadValue, line.offset,
                 "value does not parse as " + std::string(fields->type) + ": " + std::string(fields->value));
+        }
+        if (value->type == ValueType::Text && textNeedsBlock(value->text)) {
+            return fail(Reason::BadValue, line.offset, "long or multiline text must use a block");
         }
         ops.push_back(SetProperty{*target, std::string(fields->key), std::move(*value)});
         index += 1;
@@ -505,8 +511,8 @@ Expected<DecodedCommit, DecodeFailure> decodeCommit(std::string_view file, std::
     record.parent = *parentDigest;
 
     const auto branch = valueAfter(lines[1].text, "branch");
-    if (!branch || !isToken(*branch)) {
-        return fail(Reason::BadLine, lines[1].offset, "expected: branch <name>");
+    if (!branch || *branch != "main") {
+        return fail(Reason::BadLine, lines[1].offset, "expected: branch main");
     }
     record.branch = std::string(*branch);
 
@@ -543,6 +549,9 @@ Expected<DecodedCommit, DecodeFailure> decodeCommit(std::string_view file, std::
             if (!text) {
                 return fail(Reason::BadLine, lines[index].offset, "message is not one quoted string");
             }
+            if (text->empty() || quoteText(*text) != *message) {
+                return fail(Reason::BadValue, lines[index].offset, "message is empty or not in canonical quoted form");
+            }
             record.message = std::move(*text);
             index += 1;
         }
@@ -561,6 +570,9 @@ Expected<DecodedCommit, DecodeFailure> decodeCommit(std::string_view file, std::
     decoded.digest = env.digest;
     decoded.begin = offset;
     decoded.end = env.end;
+    if (encodeCommit(record).bytes != file.substr(offset, env.end - offset)) {
+        return fail(Reason::BadLine, offset, "record is not in the encoder's canonical form");
+    }
     return decoded;
 }
 

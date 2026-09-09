@@ -190,6 +190,8 @@ TEST_CASE("value: parseValue and formatInline per type") {
     CHECK_FALSE(parseValue(ValueType::Int, "").has_value());
     CHECK_FALSE(parseValue(ValueType::Int, "99999999999999999999").has_value());
     CHECK_FALSE(parseValue(ValueType::Int, "12 ").has_value());
+    CHECK_FALSE(parseValue(ValueType::Int, "-0").has_value());
+    CHECK_FALSE(parseValue(ValueType::Int, "007").has_value());
 
     // Bool: exactly true or false.
     CHECK(parseValue(ValueType::Bool, "true") == Value::ofBool(true));
@@ -208,7 +210,12 @@ TEST_CASE("value: parseValue and formatInline per type") {
     // Real, Text and Time go through their own parsers.
     CHECK(parseValue(ValueType::Real, "1.5") == Value::ofReal(1.5));
     CHECK_FALSE(parseValue(ValueType::Real, "nan").has_value());
+    CHECK_FALSE(parseValue(ValueType::Real, ".5").has_value());
+    CHECK_FALSE(parseValue(ValueType::Real, "5.").has_value());
+    CHECK_FALSE(parseValue(ValueType::Real, "1E5").has_value());
     CHECK(parseValue(ValueType::Text, R"("hi")") == Value::ofText("hi"));
+    CHECK_FALSE(parseValue(ValueType::Text, R"("\/")").has_value());
+    CHECK_FALSE(parseValue(ValueType::Text, R"("\u0041")").has_value());
     CHECK_FALSE(parseValue(ValueType::Text, "hi").has_value());
     CHECK(parseValue(ValueType::Time, "2026-09-07") == Value::ofTime("2026-09-07"));
     CHECK_FALSE(parseValue(ValueType::Time, "yesterday").has_value());
