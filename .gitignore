@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+
+# Build output
+app/native/build/
+app/dist/
+sdk/dist/
+tapestry/build-kernel/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
