@@ -255,9 +255,12 @@ std::optional<DecodeFailure> parseOp(const std::vector<Line>& lines, std::size_t
     const Line& line = lines[index];
     const auto space = line.text.find(' ');
     const std::string_view verb = line.text.substr(0, space);
-    const auto tokens = tokenize(line.text);
-    if (!tokens) {
-        return fail(Reason::BadLine, line.offset, "op line has an empty token (double, leading or trailing space)");
+    std::optional<std::vector<std::string_view>> tokens;
+    if (verb != "set") {
+        tokens = tokenize(line.text);
+        if (!tokens) {
+            return fail(Reason::BadLine, line.offset, "op line has an empty token (double, leading or trailing space)");
+        }
     }
 
     if (verb == "create-node") {

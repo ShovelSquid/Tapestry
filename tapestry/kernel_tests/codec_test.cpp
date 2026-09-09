@@ -282,9 +282,17 @@ TEST_CASE("codec: text is inline up to 80 bytes and a block beyond that or with 
     CHECK(encodedTextLine("a\nb").find("set n1 t text <<TEXT\na\nb\nTEXT\n") != std::string::npos);
     CHECK(encodedTextLine("").find("set n1 t text \"\"\n") != std::string::npos);
 
-    for (const std::string& text : {eighty, eightyOne, std::string("a\nb"), std::string()}) {
+    for (const std::string& text : {eighty, eightyOne, std::string("a\nb"), std::string(), std::string("a  b"),
+             std::string(" a"), std::string("a "), std::string("  ")}) {
         CHECK(decodedTextValue(encodedTextLine(text)) == Value::ofText(text));
     }
+
+    CommitRecord messageRecord = baseRecord(1);
+    messageRecord.message = "message  with  spaces";
+    const tree::Encoded messageEncoded = tree::encodeCommit(messageRecord);
+    auto messageDecoded = decode(messageEncoded.bytes, 1);
+    REQUIRE_MESSAGE(messageDecoded.ok(), detailOf(messageDecoded));
+    CHECK(messageDecoded.value().record.message == messageRecord.message);
 }
 
 TEST_CASE("codec: non-ASCII text round-trips byte-identically and the byte count is UTF-8 length") {
