@@ -11,6 +11,7 @@
 #include <cerrno>
 #include <cstdio>
 #include <cstring>
+#include <limits>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -201,10 +202,25 @@ Expected<std::unique_ptr<Journal>, OpenFailure> Journal::scan(std::string bytes)
             break;
         }
         tree::DecodedCommit& decoded = commit.value();
+        bool tickOverflow = false;
         for (const Op& op : decoded.record.ops) {
             if (const auto* advance = std::get_if<Advance>(&op)) {
+                if (advance->ticks > std::numeric_limits<Tick>::max() - expectedTick) {
+                    JournalStatus status;
+                    status.kind = JournalStatus::Kind::Corrupt;
+                    status.offset = decoded.begin;
+                    status.lastGoodSeq = journal->m_lastSeq;
+                    status.reason = "commit " + std::to_string(decoded.record.seq)
+                        + ": advance would overflow the tick counter";
+                    journal->m_status = std::move(status);
+                    tickOverflow = true;
+                    break;
+                }
                 expectedTick += advance->ticks;
             }
+        }
+        if (tickOverflow) {
+            break;
         }
         journal->m_commits.push_back(std::move(decoded.record));
         journal->m_commitBegins.push_back(decoded.begin);

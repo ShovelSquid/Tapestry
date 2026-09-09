@@ -34,6 +34,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <string>
@@ -56,7 +57,9 @@ using tapestry::kernel::Digest;
 using tapestry::kernel::EdgeId;
 using tapestry::kernel::Expected;
 using tapestry::kernel::FixedClock;
+using tapestry::kernel::HeaderRecord;
 using tapestry::kernel::IoError;
+using tapestry::kernel::Journal;
 using tapestry::kernel::JournalStatus;
 using tapestry::kernel::Kernel;
 using tapestry::kernel::NodeId;
@@ -306,6 +309,40 @@ std::string sidecarFor(const std::string& path, const char* stamp) {
 } // namespace
 
 TEST_SUITE("journal") {
+
+TEST_CASE("journal: tick accumulation rejects overflow before recording the commit") {
+    HeaderRecord header;
+    header.world = "overflow";
+    header.created = *RecordedAt::parse(kStamp);
+    const tree::Encoded encodedHeader = tree::encodeHeader(header);
+
+    CommitRecord first;
+    first.seq = 1;
+    first.parent = encodedHeader.digest;
+    first.branch = "main";
+    first.recorded = header.created;
+    first.tick = 0;
+    first.actor = Actor{"system", "test"};
+    first.ops.push_back(Advance{std::numeric_limits<Tick>::max()});
+    const tree::Encoded encodedFirst = tree::encodeCommit(first);
+
+    CommitRecord second = first;
+    second.seq = 2;
+    second.parent = encodedFirst.digest;
+    second.tick = std::numeric_limits<Tick>::max();
+    const tree::Encoded encodedSecond = tree::encodeCommit(second);
+
+    auto opened = Journal::openBytes(encodedHeader.bytes + encodedFirst.bytes + encodedSecond.bytes, nullptr);
+    REQUIRE_MESSAGE(opened.ok(), detailOf(opened));
+    const std::unique_ptr<Journal>& journal = opened.value();
+    CHECK(journal->status().kind == Kind::Corrupt);
+    CHECK(journal->status().lastGoodSeq == 1);
+    CHECK(journal->status().offset == encodedHeader.bytes.size() + encodedFirst.bytes.size());
+    CHECK_MESSAGE(journal->status().reason.find("overflow") != std::string::npos, journal->status().reason);
+    CHECK(journal->commitCount() == 1);
+    CHECK(journal->lastSeq() == 1);
+    CHECK(journal->verifiedBytes() == encodedHeader.bytes.size() + encodedFirst.bytes.size());
+}
 
 TEST_CASE("journal: every commit is written then synced before submit returns") {
     auto owned = std::make_unique<RecordingSink>();
