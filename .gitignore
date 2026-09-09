@@ -4,6 +4,7 @@ node_modules/
 # Build output
 app/native/build/
 app/dist/
+app/out/
 sdk/dist/
 tapestry/build-kernel/
 
