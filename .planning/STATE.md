@@ -5,10 +5,10 @@ current_phase: 01
 current_phase_name: Deterministic Core & Readable Format
 status: executing
 stopped_at: Completed 01-03-PLAN.md
-last_updated: "2026-09-09T07:39:12.928Z"
+last_updated: "2026-09-09T07:39:48.093Z"
 last_activity: 2026-09-08
 last_activity_desc: Phase 01 execution started
-state_head: e74211f828c0ce0726263679290d877f4e143a61
+state_head: 956fbfdf516b7b8b1172d5250ca3a8f7604495bb
 progress:
   total_phases: 7
   completed_phases: 0
@@ -81,6 +81,9 @@ Recent decisions affecting current work:
 - [Phase 01]: Kernel::submit fixed order: refuse unless journal Ok, validate actor, prepare+apply every op on a scratch World (ids assigned there), encode, Journal::append (writeAll then F_FULLFSYNC), only then swap the world in; replay applies each verified commit on a scratch copy and a refused commit flips the journal to Corrupt via markCorrupt
 - [Phase 01]: Text validity (strict UTF-8, no NUL) is enforced by World::prepare, Kernel::submit and Journal::createWithSink before any bytes are written, using the same isValidText predicate the decoder applies, so a written .tree file always reopens
 - [Phase 01]: A torn or corrupt @tree header record makes open() fail NotATree with the decode reason; Journal::open reads then scans then flocks and checks the sink size equals the bytes scanned (Plan 04 may refine the torn-header case)
+- [Phase 01]: Decoded records compare equal to their inputs in flattened form (each set line its own SetProperty, per Plan 02) and every op struct carries a defaulted operator==; byte identity is asserted directly
+- [Phase 01]: Decoder offsets and details: DigestMismatch reports the record head-line offset, InvalidUtf8 the line holding the bad byte; UnsupportedOp/TickMismatch details name the reason, verb and seq so JournalStatus.reason is greppable; set with missing value or unknown type is BadValue, wrong shape is BadLine; advance 0 is refused at decode
+- [Phase 01]: Plan 03 completed three small edits outside its file list as documented deviations: Journal::scan raises expectedTick from advance ops, Kernel::submit fills CommitResult.edgeIds, World::prepare refuses text with a line over kMaxLineBytes (World.cpp includes tree/Codec.hpp for the constant)
 
 ### Pending Todos
 
