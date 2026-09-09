@@ -3,9 +3,9 @@ phase: "1"
 slug: "deterministic-core-readable-format"
 # status lifecycle: draft (seeded by plan-phase) → validated (set by validate-phase §6)
 # audit-milestone §5.5 distinguishes NOT-VALIDATED (draft) from PARTIAL (validated + nyquist_compliant: false) (#2117)
-status: draft
-nyquist_compliant: false
-wave_0_complete: false
+status: validated
+nyquist_compliant: true
+wave_0_complete: true
 created: "2026-09-08"
 ---
 
@@ -44,7 +44,7 @@ Legacy regression (render stack on, existing build dir): `ctest --test-dir /User
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| 1-01-01 | 01 | 1 | TREE-01, TREE-02, TREE-04 | — | N/A (checkpoint:decision — format bundle confirmed by the user) | manual | — (decision gate, no command) | — | ⬜ pending |
+| 1-01-01 | 01 | 1 | TREE-01, TREE-02, TREE-04 | — | N/A (checkpoint:decision — format bundle confirmed by the user) | manual | — (decision gate, no command) | — | ✅ green |
 | 1-01-02 | 01 | 1 | TREE-01 | T-1-SC / T-1-13 | Vendored headers pinned; kernel links no renderer; no FetchContent in kernel build | build + unit (KAT) | `cmake -S …/tapestry -B …/build-kernel -DTAPESTRY_BUILD_APP=OFF -DTAPESTRY_BUILD_RENDER=OFF && cmake --build …/build-kernel -j 8 && ctest --test-dir …/build-kernel --output-on-failure`; `nm -u …/libtapestry_kernel.a \| grep -ci 'nvg\|glad'` → 0 | ❌ W0 | ⬜ pending |
 | 1-01-03 | 01 | 1 | TREE-02, TREE-04 | T-1-11 | Locale-independent real parse/format; NaN/Inf rejected; strict id/time grammars | unit | `…/build-kernel/tapestry_kernel_tests -ts=value` | ❌ W0 | ⬜ pending |
 | 1-02-01 | 02 | 2 | TREE-01, TREE-02, TREE-03 | — | Contracts document validate→write→apply order and torn/corrupt flag | compile | `for h in …; do clang++ -std=c++20 … -fsyntax-only -I . -x c++ "$h"; done` | ❌ W0 | ⬜ pending |

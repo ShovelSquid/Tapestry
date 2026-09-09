@@ -50,8 +50,10 @@ Exceptions: Bubbly control hit targets: 44px diameter minimum (touch-friendly, D
 | Role | Size | Weight | Line Height |
 |------|------|--------|-------------|
 | Body | 16px | 400 (regular) | 1.5 |
-| Label | 13px | 500 (medium) | 1.4 |
+| Label | 13px | 400 (regular) | 1.4 |
 | Heading | 22px | 600 (semibold) | 1.25 |
+
+Two weights only: 400 (regular) for body text and labels, 600 (semibold) for headings and emphasis. Labels are distinguished from body text by their smaller 13px size rather than by weight.
 
 These roles apply to application chrome and default note content. User-authored rich text (D-23) uses Body as the default and Heading for user-applied heading formatting. Bold formatting within notes uses weight 600 on body text. Italic uses the corresponding italic/oblique style. Font family selection (D-23) is a user content feature handled by the editor plugin; the system font stack above governs UI chrome only.
 
@@ -114,9 +116,9 @@ Bubbly controls use rounded/circular shapes with complementary icon glyphs insid
 
 | State | Indicator |
 |-------|-----------|
-| All changes saved | "Saved" (label weight, neutral color) |
-| Save in progress | "Saving..." (label weight, neutral color) |
-| Save failed | "Not saved" (label weight, destructive color #E5484D) |
+| All changes saved | "Saved" (Label role: 13px/400, neutral color) |
+| Save in progress | "Saving..." (Label role: 13px/400, neutral color) |
+| Save failed | "Not saved" (Label role: 13px/400, destructive color #E5484D) |
 
 The indicator sits beside the file/project name in the top-left corner (D-05). Never imply unsaved text was saved (D-02). The exact debounce timing is an implementation detail; the visual contract is that the indicator reflects ground truth at all times.
 
