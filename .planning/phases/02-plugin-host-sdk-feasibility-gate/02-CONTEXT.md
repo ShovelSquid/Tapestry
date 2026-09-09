@@ -1,7 +1,7 @@
 # Phase 2: Plugin Host, SDK & Feasibility Gate - Context
 
 **Gathered:** 2026-09-09
-**Status:** Partial discussion saved at user request — UI decisions captured; plugin discussion pending
+**Status:** Partial discussion saved at user request — UI, plugin authoring/loading, and failure behavior captured; contribution surface and compatibility details pending
 
 <domain>
 ## Phase Boundary
@@ -10,7 +10,7 @@ Original phase: documented versioned public plugin API, starter/local developmen
 
 The user explicitly expanded the Phase 2 working app to include the editing and passage/thread behavior below. This is a deliberate scope addition to the original thin feasibility slice, overlapping notebook work originally scheduled in Phase 4. Planning must reconcile that overlap with ROADMAP.md and REQUIREMENTS.md, preserve these decisions, and expose the added work rather than silently deferring it. No roadmap or requirement changes have yet been made. Full branching/history navigation remains Phase 3; undo/redo for the editing interactions below is required here.
 
-Discussion stopped to conserve the user's usage, not because the remaining plugin decisions were settled. Do not mark all discussion complete or auto-start research/planning. Resume with plugin authoring, permissions/failure behavior, and compatibility/version handling. Do not re-ask the UI decisions below.
+Discussion has been saved twice at the user's request. Do not mark all discussion complete or auto-start research/planning. Resume with the plugin contribution surface and compatibility/API/schema/artifact version handling. Do not re-ask the UI, plugin authoring/loading, trust, or failure decisions below.
 </domain>
 
 <decisions>
@@ -54,8 +54,21 @@ Discussion stopped to conserve the user's usage, not because the remaining plugi
 - **D-25:** Toolbar/submenus remain open while the pointer is anywhere inside them, including moving between levels. Collapse only after a short delay on leaving. Exact delay and geometry are not specified.
 - **D-26:** The same formatting controls and editor behavior are universal across ordinary notes and text-bearing thread-center nodes, including passage linking.
 
+### Teachable plugin authoring and local loading
+- **D-27:** Plugin projects must teach the system through visible, understandable primitives. Helpers and generated files may remove repetition, but essential behavior must not be hidden behind framework boilerplate.
+- **D-28:** Each plugin has a readable manifest and a clear main composition file that describes the plugin's pieces and how they fit together. Individual modules should be only as divided or as large as their responsibilities require.
+- **D-29:** Reloading changed plugin code is explicit by default. Developers can opt into automatic reload while actively developing.
+- **D-30:** Local installation follows the Minecraft-mods mental model: place a plugin folder or package in Tapestry's `plugins` directory, then launch Tapestry with it discovered and enabled. Development tools may automate this mechanism but must not obscure it.
+
+### Trust, recorded effects, and failure containment
+- **D-31:** Choosing and installing a plugin is the user's trust decision; routine per-capability or per-action permission prompts are not required. Regardless of that trust, the host must enforce that plugins cannot delete or rewrite earlier `.tree` journal records.
+- **D-32:** A plugin's source and release history may live in GitHub. The world records plugin installation, enablement, disablement, identity, or version as a new journal event when that fact affects how the tree is regenerated. Plugin-originated durable effects still pass through attributed, validated, atomic core transactions.
+- **D-33:** A missing or broken plugin never prevents a world from opening. Tapestry opens the world with that plugin inactive, preserves the complete recorded history, and exposes its persisted content through a generic readable fallback. Behavior supplied by the missing plugin simply does not run; for example, a project that used a physics plugin remains openable without physics installed.
+- **D-34:** If a plugin crashes or hangs during a session, notify the user immediately that it stopped working and that Tapestry is attempting a restart. Attempt one automatic restart. If that fails, disable only that plugin and show an error notification with **Restart** and **Dismiss** actions. Release its handlers and leave any unfinished durable transaction unapplied so the prior world state remains intact.
+- **D-35:** Disabled plugin content remains editable through a generic fallback editor. Custom commands, editors, themes, or other UI may disappear, but underlying nodes, properties, connections, plugin/version information, and recorded events remain readable and editable. Losing a theme or UI plugin must never hide or strand its data.
+
 ### the agent's Discretion
-No blanket delegation of unresolved product decisions was given. Exact implementation, tooling, serialization of rich text/anchors, palette, timings, and layout remain research/planning work constrained by the above. Existing core/plugin invariants remain in force; this discussion did not choose a UI toolkit or plugin runtime.
+No blanket delegation of unresolved product decisions was given. Exact implementation, tooling, serialization of rich text/anchors, palette, timings, and layout remain research/planning work constrained by the above. Existing core/plugin invariants remain in force; this discussion did not choose a UI toolkit, plugin runtime, full contribution surface, or compatibility policy.
 </decisions>
 
 <canonical_refs>
@@ -80,19 +93,21 @@ Downstream agents MUST read these before planning or implementing:
 - `tapestry/CMakeLists.txt`: separate headless tapestry_kernel target and kernel tests; old SDL/OpenGL/NanoVG stack is gated separately.
 
 ### Established Patterns and Integration Points
-Kernel is C++20 with readable .tree journal and unknown plugin data support. UI/host bridges should use validated recorded proposals. Existing prototype rendering/editor code is reference material, not a locked toolkit choice. This was a lightweight scout, not verification of editor suitability or plugin implementation.
+Kernel is C++20 with readable .tree journal and unknown plugin data support. `kernel/Ops.hpp` already admits `plugin` actors and tokenized version-bearing type names; `kernel/World.hpp` stores opaque node types and typed properties without feature classes. UI/host bridges should use validated recorded proposals. Existing prototype rendering/editor code is reference material, not a locked toolkit choice. This was a lightweight scout, not verification of editor suitability or plugin implementation.
 </code_context>
 
 <specifics>
 ## Specific Ideas
 
-User language: “text brackets []”; selection text “gobbled up” by the cursor; “bubbly buttons” of different colors; a “gradient of focus” refined into progressively weaker highlights for successively larger passages. Threads themselves carry thoughts through ordinary center nodes. Content deletion and structure deletion are intentionally distinct everywhere.
+User language: “text brackets []”; selection text “gobbled up” by the cursor; “bubbly buttons” of different colors; a “gradient of focus” refined into progressively weaker highlights for successively larger passages. Threads themselves carry thoughts through ordinary center nodes. Content deletion and structure deletion are intentionally distinct everywhere. Local plugins should feel like adding mods to Minecraft: put them in the plugins folder and run Tapestry. Plugin structure should read as an explanation of how its pieces fit together, not as generated boilerplate.
 </specifics>
 
 <deferred>
 ## Deferred Ideas and Pending Discussion
 
-Pending for this phase: plugin authoring/local loading; permissions and failure containment; compatibility/API/schema/artifact behavior; choosing a toolkit through the working slice. User had no further editing topics before requesting this save. Begin the next discussion with plugins, not the already settled UI.
+Pending for this phase: the public plugin contribution surface; detailed compatibility/API/schema/artifact behavior; and choosing a toolkit through the working slice. User requested this save after settling authoring/local loading, trust, and failure containment. Begin the next discussion with contribution and compatibility questions, not the already settled UI or failure behavior.
+
+Future capability: a user-facing Tapestry plugin updater that can fetch and install updates for ordinary users. Phase 2 only locks the underlying explicit install/reload behavior; updater design and distribution policy remain later work.
 
 Still later: full branching/history navigation (Phase 3), companion/semantic AI, simulations, Mimics, and the brief's explicitly deferred 3D, distributed compute, complex cryptography/federation, continuous AV perception, rigid automatic ontologies, NPC training, and polished multiplayer. The brief's primitive AI toolset is future-facing guidance, not authorization to build an AI integration in Phase 2.
 

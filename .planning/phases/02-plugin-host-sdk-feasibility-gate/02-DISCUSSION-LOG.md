@@ -3,8 +3,8 @@
 > Audit trail only. Downstream agents consume 02-CONTEXT.md, not this log.
 
 **Date:** 2026-09-09
-**Areas discussed:** persistent spatial editing, hover/selection, passage threads, overlapping highlights, thread-center nodes, deletion/undo, resizing, universal formatting.
-**Status:** Saved at user request; plugin discussion has not occurred. Entries below summarize questions and answers in chronological order; quoted phrases retain distinctive user wording, other entries are paraphrases.
+**Areas discussed:** persistent spatial editing, hover/selection, passage threads, overlapping highlights, thread-center nodes, deletion/undo, resizing, universal formatting, plugin authoring/local loading, trust, recorded effects, and failure containment.
+**Status:** Saved at user request; plugin contribution-surface and detailed compatibility discussion remain pending. Entries below summarize questions and answers in chronological order; quoted phrases retain distinctive user wording, other entries are paraphrases.
 
 ## Questions, alternatives, and user selections
 
@@ -107,6 +107,36 @@
 33. **Anything more about editing before plugins?**
    No; user asked to record everything because usage is running out. Pause and preserve, do not start more discussion or planning.
 
+34. **Should plugins themselves be discussed?**
+   Yes. Existing context explicitly left the central Phase 2 plugin decisions pending.
+
+35. **Should plugin behavior be easy to teach and learn without boilerplate hiding it?**
+   Yes. The user emphasized that everything should be easily taught and learned and should not be hidden behind boilerplate.
+
+36. **Manifest plus source modules, mostly declarative files, or a single entry file?**
+   Manifest plus a main composition file that explains the pieces and how they fit together. Individual pieces may be as large as they need to be.
+
+37. **Automatic reload, explicit reload, or automatic only in development?**
+   Automatic reload only when a developer opts into it; otherwise updates/reloads remain explicit. The user also suggested a future plugin updater for ordinary users.
+
+38. **Choose a folder in Tapestry, run a development command, or support both?**
+   Superseded by the user's Minecraft-mods model: place the plugin in Tapestry's plugins folder and Tapestry runs with it.
+
+39. **How should plugin trust and history work?**
+   Trust comes from choosing what to download and install. A plugin's own history may live on GitHub. Plugins must never delete old journal records; plugin lifecycle/version facts become new records when they affect regeneration, and durable plugin effects remain recorded transactions.
+
+40. **What happens if a required plugin is missing or broken while opening a world?**
+   Open with that plugin inactive. Preserve and show all other events and recorded history; a project that used a physics plugin remains usable without the physics plugin installed.
+
+41. **What happens if a plugin crashes or hangs during a session?**
+   Notify immediately that the plugin stopped working and a restart is being attempted. Try one automatic restart; if it fails, disable the plugin and show an error notification with Restart and Dismiss actions.
+
+42. **Generic fallback, frozen last view, or minimal placeholder after disablement?**
+   Generic readable fallback. Underlying data remains visible and editable in the fallback editor, including when a theme or UI plugin is lost.
+
+43. **Continue plugin discussion or save?**
+   Save and record the work completed so far.
+
 ## Superseded interpretations
 
 - Five notes is not a quota or feature limit.
@@ -121,4 +151,4 @@ No general “you decide” authorization was given for unresolved product choic
 
 ## Pending / Deferred
 
-Next discussion: plugin authoring/local loading, permissions/failure behavior, and compatibility/version handling. No need to repeat captured editing questions. Planning must reconcile the expanded Phase 2 UI with the old roadmap and requirements. Full history navigation/branching and the brief's AI/Mimic ambitions remain later work.
+Next discussion: plugin contribution surface and detailed compatibility/API/schema/artifact behavior. No need to repeat captured editing, authoring/loading, trust, or failure questions. Planning must reconcile the expanded Phase 2 UI with the old roadmap and requirements. A user-facing plugin updater, full history navigation/branching, and the brief's AI/Mimic ambitions remain later work.
