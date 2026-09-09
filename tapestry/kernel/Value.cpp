@@ -328,6 +328,9 @@ std::optional<std::string> unquoteText(std::string_view quoted) {
             } else if (codePoint >= 0xDC00 && codePoint <= 0xDFFF) {
                 return std::nullopt; // a low surrogate on its own
             }
+            if (codePoint == 0) {
+                return std::nullopt; // a NUL is never valid text, escaped or raw
+            }
             appendUtf8(out, codePoint);
             break;
         }

@@ -169,6 +169,7 @@ TEST_CASE("value: inline text quoting round-trips and block selection") {
     CHECK_FALSE(unquoteText("\"raw\nnewline\"").has_value());
     CHECK_FALSE(unquoteText("\"\\u12\"").has_value());
     CHECK_FALSE(unquoteText("\"\\ud83d\"").has_value());
+    CHECK_FALSE(unquoteText(R"("a\u0000b")").has_value());
     CHECK_FALSE(unquoteText("").has_value());
 
     CHECK(textNeedsBlock("a\nb"));

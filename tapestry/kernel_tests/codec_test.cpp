@@ -324,6 +324,9 @@ TEST_CASE("codec: a NUL byte or invalid UTF-8 in the body is InvalidUtf8 at that
     const std::string nul = frame(1, headerLines() + "create-node n1 t\nset n1 a text \"a" + std::string(1, '\0') + "b\"\n");
     expectFailure(decode(nul, 1), Reason::InvalidUtf8, offsetOfLine(nul, "set n1 a"));
 
+    const std::string escapedNul = frame(1, headerLines() + R"(set n1 a text "a\u0000b")" + "\n");
+    expectFailure(decode(escapedNul, 1), Reason::BadValue, offsetOfLine(escapedNul, "set n1 a"));
+
     const std::string bad = frame(1, headerLines() + "create-node n1 t\nset n1 a text \"a\xC3\x28" "b\"\n");
     expectFailure(decode(bad, 1), Reason::InvalidUtf8, offsetOfLine(bad, "set n1 a"));
 
