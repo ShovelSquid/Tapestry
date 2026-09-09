@@ -150,75 +150,74 @@ Retained product vision, scheduled after the first core-and-plugins milestone.
 
 ## Traceability
 
-Populated during roadmap creation. Each v1 requirement has one owning phase; later phases may exercise it through integration without duplicating ownership.
+Each v1 requirement has one owning phase; later phases may exercise it through integration without duplicating ownership. Phases per .planning/ROADMAP.md (created 2026-09-08).
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| PLUG-01 | To be assigned | Pending |
-| PLUG-02 | To be assigned | Pending |
-| PLUG-03 | To be assigned | Pending |
-| PLUG-04 | To be assigned | Pending |
-| PLUG-05 | To be assigned | Pending |
-| PLUG-06 | To be assigned | Pending |
-| PLUG-07 | To be assigned | Pending |
-| NOTE-01 | To be assigned | Pending |
-| NOTE-02 | To be assigned | Pending |
-| NOTE-03 | To be assigned | Pending |
-| NOTE-04 | To be assigned | Pending |
-| NOTE-05 | To be assigned | Pending |
-| NOTE-06 | To be assigned | Pending |
-| NOTE-07 | To be assigned | Pending |
-| TREE-01 | To be assigned | Pending |
-| TREE-02 | To be assigned | Pending |
-| TREE-03 | To be assigned | Pending |
-| TREE-04 | To be assigned | Pending |
-| HIST-01 | To be assigned | Pending |
-| HIST-02 | To be assigned | Pending |
-| HIST-03 | To be assigned | Pending |
-| HIST-04 | To be assigned | Pending |
-| HIST-05 | To be assigned | Pending |
-| HIST-06 | To be assigned | Pending |
-| HIST-07 | To be assigned | Pending |
-| HIST-08 | To be assigned | Pending |
-| RULE-01 | To be assigned | Pending |
-| RULE-02 | To be assigned | Pending |
-| RULE-03 | To be assigned | Pending |
-| RULE-04 | To be assigned | Pending |
-| RULE-05 | To be assigned | Pending |
-| RULE-06 | To be assigned | Pending |
-| RULE-07 | To be assigned | Pending |
-| RULE-08 | To be assigned | Pending |
-| DRAW-01 | To be assigned | Pending |
-| DRAW-02 | To be assigned | Pending |
-| DRAW-03 | To be assigned | Pending |
-| DRAW-04 | To be assigned | Pending |
-| PROV-01 | To be assigned | Pending |
-| PROV-02 | To be assigned | Pending |
-| PROV-03 | To be assigned | Pending |
-| PROV-04 | To be assigned | Pending |
-| AI-01 | To be assigned | Pending |
-| AI-02 | To be assigned | Pending |
-| AI-03 | To be assigned | Pending |
-| AI-04 | To be assigned | Pending |
-| AI-05 | To be assigned | Pending |
-| AI-06 | To be assigned | Pending |
-| AI-07 | To be assigned | Pending |
-| AI-08 | To be assigned | Pending |
-| AI-09 | To be assigned | Pending |
-| MEM-01 | To be assigned | Pending |
-| MEM-02 | To be assigned | Pending |
-| MEM-03 | To be assigned | Pending |
-| MEM-04 | To be assigned | Pending |
-| ATTN-01 | To be assigned | Pending |
-| ATTN-02 | To be assigned | Pending |
-| ATTN-03 | To be assigned | Pending |
+| PLUG-01 | Phase 2 | Pending |
+| PLUG-02 | Phase 2 | Pending |
+| PLUG-03 | Phase 2 | Pending |
+| PLUG-04 | Phase 2 | Pending |
+| PLUG-05 | Phase 2 | Pending |
+| PLUG-06 | Phase 2 | Pending |
+| PLUG-07 | Phase 2 | Pending |
+| NOTE-01 | Phase 4 | Pending |
+| NOTE-02 | Phase 4 | Pending |
+| NOTE-03 | Phase 4 | Pending |
+| NOTE-04 | Phase 4 | Pending |
+| NOTE-05 | Phase 4 | Pending |
+| NOTE-06 | Phase 4 | Pending |
+| NOTE-07 | Phase 4 | Pending |
+| TREE-01 | Phase 1 | Pending |
+| TREE-02 | Phase 1 | Pending |
+| TREE-03 | Phase 1 | Pending |
+| TREE-04 | Phase 1 | Pending |
+| HIST-01 | Phase 3 | Pending |
+| HIST-02 | Phase 3 | Pending |
+| HIST-03 | Phase 3 | Pending |
+| HIST-04 | Phase 3 | Pending |
+| HIST-05 | Phase 3 | Pending |
+| HIST-06 | Phase 3 | Pending |
+| HIST-07 | Phase 3 | Pending |
+| HIST-08 | Phase 3 | Pending |
+| RULE-01 | Phase 5 | Pending |
+| RULE-02 | Phase 5 | Pending |
+| RULE-03 | Phase 5 | Pending |
+| RULE-04 | Phase 5 | Pending |
+| RULE-05 | Phase 5 | Pending |
+| RULE-06 | Phase 5 | Pending |
+| RULE-07 | Phase 5 | Pending |
+| RULE-08 | Phase 5 | Pending |
+| DRAW-01 | Phase 4 | Pending |
+| DRAW-02 | Phase 4 | Pending |
+| DRAW-03 | Phase 4 | Pending |
+| DRAW-04 | Phase 4 | Pending |
+| PROV-01 | Phase 4 | Pending |
+| PROV-02 | Phase 4 | Pending |
+| PROV-03 | Phase 4 | Pending |
+| PROV-04 | Phase 6 | Pending |
+| AI-01 | Phase 6 | Pending |
+| AI-02 | Phase 6 | Pending |
+| AI-03 | Phase 6 | Pending |
+| AI-04 | Phase 6 | Pending |
+| AI-05 | Phase 6 | Pending |
+| AI-06 | Phase 6 | Pending |
+| AI-07 | Phase 6 | Pending |
+| AI-08 | Phase 6 | Pending |
+| AI-09 | Phase 6 | Pending |
+| MEM-01 | Phase 7 | Pending |
+| MEM-02 | Phase 7 | Pending |
+| MEM-03 | Phase 7 | Pending |
+| MEM-04 | Phase 7 | Pending |
+| ATTN-01 | Phase 7 | Pending |
+| ATTN-02 | Phase 7 | Pending |
+| ATTN-03 | Phase 7 | Pending |
 
 **Coverage:**
 - v1 requirements: 58 total
-- Mapped to phases: 0
-- Unmapped: 58 (roadmap creation in progress)
+- Mapped to phases: 58
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-09-08*
-*Last updated: 2026-09-08 after user-scoped requirements synthesis; awaiting roadmap mapping*
-
+*Last updated: 2026-09-08 after roadmap creation; all 58 v1 requirements assigned to owning phases*
