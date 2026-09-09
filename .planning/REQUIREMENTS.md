@@ -35,8 +35,8 @@ The first phase must prove an actual plugin-authored interaction and readable sa
 ### Readable persistence
 
 - [ ] **TREE-01**: User can inspect a .tree file in an ordinary text editor and identify node content, relationships, changes, authorship and branch ancestry.
-- [ ] **TREE-02**: User can save and reopen extensible node data with stable identifiers and readable fallback values for unknown plugin types.
-- [ ] **TREE-03**: User can recover the last complete committed history after an interrupted write without silently losing or accepting partial changes.
+- [x] **TREE-02**: User can save and reopen extensible node data with stable identifiers and readable fallback values for unknown plugin types.
+- [x] **TREE-03**: User can recover the last complete committed history after an interrupted write without silently losing or accepting partial changes.
 - [ ] **TREE-04**: User can distinguish when an event happened, when it was recorded or corrected, and the simulation tick at which a change applies.
 
 ### History and replay
@@ -169,8 +169,8 @@ Each v1 requirement has one owning phase; later phases may exercise it through i
 | NOTE-06 | Phase 4 | Pending |
 | NOTE-07 | Phase 4 | Pending |
 | TREE-01 | Phase 1 | Pending |
-| TREE-02 | Phase 1 | Pending |
-| TREE-03 | Phase 1 | Pending |
+| TREE-02 | Phase 1 | Complete |
+| TREE-03 | Phase 1 | Complete |
 | TREE-04 | Phase 1 | Pending |
 | HIST-01 | Phase 3 | Pending |
 | HIST-02 | Phase 3 | Pending |
@@ -214,6 +214,7 @@ Each v1 requirement has one owning phase; later phases may exercise it through i
 | ATTN-03 | Phase 7 | Pending |
 
 **Coverage:**
+
 - v1 requirements: 58 total
 - Mapped to phases: 58
 - Unmapped: 0
