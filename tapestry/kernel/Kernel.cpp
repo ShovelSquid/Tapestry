@@ -93,7 +93,8 @@ Expected<std::unique_ptr<Kernel>, OpenFailure> Kernel::fromJournal(std::unique_p
     // time on a scratch copy so a commit that will not apply leaves the world
     // at the previous commit rather than half-way through. A verified record
     // the world refuses is corruption of the history, not a crash.
-    for (const CommitRecord& commit : kernel->m_journal->commits()) {
+    for (std::size_t index = 0; index < kernel->m_journal->commitCount(); ++index) {
+        const CommitRecord commit = kernel->m_journal->commits()[index];
         World scratch = kernel->m_world;
         for (const Op& original : commit.ops) {
             Op op = original;

@@ -713,6 +713,49 @@ TEST_CASE("kernel: an unsupported op verb stops the load with the verb and seq n
     std::remove(path.c_str());
 }
 
+TEST_CASE("kernel: apply-level corruption rolls the journal back to the applied prefix") {
+    const std::string path = scratchPath("apply-corrupt");
+    {
+        std::unique_ptr<Kernel> kernel = createOk(path, "apply-corrupt");
+        submitOk(*kernel, firstNote());
+        submitOk(*kernel,
+            proposalOf({CreateNode{NodeId{}, kTracerType, {{"title", Value::ofText("second")}}}}, "second"));
+    }
+
+    const std::string original = readFile(path);
+    const std::vector<tree::DecodedCommit> commits = decodeAll(original);
+    REQUIRE(commits.size() == 2);
+    CommitRecord first = commits[0].record;
+    std::get<CreateNode>(first.ops[0]).id = NodeId{5};
+    const tree::Encoded encodedFirst = tree::encodeCommit(first);
+    CommitRecord second = commits[1].record;
+    second.parent = encodedFirst.digest;
+    const tree::Encoded encodedSecond = tree::encodeCommit(second);
+    const std::string corrupted = original.substr(0, commits[0].begin) + encodedFirst.bytes + encodedSecond.bytes;
+    writeFile(path, corrupted);
+
+    const std::string copy = scratchPath("apply-corrupt-copy");
+    {
+        std::unique_ptr<Kernel> kernel = openOk(path, OpenPolicy::ReadOnly);
+        const JournalStatus& status = kernel->status();
+        REQUIRE(status.kind == JournalStatus::Kind::Corrupt);
+        CHECK(status.lastGoodSeq == 0);
+        CHECK(kernel->journal().commitCount() == status.lastGoodSeq);
+        CHECK(kernel->journal().lastSeq() == status.lastGoodSeq);
+        CHECK(kernel->journal().verifiedBytes() == status.offset);
+        CHECK(kernel->world().nodeCount() == 0);
+        CHECK_MESSAGE(!kernel->saveAs(copy).has_value(), "save-as should copy the applied prefix");
+    }
+    {
+        std::unique_ptr<Kernel> saved = openOk(copy, OpenPolicy::ReadOnly);
+        CHECK(saved->status().kind == JournalStatus::Kind::Ok);
+        CHECK(saved->journal().commitCount() == 0);
+        CHECK(saved->world().nodeCount() == 0);
+    }
+    std::remove(path.c_str());
+    std::remove(copy.c_str());
+}
+
 TEST_CASE("kernel: tick lines follow advance") {
     const std::string path = scratchPath("ticks");
     {

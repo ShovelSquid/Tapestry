@@ -143,6 +143,8 @@ Expected<std::unique_ptr<Journal>, OpenFailure> Journal::createWithSink(std::uni
     }
     std::unique_ptr<Journal> journal(new Journal());
     journal->m_header = header;
+    journal->m_headerDigest = encoded.digest;
+    journal->m_headerEnd = encoded.bytes.size();
     journal->m_lastDigest = encoded.digest;
     journal->m_verifiedBytes = encoded.bytes.size();
     journal->m_bytes = encoded.bytes;
@@ -159,6 +161,8 @@ Expected<std::unique_ptr<Journal>, OpenFailure> Journal::scan(std::string bytes)
         return OpenFailure{OpenKind::NotATree, describe(header.error())};
     }
     journal->m_header = std::move(header.value().record);
+    journal->m_headerDigest = header.value().digest;
+    journal->m_headerEnd = header.value().end;
     journal->m_lastDigest = header.value().digest;
     journal->m_verifiedBytes = header.value().end;
 
@@ -197,6 +201,8 @@ Expected<std::unique_ptr<Journal>, OpenFailure> Journal::scan(std::string bytes)
         }
         journal->m_commits.push_back(std::move(decoded.record));
         journal->m_commitBegins.push_back(decoded.begin);
+        journal->m_commitEnds.push_back(decoded.end);
+        journal->m_commitDigests.push_back(decoded.digest);
         journal->m_lastDigest = decoded.digest;
         journal->m_lastSeq += 1;
         journal->m_verifiedBytes = decoded.end;
@@ -264,6 +270,8 @@ std::optional<IoError> Journal::append(const tree::Encoded& encoded, const Commi
     // Only now: the bytes are on the medium.
     m_commits.push_back(record);
     m_commitBegins.push_back(static_cast<std::size_t>(m_verifiedBytes));
+    m_commitEnds.push_back(static_cast<std::size_t>(m_verifiedBytes + encoded.bytes.size()));
+    m_commitDigests.push_back(encoded.digest);
     m_lastDigest = encoded.digest;
     m_lastSeq = record.seq;
     m_verifiedBytes += encoded.bytes.size();
@@ -297,12 +305,21 @@ void Journal::markUnacknowledged(std::string_view attempted, const IoError& erro
 }
 
 void Journal::markCorrupt(CommitSeq seq, std::string reason) {
+    const std::size_t keep = (seq >= 1 && seq <= m_commits.size()) ? static_cast<std::size_t>(seq - 1) : 0;
     JournalStatus status;
     status.kind = JournalStatus::Kind::Corrupt;
-    status.lastGoodSeq = seq > 0 ? seq - 1 : 0;
-    status.offset = (seq >= 1 && seq <= m_commitBegins.size()) ? m_commitBegins[static_cast<std::size_t>(seq - 1)] : 0;
+    status.lastGoodSeq = static_cast<CommitSeq>(keep);
+    status.offset = keep < m_commitBegins.size() ? m_commitBegins[keep] : m_headerEnd;
     status.bytes = 0;
     status.reason = "commit " + std::to_string(seq) + ": " + std::move(reason);
+
+    m_commits.resize(keep);
+    m_commitBegins.resize(keep);
+    m_commitEnds.resize(keep);
+    m_commitDigests.resize(keep);
+    m_lastSeq = static_cast<CommitSeq>(keep);
+    m_lastDigest = keep == 0 ? m_headerDigest : m_commitDigests[keep - 1];
+    m_verifiedBytes = keep == 0 ? m_headerEnd : m_commitEnds[keep - 1];
     m_status = status;
 }
 

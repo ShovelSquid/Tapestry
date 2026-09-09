@@ -132,8 +132,12 @@ private:
     std::string m_bytes;
 
     HeaderRecord m_header;
+    Digest m_headerDigest;
+    std::size_t m_headerEnd = 0;
     std::vector<CommitRecord> m_commits;
     std::vector<std::size_t> m_commitBegins;
+    std::vector<std::size_t> m_commitEnds;
+    std::vector<Digest> m_commitDigests;
     JournalStatus m_status;
     Digest m_lastDigest;
     CommitSeq m_lastSeq = 0;
