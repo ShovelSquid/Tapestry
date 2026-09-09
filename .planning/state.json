@@ -14,6 +14,11 @@
       "status": "pending"
     },
     {
+      "number": "2.1",
+      "name": "Passage Anchors, Threads & Complete Rich Editing",
+      "status": "pending"
+    },
+    {
       "number": "3",
       "name": "Branching History & Deterministic Replay",
       "status": "pending"
@@ -41,8 +46,8 @@
   ],
   "next": {
     "command": "/gsd:progress --next",
-    "label": "Advance to the next step (verify)",
-    "reason": "Phase 01 of 7 · ready to verify"
+    "label": "Advance to the next step",
+    "reason": "Phase 02 of 8 · executing"
   },
-  "updated_at": "2026-09-09T08:15:35.120Z"
+  "updated_at": "2026-09-09T22:47:14.866Z"
 }
