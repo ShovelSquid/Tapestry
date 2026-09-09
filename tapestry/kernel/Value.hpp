@@ -75,4 +75,11 @@ std::string formatInline(const Value& value);
 // edge id; Time must satisfy isValidEventTime.
 std::optional<Value> parseValue(ValueType type, std::string_view token);
 
+// Text the file can carry: UTF-8 (RFC 3629, no overlongs, no surrogates,
+// nothing above U+10FFFF) with no NUL byte. The decoder rejects anything
+// else, so the world refuses it before it is ever written; returns the index
+// of the first offending byte, or npos when the whole text is valid.
+std::size_t findInvalidText(std::string_view text);
+inline bool isValidText(std::string_view text) { return findInvalidText(text) == std::string_view::npos; }
+
 } // namespace tapestry::kernel

@@ -404,4 +404,59 @@ std::optional<Value> parseValue(ValueType type, std::string_view token) {
     return Value::ofTime(std::string(token));
 }
 
+
+std::size_t findInvalidText(std::string_view text) {
+    const std::size_t n = text.size();
+    const auto at = [&](std::size_t i) { return static_cast<unsigned char>(text[i]); };
+    const auto continuation = [&](std::size_t i, unsigned char low, unsigned char high) {
+        return i < n && at(i) >= low && at(i) <= high;
+    };
+    std::size_t i = 0;
+    while (i < n) {
+        const unsigned char c = at(i);
+        if (c == 0) {
+            return i;
+        }
+        if (c < 0x80) {
+            i += 1;
+            continue;
+        }
+        // Unicode Table 3-7: the well-formed byte sequences, by lead byte.
+        std::size_t trailing = 0;
+        unsigned char secondLow = 0x80;
+        unsigned char secondHigh = 0xBF;
+        if (c >= 0xC2 && c <= 0xDF) {
+            trailing = 1;
+        } else if (c == 0xE0) {
+            trailing = 2;
+            secondLow = 0xA0;
+        } else if ((c >= 0xE1 && c <= 0xEC) || c == 0xEE || c == 0xEF) {
+            trailing = 2;
+        } else if (c == 0xED) {
+            trailing = 2;
+            secondHigh = 0x9F; // no surrogates
+        } else if (c == 0xF0) {
+            trailing = 3;
+            secondLow = 0x90;
+        } else if (c >= 0xF1 && c <= 0xF3) {
+            trailing = 3;
+        } else if (c == 0xF4) {
+            trailing = 3;
+            secondHigh = 0x8F; // nothing above U+10FFFF
+        } else {
+            return i;
+        }
+        if (!continuation(i + 1, secondLow, secondHigh)) {
+            return i;
+        }
+        for (std::size_t k = 2; k <= trailing; ++k) {
+            if (!continuation(i + k, 0x80, 0xBF)) {
+                return i;
+            }
+        }
+        i += trailing + 1;
+    }
+    return std::string_view::npos;
+}
+
 } // namespace tapestry::kernel
