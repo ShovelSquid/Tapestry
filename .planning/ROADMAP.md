@@ -32,7 +32,14 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. Saving and reopening a world reproduces the same node data with stable identifiers, and node types the core does not recognize display readable fallback values instead of disappearing or breaking the load
   3. After an interrupted write (simulated crash mid-save), reopening recovers the last complete committed history with no silent loss and no silent acceptance of partial changes
   4. Every recorded change carries a distinguishable domain event time, recorded/corrected time, and simulation tick, and a reader can tell the three apart in the journal
-**Plans**: TBD
+**Plans**: 5 plans
+
+Plans:
+- [ ] 01-01-PLAN.md — Lock the .tree v1 format bundle (decision gate), stand up the rendering-independent kernel target + doctest runner, typed value/time/id primitives
+- [ ] 01-02-PLAN.md — Tracer: create a node → durable @commit record → reopen → read back (contracts + single end-to-end path)
+- [ ] 01-03-PLAN.md — Full v1 op set, block text, strict reader rules; unknown plugin data readable and safe; stable ids
+- [ ] 01-04-PLAN.md — Durability: failure-injection sinks, truncation/bit-flip sweeps, lock, explicit repair with sidecar, byte-identical save-as
+- [ ] 01-05-PLAN.md — Three kinds of time, frozen golden example.tree, FORMAT.md human guide, cold-read check
 
 ### Phase 2: Plugin Host, SDK & Feasibility Gate
 **Goal**: Developers can build, load, and safely fail plugins against a documented versioned public API — and the UI toolkit decision is settled by a working vertical slice (editable note, spatial interaction, independent plugin, command bridge, packaged app) before broad UI investment
@@ -122,7 +129,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Deterministic Core & Readable Format | 0/TBD | Not started | - |
+| 1. Deterministic Core & Readable Format | 0/5 | Not started | - |
 | 2. Plugin Host, SDK & Feasibility Gate | 0/TBD | Not started | - |
 | 3. Branching History & Deterministic Replay | 0/TBD | Not started | - |
 | 4. Spatial Notebook | 0/TBD | Not started | - |
