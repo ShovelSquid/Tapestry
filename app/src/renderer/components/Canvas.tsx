@@ -62,6 +62,7 @@ interface CanvasProps {
     x: number,
     y: number,
   ) => void
+  onWidthChange: (nodeId: string, width: number) => void
   onEdgeCreate: (fromId: string, toId: string) => void
 }
 
@@ -121,6 +122,7 @@ export default function Canvas({
   onMarkDirty,
   onMarkClean,
   onPositionChange,
+  onWidthChange,
   onEdgeCreate,
 }: CanvasProps): React.ReactElement {
   const viewportRef = useRef<HTMLDivElement>(null)
@@ -477,6 +479,7 @@ export default function Canvas({
             onMarkDirty={onMarkDirty}
             onMarkClean={onMarkClean}
             onPositionChange={onPositionChange}
+            onWidthChange={onWidthChange}
             onHover={(hovered) =>
               setHoveredNoteId(hovered ? node.id : null)
             }

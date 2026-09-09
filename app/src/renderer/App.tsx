@@ -210,6 +210,46 @@ export default function App(): React.ReactElement {
   )
 
   // -----------------------------------------------------------------------
+  // Width change handler (D-08 resize persistence)
+  // -----------------------------------------------------------------------
+
+  const handleWidthChange = useCallback(
+    async (nodeId: string, newWidth: number) => {
+      pendingSavesRef.current += 1
+      setSaveState('saving')
+
+      try {
+        await window.tapestry.kernel.submit(
+          'user',
+          'local',
+          'Resize note',
+          [
+            {
+              op: 'setProperty',
+              target: nodeId,
+              key: 'width',
+              type: 'real',
+              value: newWidth,
+            },
+          ],
+        )
+
+        pendingSavesRef.current -= 1
+        if (pendingSavesRef.current < 0) pendingSavesRef.current = 0
+        recomputeSaveState()
+
+        await refreshNodes()
+      } catch (err) {
+        pendingSavesRef.current -= 1
+        if (pendingSavesRef.current < 0) pendingSavesRef.current = 0
+        console.error('Failed to update width:', err)
+        setSaveState('error')
+      }
+    },
+    [recomputeSaveState, refreshNodes],
+  )
+
+  // -----------------------------------------------------------------------
   // Edge creation handler
   // -----------------------------------------------------------------------
 
@@ -352,6 +392,7 @@ export default function App(): React.ReactElement {
         onMarkDirty={handleMarkDirty}
         onMarkClean={handleMarkClean}
         onPositionChange={handlePositionChange}
+        onWidthChange={handleWidthChange}
         onEdgeCreate={handleEdgeCreate}
       />
     </div>

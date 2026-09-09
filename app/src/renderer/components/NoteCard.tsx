@@ -64,6 +64,7 @@ interface NoteCardProps {
   onMarkDirty: (nodeId: string) => void
   onMarkClean: (nodeId: string) => void
   onPositionChange: (nodeId: string, x: number, y: number) => void
+  onWidthChange: (nodeId: string, width: number) => void
   onHover: (hovered: boolean) => void
   onHoverDuringConnection: () => void
   onLeaveDuringConnection: () => void
@@ -121,6 +122,7 @@ export default function NoteCard({
   onMarkDirty,
   onMarkClean,
   onPositionChange,
+  onWidthChange,
   onHover,
   onHoverDuringConnection,
   onLeaveDuringConnection,
@@ -407,11 +409,7 @@ export default function NoteCard({
 
         setLocalWidth((w) => {
           if (w !== null) {
-            // Persist width through kernel
-            onPositionChange(node.id, effectiveX, effectiveY)
-            // Width is persisted separately -- use onSave path for now
-            // by submitting through the parent. For simplicity we use
-            // onPositionChange which triggers the same kernel:submit.
+            onWidthChange(node.id, w)
           }
           return null
         })
@@ -420,7 +418,7 @@ export default function NoteCard({
       document.addEventListener('pointermove', onMove)
       document.addEventListener('pointerup', onUp)
     },
-    [effectiveWidth, effectiveX, effectiveY, zoom, node.id, onPositionChange],
+    [effectiveWidth, zoom, node.id, onWidthChange],
   )
 
   // -----------------------------------------------------------------------
