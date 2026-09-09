@@ -39,6 +39,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace {
@@ -65,8 +66,10 @@ using tapestry::kernel::OpenPolicy;
 using tapestry::kernel::Proposal;
 using tapestry::kernel::RecordedAt;
 using tapestry::kernel::Rejection;
+using tapestry::kernel::RepairResult;
 using tapestry::kernel::SetProperty;
 using tapestry::kernel::Sink;
+using tapestry::kernel::Tick;
 using tapestry::kernel::UnsetProperty;
 using tapestry::kernel::Value;
 namespace tree = tapestry::kernel::tree;
@@ -116,6 +119,11 @@ struct RecordingSink final : Sink {
         return std::nullopt;
     }
     std::uint64_t size() const override { return data.size(); }
+    std::optional<IoError> truncate(std::uint64_t newSize) override {
+        calls.emplace_back("t");
+        data.resize(static_cast<std::size_t>(std::min<std::uint64_t>(newSize, data.size())));
+        return std::nullopt;
+    }
 };
 
 template <class T, class E>
@@ -241,6 +249,58 @@ std::unique_ptr<Kernel> kernelWithOneCommit(RecordingSink*& sink) {
     std::unique_ptr<Kernel> kernel = std::move(created.value());
     submitOk(*kernel, fixtureProposals()[0]);
     return kernel;
+}
+
+// A journal on disk exactly as a crash 137 bytes into its second commit
+// would leave it: the bytes a mid-write injection produced, written with
+// plain stdio. Returns the bytes; the verified prefix ends at the header's
+// and first commit's boundaries.
+std::string writeTornJournal(const std::string& path) {
+    RecordingSink* sink = nullptr;
+    std::unique_ptr<Kernel> kernel = kernelWithOneCommit(sink);
+    sink->failWriteAfter = sink->data.size() + 137;
+    REQUIRE_FALSE(kernel->submit(fixtureProposals()[1]).ok());
+    writeFile(path, sink->data);
+    return sink->data;
+}
+
+// Every commit record of a journal, decoded with the pure codec alone, so a
+// test can rewrite one record's bytes (as kernel_test does).
+std::vector<tree::DecodedCommit> decodeAll(const std::string& bytes) {
+    auto header = tree::decodeHeader(bytes);
+    REQUIRE_MESSAGE(header.ok(), detailOf(header));
+    std::vector<tree::DecodedCommit> commits;
+    Digest parent = header.value().digest;
+    std::size_t position = header.value().end;
+    tapestry::kernel::CommitSeq seq = 1;
+    Tick tick = 0;
+    while (position < bytes.size()) {
+        auto commit = tree::decodeCommit(bytes, position, parent, seq, tick);
+        REQUIRE_MESSAGE(commit.ok(), detailOf(commit));
+        for (const Op& op : commit.value().record.ops) {
+            if (const auto* advance = std::get_if<Advance>(&op)) {
+                tick += advance->ticks;
+            }
+        }
+        parent = commit.value().digest;
+        position = commit.value().end;
+        seq += 1;
+        commits.push_back(std::move(commit.value()));
+    }
+    return commits;
+}
+
+std::string withRecordReplaced(const std::string& bytes, const tree::DecodedCommit& commit,
+    const std::string& replacement) {
+    return bytes.substr(0, commit.begin) + replacement + bytes.substr(commit.end);
+}
+
+// The sidecar name repair() derives for a journal at `path` repaired at
+// `stamp`: the path, `.torn-`, the stamp with ':' as '-'.
+std::string sidecarFor(const std::string& path, const char* stamp) {
+    std::string name = stamp;
+    std::replace(name.begin(), name.end(), ':', '-');
+    return path + ".torn-" + name;
 }
 
 } // namespace
@@ -668,6 +728,266 @@ TEST_CASE("journal: open twice yields the same digests and never modifies the fi
     CHECK(first.edgeIds == std::vector<EdgeId>{EdgeId{1}});
     CHECK(first.title == "Sam");
     std::remove(path.c_str());
+}
+
+TEST_CASE("journal: repair preserves the torn tail in a sidecar and re-enables appends") {
+    const std::string path = scratchPath("repair");
+    const std::string& journal = path;
+    const std::string bytes = writeTornJournal(path);
+    const std::vector<std::size_t> boundaries = recordBoundaries(bytes);
+    REQUIRE(boundaries.size() == 2);
+    const std::size_t verified = boundaries[1];
+    const std::string prefixBytes = bytes.substr(0, verified);
+    const std::string tailBytes = bytes.substr(verified);
+    REQUIRE(tailBytes.size() == 137);
+    const std::string sidecar = sidecarFor(path, kStamp);
+    CHECK(sidecar == path + ".torn-2026-09-08T21-15-07Z");
+    std::remove(sidecar.c_str());
+
+    Digest lastDigest;
+    {
+        std::unique_ptr<Kernel> kernel = openOk(path, OpenPolicy::Existing);
+        REQUIRE(kernel->status().kind == Kind::TornTail);
+        CHECK(kernel->status().offset == verified);
+        CHECK(kernel->status().bytes == 137);
+        CHECK(kernel->journal().commitCount() == 1);
+        lastDigest = kernel->journal().lastDigest();
+        CHECK(kernel->submit(fixtureProposals()[1]).error().kind == Rejection::Kind::JournalNotClean);
+
+        const RepairResult repaired = kernel->repair();
+        CHECK_MESSAGE(repaired.repaired, repaired.detail);
+        CHECK(repaired.sidecar.string() == sidecar);
+        CHECK(repaired.bytesMoved == 137);
+        REQUIRE(fileExists(sidecar));
+        CHECK(readFile(sidecar) == tailBytes);
+        CHECK(readFile(journal) == prefixBytes);
+        CHECK(kernel->status().kind == Kind::Ok);
+        CHECK(kernel->status().lastGoodSeq == 1);
+        CHECK(kernel->journal().commitCount() == 1);
+        CHECK(kernel->journal().lastSeq() == 1);
+        CHECK(kernel->journal().lastDigest() == lastDigest);
+        CHECK(kernel->journal().verifiedBytes() == verified);
+        CHECK(kernel->world().nodeCount() == 1);
+
+        // Appends work again, on top of the verified prefix.
+        const CommitResult second = submitOk(*kernel, fixtureProposals()[1]);
+        CHECK(second.seq == 2);
+        CHECK(kernel->world().nodeCount() == 2);
+        const std::string after = readFile(path);
+        CHECK(after.size() > verified);
+        CHECK(after.compare(0, prefixBytes.size(), prefixBytes) == 0);
+        CHECK(readFile(sidecar) == tailBytes);
+    }
+    {
+        std::unique_ptr<Kernel> kernel = openOk(path, OpenPolicy::ReadOnly);
+        CHECK(kernel->status().kind == Kind::Ok);
+        CHECK(kernel->journal().commitCount() == 2);
+        CHECK(kernel->world().nodeCount() == 2);
+        CHECK(kernel->world().edgeCount() == 1);
+    }
+
+    // repair() on an Ok journal changes nothing and creates nothing.
+    const std::string repairedBytes = readFile(path);
+    {
+        auto opened = Kernel::open(path, OpenPolicy::Existing, fixedClock("2026-09-08T21:15:08Z"));
+        REQUIRE_MESSAGE(opened.ok(), detailOf(opened));
+        const RepairResult nothing = opened.value()->repair();
+        CHECK_FALSE(nothing.repaired);
+        CHECK(nothing.bytesMoved == 0);
+        CHECK(nothing.sidecar.empty());
+        CHECK_MESSAGE(nothing.detail.find("Ok") != std::string::npos, nothing.detail);
+        CHECK_FALSE(fileExists(sidecarFor(path, "2026-09-08T21:15:08Z")));
+    }
+    CHECK(readFile(path) == repairedBytes);
+    std::remove(path.c_str());
+    std::remove(sidecar.c_str());
+
+    // A read-only opener cannot repair: nothing is written anywhere.
+    const std::string readOnly = scratchPath("repair-readonly");
+    writeFile(readOnly, bytes);
+    {
+        std::unique_ptr<Kernel> kernel = openOk(readOnly, OpenPolicy::ReadOnly);
+        REQUIRE(kernel->status().kind == Kind::TornTail);
+        const RepairResult refused = kernel->repair();
+        CHECK_FALSE(refused.repaired);
+        CHECK_MESSAGE(refused.detail.find("read-only") != std::string::npos, refused.detail);
+        CHECK(kernel->status().kind == Kind::TornTail);
+    }
+    CHECK(readFile(readOnly) == bytes);
+    CHECK_FALSE(fileExists(sidecarFor(readOnly, kStamp)));
+    std::remove(readOnly.c_str());
+
+    // An existing sidecar is never overwritten: the repair fails before
+    // touching the journal, and both files are as they were.
+    const std::string occupied = scratchPath("repair-occupied");
+    writeFile(occupied, bytes);
+    const std::string occupiedSidecar = sidecarFor(occupied, kStamp);
+    writeFile(occupiedSidecar, "someone else's bytes\n");
+    {
+        std::unique_ptr<Kernel> kernel = openOk(occupied, OpenPolicy::Existing);
+        REQUIRE(kernel->status().kind == Kind::TornTail);
+        const RepairResult refused = kernel->repair();
+        CHECK_FALSE(refused.repaired);
+        CHECK_MESSAGE(refused.detail.find("sidecar") != std::string::npos, refused.detail);
+        CHECK(kernel->status().kind == Kind::TornTail);
+        CHECK(kernel->submit(fixtureProposals()[1]).error().kind == Rejection::Kind::JournalNotClean);
+    }
+    CHECK(readFile(occupied) == bytes);
+    CHECK(readFile(occupiedSidecar) == "someone else's bytes\n");
+    std::remove(occupied.c_str());
+    std::remove(occupiedSidecar.c_str());
+}
+
+TEST_CASE("journal: repair refuses a corrupt journal") {
+    const std::string path = scratchPath("repair-corrupt");
+    std::string bytes = buildJournal(path, 3);
+    const std::vector<std::size_t> boundaries = recordBoundaries(bytes);
+    REQUIRE(boundaries.size() == 4);
+    // One bit inside commit 1's body.
+    const std::size_t at = boundaries[0] + 60;
+    bytes[at] = static_cast<char>(static_cast<unsigned char>(bytes[at]) ^ 0x01u);
+    writeFile(path, bytes);
+
+    {
+        std::unique_ptr<Kernel> kernel = openOk(path, OpenPolicy::Existing);
+        REQUIRE(kernel->status().kind == Kind::Corrupt);
+        CHECK(kernel->status().offset == boundaries[0]);
+        CHECK(kernel->journal().commitCount() == 0);
+        const RepairResult refused = kernel->repair();
+        CHECK_FALSE(refused.repaired);
+        CHECK(refused.bytesMoved == 0);
+        CHECK(refused.sidecar.empty());
+        CHECK_MESSAGE(refused.detail.find("Corrupt") != std::string::npos, refused.detail);
+        CHECK(kernel->status().kind == Kind::Corrupt);
+        CHECK(kernel->submit(fixtureProposals()[0]).error().kind == Rejection::Kind::JournalNotClean);
+    }
+    CHECK(readFile(path) == bytes);
+    CHECK_FALSE(fileExists(sidecarFor(path, kStamp)));
+    std::remove(path.c_str());
+}
+
+TEST_CASE("journal: save-as is byte-identical to the verified prefix and idempotent") {
+    const std::string a = scratchPath("saveas-a");
+    const std::string bytesA = buildJournal(a, 3);
+    const std::string b = scratchPath("saveas-b");
+    const std::string c = scratchPath("saveas-c");
+
+    Digest lastDigest;
+    {
+        std::unique_ptr<Kernel> kernel = openOk(a, OpenPolicy::Existing);
+        lastDigest = kernel->journal().lastDigest();
+        auto first = kernel->saveAs(b);
+        CHECK_MESSAGE(!first.has_value(), (first ? first->what : std::string()));
+        CHECK(readFile(b) == readFile(a));
+        CHECK(readFile(b) == bytesA);
+
+        // A second save to the same path refuses to overwrite it.
+        auto again = kernel->saveAs(b);
+        REQUIRE(again.has_value());
+        CHECK(again->errnoValue == EEXIST);
+        CHECK(readFile(b) == bytesA);
+
+        auto third = kernel->saveAs(c);
+        CHECK_MESSAGE(!third.has_value(), (third ? third->what : std::string()));
+        CHECK(readFile(c) == readFile(b));
+
+        // The source is never the target, and never changes.
+        auto self = kernel->saveAs(a);
+        REQUIRE(self.has_value());
+        CHECK(self->errnoValue == EEXIST);
+        CHECK(readFile(a) == bytesA);
+    }
+
+    // The copy opens as the same world with the same digests.
+    {
+        std::unique_ptr<Kernel> kernel = openOk(b, OpenPolicy::Existing);
+        CHECK(kernel->status().kind == Kind::Ok);
+        CHECK(kernel->journal().commitCount() == 3);
+        CHECK(kernel->journal().lastDigest() == lastDigest);
+        CHECK(kernel->world().nodeIds() == std::vector<NodeId>{NodeId{1}, NodeId{2}});
+        CHECK(kernel->world().edgeIds() == std::vector<EdgeId>{EdgeId{1}});
+        CHECK(kernel->world().node(NodeId{1})->props.at("pinned") == Value::ofBool(true));
+        CHECK(kernel->world().node(NodeId{1})->props.count("anger") == 0);
+        // And can be written to independently of the original.
+        submitOk(*kernel, fixtureProposals()[3]);
+    }
+    CHECK(readFile(a) == bytesA);
+    CHECK(readFile(b) != bytesA);
+    CHECK(readFile(c) == bytesA);
+
+    // A torn journal saves only its verified prefix, which opens Ok.
+    const std::vector<std::size_t> boundaries = recordBoundaries(bytesA);
+    REQUIRE(boundaries.size() == 4);
+    const std::string torn = scratchPath("saveas-torn");
+    writeFile(torn, bytesA.substr(0, boundaries[2] + 33));
+    const std::string d = scratchPath("saveas-d");
+    {
+        std::unique_ptr<Kernel> kernel = openOk(torn, OpenPolicy::ReadOnly);
+        REQUIRE(kernel->status().kind == Kind::TornTail);
+        auto saved = kernel->saveAs(d);
+        CHECK_MESSAGE(!saved.has_value(), (saved ? saved->what : std::string()));
+        CHECK(readFile(d) == bytesA.substr(0, boundaries[2]));
+        CHECK(readFile(torn) == bytesA.substr(0, boundaries[2] + 33));
+    }
+    {
+        std::unique_ptr<Kernel> kernel = openOk(d, OpenPolicy::ReadOnly);
+        CHECK(kernel->status().kind == Kind::Ok);
+        CHECK(kernel->journal().commitCount() == 2);
+        CHECK(kernel->world().nodeCount() == 2);
+    }
+    for (const std::string* file : {&a, &b, &c, &torn, &d}) {
+        std::remove(file->c_str());
+    }
+}
+
+TEST_CASE("journal: save-as keeps unknown node types and x- lines byte-for-byte") {
+    const std::string path = scratchPath("saveas-unknown");
+    const char* const type = "acme.widgets/gizmo@7"; // no kernel source knows this type
+    {
+        std::unique_ptr<Kernel> kernel = createOk(path, "widgets");
+        submitOk(*kernel,
+            proposalOf({CreateNode{NodeId{}, type,
+                           {{"title", Value::ofText("Gizmo")}, {"body", Value::ofText("A gizmo.\nThree lines.\nOf text.")},
+                               {"anger", Value::ofInt(3)}, {"pinned", Value::ofBool(true)}}}},
+                "a widget"));
+        submitOk(*kernel, proposalOf({SetProperty{NodeId{1}, "title", Value::ofText("Gizmo again")}}, "rename"));
+    }
+
+    // Plant two plugin-owned lines in commit 2, re-sealed by the codec.
+    std::string bytes = readFile(path);
+    const std::vector<tree::DecodedCommit> commits = decodeAll(bytes);
+    REQUIRE(commits.size() == 2);
+    CommitRecord edited = commits[1].record;
+    edited.extensionLines = {"x-acme.widgets flag 1", "x-example.people mood curious"};
+    bytes = withRecordReplaced(bytes, commits[1], tree::encodeCommit(edited).bytes);
+    writeFile(path, bytes);
+
+    const std::string copy = scratchPath("saveas-unknown-copy");
+    {
+        std::unique_ptr<Kernel> kernel = openOk(path, OpenPolicy::ReadOnly);
+        REQUIRE(kernel->status().kind == Kind::Ok);
+        CHECK(kernel->world().node(NodeId{1})->type == type);
+        CHECK(kernel->journal().commits()[1].extensionLines
+            == std::vector<std::string>{"x-acme.widgets flag 1", "x-example.people mood curious"});
+        auto saved = kernel->saveAs(copy);
+        CHECK_MESSAGE(!saved.has_value(), (saved ? saved->what : std::string()));
+    }
+    const std::string copied = readFile(copy);
+    CHECK(copied == bytes);
+    CHECK(copied.find("create-node n1 acme.widgets/gizmo@7\n") != std::string::npos);
+    CHECK(copied.find("set n1 body text <<TEXT\nA gizmo.\nThree lines.\nOf text.\nTEXT\n") != std::string::npos);
+    CHECK(copied.find("x-acme.widgets flag 1\nx-example.people mood curious\n@end sha256:") != std::string::npos);
+    {
+        std::unique_ptr<Kernel> kernel = openOk(copy, OpenPolicy::ReadOnly);
+        CHECK(kernel->status().kind == Kind::Ok);
+        CHECK(kernel->journal().commitCount() == 2);
+        CHECK(kernel->world().node(NodeId{1})->type == type);
+        CHECK(kernel->world().node(NodeId{1})->props.at("title") == Value::ofText("Gizmo again"));
+        CHECK(kernel->journal().commits()[1].extensionLines
+            == std::vector<std::string>{"x-acme.widgets flag 1", "x-example.people mood curious"});
+    }
+    std::remove(path.c_str());
+    std::remove(copy.c_str());
 }
 
 } // TEST_SUITE("journal")

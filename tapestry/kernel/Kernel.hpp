@@ -65,9 +65,14 @@ public:
     const JournalStatus& status() const { return m_journal->status(); }
     const Journal& journal() const { return *m_journal; }
 
-    // Plan 04 adds:
-    //   RepairResult repair();
-    //   std::optional<IoError> saveAs(const std::filesystem::path& path);
+    // Explicit repair of a torn tail (Journal::repair), the sidecar stamped
+    // with this kernel's clock. The world does not change: it never held
+    // anything from the tail.
+    RepairResult repair();
+
+    // A byte-identical copy of the verified journal into a new file
+    // (Journal::saveAs). The source is never touched.
+    std::optional<IoError> saveAs(const std::filesystem::path& path) const;
 
 private:
     Kernel(std::unique_ptr<Journal> journal, std::unique_ptr<Clock> clock);

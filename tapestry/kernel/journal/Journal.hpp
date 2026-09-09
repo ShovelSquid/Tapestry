@@ -4,6 +4,7 @@
 #include "kernel/Ids.hpp"
 #include "kernel/Record.hpp"
 #include "kernel/Result.hpp"
+#include "kernel/Time.hpp"
 #include "kernel/journal/Sink.hpp"
 #include "kernel/tree/Codec.hpp"
 
@@ -39,6 +40,17 @@ struct JournalStatus {
 // or modify a file.
 struct OpenFailure {
     enum class Kind { Missing, AlreadyExists, Locked, NotATree, Io } kind;
+    std::string detail;
+};
+
+// What an explicit repair did. repaired == false means the journal file was
+// not modified: the status was not TornTail, the journal is read-only or
+// has no file, or a step failed — detail says which, and sidecar names the
+// file that step left behind, if any.
+struct RepairResult {
+    bool repaired = false;
+    std::filesystem::path sidecar;
+    std::size_t bytesMoved = 0;
     std::string detail;
 };
 
@@ -87,9 +99,23 @@ public:
     // Corrupt from that commit on, and appends are refused.
     void markCorrupt(CommitSeq seq, std::string reason);
 
-    // Plan 04 adds:
-    //   RepairResult repair(RecordedAt now);
-    //   std::optional<IoError> saveAs(const std::filesystem::path& path);
+    // Explicit, never automatic (PD-04): the only path that ever shortens a
+    // journal. Only when status() is TornTail and the journal was opened for
+    // writing. In order: the torn tail is written verbatim to a new sidecar
+    // `<journal path>.torn-<now as RFC 3339, ':' replaced by '-'>` (named
+    // from the journal path and the clock only, never from file content;
+    // an existing sidecar is refused, not overwritten), the sidecar is
+    // synced, then the journal is truncated to the verified prefix and
+    // synced, and only then is the status Ok. Header, commits, digests and
+    // verifiedBytes() do not change. A failure at any step leaves the status
+    // TornTail and names the step.
+    RepairResult repair(RecordedAt now);
+
+    // Writes exactly the verified prefix bytes into a new file at `path`
+    // (an existing file is refused with EEXIST) and syncs it. Never touches
+    // the source. Byte-identical: the copy's records and digests are the
+    // original's, whatever the kernel did or did not understand in them.
+    std::optional<IoError> saveAs(const std::filesystem::path& path) const;
 
 private:
     Journal() = default;

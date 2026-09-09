@@ -25,6 +25,7 @@
 
 #include <doctest.h>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdio>
 #include <cstdlib>
@@ -131,6 +132,10 @@ struct RecordingSink final : Sink {
         return std::nullopt;
     }
     std::uint64_t size() const override { return data.size(); }
+    std::optional<IoError> truncate(std::uint64_t newSize) override {
+        data.resize(static_cast<std::size_t>(std::min<std::uint64_t>(newSize, data.size())));
+        return std::nullopt;
+    }
 };
 
 // The head line plus counted body of the record that starts at `offset`,

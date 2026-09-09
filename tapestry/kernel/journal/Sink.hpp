@@ -38,6 +38,12 @@ public:
 
     // Current size of the file in bytes.
     virtual std::uint64_t size() const = 0;
+
+    // Cuts the file to newSize bytes and makes the new length durable
+    // (PosixSink: ftruncate, then the same full flush sync() performs). The
+    // journal calls this from an explicit repair only, after the bytes being
+    // cut have been preserved verbatim elsewhere — never from open().
+    virtual std::optional<IoError> truncate(std::uint64_t newSize) = 0;
 };
 
 // CreateNew refuses an existing path and syncs the parent directory once the

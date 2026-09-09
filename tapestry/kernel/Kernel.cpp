@@ -156,4 +156,8 @@ Expected<CommitResult, Rejection> Kernel::submit(const Proposal& proposal) {
     return result;
 }
 
+RepairResult Kernel::repair() { return m_journal->repair(m_clock->now()); }
+
+std::optional<IoError> Kernel::saveAs(const std::filesystem::path& path) const { return m_journal->saveAs(path); }
+
 } // namespace tapestry::kernel

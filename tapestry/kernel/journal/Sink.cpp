@@ -6,6 +6,7 @@
 
 #include <cerrno>
 #include <cstddef>
+#include <limits>
 #include <string>
 #include <utility>
 
@@ -74,6 +75,20 @@ public:
             return 0;
         }
         return static_cast<std::uint64_t>(info.st_size);
+    }
+
+    std::optional<IoError> truncate(std::uint64_t newSize) override {
+        if (newSize > static_cast<std::uint64_t>(std::numeric_limits<off_t>::max())) {
+            return IoError{EINVAL, "truncate: size does not fit off_t"};
+        }
+        while (::ftruncate(m_fd, static_cast<off_t>(newSize)) != 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            return errorNow("ftruncate");
+        }
+        // The new length is metadata; it needs the same full flush as data.
+        return sync();
     }
 
 private:

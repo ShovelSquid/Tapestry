@@ -302,4 +302,83 @@ void Journal::markCorrupt(CommitSeq seq, std::string reason) {
     m_status = status;
 }
 
+RepairResult Journal::repair(RecordedAt now) {
+    RepairResult result;
+    if (m_status.kind == JournalStatus::Kind::Ok) {
+        result.detail = "journal is Ok: nothing to repair";
+        return result;
+    }
+    if (m_status.kind == JournalStatus::Kind::Corrupt) {
+        // Bytes that are all present and do not verify are not a torn tail;
+        // cutting them would discard history a person has not looked at.
+        result.detail = "journal is Corrupt, not torn: " + m_status.reason;
+        return result;
+    }
+    if (!m_sink) {
+        result.detail = "journal is read-only: open it for writing to repair";
+        return result;
+    }
+    if (m_path.empty()) {
+        result.detail = "journal has no file: nowhere to put a sidecar";
+        return result;
+    }
+
+    // The sidecar name comes from the journal path and the clock only.
+    std::string stamp = now.rfc3339Z();
+    std::replace(stamp.begin(), stamp.end(), ':', '-');
+    result.sidecar = m_path;
+    result.sidecar += ".torn-" + stamp;
+
+    const std::size_t verified = static_cast<std::size_t>(m_verifiedBytes);
+    const std::string_view tail = std::string_view(m_bytes).substr(std::min(verified, m_bytes.size()));
+
+    // 1. Preserve the tail verbatim, durably, in a file that did not exist.
+    auto sidecar = openPosixSink(result.sidecar, SinkMode::CreateNew);
+    if (!sidecar) {
+        result.detail = "create sidecar " + result.sidecar.string() + ": " + sidecar.error().what + ": "
+            + errnoText(sidecar.error().errnoValue);
+        return result;
+    }
+    if (auto failure = sidecar.value()->writeAll(tail)) {
+        result.detail = "write sidecar " + result.sidecar.string() + ": " + failure->what + ": "
+            + errnoText(failure->errnoValue);
+        return result;
+    }
+    if (auto failure = sidecar.value()->sync()) {
+        result.detail = "sync sidecar " + result.sidecar.string() + ": " + failure->what + ": "
+            + errnoText(failure->errnoValue);
+        return result;
+    }
+    sidecar.value().reset();
+
+    // 2. Only now cut the journal back to what verified, and flush that.
+    if (auto failure = m_sink->truncate(m_verifiedBytes)) {
+        result.detail = "truncate journal to " + std::to_string(verified) + " bytes (tail preserved in "
+            + result.sidecar.string() + "): " + failure->what + ": " + errnoText(failure->errnoValue);
+        return result;
+    }
+
+    // 3. The journal is exactly its verified prefix again.
+    m_bytes.resize(verified);
+    m_status = JournalStatus{};
+    m_status.lastGoodSeq = m_lastSeq;
+    result.repaired = true;
+    result.bytesMoved = tail.size();
+    result.detail = "moved " + std::to_string(tail.size()) + " unverified bytes to " + result.sidecar.string()
+        + " and truncated the journal to " + std::to_string(verified) + " bytes";
+    return result;
+}
+
+std::optional<IoError> Journal::saveAs(const std::filesystem::path& path) const {
+    auto sink = openPosixSink(path, SinkMode::CreateNew); // EEXIST for an existing file
+    if (!sink) {
+        return sink.error();
+    }
+    const std::string_view prefix = std::string_view(m_bytes).substr(0, static_cast<std::size_t>(m_verifiedBytes));
+    if (auto failure = sink.value()->writeAll(prefix)) {
+        return failure;
+    }
+    return sink.value()->sync();
+}
+
 } // namespace tapestry::kernel
