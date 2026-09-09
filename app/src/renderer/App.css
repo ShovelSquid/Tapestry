@@ -1,4 +1,4 @@
-/* Tapestry App — visual values from UI-SPEC.md */
+/* Tapestry App -- visual values from UI-SPEC.md */
 
 /* Reset */
 *, *::before, *::after {
@@ -26,7 +26,7 @@ html, body, #root {
   position: relative;
 }
 
-/* Canvas — dominant color #F7F5F0 */
+/* Canvas -- dominant color #F7F5F0 */
 .tapestry-canvas {
   width: 100%;
   height: 100%;
@@ -34,9 +34,24 @@ html, body, #root {
   background-color: #F7F5F0;
   overflow: hidden;
   cursor: default;
+  touch-action: none; /* Prevent browser pan/zoom on touch */
 }
 
-/* Empty state — centered text */
+/* Transformed canvas container -- notes and connections live here */
+.tapestry-canvas-container {
+  pointer-events: none; /* Let viewport receive pan events */
+}
+
+.tapestry-canvas-container > * {
+  pointer-events: auto; /* Notes and SVG re-enable events */
+}
+
+/* SVG connection overlay */
+.tapestry-connections-svg {
+  pointer-events: none !important;
+}
+
+/* Empty state -- centered text */
 .tapestry-empty-state {
   position: absolute;
   top: 50%;
@@ -45,6 +60,7 @@ html, body, #root {
   text-align: center;
   pointer-events: none;
   user-select: none;
+  z-index: 1;
 }
 
 .tapestry-empty-heading {
@@ -62,7 +78,7 @@ html, body, #root {
   color: #6B6B6B;
 }
 
-/* Save indicator — top-left corner (D-05) */
+/* Save indicator -- top-left corner (D-05) */
 .tapestry-save-indicator {
   position: absolute;
   top: 16px;
@@ -103,7 +119,7 @@ html, body, #root {
   color: #E5484D;
 }
 
-/* Note card — secondary color #FFFFFF */
+/* Note card -- secondary color #FFFFFF */
 .tapestry-note-card {
   position: absolute;
   min-width: 200px;
@@ -112,19 +128,40 @@ html, body, #root {
   border: 1px solid #E0DDD7;
   border-radius: 8px;
   padding: 16px;
+  padding-top: 24px; /* Extra top for drag handle */
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.06);
   cursor: default;
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 
-.tapestry-note-card:hover {
-  border-color: #4A7CFF;
+.tapestry-note-card--selected {
+  border: 2px solid #4A7CFF;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.10);
 }
 
 .tapestry-note-card--editing {
   border-color: #4A7CFF;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.10);
+}
+
+.tapestry-note-card--connect-target {
+  border: 2px solid #4A7CFF;
+  box-shadow: 0 0 0 4px rgba(74, 124, 255, 0.20);
+}
+
+/* Drag handle -- invisible strip at top of note (D-01) */
+.tapestry-note-drag-handle {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 20px;
+  cursor: grab;
+  border-radius: 8px 8px 0 0;
+}
+
+.tapestry-note-drag-handle:active {
+  cursor: grabbing;
 }
 
 /* Note title */
@@ -181,4 +218,113 @@ html, body, #root {
   color: #B0ADA6;
   pointer-events: none;
   font-style: italic;
+}
+
+/* ======================================================================= */
+/* Note controls -- bubbly round buttons (D-06)                            */
+/* ======================================================================= */
+
+.tapestry-note-controls {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+}
+
+.tapestry-control-bubble {
+  position: absolute;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+  padding: 0;
+}
+
+.tapestry-control-bubble:hover {
+  transform: scale(1.143); /* 32/28 */
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.20);
+}
+
+/* Connection handle -- right edge, accent #4A7CFF */
+.tapestry-control-bubble--connect {
+  background-color: #4A7CFF;
+  right: -14px;
+  top: 50%;
+  margin-top: -14px;
+}
+
+/* Delete bubble -- top-right corner, destructive #E5484D */
+.tapestry-control-bubble--delete {
+  background-color: #E5484D;
+  right: -10px;
+  top: -10px;
+}
+
+/* ======================================================================= */
+/* Resize handles (D-08)                                                   */
+/* ======================================================================= */
+
+.tapestry-resize-handle {
+  position: absolute;
+  background: transparent;
+  z-index: 2;
+}
+
+/* Side handles */
+.tapestry-resize-handle--right {
+  right: -3px;
+  top: 20px;
+  bottom: 20px;
+  width: 6px;
+  cursor: ew-resize;
+}
+
+.tapestry-resize-handle--left {
+  left: -3px;
+  top: 20px;
+  bottom: 20px;
+  width: 6px;
+  cursor: ew-resize;
+}
+
+/* Corner handles */
+.tapestry-resize-handle--corner-tr,
+.tapestry-resize-handle--corner-tl,
+.tapestry-resize-handle--corner-br,
+.tapestry-resize-handle--corner-bl {
+  width: 10px;
+  height: 10px;
+}
+
+.tapestry-resize-handle--corner-tr {
+  top: -3px;
+  right: -3px;
+  cursor: nesw-resize;
+}
+
+.tapestry-resize-handle--corner-tl {
+  top: -3px;
+  left: -3px;
+  cursor: nwse-resize;
+}
+
+.tapestry-resize-handle--corner-br {
+  bottom: -3px;
+  right: -3px;
+  cursor: nwse-resize;
+}
+
+.tapestry-resize-handle--corner-bl {
+  bottom: -3px;
+  left: -3px;
+  cursor: nesw-resize;
 }
