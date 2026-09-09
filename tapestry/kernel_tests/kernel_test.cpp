@@ -237,6 +237,35 @@ std::string withRecordReplaced(const std::string& bytes, const tree::DecodedComm
     return bytes.substr(0, commit.begin) + replacement + bytes.substr(commit.end);
 }
 
+// How many lines of `text` begin with `prefix` — the shape a reader relies
+// on: a header key starts its line, a property value never does.
+std::size_t countLinesStartingWith(const std::string& text, const std::string& prefix) {
+    std::size_t count = 0;
+    std::size_t pos = 0;
+    while (pos < text.size()) {
+        if (text.compare(pos, prefix.size(), prefix) == 0) {
+            ++count;
+        }
+        const std::size_t lf = text.find('\n', pos);
+        if (lf == std::string::npos) {
+            break;
+        }
+        pos = lf + 1;
+    }
+    return count;
+}
+
+// A kernel on a fresh file whose clock the test keeps a handle to, so the
+// wall clock can be moved — forwards or backwards — between commits.
+std::unique_ptr<Kernel> createWithClock(const std::string& path, const char* world, FixedClock*& clock) {
+    auto owned = std::make_unique<FixedClock>();
+    clock = owned.get();
+    clock->at = *RecordedAt::parse(kClockStamp);
+    auto created = Kernel::create(path, world, std::move(owned));
+    REQUIRE_MESSAGE(created.ok(), detailOf(created));
+    return std::move(created.value());
+}
+
 } // namespace
 
 TEST_SUITE("kernel") {
@@ -738,6 +767,180 @@ TEST_CASE("kernel: text is bytes — non-ASCII round-trips and the byte count is
     REQUIRE(kernel->world().node(NodeId{1}) != nullptr);
     CHECK(kernel->world().node(NodeId{1})->props.at("title") == Value::ofText(title));
     CHECK(kernel->world().node(NodeId{1})->props.at("title").text.size() == 9);
+    std::remove(path.c_str());
+}
+
+// --- TREE-04: three kinds of time, three names, three places ------------
+//
+// `recorded` (commit header, wall clock, audit only), `tick` (commit header,
+// the simulation step a commit applies at) and `event` (a time-typed node
+// property a person or plugin sets) must be tellable apart by name and place
+// alone, a correction must keep the earlier value in its earlier record, and
+// the wall clock must never decide the order of history.
+
+TEST_CASE("kernel: three kinds of time are distinguishable and a correction keeps both values") {
+    const std::string path = scratchPath("three-times");
+    {
+        FixedClock* clock = nullptr;
+        std::unique_ptr<Kernel> kernel = createWithClock(path, "times", clock);
+        const CommitResult first = submitOk(*kernel,
+            proposalOf({CreateNode{NodeId{}, kTracerType,
+                           {{"title", Value::ofText("Sam")}, {"event", Value::ofTime("2026-09-07")}}}},
+                "first note"));
+        CHECK(first.seq == 1);
+
+        // A minute later: the dinner was the day before. A correction is a
+        // new commit under its own stamp, not an edit of the old record.
+        clock->at = *RecordedAt::parse("2026-09-08T21:16:07Z");
+        const CommitResult correction = submitOk(*kernel,
+            proposalOf({SetProperty{NodeId{1}, "event", Value::ofTime("2026-09-06")}}, "corrected dinner date"));
+        CHECK(correction.seq == 2);
+        CHECK(kernel->world().node(NodeId{1})->props.at("event") == Value::ofTime("2026-09-06"));
+    }
+
+    std::unique_ptr<Kernel> kernel = openOk(path, OpenPolicy::ReadOnly);
+    CHECK(kernel->status().kind == JournalStatus::Kind::Ok);
+    REQUIRE(kernel->journal().commitCount() == 2);
+    const Node* node = kernel->world().node(NodeId{1});
+    REQUIRE(node != nullptr);
+    CHECK(node->props.at("event") == Value::ofTime("2026-09-06"));
+    CHECK(kernel->journal().commits()[0].recorded.rfc3339Z() == "2026-09-08T21:15:07Z");
+    CHECK(kernel->journal().commits()[1].recorded.rfc3339Z() == "2026-09-08T21:16:07Z");
+    CHECK(kernel->journal().commits()[1].message == "corrected dinner date");
+    CHECK(kernel->journal().commits()[0].tick == 0);
+    CHECK(kernel->journal().commits()[1].tick == 0);
+
+    // Both values are in the file: the correction erased nothing.
+    const std::string text = readFile(path);
+    for (const char* needle : {"set n1 event time 2026-09-07\n", "set n1 event time 2026-09-06\n",
+             "recorded 2026-09-08T21:15:07Z\n", "recorded 2026-09-08T21:16:07Z\n",
+             "message \"corrected dinner date\"\n"}) {
+        CHECK_MESSAGE(text.find(needle) != std::string::npos, needle);
+    }
+    // The original sits under the earlier stamp, the correction under the
+    // later one, in file order.
+    const std::size_t firstStamp = text.find("recorded 2026-09-08T21:15:07Z\n");
+    const std::size_t original = text.find("set n1 event time 2026-09-07\n");
+    const std::size_t secondStamp = text.find("recorded 2026-09-08T21:16:07Z\n");
+    const std::size_t corrected = text.find("set n1 event time 2026-09-06\n");
+    CHECK(firstStamp < original);
+    CHECK(original < secondStamp);
+    CHECK(secondStamp < corrected);
+
+    // Three names, three places. Header keys start their line, once per
+    // commit; the event is the value of a `set … event time …` line and
+    // never starts a line; the header names never appear inside a set line.
+    CHECK(countLinesStartingWith(text, "recorded ") == 2);
+    CHECK(countLinesStartingWith(text, "tick 0\n") == 2);
+    CHECK(countLinesStartingWith(text, "tick ") == 2);
+    CHECK(countLinesStartingWith(text, "set n1 event time ") == 2);
+    CHECK(countLinesStartingWith(text, "event") == 0);
+    CHECK(text.find(" recorded") == std::string::npos);
+    CHECK(text.find(" tick") == std::string::npos);
+    std::remove(path.c_str());
+}
+
+TEST_CASE("kernel: recorded is audit-only and never orders history") {
+    const std::string path = scratchPath("clock-back");
+    CommitResult first;
+    CommitResult second;
+    {
+        FixedClock* clock = nullptr;
+        std::unique_ptr<Kernel> kernel = createWithClock(path, "clock", clock);
+        first = submitOk(*kernel, firstNote());
+        CHECK(first.seq == 1);
+
+        // The wall clock steps backwards (an NTP correction, a wrong zone, a
+        // laptop waking up). History still moves forward by seq and parent.
+        clock->at = *RecordedAt::parse("2026-09-08T20:00:00Z");
+        second = submitOk(*kernel,
+            proposalOf({SetProperty{NodeId{1}, "title", Value::ofText("Sam, again")}}, "later by seq, earlier by clock"));
+        CHECK(second.seq == 2);
+    }
+
+    const std::string text = readFile(path);
+    const std::size_t firstStamp = text.find("recorded 2026-09-08T21:15:07Z\n");
+    const std::size_t secondStamp = text.find("recorded 2026-09-08T20:00:00Z\n");
+    REQUIRE(firstStamp != std::string::npos);
+    REQUIRE(secondStamp != std::string::npos);
+    CHECK(countLinesStartingWith(text, "recorded ") == 2);
+    // The second record's stamp is the earlier one, and it is still second.
+    CHECK(text.find("@commit 1 ") < firstStamp);
+    CHECK(firstStamp < text.find("@commit 2 "));
+    CHECK(text.find("@commit 2 ") < secondStamp);
+
+    std::unique_ptr<Kernel> kernel = openOk(path, OpenPolicy::ReadOnly);
+    CHECK(kernel->status().kind == JournalStatus::Kind::Ok);
+    REQUIRE(kernel->journal().commitCount() == 2);
+    const std::vector<CommitRecord>& commits = kernel->journal().commits();
+    CHECK(commits[0].seq == 1);
+    CHECK(commits[1].seq == 2);
+    CHECK(commits[0].recorded.unixSeconds > commits[1].recorded.unixSeconds);
+    CHECK(commits[1].parent == first.digest);
+    CHECK(kernel->journal().lastDigest() == second.digest);
+    CHECK(kernel->world().node(NodeId{1})->props.at("title") == Value::ofText("Sam, again"));
+
+    // The same chain, re-derived with the pure codec: commit 2's parent is
+    // commit 1's digest whatever the clocks said.
+    const std::vector<tree::DecodedCommit> decoded = decodeAll(text);
+    REQUIRE(decoded.size() == 2);
+    CHECK(decoded[0].digest == first.digest);
+    CHECK(decoded[1].record.parent == decoded[0].digest);
+    CHECK(decoded[1].digest == second.digest);
+    std::remove(path.c_str());
+}
+
+TEST_CASE("kernel: tick changes only through advance and appears in the header") {
+    const std::string path = scratchPath("tick-header");
+    {
+        std::unique_ptr<Kernel> kernel = createOk(path, "ticking");
+        submitOk(*kernel, firstNote());
+        submitOk(*kernel, proposalOf({SetProperty{NodeId{1}, "title", Value::ofText("Sam")}}, "still tick 0"));
+        CHECK(kernel->world().tick() == 0);
+        submitOk(*kernel, proposalOf({Advance{3}}, "advance simulation"));
+        CHECK(kernel->world().tick() == 3);
+        submitOk(*kernel, proposalOf({SetProperty{NodeId{1}, "title", Value::ofText("Sam at 3")}}, "at tick 3"));
+    }
+
+    std::string bytes = readFile(path);
+    std::vector<tree::DecodedCommit> commits = decodeAll(bytes);
+    REQUIRE(commits.size() == 4);
+    CHECK(commits[0].record.tick == 0);
+    CHECK(commits[1].record.tick == 0);
+    CHECK(commits[2].record.tick == 0); // the advance itself applies at the old tick
+    CHECK(commits[3].record.tick == 3);
+    CHECK(bodyOf(bytes, commits[2]).find("advance 3\n") != std::string::npos);
+    CHECK(bodyOf(bytes, commits[3]).find("tick 3\n") != std::string::npos);
+    CHECK(countLinesStartingWith(bytes, "tick 0\n") == 3);
+    CHECK(countLinesStartingWith(bytes, "tick 3\n") == 1);
+    CHECK(countLinesStartingWith(bytes, "advance ") == 1);
+    // Nothing but advance moved the tick: two edits, no tick change.
+    CHECK(countLinesStartingWith(bytes, "tick ") == 4);
+
+    std::unique_ptr<Kernel> kernel = openOk(path, OpenPolicy::Existing);
+    CHECK(kernel->status().kind == JournalStatus::Kind::Ok);
+    CHECK(kernel->world().tick() == 3);
+    CHECK(kernel->journal().commits()[3].tick == 3);
+
+    // One commit that both advances and edits applies at the header tick —
+    // the tick before its own advance — and leaves the world two ticks on.
+    const CommitResult mixed = submitOk(*kernel,
+        proposalOf({Advance{2}, SetProperty{NodeId{1}, "title", Value::ofText("Sam at 5")}}, "advance and edit"));
+    CHECK(mixed.seq == 5);
+    CHECK(kernel->world().tick() == 5);
+    CHECK(kernel->journal().commits()[4].tick == 3);
+    bytes = readFile(path);
+    commits = decodeAll(bytes);
+    REQUIRE(commits.size() == 5);
+    CHECK(commits[4].record.tick == 3);
+    CHECK(bodyOf(bytes, commits[4]).find("tick 3\n") != std::string::npos);
+    CHECK(bodyOf(bytes, commits[4]).find("advance 2\n") != std::string::npos);
+
+    std::unique_ptr<Kernel> again = openOk(path, OpenPolicy::ReadOnly);
+    CHECK(again->status().kind == JournalStatus::Kind::Ok);
+    CHECK(again->world().tick() == 5);
+    CHECK(again->journal().commits()[4].tick == 3);
+    CHECK(again->world().node(NodeId{1})->props.at("title") == Value::ofText("Sam at 5"));
     std::remove(path.c_str());
 }
 
