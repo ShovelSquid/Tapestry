@@ -29,9 +29,9 @@ enum class OpenPolicy { Existing, ReadOnly };
 // is loaded read-only and nothing is ever repaired silently.
 struct JournalStatus {
     enum class Kind { Ok, TornTail, Corrupt } kind = Kind::Ok;
-    std::size_t offset = 0;      // start of the bad region
-    std::size_t bytes = 0;       // TornTail: bytes from offset to the end of the file
-    CommitSeq lastGoodSeq = 0;   // the last commit that verified (0: none)
+    std::size_t offset = 0;      // start of the bad region (TornTail: end of the verified prefix)
+    std::size_t bytes = 0;       // TornTail: unverified bytes after offset that are known to exist
+    CommitSeq lastGoodSeq = 0;   // the last commit that verified (0: none); equals lastSeq() when Ok
     std::string reason;
 };
 
@@ -75,7 +75,11 @@ public:
 
     // writeAll → sync → record. Refused (nothing written) unless status() is
     // Ok, a sink exists, and the record chains from lastDigest() with
-    // seq == lastSeq() + 1.
+    // seq == lastSeq() + 1. A write or sync the sink does not confirm leaves
+    // whatever reached it in place (a disk cannot take bytes back) and turns
+    // the status TornTail at the verified prefix: the journal never appends
+    // on top of bytes it could not vouch for, until an explicit repair() or
+    // a fresh open() decides what those bytes are.
     std::optional<IoError> append(const tree::Encoded& encoded, const CommitRecord& record);
 
     // A verified record whose ops the world refused to apply (the kernel
@@ -91,6 +95,15 @@ private:
     Journal() = default;
 
     static Expected<std::unique_ptr<Journal>, OpenFailure> scan(std::string bytes);
+    void markUnacknowledged(std::string_view attempted, const IoError& error);
+
+    // The file's bytes as verified — the whole verified prefix, followed by
+    // any unverified tail found at open or left by an unacknowledged append
+    // — so repair() and saveAs() work on exactly the bytes that were read or
+    // written, never on a file that may have changed since. Empty path: a
+    // sink-only journal (createWithSink / openBytes) that has no file.
+    std::filesystem::path m_path;
+    std::string m_bytes;
 
     HeaderRecord m_header;
     std::vector<CommitRecord> m_commits;

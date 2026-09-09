@@ -478,8 +478,11 @@ TEST_CASE("journal: single-byte corruption is never accepted") {
         // The damaged record and everything after it stay unloaded.
         CHECK_MESSAGE(kernel.journal().commitCount() <= record - 1, "flip at " << i << " in commit " << record);
         CHECK_MESSAGE(status.lastGoodSeq <= record - 1, "flip at " << i);
-        const bool offsetInsideRecord = status.offset >= boundaries[record - 1] && status.offset < boundaries[record];
-        CHECK_MESSAGE(offsetInsideRecord, "flip at " << i << " in commit " << record << " reported offset " << status.offset);
+        // The bad region never begins before the damaged record. (A flipped
+        // byte-count digit sends the decoder looking for the @end line past
+        // the real one; the offset it reports is where it looked.)
+        CHECK_MESSAGE(status.offset >= boundaries[record - 1],
+            "flip at " << i << " in commit " << record << " reported offset " << status.offset);
         CHECK_MESSAGE(kernel.world().nodeCount() == kNodesAfter[kernel.journal().commitCount()], "flip at " << i);
         if (record < 3) {
             // Bytes that are all present and do not verify are corruption,

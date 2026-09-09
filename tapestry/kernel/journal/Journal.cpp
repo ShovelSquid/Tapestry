@@ -7,10 +7,12 @@
 #include "kernel/Ops.hpp"
 #include "kernel/Value.hpp"
 
+#include <algorithm>
 #include <cerrno>
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <variant>
 
@@ -113,7 +115,11 @@ Expected<std::unique_ptr<Journal>, OpenFailure> Journal::create(const std::files
     if (!sink) {
         return fromIo(sink.error());
     }
-    return createWithSink(std::move(sink.value()), header);
+    auto journal = createWithSink(std::move(sink.value()), header);
+    if (journal) {
+        journal.value()->m_path = path;
+    }
+    return journal;
 }
 
 Expected<std::unique_ptr<Journal>, OpenFailure> Journal::createWithSink(std::unique_ptr<Sink> sink,
@@ -135,6 +141,7 @@ Expected<std::unique_ptr<Journal>, OpenFailure> Journal::createWithSink(std::uni
     journal->m_header = header;
     journal->m_lastDigest = encoded.digest;
     journal->m_verifiedBytes = encoded.bytes.size();
+    journal->m_bytes = encoded.bytes;
     journal->m_sink = std::move(sink);
     return journal;
 }
@@ -191,6 +198,10 @@ Expected<std::unique_ptr<Journal>, OpenFailure> Journal::scan(std::string bytes)
         journal->m_verifiedBytes = decoded.end;
         position = decoded.end;
     }
+    if (journal->m_status.kind == JournalStatus::Kind::Ok) {
+        journal->m_status.lastGoodSeq = journal->m_lastSeq;
+    }
+    journal->m_bytes = std::move(bytes);
     return journal;
 }
 
@@ -205,6 +216,7 @@ Expected<std::unique_ptr<Journal>, OpenFailure> Journal::open(const std::filesys
     if (!journal) {
         return journal.error();
     }
+    journal.value()->m_path = path;
     if (policy == OpenPolicy::Existing) {
         auto sink = openPosixSink(path, SinkMode::AppendExisting);
         if (!sink) {
@@ -238,9 +250,11 @@ std::optional<IoError> Journal::append(const tree::Encoded& encoded, const Commi
         return IoError{0, "record does not chain from the last verified record"};
     }
     if (auto failure = m_sink->writeAll(encoded.bytes)) {
+        markUnacknowledged(encoded.bytes, *failure);
         return failure;
     }
     if (auto failure = m_sink->sync()) {
+        markUnacknowledged(encoded.bytes, *failure);
         return failure;
     }
     // Only now: the bytes are on the medium.
@@ -249,7 +263,33 @@ std::optional<IoError> Journal::append(const tree::Encoded& encoded, const Commi
     m_lastDigest = encoded.digest;
     m_lastSeq = record.seq;
     m_verifiedBytes += encoded.bytes.size();
+    m_bytes += encoded.bytes;
+    m_status.lastGoodSeq = record.seq;
     return std::nullopt;
+}
+
+// An append the sink did not confirm. Whatever reached the sink past the
+// verified prefix (the sink's own size says how much — a real crash before
+// the flush may have kept any prefix of it, Assumption A3) is an
+// unacknowledged tail: kept in m_bytes so an explicit repair can preserve it,
+// and reported as TornTail so nothing is ever appended behind it. Writing on
+// would put a second `@commit <seq>` after the first and corrupt the file.
+void Journal::markUnacknowledged(std::string_view attempted, const IoError& error) {
+    const std::uint64_t size = m_sink->size();
+    std::size_t landed = 0;
+    if (size > m_verifiedBytes) {
+        landed = static_cast<std::size_t>(std::min<std::uint64_t>(size - m_verifiedBytes, attempted.size()));
+    }
+    m_bytes.resize(static_cast<std::size_t>(m_verifiedBytes));
+    m_bytes.append(attempted.data(), landed);
+    JournalStatus status;
+    status.kind = JournalStatus::Kind::TornTail;
+    status.offset = static_cast<std::size_t>(m_verifiedBytes);
+    status.bytes = landed;
+    status.lastGoodSeq = m_lastSeq;
+    status.reason = "append not acknowledged (" + error.what + "): " + std::to_string(landed)
+        + " unconfirmed bytes after the verified prefix";
+    m_status = status;
 }
 
 void Journal::markCorrupt(CommitSeq seq, std::string reason) {
