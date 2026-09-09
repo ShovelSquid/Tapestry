@@ -15,6 +15,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [ ] **Phase 1: Deterministic Core & Readable Format** - Transaction kernel, provenance-carrying world model, and the durable human-readable `.tree` journal
 - [ ] **Phase 2: Plugin Host, SDK & Feasibility Gate** - Versioned public plugin API, local dev loop, lifecycle safety, and the toolkit-deciding vertical slice
+- [ ] **Phase 2.1: Passage Anchors, Threads & Complete Rich Editing** - Passage-level linking, thread center nodes, gradient-of-focus hover hierarchy, and complete formatting toolbar with universal editing (INSERTED)
 - [ ] **Phase 3: Branching History & Deterministic Replay** - History navigation, fork-preserving branches, snapshots, and replay from recorded inputs
 - [ ] **Phase 4: Spatial Notebook** - Bundled note, drawing, property, and provenance-display plugins delivering the usable spatial workspace
 - [ ] **Phase 5: Deterministic Rule Engine** - Typed rule inputs/outputs, fixed-step simulation, forces, and explicit failure semantics
@@ -69,6 +70,41 @@ Plans:
   3. Disabling, unloading, or breaking a plugin releases its handlers, never prevents the base world from opening, and leaves its persisted content inspectable through the readable fallback
   4. A plugin with an unavailable API/schema/artifact version produces a clear compatibility result; recorded behavior is never silently substituted
   5. Every plugin-originated durable change passes through a validated, recorded core transaction, and a failed transaction leaves the prior state intact
+
+**Plans**: 4 plans
+
+Plans:
+**Wave 1**
+
+- [ ] 02-01-PLAN.md — Tracer: Electron + C++ bridge + note plugin + autosave + reopen
+
+**Wave 2**
+
+- [ ] 02-02-PLAN.md — Spatial canvas: pan/zoom, drag, connections, hover controls
+
+**Wave 3**
+
+- [ ] 02-03-PLAN.md — Plugin SDK contribution surface, lifecycle safety, third-party example
+
+**Wave 4**
+
+- [ ] 02-04-PLAN.md — Deletion, undo, basic rich text, packaged app + feasibility evidence
+
+**UI hint**: yes
+
+### Phase 2.1: Passage Anchors, Threads & Complete Rich Editing
+
+**Goal**: Passage-level linking, thread center nodes, gradient-of-focus hover hierarchy, and a complete formatting toolbar make connected thought legible at every scale — with universal editing across notes and thread centers
+**Mode:** mvp
+**Depends on**: Phase 2
+**Requirements**: TBD
+**Success Criteria** (what must be TRUE):
+
+  1. A user can select text in a note, link it to another note or passage, and see the thread with both endpoints highlighted on hover
+  2. Thread center nodes appear between endpoints, accept text, and behave as ordinary editable/connectable nodes
+  3. Overlapping passages produce a gradient-of-focus hierarchy where the smallest passage at the pointer is strongest and enclosing passages are progressively weaker
+  4. A complete floating formatting toolbar (bold, italic, headings, lists, color, alignment, font family) expands on hover with submenus that stay open while the pointer is inside
+  5. The same editor behavior and formatting controls work identically across ordinary notes and text-bearing thread center nodes
 
 **Plans**: TBD
 **UI hint**: yes
@@ -158,12 +194,13 @@ Plans:
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
+Phases execute in numeric order: 1 → 2 → 2.1 → 3 → 4 → 5 → 6 → 7
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Deterministic Core & Readable Format | 5/5 | In Progress|  |
-| 2. Plugin Host, SDK & Feasibility Gate | 0/TBD | Not started | - |
+| 2. Plugin Host, SDK & Feasibility Gate | 0/4 | Not started | - |
+| 2.1. Passage Anchors, Threads & Complete Rich Editing | 0/TBD | Not started | - |
 | 3. Branching History & Deterministic Replay | 0/TBD | Not started | - |
 | 4. Spatial Notebook | 0/TBD | Not started | - |
 | 5. Deterministic Rule Engine | 0/TBD | Not started | - |
