@@ -1,0 +1,29 @@
+{
+ "command": "/Users/kaelencook/conductor/workspaces/Tapestry/tehran/tapestry/build-kernel/tapestry_kernel_tests -ts=value",
+ "exitCode": 1,
+ "targetTest": "value: reals format as shortest round-trip text",
+ "targetFile": "tapestry/kernel_tests/value_test.cpp",
+ "expected": "formatReal(1.5) == \"1.5\" and the other seven new value-suite cases pass",
+ "actual": "8 of 9 test cases fail on assertions against RED stubs (57 failing assertions); only the pre-existing sha256 KAT passes",
+ "output": "ok 1 - value: sha256 known answer\nnot ok 2 - value: reals format as shortest round-trip text\n  # == 1.5\n  # == 0.30000000000000004\n  # == 0.1\n  # == 1e+300\n  # == -0\n  # == 4.35\n  # == 0.000125\n  # == -123.456789012345\n  # false\nnot ok 3 - value: reals are locale-proof and reject nan inf comma empty trailing\n  # false\nnot ok 4 - value: inline text quoting round-trips and block selection\n  # == \"He said \\\"hi\\\"\\n\\t\"\n  # == \"\"\n  # == \"plain\"\n  # 18446744073709551615 != 18446744073709551615\n  # 18446744073709551615 != 18446744073709551615\n  # 18446744073709551615 != 18446744073709551615\n  # false\nnot ok 5 - value: parseValue and formatInline per type\n  # false\nnot ok 6 - value: event time whitelist grammar (EDTF level 0/1 and RFC 3339)\n  # false\n  # false\n  # false\n  # false\n  # false\n  # false\n  # false\n  # false\n  # false\n  # false\n  # false\n  # false\n  # false\n  # false\n  # false\n  # false\n  # false\n  # false\n  # false\n  # false\n  # false\n  # false\n  # false\n  # false\n  # false\n  # false\n  # false\nnot ok 7 - value: recorded stamps round-trip as RFC 3339 UTC seconds\n  # false\nnot ok 8 - value: node and edge ids format as n<k>/e<k> and parse strictly\n  # == n12\n  # == e3\n  # == n1\n  # false\nnot ok 9 - value: type names round-trip\n  # == text\n  # == int\n  # == real\n  # == bool\n  # == ref\n  # == time\n  # false\n1..9\n# tests 9\n# pass 1\n# fail 8\n# cancelled 0\n# source: doctest -r=junit transcription (/tmp/tapestry-red-junit.xml)\n",
+ "verdict": "RED_EVIDENCE_OK",
+ "reason": "target_test_failed",
+ "evidence": {
+  "command": "/Users/kaelencook/conductor/workspaces/Tapestry/tehran/tapestry/build-kernel/tapestry_kernel_tests -ts=value",
+  "exit_code": 1,
+  "target_test": "value: reals format as shortest round-trip text",
+  "tests": 9,
+  "pass": 1,
+  "fail": 8,
+  "failing_tests": [
+   "value: reals format as shortest round-trip text",
+   "value: reals are locale-proof and reject nan inf comma empty trailing",
+   "value: inline text quoting round-trips and block selection",
+   "value: parseValue and formatInline per type",
+   "value: event time whitelist grammar (EDTF level 0/1 and RFC 3339)",
+   "value: recorded stamps round-trip as RFC 3339 UTC seconds",
+   "value: node and edge ids format as n<k>/e<k> and parse strictly",
+   "value: type names round-trip"
+  ]
+ }
+}
