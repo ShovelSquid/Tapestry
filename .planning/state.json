@@ -1,0 +1,48 @@
+{
+  "contract": "1.0.0",
+  "flavor": "core",
+  "milestone": "v1.0",
+  "phases": [
+    {
+      "number": "1",
+      "name": "Deterministic Core & Readable Format",
+      "status": "pending"
+    },
+    {
+      "number": "2",
+      "name": "Plugin Host, SDK & Feasibility Gate",
+      "status": "pending"
+    },
+    {
+      "number": "3",
+      "name": "Branching History & Deterministic Replay",
+      "status": "pending"
+    },
+    {
+      "number": "4",
+      "name": "Spatial Notebook",
+      "status": "pending"
+    },
+    {
+      "number": "5",
+      "name": "Deterministic Rule Engine",
+      "status": "pending"
+    },
+    {
+      "number": "6",
+      "name": "Conversational Companion & Guessing Policy",
+      "status": "pending"
+    },
+    {
+      "number": "7",
+      "name": "Companion Memory & Attention Evidence",
+      "status": "pending"
+    }
+  ],
+  "next": {
+    "command": "/gsd:progress --next",
+    "label": "Advance to the next step",
+    "reason": "Phase 1 of 7 · executing"
+  },
+  "updated_at": "2026-09-09T06:08:05.359Z"
+}
