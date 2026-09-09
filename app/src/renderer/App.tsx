@@ -4,6 +4,12 @@
  *
  * Double-clicking empty canvas space creates a new note (D-04).
  * Notes are rendered as NoteCard components with ProseMirror editing.
+ *
+ * Save state tracking (D-02):
+ * - "Saving..." when any note has a debounce timer active OR an IPC call in-flight
+ * - "Saved" only when ALL debounce timers have fired AND all IPC calls have completed
+ * - "Not saved" when the last IPC call failed
+ * The indicator never shows "Saved" while a debounce timer is still active.
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react'
@@ -34,8 +40,24 @@ export default function App(): React.ReactElement {
   const [isFileLoaded, setIsFileLoaded] = useState(false)
   const canvasRef = useRef<HTMLDivElement>(null)
 
-  // Track pending debounced saves
+  // Track pending debounced saves (IPC calls in-flight)
   const pendingSavesRef = useRef(0)
+  // Track notes with active debounce timers (text changed but not yet submitted)
+  const dirtyNotesRef = useRef(new Set<string>())
+
+  /**
+   * Recompute save state from the two sources of truth:
+   * - dirtyNotesRef: notes with active debounce timers
+   * - pendingSavesRef: IPC calls currently in-flight
+   * Only shows "Saved" when BOTH are empty.
+   */
+  const recomputeSaveState = useCallback(() => {
+    if (dirtyNotesRef.current.size > 0 || pendingSavesRef.current > 0) {
+      setSaveState('saving')
+    } else {
+      setSaveState('saved')
+    }
+  }, [])
 
   // -----------------------------------------------------------------------
   // Load state on mount
@@ -121,7 +143,7 @@ export default function App(): React.ReactElement {
           ],
         )
 
-        setSaveState('saved')
+        recomputeSaveState()
 
         // Refresh nodes and start editing the new one
         const updatedNodes = await window.tapestry.kernel.getNodes()
@@ -136,7 +158,35 @@ export default function App(): React.ReactElement {
         setSaveState('error')
       }
     },
-    [isFileLoaded],
+    [isFileLoaded, recomputeSaveState],
+  )
+
+  // -----------------------------------------------------------------------
+  // Debounce tracking: mark/unmark notes as dirty
+  // -----------------------------------------------------------------------
+
+  /**
+   * Called by NoteCard when a debounce timer starts (text changed).
+   * Marks the note as dirty so the indicator shows "Saving...".
+   */
+  const handleMarkDirty = useCallback(
+    (nodeId: string) => {
+      dirtyNotesRef.current.add(nodeId)
+      recomputeSaveState()
+    },
+    [recomputeSaveState],
+  )
+
+  /**
+   * Called by NoteCard when its debounce timer fires (about to call onSave).
+   * Removes the dirty mark — the IPC call is now tracked by pendingSavesRef.
+   */
+  const handleMarkClean = useCallback(
+    (nodeId: string) => {
+      dirtyNotesRef.current.delete(nodeId)
+      // Don't recompute here — the onSave call will increment pendingSavesRef
+    },
+    [],
   )
 
   // -----------------------------------------------------------------------
@@ -176,17 +226,16 @@ export default function App(): React.ReactElement {
         )
 
         pendingSavesRef.current -= 1
-        if (pendingSavesRef.current <= 0) {
-          pendingSavesRef.current = 0
-          setSaveState('saved')
-        }
+        if (pendingSavesRef.current < 0) pendingSavesRef.current = 0
+        recomputeSaveState()
       } catch (err) {
         pendingSavesRef.current -= 1
+        if (pendingSavesRef.current < 0) pendingSavesRef.current = 0
         console.error('Failed to save note:', err)
         setSaveState('error')
       }
     },
-    [],
+    [recomputeSaveState],
   )
 
   // -----------------------------------------------------------------------
@@ -222,7 +271,7 @@ export default function App(): React.ReactElement {
 
   return (
     <div className="tapestry-app">
-      {/* Top-left: file name + save indicator */}
+      {/* Top-left: file name + save indicator (D-02, D-05) */}
       <SaveIndicator filePath={filePath} saveState={saveState} />
 
       {/* Canvas */}
@@ -232,7 +281,7 @@ export default function App(): React.ReactElement {
         onDoubleClick={handleCanvasDoubleClick}
         onClick={handleCanvasClick}
       >
-        {/* Empty state */}
+        {/* Empty state (UI-SPEC copywriting) */}
         {!isFileLoaded && nodes.length === 0 && (
           <div className="tapestry-empty-state">
             <h2 className="tapestry-empty-heading">
@@ -252,7 +301,8 @@ export default function App(): React.ReactElement {
             isEditing={editingNodeId === node.id}
             onStartEditing={() => setEditingNodeId(node.id)}
             onSave={handleNoteSave}
-            onSaveStateChange={setSaveState}
+            onMarkDirty={handleMarkDirty}
+            onMarkClean={handleMarkClean}
           />
         ))}
       </div>

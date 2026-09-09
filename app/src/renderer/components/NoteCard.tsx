@@ -7,7 +7,9 @@
  * is keyboard-first with minimal chrome.
  *
  * Text changes are debounced (300ms) before submitting through the kernel
- * bridge (D-02 autosave).
+ * bridge (D-02 autosave). The component communicates its debounce lifecycle
+ * to the parent via onMarkDirty/onMarkClean so the save indicator never
+ * shows "Saved" while a debounce timer is active.
  */
 
 import React, { useCallback, useEffect, useRef } from 'react'
@@ -38,14 +40,15 @@ interface NodeInfo {
   props: Record<string, { type: string; value: string | number | boolean }>
 }
 
-type SaveState = 'saved' | 'saving' | 'error'
-
 interface NoteCardProps {
   node: NodeInfo
   isEditing: boolean
   onStartEditing: () => void
   onSave: (nodeId: string, body: string, title: string) => Promise<void>
-  onSaveStateChange: (state: SaveState) => void
+  /** Called when a debounce timer starts (text changed, save pending). */
+  onMarkDirty: (nodeId: string) => void
+  /** Called when the debounce timer fires (save is about to be submitted). */
+  onMarkClean: (nodeId: string) => void
 }
 
 // ---------------------------------------------------------------------------
@@ -90,7 +93,8 @@ export default function NoteCard({
   isEditing,
   onStartEditing,
   onSave,
-  onSaveStateChange,
+  onMarkDirty,
+  onMarkClean,
 }: NoteCardProps): React.ReactElement {
   const editorRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
@@ -100,6 +104,14 @@ export default function NoteCard({
   const y = Number(getNodeProp(node, 'position.y', 100))
   const body = String(getNodeProp(node, 'body', ''))
   const title = String(getNodeProp(node, 'title', ''))
+
+  // Stable refs for callbacks used inside ProseMirror dispatchTransaction
+  const onSaveRef = useRef(onSave)
+  const onMarkDirtyRef = useRef(onMarkDirty)
+  const onMarkCleanRef = useRef(onMarkClean)
+  onSaveRef.current = onSave
+  onMarkDirtyRef.current = onMarkDirty
+  onMarkCleanRef.current = onMarkClean
 
   // -----------------------------------------------------------------------
   // Initialize ProseMirror editor
@@ -132,6 +144,8 @@ export default function NoteCard({
       ],
     })
 
+    const nodeId = node.id
+
     const view = new EditorView(editorRef.current, {
       state,
       editable: () => isEditing,
@@ -140,16 +154,19 @@ export default function NoteCard({
         view.updateState(newState)
 
         if (tr.docChanged) {
-          // Signal that we have unsaved changes
-          onSaveStateChange('saving')
+          // Mark this note as dirty — indicator must show "Saving..."
+          onMarkDirtyRef.current(nodeId)
 
           // Debounce: submit after 300ms of inactivity (D-02)
           if (debounceRef.current) {
             clearTimeout(debounceRef.current)
           }
           debounceRef.current = setTimeout(() => {
+            debounceRef.current = null
+            // Unmark dirty — the IPC call is about to start, tracked by pendingSavesRef
+            onMarkCleanRef.current(nodeId)
             const { body: newBody, title: newTitle } = extractTextAndTitle(view)
-            onSave(node.id, newBody, newTitle)
+            onSaveRef.current(nodeId, newBody, newTitle)
           }, 300)
         }
       },
@@ -160,11 +177,13 @@ export default function NoteCard({
     return () => {
       if (debounceRef.current) {
         clearTimeout(debounceRef.current)
+        debounceRef.current = null
         // Flush pending save before unmount
+        onMarkCleanRef.current(nodeId)
         if (viewRef.current) {
           const { body: finalBody, title: finalTitle } = extractTextAndTitle(viewRef.current)
           if (finalBody !== body || finalTitle !== title) {
-            onSave(node.id, finalBody, finalTitle)
+            onSaveRef.current(nodeId, finalBody, finalTitle)
           }
         }
       }
