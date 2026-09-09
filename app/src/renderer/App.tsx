@@ -1,6 +1,10 @@
 /**
- * Main Tapestry application — renders a full-window 2D canvas (D-05)
+ * Main Tapestry application -- renders a full-window 2D canvas (D-05)
  * with notes positioned at their world-space coordinates.
+ *
+ * The Canvas component (Plan 03) handles pan/zoom, drag-to-reposition,
+ * connection display, and hover controls. This App component owns the
+ * data layer: nodes, edges, save state, file lifecycle.
  *
  * Double-clicking empty canvas space creates a new note (D-04).
  * Notes are rendered as NoteCard components with ProseMirror editing.
@@ -13,18 +17,12 @@
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react'
-import NoteCard from './components/NoteCard'
+import Canvas, { type NodeInfo, type EdgeInfo } from './components/Canvas'
 import SaveIndicator from './components/SaveIndicator'
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
-
-interface NodeInfo {
-  id: string
-  type: string
-  props: Record<string, { type: string; value: string | number | boolean }>
-}
 
 type SaveState = 'saved' | 'saving' | 'error'
 
@@ -34,11 +32,11 @@ type SaveState = 'saved' | 'saving' | 'error'
 
 export default function App(): React.ReactElement {
   const [nodes, setNodes] = useState<NodeInfo[]>([])
+  const [edges, setEdges] = useState<EdgeInfo[]>([])
   const [filePath, setFilePath] = useState<string | null>(null)
   const [saveState, setSaveState] = useState<SaveState>('saved')
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null)
   const [isFileLoaded, setIsFileLoaded] = useState(false)
-  const canvasRef = useRef<HTMLDivElement>(null)
 
   // Track pending debounced saves (IPC calls in-flight)
   const pendingSavesRef = useRef(0)
@@ -68,8 +66,16 @@ export default function App(): React.ReactElement {
       const nodeList = await window.tapestry.kernel.getNodes()
       setNodes(nodeList || [])
     } catch {
-      // Kernel not loaded yet — show empty canvas
       setNodes([])
+    }
+  }, [])
+
+  const refreshEdges = useCallback(async () => {
+    try {
+      const edgeList = await window.tapestry.kernel.getEdges()
+      setEdges(edgeList || [])
+    } catch {
+      setEdges([])
     }
   }, [])
 
@@ -83,30 +89,26 @@ export default function App(): React.ReactElement {
     }
   }, [])
 
-  useEffect(() => {
-    // Check if a file is already loaded (e.g. from last-opened)
-    refreshFilePath().then(() => refreshNodes())
+  const refreshAll = useCallback(async () => {
+    await Promise.all([refreshNodes(), refreshEdges()])
+  }, [refreshNodes, refreshEdges])
 
-    // Listen for file-opened events from the main process
+  useEffect(() => {
+    refreshFilePath().then(() => refreshAll())
+
     window.tapestry.onFileOpened((path: string) => {
       setFilePath(path)
       setIsFileLoaded(true)
-      refreshNodes()
+      refreshAll()
     })
-  }, [refreshNodes, refreshFilePath])
+  }, [refreshAll, refreshFilePath])
 
   // -----------------------------------------------------------------------
   // Create note on double-click (D-04)
   // -----------------------------------------------------------------------
 
   const handleCanvasDoubleClick = useCallback(
-    async (e: React.MouseEvent<HTMLDivElement>) => {
-      // Only handle clicks on the canvas background, not on existing notes
-      if (e.target !== canvasRef.current) return
-
-      const x = e.clientX
-      const y = e.clientY
-
+    async (worldX: number, worldY: number) => {
       // If no file is loaded, prompt for a save location first
       if (!isFileLoaded) {
         const result = await window.tapestry.dialog.showSave()
@@ -122,7 +124,7 @@ export default function App(): React.ReactElement {
         }
       }
 
-      // Create a new note node at the click position
+      // Create a new note node at the world-space click position
       try {
         setSaveState('saving')
         const commitResult = await window.tapestry.kernel.submit(
@@ -134,8 +136,8 @@ export default function App(): React.ReactElement {
               op: 'createNode',
               type: 'tapestry.notes/note@1',
               props: {
-                'position.x': { type: 'real', value: x },
-                'position.y': { type: 'real', value: y },
+                'position.x': { type: 'real', value: worldX },
+                'position.y': { type: 'real', value: worldY },
                 body: { type: 'text', value: '' },
                 title: { type: 'text', value: '' },
               },
@@ -146,10 +148,8 @@ export default function App(): React.ReactElement {
         recomputeSaveState()
 
         // Refresh nodes and start editing the new one
-        const updatedNodes = await window.tapestry.kernel.getNodes()
-        setNodes(updatedNodes || [])
+        await refreshAll()
 
-        // The new node ID is in the commit result
         if (commitResult.nodeIds && commitResult.nodeIds.length > 0) {
           setEditingNodeId(commitResult.nodeIds[0])
         }
@@ -158,17 +158,140 @@ export default function App(): React.ReactElement {
         setSaveState('error')
       }
     },
-    [isFileLoaded, recomputeSaveState],
+    [isFileLoaded, recomputeSaveState, refreshAll],
+  )
+
+  // -----------------------------------------------------------------------
+  // Position change handler (D-01 persistence)
+  // -----------------------------------------------------------------------
+
+  const handlePositionChange = useCallback(
+    async (nodeId: string, newX: number, newY: number) => {
+      pendingSavesRef.current += 1
+      setSaveState('saving')
+
+      try {
+        await window.tapestry.kernel.submit(
+          'user',
+          'local',
+          'Move note',
+          [
+            {
+              op: 'setProperty',
+              target: nodeId,
+              key: 'position.x',
+              type: 'real',
+              value: newX,
+            },
+            {
+              op: 'setProperty',
+              target: nodeId,
+              key: 'position.y',
+              type: 'real',
+              value: newY,
+            },
+          ],
+        )
+
+        pendingSavesRef.current -= 1
+        if (pendingSavesRef.current < 0) pendingSavesRef.current = 0
+        recomputeSaveState()
+
+        // Refresh to get confirmed positions
+        await refreshNodes()
+      } catch (err) {
+        pendingSavesRef.current -= 1
+        if (pendingSavesRef.current < 0) pendingSavesRef.current = 0
+        console.error('Failed to update position:', err)
+        setSaveState('error')
+      }
+    },
+    [recomputeSaveState, refreshNodes],
+  )
+
+  // -----------------------------------------------------------------------
+  // Width change handler (D-08 resize persistence)
+  // -----------------------------------------------------------------------
+
+  const handleWidthChange = useCallback(
+    async (nodeId: string, newWidth: number) => {
+      pendingSavesRef.current += 1
+      setSaveState('saving')
+
+      try {
+        await window.tapestry.kernel.submit(
+          'user',
+          'local',
+          'Resize note',
+          [
+            {
+              op: 'setProperty',
+              target: nodeId,
+              key: 'width',
+              type: 'real',
+              value: newWidth,
+            },
+          ],
+        )
+
+        pendingSavesRef.current -= 1
+        if (pendingSavesRef.current < 0) pendingSavesRef.current = 0
+        recomputeSaveState()
+
+        await refreshNodes()
+      } catch (err) {
+        pendingSavesRef.current -= 1
+        if (pendingSavesRef.current < 0) pendingSavesRef.current = 0
+        console.error('Failed to update width:', err)
+        setSaveState('error')
+      }
+    },
+    [recomputeSaveState, refreshNodes],
+  )
+
+  // -----------------------------------------------------------------------
+  // Edge creation handler
+  // -----------------------------------------------------------------------
+
+  const handleEdgeCreate = useCallback(
+    async (fromId: string, toId: string) => {
+      pendingSavesRef.current += 1
+      setSaveState('saving')
+
+      try {
+        await window.tapestry.kernel.submit(
+          'user',
+          'local',
+          'Connect notes',
+          [
+            {
+              op: 'createEdge',
+              from: fromId,
+              to: toId,
+              label: 'link',
+            },
+          ],
+        )
+
+        pendingSavesRef.current -= 1
+        if (pendingSavesRef.current < 0) pendingSavesRef.current = 0
+        recomputeSaveState()
+
+        await refreshEdges()
+      } catch (err) {
+        pendingSavesRef.current -= 1
+        if (pendingSavesRef.current < 0) pendingSavesRef.current = 0
+        console.error('Failed to create edge:', err)
+        setSaveState('error')
+      }
+    },
+    [recomputeSaveState, refreshEdges],
   )
 
   // -----------------------------------------------------------------------
   // Debounce tracking: mark/unmark notes as dirty
   // -----------------------------------------------------------------------
 
-  /**
-   * Called by NoteCard when a debounce timer starts (text changed).
-   * Marks the note as dirty so the indicator shows "Saving...".
-   */
   const handleMarkDirty = useCallback(
     (nodeId: string) => {
       dirtyNotesRef.current.add(nodeId)
@@ -177,14 +300,9 @@ export default function App(): React.ReactElement {
     [recomputeSaveState],
   )
 
-  /**
-   * Called by NoteCard when its debounce timer fires (about to call onSave).
-   * Removes the dirty mark — the IPC call is now tracked by pendingSavesRef.
-   */
   const handleMarkClean = useCallback(
     (nodeId: string) => {
       dirtyNotesRef.current.delete(nodeId)
-      // Don't recompute here — the onSave call will increment pendingSavesRef
     },
     [],
   )
@@ -239,19 +357,6 @@ export default function App(): React.ReactElement {
   )
 
   // -----------------------------------------------------------------------
-  // Click outside note to end editing (D-04)
-  // -----------------------------------------------------------------------
-
-  const handleCanvasClick = useCallback(
-    (e: React.MouseEvent<HTMLDivElement>) => {
-      if (e.target === canvasRef.current) {
-        setEditingNodeId(null)
-      }
-    },
-    [],
-  )
-
-  // -----------------------------------------------------------------------
   // Keyboard: Escape ends editing (D-04)
   // -----------------------------------------------------------------------
 
@@ -274,38 +379,22 @@ export default function App(): React.ReactElement {
       {/* Top-left: file name + save indicator (D-02, D-05) */}
       <SaveIndicator filePath={filePath} saveState={saveState} />
 
-      {/* Canvas */}
-      <div
-        ref={canvasRef}
-        className="tapestry-canvas"
-        onDoubleClick={handleCanvasDoubleClick}
-        onClick={handleCanvasClick}
-      >
-        {/* Empty state (UI-SPEC copywriting) */}
-        {!isFileLoaded && nodes.length === 0 && (
-          <div className="tapestry-empty-state">
-            <h2 className="tapestry-empty-heading">
-              Double-click anywhere to start
-            </h2>
-            <p className="tapestry-empty-body">
-              Create notes, connect ideas, and build your world of thought.
-            </p>
-          </div>
-        )}
-
-        {/* Note cards */}
-        {nodes.map((node) => (
-          <NoteCard
-            key={node.id}
-            node={node}
-            isEditing={editingNodeId === node.id}
-            onStartEditing={() => setEditingNodeId(node.id)}
-            onSave={handleNoteSave}
-            onMarkDirty={handleMarkDirty}
-            onMarkClean={handleMarkClean}
-          />
-        ))}
-      </div>
+      {/* Canvas with pan/zoom, notes, connections, and controls */}
+      <Canvas
+        nodes={nodes}
+        edges={edges}
+        editingNodeId={editingNodeId}
+        isFileLoaded={isFileLoaded}
+        onStartEditing={(nodeId) => setEditingNodeId(nodeId)}
+        onStopEditing={() => setEditingNodeId(null)}
+        onCanvasDoubleClick={handleCanvasDoubleClick}
+        onSave={handleNoteSave}
+        onMarkDirty={handleMarkDirty}
+        onMarkClean={handleMarkClean}
+        onPositionChange={handlePositionChange}
+        onWidthChange={handleWidthChange}
+        onEdgeCreate={handleEdgeCreate}
+      />
     </div>
   )
 }
