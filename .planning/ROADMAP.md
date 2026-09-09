@@ -36,12 +36,12 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. After an interrupted write (simulated crash mid-save), reopening recovers the last complete committed history with no silent loss and no silent acceptance of partial changes
   4. Every recorded change carries a distinguishable domain event time, recorded/corrected time, and simulation tick, and a reader can tell the three apart in the journal
 
-**Plans**: 5 plans
+**Plans**: 1/5 plans executed
 
 Plans:
 **Wave 1**
 
-- [ ] 01-01-PLAN.md — Lock the .tree v1 format bundle (decision gate), stand up the rendering-independent kernel target + doctest runner, typed value/time/id primitives
+- [x] 01-01-PLAN.md — Lock the .tree v1 format bundle (decision gate), stand up the rendering-independent kernel target + doctest runner, typed value/time/id primitives
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -162,7 +162,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Deterministic Core & Readable Format | 0/5 | Not started | - |
+| 1. Deterministic Core & Readable Format | 1/5 | In Progress|  |
 | 2. Plugin Host, SDK & Feasibility Gate | 0/TBD | Not started | - |
 | 3. Branching History & Deterministic Replay | 0/TBD | Not started | - |
 | 4. Spatial Notebook | 0/TBD | Not started | - |
