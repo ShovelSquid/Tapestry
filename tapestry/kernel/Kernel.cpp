@@ -127,6 +127,8 @@ Expected<CommitResult, Rejection> Kernel::submit(const Proposal& proposal) {
         }
         if (const auto* create = std::get_if<CreateNode>(&op)) {
             result.nodeIds.push_back(create->id);
+        } else if (const auto* edge = std::get_if<CreateEdge>(&op)) {
+            result.edgeIds.push_back(edge->id);
         }
         scratch.apply(op);
         record.ops.push_back(std::move(op));

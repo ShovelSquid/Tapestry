@@ -12,6 +12,7 @@
 #include <cstring>
 #include <string>
 #include <utility>
+#include <variant>
 
 namespace tapestry::kernel {
 namespace {
@@ -151,7 +152,9 @@ Expected<std::unique_ptr<Journal>, OpenFailure> Journal::scan(std::string bytes)
     journal->m_verifiedBytes = header.value().end;
 
     std::size_t position = header.value().end;
-    const Tick expectedTick = 0; // Plan 03: follows advance ops
+    // The tick a commit must carry is the tick the replayed world is at:
+    // zero, raised by every advance op in the verified commits before it.
+    Tick expectedTick = 0;
     while (position < bytes.size()) {
         auto commit = tree::decodeCommit(bytes, position, journal->m_lastDigest, journal->m_lastSeq + 1, expectedTick);
         if (!commit) {
@@ -176,6 +179,11 @@ Expected<std::unique_ptr<Journal>, OpenFailure> Journal::scan(std::string bytes)
             break;
         }
         tree::DecodedCommit& decoded = commit.value();
+        for (const Op& op : decoded.record.ops) {
+            if (const auto* advance = std::get_if<Advance>(&op)) {
+                expectedTick += advance->ticks;
+            }
+        }
         journal->m_commits.push_back(std::move(decoded.record));
         journal->m_commitBegins.push_back(decoded.begin);
         journal->m_lastDigest = decoded.digest;

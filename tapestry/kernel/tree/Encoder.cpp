@@ -1,6 +1,8 @@
 // struct -> bytes. Builds the body as one string of LF-terminated lines,
 // prepends the counted head line, seals it with the digest of exactly those
-// bytes, and never performs I/O.
+// bytes, and never performs I/O. There is exactly one canonical form for
+// every record: no option, no normalization step, so a decoded record
+// re-encodes to the bytes it came from.
 
 #include "kernel/tree/Codec.hpp"
 
@@ -113,12 +115,43 @@ void appendOp(std::string& body, const Op& op) {
             }
         },
         [&](const SetProperty& set) { appendSet(body, formatTarget(set.target), set.key, set.value); },
-        // RED stubs: emit nothing until the GREEN commit.
-        [](const UnsetProperty&) {},
-        [](const CreateEdge&) {},
-        [](const DeleteNode&) {},
-        [](const DeleteEdge&) {},
-        [](const Advance&) {},
+        [&](const UnsetProperty& unset) {
+            body += "unset ";
+            body += formatTarget(unset.target);
+            body += ' ';
+            body += unset.key;
+            body += '\n';
+        },
+        [&](const CreateEdge& create) {
+            const std::string id = format(create.id);
+            body += "create-edge ";
+            body += id;
+            body += ' ';
+            body += format(create.from);
+            body += ' ';
+            body += format(create.to);
+            body += ' ';
+            body += create.label;
+            body += '\n';
+            for (const auto& [key, value] : create.props) {
+                appendSet(body, id, key, value);
+            }
+        },
+        [&](const DeleteNode& del) {
+            body += "delete-node ";
+            body += format(del.id);
+            body += '\n';
+        },
+        [&](const DeleteEdge& del) {
+            body += "delete-edge ";
+            body += format(del.id);
+            body += '\n';
+        },
+        [&](const Advance& advance) {
+            body += "advance ";
+            body += decimal(advance.ticks);
+            body += '\n';
+        },
     }, op);
 }
 

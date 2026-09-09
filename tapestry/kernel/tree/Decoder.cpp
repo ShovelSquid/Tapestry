@@ -80,7 +80,8 @@ std::optional<std::vector<std::string_view>> tokenize(std::string_view line) {
 }
 
 // The first four tokens of a set line and the value text after them, which
-// may itself contain spaces (an inline quoted string).
+// may itself contain spaces (an inline quoted string). `value` is empty when
+// the line stops after the type, so the caller can name that failure.
 struct SetFields {
     std::string_view target;
     std::string_view key;
@@ -91,18 +92,33 @@ struct SetFields {
 std::optional<SetFields> splitSetLine(std::string_view line) {
     std::string_view fields[4];
     std::size_t pos = 0;
-    for (std::string_view& field : fields) {
+    for (std::size_t i = 0; i < 4; ++i) {
         const auto space = line.find(' ', pos);
-        if (space == std::string_view::npos || space == pos) {
+        const std::size_t end = space == std::string_view::npos ? line.size() : space;
+        if (end == pos) {
             return std::nullopt;
         }
-        field = line.substr(pos, space - pos);
+        fields[i] = line.substr(pos, end - pos);
+        if (space == std::string_view::npos) {
+            if (i < 3) {
+                return std::nullopt;
+            }
+            return SetFields{fields[1], fields[2], fields[3], std::string_view()};
+        }
         pos = space + 1;
     }
-    if (pos >= line.size()) {
-        return std::nullopt;
-    }
     return SetFields{fields[1], fields[2], fields[3], line.substr(pos)};
+}
+
+// `n<k>` or `e<k>`.
+std::optional<Target> parseTarget(std::string_view text) {
+    if (const auto nodeId = parseNodeId(text)) {
+        return Target{*nodeId};
+    }
+    if (const auto edgeId = parseEdgeId(text)) {
+        return Target{*edgeId};
+    }
+    return std::nullopt;
 }
 
 bool isPrefixOf(std::string_view text, std::string_view whole) {
@@ -195,7 +211,8 @@ Expected<Envelope, DecodeFailure> readEnvelope(std::string_view file, std::size_
     }
     const Digest actual = sha256(file.substr(offset, endStart - offset));
     if (actual != *claimed) {
-        return fail(Reason::DigestMismatch, endStart, "@end digest does not match the record bytes");
+        return fail(Reason::DigestMismatch, offset,
+            "@end digest at offset " + std::to_string(endStart) + " is not the SHA-256 of the record bytes");
     }
     return Envelope{(*tokens)[1], file.substr(bodyStart, bytes), bodyStart, actual, endLf + 1};
 }
@@ -205,7 +222,10 @@ Expected<Envelope, DecodeFailure> readEnvelope(std::string_view file, std::size_
 Expected<std::vector<Line>, DecodeFailure> splitBody(std::string_view body, std::size_t bodyOffset) {
     const std::size_t bad = findInvalidText(body);
     if (bad != std::string_view::npos) {
-        return fail(Reason::InvalidUtf8, bodyOffset + bad, "NUL byte or invalid UTF-8 in record body");
+        const auto previousLf = bad == 0 ? std::string_view::npos : body.rfind('\n', bad - 1);
+        const std::size_t lineStart = previousLf == std::string_view::npos ? 0 : previousLf + 1;
+        return fail(Reason::InvalidUtf8, bodyOffset + lineStart,
+            "NUL byte or invalid UTF-8 at offset " + std::to_string(bodyOffset + bad) + " in record body");
     }
     if (!body.empty() && body.back() != '\n') {
         return fail(Reason::BadLine, bodyOffset + body.size(), "record body does not end with a line feed");
@@ -227,20 +247,29 @@ Expected<std::vector<Line>, DecodeFailure> splitBody(std::string_view body, std:
 bool isExtensionLine(std::string_view line) { return line.size() >= 2 && line.substr(0, 2) == "x-"; }
 
 // One op line (plus the block lines it may consume). Advances `index` past
-// everything it used.
-std::optional<DecodeFailure> parseOp(const std::vector<Line>& lines, std::size_t& index, std::vector<Op>& ops) {
+// everything it used. `seq` appears only in diagnostics. A line is BadLine
+// when its shape is wrong (token count, an id or key that does not parse)
+// and BadValue when the shape is right but the value is not.
+std::optional<DecodeFailure> parseOp(const std::vector<Line>& lines, std::size_t& index, std::vector<Op>& ops,
+    CommitSeq seq) {
     const Line& line = lines[index];
     const auto space = line.text.find(' ');
     const std::string_view verb = line.text.substr(0, space);
+    const auto tokens = tokenize(line.text);
+    if (!tokens) {
+        return fail(Reason::BadLine, line.offset, "op line has an empty token (double, leading or trailing space)");
+    }
 
     if (verb == "create-node") {
-        const auto tokens = tokenize(line.text);
-        if (!tokens || tokens->size() != 3) {
+        if (tokens->size() != 3) {
             return fail(Reason::BadLine, line.offset, "create-node needs exactly <id> <type>");
         }
         const auto id = parseNodeId((*tokens)[1]);
         if (!id) {
             return fail(Reason::BadLine, line.offset, "create-node id is not n<k>: " + std::string((*tokens)[1]));
+        }
+        if (!isToken((*tokens)[2])) {
+            return fail(Reason::BadLine, line.offset, "create-node type is not one token");
         }
         ops.push_back(CreateNode{*id, std::string((*tokens)[2]), {}});
         index += 1;
@@ -252,12 +281,8 @@ std::optional<DecodeFailure> parseOp(const std::vector<Line>& lines, std::size_t
         if (!fields) {
             return fail(Reason::BadLine, line.offset, "set needs <target> <key> <type> <value>");
         }
-        Target target;
-        if (const auto nodeId = parseNodeId(fields->target)) {
-            target = *nodeId;
-        } else if (const auto edgeId = parseEdgeId(fields->target)) {
-            target = *edgeId;
-        } else {
+        const auto target = parseTarget(fields->target);
+        if (!target) {
             return fail(Reason::BadLine, line.offset, "set target is not n<k> or e<k>: " + std::string(fields->target));
         }
         if (!isValidKey(fields->key)) {
@@ -265,11 +290,15 @@ std::optional<DecodeFailure> parseOp(const std::vector<Line>& lines, std::size_t
         }
         const auto type = parseTypeName(fields->type);
         if (!type) {
-            return fail(Reason::BadLine, line.offset, "set type is not text|int|real|bool|ref|time: " + std::string(fields->type));
+            return fail(Reason::BadValue, line.offset,
+                "set type is not text|int|real|bool|ref|time: " + std::string(fields->type));
+        }
+        if (fields->value.empty()) {
+            return fail(Reason::BadValue, line.offset, "set line has no value after its type");
         }
         if (fields->value.size() >= 2 && fields->value.substr(0, 2) == "<<") {
             // A delimited block: the following lines up to one equal to the
-            // delimiter, all inside the counted body.
+            // delimiter, all inside the counted body — never a byte beyond it.
             if (*type != ValueType::Text) {
                 return fail(Reason::BadValue, line.offset, "a <<block is only valid for a text value");
             }
@@ -291,9 +320,10 @@ std::optional<DecodeFailure> parseOp(const std::vector<Line>& lines, std::size_t
                 text += lines[cursor].text;
             }
             if (!closed) {
-                return fail(Reason::BadValue, line.offset, "block is not closed by a line equal to " + std::string(delimiter));
+                return fail(Reason::BadValue, line.offset,
+                    "block is not closed by a line equal to " + std::string(delimiter) + " inside the record");
             }
-            ops.push_back(SetProperty{target, std::string(fields->key), Value::ofText(std::move(text))});
+            ops.push_back(SetProperty{*target, std::string(fields->key), Value::ofText(std::move(text))});
             index = cursor + 1;
             return std::nullopt;
         }
@@ -302,14 +332,84 @@ std::optional<DecodeFailure> parseOp(const std::vector<Line>& lines, std::size_t
             return fail(Reason::BadValue, line.offset,
                 "value does not parse as " + std::string(fields->type) + ": " + std::string(fields->value));
         }
-        ops.push_back(SetProperty{target, std::string(fields->key), std::move(*value)});
+        ops.push_back(SetProperty{*target, std::string(fields->key), std::move(*value)});
+        index += 1;
+        return std::nullopt;
+    }
+
+    if (verb == "unset") {
+        if (tokens->size() != 3) {
+            return fail(Reason::BadLine, line.offset, "unset needs exactly <target> <key>");
+        }
+        const auto target = parseTarget((*tokens)[1]);
+        if (!target) {
+            return fail(Reason::BadLine, line.offset, "unset target is not n<k> or e<k>: " + std::string((*tokens)[1]));
+        }
+        if (!isValidKey((*tokens)[2])) {
+            return fail(Reason::BadLine, line.offset, "unset key is not a valid key: " + std::string((*tokens)[2]));
+        }
+        ops.push_back(UnsetProperty{*target, std::string((*tokens)[2])});
+        index += 1;
+        return std::nullopt;
+    }
+
+    if (verb == "create-edge") {
+        if (tokens->size() != 5) {
+            return fail(Reason::BadLine, line.offset, "create-edge needs exactly <id> <from> <to> <label>");
+        }
+        const auto id = parseEdgeId((*tokens)[1]);
+        const auto from = parseNodeId((*tokens)[2]);
+        const auto to = parseNodeId((*tokens)[3]);
+        if (!id || !from || !to) {
+            return fail(Reason::BadLine, line.offset, "create-edge ids must be e<k> n<a> n<b>: " + std::string(line.text));
+        }
+        if (!isToken((*tokens)[4])) {
+            return fail(Reason::BadLine, line.offset, "create-edge label is not one token");
+        }
+        ops.push_back(CreateEdge{*id, *from, *to, std::string((*tokens)[4]), {}});
+        index += 1;
+        return std::nullopt;
+    }
+
+    if (verb == "delete-node") {
+        const auto id = tokens->size() == 2 ? parseNodeId((*tokens)[1]) : std::nullopt;
+        if (!id) {
+            return fail(Reason::BadLine, line.offset, "delete-node needs exactly one n<k>");
+        }
+        ops.push_back(DeleteNode{*id});
+        index += 1;
+        return std::nullopt;
+    }
+
+    if (verb == "delete-edge") {
+        const auto id = tokens->size() == 2 ? parseEdgeId((*tokens)[1]) : std::nullopt;
+        if (!id) {
+            return fail(Reason::BadLine, line.offset, "delete-edge needs exactly one e<k>");
+        }
+        ops.push_back(DeleteEdge{*id});
+        index += 1;
+        return std::nullopt;
+    }
+
+    if (verb == "advance") {
+        const auto ticks = tokens->size() == 2 ? parseCount((*tokens)[1]) : std::nullopt;
+        if (!ticks) {
+            return fail(Reason::BadLine, line.offset, "advance needs exactly one decimal count");
+        }
+        if (*ticks == 0) {
+            return fail(Reason::BadValue, line.offset, "advance 0 changes nothing and is never written");
+        }
+        ops.push_back(Advance{*ticks});
         index += 1;
         return std::nullopt;
     }
 
     // A verb this kernel does not know — written by a newer Tapestry or by
     // hand. Never skipped: applying the rest would diverge from the history.
-    return fail(Reason::UnsupportedOp, line.offset, std::string(verb));
+    // Plugin data belongs on x- lines, which are kept without being read.
+    return fail(Reason::UnsupportedOp, line.offset,
+        "UnsupportedOp: verb '" + std::string(verb) + "' in commit " + std::to_string(seq)
+            + " is not a v1 op (create-node, set, unset, create-edge, delete-node, delete-edge, advance)");
 }
 
 } // namespace
@@ -421,7 +521,8 @@ Expected<DecodedCommit, DecodeFailure> decodeCommit(std::string_view file, std::
     }
     if (*tick != expectedTick) {
         return fail(Reason::TickMismatch, lines[3].offset,
-            "expected tick " + std::to_string(expectedTick) + ", found " + std::to_string(*tick));
+            "TickMismatch: expected tick " + std::to_string(expectedTick) + " (the tick the replayed world is at), found "
+                + std::to_string(*tick));
     }
     record.tick = *tick;
 
@@ -449,7 +550,7 @@ Expected<DecodedCommit, DecodeFailure> decodeCommit(std::string_view file, std::
             index += 1;
             continue;
         }
-        if (auto failure = parseOp(lines, index, record.ops)) {
+        if (auto failure = parseOp(lines, index, record.ops, *seq)) {
             return *failure;
         }
     }

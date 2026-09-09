@@ -32,16 +32,24 @@ Encoded encodeHeader(const HeaderRecord& record);
 
 // `@commit <seq> <bytes>` + body + `@end sha256:<hex>`. Body lines in fixed
 // order: parent, branch, recorded, tick, actor, message (when non-empty), the
-// ops, then extension lines verbatim. Inline text never carries a raw LF —
-// any text containing one, or longer than 80 bytes, is written as a
-// `<<DELIM` block whose delimiter (TEXT, TEXT1, TEXT2 …) is the first that
-// equals no line of the text.
+// ops, then extension lines verbatim. Op lines, one form each:
+//   create-node n<k> <type>          then `set n<k> …` per initial prop (key order)
+//   set <n<k>|e<k>> <key> <type> <value>
+//   unset <n<k>|e<k>> <key>
+//   create-edge e<k> n<a> n<b> <label>  then `set e<k> …` per initial prop
+//   delete-node n<k>   delete-edge e<k>   advance <n>
+// Inline text never carries a raw LF — any text containing one, or longer
+// than 80 bytes, is written as a `<<DELIM` block whose delimiter (TEXT,
+// TEXT1, TEXT2 …) is the first that equals no line of the text. This is the
+// only form the encoder ever writes; there is no normalization step.
 Encoded encodeCommit(const CommitRecord& record);
 
-// Why a record could not be decoded, and where. Every failure carries the
-// byte offset of the offending line or record. atEof is the flag the journal
-// uses to tell a torn tail (the record could not be completed before the end
-// of the input) from corruption of bytes that are all present.
+// Why a record could not be decoded, and where. Every failure carries a byte
+// offset: the offending line for grammar and value failures (InvalidUtf8
+// names the line holding the bad byte), the record's own head line for
+// envelope, digest and seq failures. atEof is the flag the journal uses to
+// tell a torn tail (the record could not be completed before the end of the
+// input) from corruption of bytes that are all present.
 struct DecodeFailure {
     enum class Reason {
         Truncated,      // the input ended inside this record
@@ -81,8 +89,11 @@ Expected<DecodedHeader, DecodeFailure> decodeHeader(std::string_view file);
 
 // Decodes one commit record starting at `offset`, verifying its envelope and
 // digest first, then that it chains from `expectedParent`, carries
-// `expectedSeq` and applies at `expectedTick`, then every body line. Unknown
-// `x-` lines are kept; any other unknown verb is UnsupportedOp.
+// `expectedSeq` and applies at `expectedTick`, then every body line. Each
+// `set` line becomes its own SetProperty op (a create-node/create-edge
+// decodes with empty props) so re-encoding reproduces the line order.
+// `x-` lines are kept verbatim, in order, wherever they appear; any other
+// unknown verb is UnsupportedOp naming the verb and the seq — never skipped.
 Expected<DecodedCommit, DecodeFailure> decodeCommit(std::string_view file, std::size_t offset,
     const Digest& expectedParent, CommitSeq expectedSeq, Tick expectedTick);
 
