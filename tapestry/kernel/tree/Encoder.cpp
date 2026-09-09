@@ -90,21 +90,36 @@ std::string formatTarget(const Target& target) {
     return format(std::get<EdgeId>(target));
 }
 
+// One operator() per Op alternative; std::visit refuses to compile when an
+// alternative is missing — there is no default branch to hide a new verb.
+template <class... Fs>
+struct Overload : Fs... {
+    using Fs::operator()...;
+};
+template <class... Fs>
+Overload(Fs...) -> Overload<Fs...>;
+
 void appendOp(std::string& body, const Op& op) {
-    if (const auto* create = std::get_if<CreateNode>(&op)) {
-        const std::string id = format(create->id);
-        body += "create-node ";
-        body += id;
-        body += ' ';
-        body += create->type;
-        body += '\n';
-        for (const auto& [key, value] : create->props) {
-            appendSet(body, id, key, value);
-        }
-        return;
-    }
-    const auto& set = std::get<SetProperty>(op);
-    appendSet(body, formatTarget(set.target), set.key, set.value);
+    std::visit(Overload{
+        [&](const CreateNode& create) {
+            const std::string id = format(create.id);
+            body += "create-node ";
+            body += id;
+            body += ' ';
+            body += create.type;
+            body += '\n';
+            for (const auto& [key, value] : create.props) {
+                appendSet(body, id, key, value);
+            }
+        },
+        [&](const SetProperty& set) { appendSet(body, formatTarget(set.target), set.key, set.value); },
+        // RED stubs: emit nothing until the GREEN commit.
+        [](const UnsetProperty&) {},
+        [](const CreateEdge&) {},
+        [](const DeleteNode&) {},
+        [](const DeleteEdge&) {},
+        [](const Advance&) {},
+    }, op);
 }
 
 // "<head> <bytes>\n" + body, digested exactly as written, then the @end line.

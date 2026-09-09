@@ -17,9 +17,12 @@ namespace tapestry::kernel {
 struct Actor {
     std::string kind;
     std::string id;
+
+    friend bool operator==(const Actor&, const Actor&) = default;
 };
 
-// What a `set` line addresses: a node or an edge, never a bare integer.
+// What a `set` or `unset` line addresses: a node or an edge, never a bare
+// integer.
 using Target = std::variant<NodeId, EdgeId>;
 
 // `create-node n<k> <type>` followed by one `set` line per initial property
@@ -30,6 +33,8 @@ struct CreateNode {
     NodeId id;
     std::string type;
     std::map<std::string, Value> props;
+
+    friend bool operator==(const CreateNode&, const CreateNode&) = default;
 };
 
 // `set <n<k>|e<k>> <key> <type> <value>`: writes one typed property on an
@@ -38,12 +43,62 @@ struct SetProperty {
     Target target;
     std::string key;
     Value value;
+
+    friend bool operator==(const SetProperty&, const SetProperty&) = default;
 };
 
-// The op vocabulary the tracer path knows. Plan 03 appends UnsetProperty,
-// CreateEdge, DeleteNode, DeleteEdge and Advance; the variant grows, nothing
-// here changes shape.
-using Op = std::variant<CreateNode, SetProperty>;
+// `unset <n<k>|e<k>> <key>`: removes one property that exists on the target.
+// Removing a property that is not there is refused, so a reader can trust
+// that every unset line changed something.
+struct UnsetProperty {
+    Target target;
+    std::string key;
+
+    friend bool operator==(const UnsetProperty&, const UnsetProperty&) = default;
+};
+
+// `create-edge e<k> n<a> n<b> <label>` followed by one `set e<k>` line per
+// initial property (key order). Both endpoints must be live nodes and the
+// label is one token; the id follows the same 0-means-assign rule as nodes.
+struct CreateEdge {
+    EdgeId id;
+    NodeId from;
+    NodeId to;
+    std::string label;
+    std::map<std::string, Value> props;
+
+    friend bool operator==(const CreateEdge&, const CreateEdge&) = default;
+};
+
+// `delete-node n<k>`: removes a live node and every edge that touches it.
+// The id is tombstoned — it stays readable in the history and is never
+// handed out again.
+struct DeleteNode {
+    NodeId id;
+
+    friend bool operator==(const DeleteNode&, const DeleteNode&) = default;
+};
+
+// `delete-edge e<k>`: removes a live edge; its id is tombstoned as well.
+struct DeleteEdge {
+    EdgeId id;
+
+    friend bool operator==(const DeleteEdge&, const DeleteEdge&) = default;
+};
+
+// `advance <n>`: moves the world tick forward by n >= 1. The commit that
+// carries it still applies at the tick before the move; the next commit's
+// tick line shows the new value.
+struct Advance {
+    Tick ticks = 0;
+
+    friend bool operator==(const Advance&, const Advance&) = default;
+};
+
+// The complete v1 op vocabulary. Every visitor over it is written without a
+// default branch, so adding an eighth verb is a compile error in the encoder,
+// the decoder and the world until each one handles it.
+using Op = std::variant<CreateNode, SetProperty, UnsetProperty, CreateEdge, DeleteNode, DeleteEdge, Advance>;
 
 // One of exactly human, plugin or system.
 inline bool isValidActorKind(std::string_view kind) {

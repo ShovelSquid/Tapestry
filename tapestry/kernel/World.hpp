@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <map>
 #include <optional>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -23,8 +24,7 @@ struct Node {
 };
 
 // A directed, labelled connection between two nodes, with its own properties.
-// Declared now so the world's shape is complete; Plan 03 adds the ops that
-// create and delete edges.
+// Deleting either endpoint deletes the edge with it.
 struct Edge {
     EdgeId id;
     NodeId from;
@@ -37,15 +37,15 @@ struct Edge {
 // request, not an exception: nothing was written and nothing changed.
 struct Rejection {
     enum class Kind {
-        UnknownTarget,   // set on a node or edge that does not exist
+        UnknownTarget,   // set/unset/delete on a node, edge or property that does not exist
         DuplicateId,     // a creation op names an id that already exists
-        IdOutOfOrder,    // a creation op names an id other than the next one
+        IdOutOfOrder,    // a creation op names an id other than the next one (including a deleted one)
         BadType,         // a node type that is not one token
         BadKey,          // a property key outside [A-Za-z_][A-Za-z0-9_.:-]*
-        BadValue,        // a value the file could not carry (NaN, bad time, bad text)
-        RefMissing,      // a ref value that resolves to nothing
+        BadValue,        // a value the file could not carry (NaN, bad time, bad text, bad label)
+        RefMissing,      // a ref value or an edge endpoint that resolves to nothing live
         BadActor,        // an actor kind outside human|plugin|system, or an id that is not a token
-        TickZero,        // advance by zero (Plan 03)
+        TickZero,        // advance by zero
         JournalNotClean, // the journal is torn or corrupt; repair first
         Io               // the durable write failed; the world is unchanged
     } kind;
@@ -58,11 +58,14 @@ struct Rejection {
 // after replaying a journal is the state the journal describes.
 class World {
 public:
-    // Read-only queries. node() returns nullptr for an unknown id; the pointer
-    // is valid until the next apply().
+    // Read-only queries. node()/edge() return nullptr for an unknown or
+    // deleted id; the pointer is valid until the next apply().
     const Node* node(NodeId id) const;
+    const Edge* edge(EdgeId id) const;
     std::vector<NodeId> nodeIds() const;
+    std::vector<EdgeId> edgeIds() const;
     std::size_t nodeCount() const;
+    std::size_t edgeCount() const;
     Tick tick() const;
 
     // The ids the next creation ops will receive: sequential per world, never
@@ -70,12 +73,18 @@ public:
     NodeId nextNodeId() const;
     EdgeId nextEdgeId() const;
 
+    // Tombstones. A deleted id is remembered for the life of the world so it
+    // is never handed out again and so a reader can tell "deleted" from
+    // "never existed".
+    bool wasDeleted(NodeId id) const;
+    bool wasDeleted(EdgeId id) const;
+
     // Validates one op against the current state and, for a creation op whose
-    // id is 0, assigns nextNodeId() in place — the only place ids are ever
-    // assigned. A non-zero id must equal nextNodeId() or the op is rejected
-    // IdOutOfOrder, so a decoded record replays with its committed ids and
-    // never re-derives them. Returns the first Rejection found, or nullopt
-    // when the op may be applied. Never changes the world.
+    // id is 0, assigns nextNodeId()/nextEdgeId() in place — the only place
+    // ids are ever assigned. A non-zero id must equal the next one or the op
+    // is rejected IdOutOfOrder, so a decoded record replays with its
+    // committed ids and never re-derives them. Returns the first Rejection
+    // found, or nullopt when the op may be applied. Never changes the world.
     std::optional<Rejection> prepare(Op&) const;
 
     // Applies an op. Precondition: prepare() returned nullopt for this op
@@ -85,6 +94,8 @@ public:
 private:
     std::map<NodeId, Node> m_nodes;
     std::map<EdgeId, Edge> m_edges;
+    std::set<NodeId> m_deletedNodes;
+    std::set<EdgeId> m_deletedEdges;
     NodeId m_nextNode{1};
     EdgeId m_nextEdge{1};
     Tick m_tick = 0;

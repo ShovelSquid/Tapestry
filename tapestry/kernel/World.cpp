@@ -9,6 +9,15 @@
 namespace tapestry::kernel {
 namespace {
 
+// One operator() per Op alternative; std::visit refuses to compile when an
+// alternative is missing, which is the point — there is no default branch.
+template <class... Fs>
+struct Overload : Fs... {
+    using Fs::operator()...;
+};
+template <class... Fs>
+Overload(Fs...) -> Overload<Fs...>;
+
 std::string formatTarget(const Target& target) {
     if (const auto* node = std::get_if<NodeId>(&target)) {
         return format(*node);
@@ -23,6 +32,8 @@ const Node* World::node(NodeId id) const {
     return it == m_nodes.end() ? nullptr : &it->second;
 }
 
+const Edge* World::edge(EdgeId) const { return nullptr; }
+
 std::vector<NodeId> World::nodeIds() const {
     std::vector<NodeId> ids;
     ids.reserve(m_nodes.size());
@@ -33,10 +44,15 @@ std::vector<NodeId> World::nodeIds() const {
     return ids;
 }
 
+std::vector<EdgeId> World::edgeIds() const { return {}; }
+
 std::size_t World::nodeCount() const { return m_nodes.size(); }
+std::size_t World::edgeCount() const { return 0; }
 Tick World::tick() const { return m_tick; }
 NodeId World::nextNodeId() const { return m_nextNode; }
 EdgeId World::nextEdgeId() const { return m_nextEdge; }
+bool World::wasDeleted(NodeId) const { return false; }
+bool World::wasDeleted(EdgeId) const { return false; }
 
 std::optional<Rejection> World::prepare(Op& op) const {
     using Kind = Rejection::Kind;
@@ -95,60 +111,76 @@ std::optional<Rejection> World::prepare(Op& op) const {
         return std::nullopt;
     };
 
-    if (auto* create = std::get_if<CreateNode>(&op)) {
-        // The one place ids are assigned. A replayed record arrives with its
-        // committed id, which must be exactly the next one — the counter is
-        // restored from the journal, never re-derived.
-        if (!create->id.assigned()) {
-            create->id = m_nextNode;
-        } else if (create->id != m_nextNode) {
-            if (m_nodes.find(create->id) != m_nodes.end()) {
-                return Rejection{Kind::DuplicateId, format(create->id)};
+    return std::visit(Overload{
+        [&](CreateNode& create) -> std::optional<Rejection> {
+            // The one place ids are assigned. A replayed record arrives with
+            // its committed id, which must be exactly the next one — the
+            // counter is restored from the journal, never re-derived.
+            if (!create.id.assigned()) {
+                create.id = m_nextNode;
+            } else if (create.id != m_nextNode) {
+                if (m_nodes.find(create.id) != m_nodes.end()) {
+                    return Rejection{Kind::DuplicateId, format(create.id)};
+                }
+                return Rejection{Kind::IdOutOfOrder, format(create.id) + " (next is " + format(m_nextNode) + ")"};
             }
-            return Rejection{Kind::IdOutOfOrder, format(create->id) + " (next is " + format(m_nextNode) + ")"};
-        }
-        if (!isToken(create->type) || !isValidText(create->type)) {
-            return Rejection{Kind::BadType, create->type};
-        }
-        return checkProps(create->props);
-    }
-
-    const auto& set = std::get<SetProperty>(op);
-    bool exists = false;
-    if (const auto* nodeId = std::get_if<NodeId>(&set.target)) {
-        exists = m_nodes.find(*nodeId) != m_nodes.end();
-    } else {
-        exists = m_edges.find(std::get<EdgeId>(set.target)) != m_edges.end();
-    }
-    if (!exists) {
-        return Rejection{Kind::UnknownTarget, formatTarget(set.target)};
-    }
-    if (!isValidKey(set.key)) {
-        return Rejection{Kind::BadKey, set.key};
-    }
-    return checkValue(set.key, set.value);
+            if (!isToken(create.type) || !isValidText(create.type)) {
+                return Rejection{Kind::BadType, create.type};
+            }
+            return checkProps(create.props);
+        },
+        [&](const SetProperty& set) -> std::optional<Rejection> {
+            bool exists = false;
+            if (const auto* nodeId = std::get_if<NodeId>(&set.target)) {
+                exists = m_nodes.find(*nodeId) != m_nodes.end();
+            } else {
+                exists = m_edges.find(std::get<EdgeId>(set.target)) != m_edges.end();
+            }
+            if (!exists) {
+                return Rejection{Kind::UnknownTarget, formatTarget(set.target)};
+            }
+            if (!isValidKey(set.key)) {
+                return Rejection{Kind::BadKey, set.key};
+            }
+            return checkValue(set.key, set.value);
+        },
+        // RED stubs: accepted and ignored until the GREEN commit.
+        [](const UnsetProperty&) -> std::optional<Rejection> { return std::nullopt; },
+        [](CreateEdge&) -> std::optional<Rejection> { return std::nullopt; },
+        [](const DeleteNode&) -> std::optional<Rejection> { return std::nullopt; },
+        [](const DeleteEdge&) -> std::optional<Rejection> { return std::nullopt; },
+        [](const Advance&) -> std::optional<Rejection> { return std::nullopt; },
+    }, op);
 }
 
 void World::apply(const Op& op) {
-    if (const auto* create = std::get_if<CreateNode>(&op)) {
-        Node node;
-        node.id = create->id;
-        node.type = create->type;
-        node.props = create->props;
-        m_nodes[create->id] = std::move(node);
-        // Move the counter past any adopted id so later assignments never
-        // collide, whether the id came from a live proposal or a replay.
-        if (!(create->id < m_nextNode)) {
-            m_nextNode = NodeId{create->id.value + 1};
-        }
-        return;
-    }
-    const auto& set = std::get<SetProperty>(op);
-    if (const auto* nodeId = std::get_if<NodeId>(&set.target)) {
-        m_nodes.at(*nodeId).props[set.key] = set.value;
-        return;
-    }
-    m_edges.at(std::get<EdgeId>(set.target)).props[set.key] = set.value;
+    std::visit(Overload{
+        [&](const CreateNode& create) {
+            Node node;
+            node.id = create.id;
+            node.type = create.type;
+            node.props = create.props;
+            m_nodes[create.id] = std::move(node);
+            // Move the counter past any adopted id so later assignments never
+            // collide, whether the id came from a live proposal or a replay.
+            if (!(create.id < m_nextNode)) {
+                m_nextNode = NodeId{create.id.value + 1};
+            }
+        },
+        [&](const SetProperty& set) {
+            if (const auto* nodeId = std::get_if<NodeId>(&set.target)) {
+                m_nodes.at(*nodeId).props[set.key] = set.value;
+                return;
+            }
+            m_edges.at(std::get<EdgeId>(set.target)).props[set.key] = set.value;
+        },
+        // RED stubs: no effect until the GREEN commit.
+        [](const UnsetProperty&) {},
+        [](const CreateEdge&) {},
+        [](const DeleteNode&) {},
+        [](const DeleteEdge&) {},
+        [](const Advance&) {},
+    }, op);
 }
 
 } // namespace tapestry::kernel
