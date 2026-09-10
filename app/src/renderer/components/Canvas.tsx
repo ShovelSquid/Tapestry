@@ -20,6 +20,7 @@ import React, {
   useState,
 } from 'react'
 import NoteCard from './NoteCard'
+import FallbackNodeView from './FallbackNodeView'
 import ConnectionLine from './ConnectionLine'
 
 // ---------------------------------------------------------------------------
@@ -51,6 +52,8 @@ interface CanvasProps {
   edges: EdgeInfo[]
   editingNodeId: string | null
   isFileLoaded: boolean
+  /** Map of node types to component names from loaded plugins. */
+  pluginNodeViews: Record<string, string>
   onStartEditing: (nodeId: string) => void
   onStopEditing: () => void
   onCanvasDoubleClick: (worldX: number, worldY: number) => void
@@ -64,6 +67,8 @@ interface CanvasProps {
   ) => void
   onWidthChange: (nodeId: string, width: number) => void
   onEdgeCreate: (fromId: string, toId: string) => void
+  /** Called when a fallback node property is edited inline (D-35). */
+  onPropertyEdit?: (nodeId: string, key: string, type: string, value: string | number | boolean) => void
 }
 
 // ---------------------------------------------------------------------------
@@ -115,6 +120,7 @@ export default function Canvas({
   edges,
   editingNodeId,
   isFileLoaded,
+  pluginNodeViews,
   onStartEditing,
   onStopEditing,
   onCanvasDoubleClick,
@@ -124,6 +130,7 @@ export default function Canvas({
   onPositionChange,
   onWidthChange,
   onEdgeCreate,
+  onPropertyEdit,
 }: CanvasProps): React.ReactElement {
   const viewportRef = useRef<HTMLDivElement>(null)
   const [view, setView] = useState<ViewTransform>({
@@ -462,37 +469,61 @@ export default function Canvas({
           )}
         </svg>
 
-        {/* Note cards */}
-        {nodes.map((node) => (
-          <NoteCard
-            key={node.id}
-            node={node}
-            isEditing={editingNodeId === node.id}
-            isHovered={hoveredNoteId === node.id}
-            isSelected={selectedNoteId === node.id}
-            isConnectTarget={connectingHover === node.id}
-            isConnecting={connectingFrom !== null}
-            zoom={view.zoom}
-            onStartEditing={() => onStartEditing(node.id)}
-            onBorderSelect={() => handleBorderSelect(node.id)}
-            onSave={onSave}
-            onMarkDirty={onMarkDirty}
-            onMarkClean={onMarkClean}
-            onPositionChange={onPositionChange}
-            onWidthChange={onWidthChange}
-            onHover={(hovered) =>
-              setHoveredNoteId(hovered ? node.id : null)
-            }
-            onHoverDuringConnection={() =>
-              handleNoteHoverDuringConnection(node.id)
-            }
-            onLeaveDuringConnection={() =>
-              handleNoteHoverDuringConnection(null)
-            }
-            onStartConnection={() => handleStartConnection(node.id)}
-            onRegisterDims={registerNodeDims}
-          />
-        ))}
+        {/* Node cards -- render NoteCard for known types, FallbackNodeView otherwise (D-33) */}
+        {nodes.map((node) => {
+          const hasPlugin = !!pluginNodeViews[node.type]
+
+          if (hasPlugin) {
+            return (
+              <NoteCard
+                key={node.id}
+                node={node}
+                isEditing={editingNodeId === node.id}
+                isHovered={hoveredNoteId === node.id}
+                isSelected={selectedNoteId === node.id}
+                isConnectTarget={connectingHover === node.id}
+                isConnecting={connectingFrom !== null}
+                zoom={view.zoom}
+                onStartEditing={() => onStartEditing(node.id)}
+                onBorderSelect={() => handleBorderSelect(node.id)}
+                onSave={onSave}
+                onMarkDirty={onMarkDirty}
+                onMarkClean={onMarkClean}
+                onPositionChange={onPositionChange}
+                onWidthChange={onWidthChange}
+                onHover={(hovered) =>
+                  setHoveredNoteId(hovered ? node.id : null)
+                }
+                onHoverDuringConnection={() =>
+                  handleNoteHoverDuringConnection(node.id)
+                }
+                onLeaveDuringConnection={() =>
+                  handleNoteHoverDuringConnection(null)
+                }
+                onStartConnection={() => handleStartConnection(node.id)}
+                onRegisterDims={registerNodeDims}
+              />
+            )
+          }
+
+          // D-33/D-35: FallbackNodeView for missing/disabled plugin nodes
+          return (
+            <FallbackNodeView
+              key={node.id}
+              node={node}
+              isSelected={selectedNoteId === node.id}
+              isHovered={hoveredNoteId === node.id}
+              zoom={view.zoom}
+              onBorderSelect={() => handleBorderSelect(node.id)}
+              onHover={(hovered) =>
+                setHoveredNoteId(hovered ? node.id : null)
+              }
+              onPositionChange={onPositionChange}
+              onRegisterDims={registerNodeDims}
+              onPropertyEdit={onPropertyEdit}
+            />
+          )
+        })}
       </div>
     </div>
   )
