@@ -223,3 +223,11 @@ app.on('window-all-closed', () => {
     app.quit()
   }
 })
+
+// Release the kernel (and its journal lock) deterministically at exit so a
+// relaunched instance can reopen the same world immediately.
+app.on('will-quit', () => {
+  if (bridge) {
+    bridge.close()
+  }
+})

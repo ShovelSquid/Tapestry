@@ -7,7 +7,7 @@
  * calls registerHandlers(ipcMain) to wire these into the IPC channel.
  */
 
-import { join } from 'path'
+import { join, resolve } from 'path'
 import { existsSync } from 'fs'
 
 // ---------------------------------------------------------------------------
@@ -89,20 +89,58 @@ interface JournalStatus {
 export class KernelBridge {
   private instance: any = null
 
+  /** Resolved path of the currently open world, if any. */
+  private openPath: string | null = null
+
   /**
    * Create a new .tree world at the given path.
+   * Creates first so a failure keeps the current world open, then releases
+   * the previous kernel (and its journal lock) explicitly.
    */
   create(path: string, worldName: string): void {
-    this.instance = TapestryAddon.create(path, worldName)
+    const next = TapestryAddon.create(path, worldName)
+    this.close()
+    this.instance = next
+    this.openPath = resolve(path)
     this.syncCurrentSeq()
   }
 
   /**
    * Open an existing .tree world.
+   * Opens first so a failure keeps the current world open, then releases
+   * the previous kernel. Reopening the file that is already open releases
+   * our own lock first, since the journal lock is exclusive per file.
    */
   open(path: string): void {
-    this.instance = TapestryAddon.open(path)
+    const target = resolve(path)
+    if (this.instance && this.openPath === target) {
+      this.close()
+    }
+    const next = TapestryAddon.open(path)
+    this.close()
+    this.instance = next
+    this.openPath = target
     this.syncCurrentSeq()
+  }
+
+  /**
+   * Release the current kernel and its journal lock deterministically.
+   * The addon's PosixSink holds flock(LOCK_EX) until the C++ object is
+   * destroyed; without this, the lock lingers until V8 garbage-collects the
+   * old wrapper and reopening the same file fails nondeterministically.
+   */
+  close(): void {
+    if (this.instance) {
+      try {
+        this.instance.close()
+      } catch (err) {
+        console.error('[KernelBridge] close() failed:', err)
+      }
+      this.instance = null
+    }
+    this.openPath = null
+    this.currentSeq = 0
+    this.undoStack = []
   }
 
   /**

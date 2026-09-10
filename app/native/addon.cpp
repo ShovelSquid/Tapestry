@@ -342,6 +342,7 @@ public:
             InstanceMethod<&TapestryAddon::Status>("status"),
             InstanceMethod<&TapestryAddon::ReplayUpTo>("replayUpTo"),
             InstanceMethod<&TapestryAddon::GetLastSeq>("getLastSeq"),
+            InstanceMethod<&TapestryAddon::Close>("close"),
         });
 
         auto* constructor = new Napi::FunctionReference();
@@ -608,6 +609,18 @@ public:
         }
         m_kernel->replayUpTo(static_cast<CommitSeq>(seqValue));
         return env.Undefined();
+    }
+
+    /**
+     * close() — release the kernel now rather than when V8 collects this
+     * wrapper. The journal sink holds an exclusive file lock for its whole
+     * lifetime, so without an explicit close a world could not be reopened
+     * (by this process or a relaunched one) until garbage collection ran.
+     * Safe to call more than once; later method calls report "No kernel loaded".
+     */
+    Napi::Value Close(const Napi::CallbackInfo& info) {
+        m_kernel.reset();
+        return info.Env().Undefined();
     }
 
     /** getLastSeq() -> number — the highest committed seq in the journal. */
