@@ -18,11 +18,14 @@ import React, { useCallback } from 'react'
 interface NoteControlsProps {
   onConnect: () => void
   onDelete: () => void
+  /** When true, the connection handle tooltip reflects a passage connection */
+  hasTextSelection?: boolean
 }
 
 export default function NoteControls({
   onConnect,
   onDelete,
+  hasTextSelection,
 }: NoteControlsProps): React.ReactElement {
   const handleConnectDown = useCallback(
     (e: React.PointerEvent) => {
@@ -48,7 +51,7 @@ export default function NoteControls({
       <button
         className="tapestry-control-bubble tapestry-control-bubble--connect"
         onPointerDown={handleConnectDown}
-        title="Connect to another note"
+        title={hasTextSelection ? 'Connect selected text' : 'Connect to another note'}
         tabIndex={-1}
       >
         {/* Link icon glyph (simple SVG) */}

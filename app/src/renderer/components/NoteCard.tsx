@@ -19,27 +19,14 @@
  * bridge (D-02 autosave). The component communicates its debounce lifecycle
  * to the parent via onMarkDirty/onMarkClean so the save indicator never
  * shows "Saved" while a debounce timer is active.
+ *
+ * Refactored for Phase 2.1: uses the shared useProseMirror hook from
+ * editor/use-prosemirror.ts (D-26 universal editing).
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { EditorState } from 'prosemirror-state'
-import { EditorView } from 'prosemirror-view'
-import { Schema } from 'prosemirror-model'
-import { schema as basicSchema } from 'prosemirror-schema-basic'
-import { keymap } from 'prosemirror-keymap'
-import { baseKeymap, toggleMark, setBlockType } from 'prosemirror-commands'
-import { history, undo, redo } from 'prosemirror-history'
-import { Command } from 'prosemirror-state'
+import { useProseMirror } from '../editor/use-prosemirror'
 import NoteControls from './NoteControls'
-
-// ---------------------------------------------------------------------------
-// Schema -- use prosemirror-schema-basic (doc, paragraph, text, marks)
-// ---------------------------------------------------------------------------
-
-const noteSchema = new Schema({
-  nodes: basicSchema.spec.nodes,
-  marks: basicSchema.spec.marks,
-})
 
 // ---------------------------------------------------------------------------
 // Types
@@ -75,6 +62,10 @@ interface NoteCardProps {
   onRegisterDims: (id: string, width: number, height: number) => void
   onDragMove?: (nodeId: string, x: number, y: number) => void
   onDragEnd?: (nodeId: string) => void
+  /** Reports ProseMirror selection state upward for passage connection flow */
+  onSelectionChange?: (nodeId: string, hasSelection: boolean, from: number, to: number) => void
+  /** Whether another note has a text selection (for NoteControls tooltip) */
+  hasTextSelection?: boolean
 }
 
 // ---------------------------------------------------------------------------
@@ -88,66 +79,6 @@ function getNodeProp(
 ): string | number | boolean {
   const prop = node.props[key]
   return prop ? prop.value : fallback
-}
-
-// extractTextAndTitle removed — replaced by serializeDoc for rich text (D-23)
-
-// ---------------------------------------------------------------------------
-// Heading toggle command (D-23): toggle between heading level and paragraph
-// ---------------------------------------------------------------------------
-
-function toggleHeading(level: number): Command {
-  return (state, dispatch) => {
-    const { $from } = state.selection
-    const node = $from.parent
-    // If already this heading level, convert back to paragraph
-    if (node.type === noteSchema.nodes.heading && node.attrs.level === level) {
-      return setBlockType(noteSchema.nodes.paragraph)(state, dispatch)
-    }
-    return setBlockType(noteSchema.nodes.heading, { level })(state, dispatch)
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Rich text serialization helpers (D-23)
-// ---------------------------------------------------------------------------
-
-/**
- * Build a ProseMirror doc from plain text, one paragraph per line. The text
- * is inserted as text nodes through the schema — never parsed as HTML — so
- * a hand-edited .tree file or a plugin-written body cannot inject markup or
- * script into the renderer.
- */
-function plainTextToDoc(body: string) {
-  const paragraphs = body.split('\n').map((line) =>
-    line
-      ? noteSchema.node('paragraph', null, [noteSchema.text(line)])
-      : noteSchema.node('paragraph'),
-  )
-  return noteSchema.node('doc', null, paragraphs)
-}
-
-/**
- * Try to parse body as ProseMirror JSON. If it fails (plain text from before
- * rich text was added), create a doc with paragraphs of text nodes.
- */
-function deserializeBody(body: string): any {
-  if (!body) return null
-  try {
-    const parsed = JSON.parse(body)
-    // Validate it looks like a ProseMirror doc
-    if (parsed && parsed.type === 'doc') {
-      return noteSchema.nodeFromJSON(parsed)
-    }
-  } catch {
-    // Not JSON — treat as plain text
-  }
-  // Plain text fallback: split on newlines and create paragraphs
-  return plainTextToDoc(body)
-}
-
-function serializeBody(view: EditorView): string {
-  return JSON.stringify(view.state.doc.toJSON())
 }
 
 const MIN_WIDTH = 120
@@ -181,22 +112,16 @@ export default function NoteCard({
   onRegisterDims,
   onDragMove,
   onDragEnd,
+  onSelectionChange,
+  hasTextSelection,
 }: NoteCardProps): React.ReactElement {
-  const editorRef = useRef<HTMLDivElement>(null)
   const cardRef = useRef<HTMLDivElement>(null)
-  const viewRef = useRef<EditorView | null>(null)
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const x = Number(getNodeProp(node, 'position.x', 100))
   const y = Number(getNodeProp(node, 'position.y', 100))
   const body = String(getNodeProp(node, 'body', ''))
   const title = String(getNodeProp(node, 'title', ''))
 
-  // The last body this editor itself emitted through onSave. When the `body`
-  // prop catches up to it, that is an echo of our own save — not an external
-  // change — and the editor must not be reset (it would drop un-debounced
-  // keystrokes, the selection, and the ProseMirror undo history).
-  const lastEmittedBodyRef = useRef<string>(body)
   const storedWidth = node.props['width']
     ? Number(node.props['width'].value)
     : 0
@@ -208,6 +133,31 @@ export default function NoteCard({
   const [localTitle, setLocalTitle] = useState(title)
   const localTitleRef = useRef(title)
   localTitleRef.current = localTitle
+
+  // Track whether the title debounce is in-flight so the save callback
+  // can include the correct title value
+  const titleDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Ref for onSave callback used by the title debounce and the hook's save
+  const onSaveRef = useRef(onSave)
+  onSaveRef.current = onSave
+
+  // ----- Shared ProseMirror hook (D-26) -----
+  const handleEditorSave = useCallback(
+    (nodeId: string, newBody: string) => {
+      onSaveRef.current(nodeId, newBody, localTitleRef.current)
+    },
+    [],
+  )
+
+  const { editorRef, viewRef, getSelection, applyPassageMark, forceSave } = useProseMirror({
+    nodeId: node.id,
+    initialBody: body,
+    isEditing,
+    onSave: handleEditorSave,
+    onMarkDirty,
+    onMarkClean,
+  })
 
   // Local drag position for immediate feedback before kernel confirms
   const [localPos, setLocalPos] = useState<{ x: number; y: number } | null>(
@@ -232,19 +182,47 @@ export default function NoteCard({
   const hoverTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [showControls, setShowControls] = useState(false)
 
-  // Stable refs for callbacks used inside ProseMirror dispatchTransaction
-  const onSaveRef = useRef(onSave)
-  const onMarkDirtyRef = useRef(onMarkDirty)
-  const onMarkCleanRef = useRef(onMarkClean)
-  onSaveRef.current = onSave
-  onMarkDirtyRef.current = onMarkDirty
-  onMarkCleanRef.current = onMarkClean
-
   // Effective position: local drag/resize position takes priority
   const effectiveX = localPos ? localPos.x : x
   const effectiveY = localPos ? localPos.y : y
   const effectiveWidth = localWidth ?? (storedWidth > 0 ? storedWidth : undefined)
   const effectiveHeight = localHeight ?? (storedHeight > 0 ? storedHeight : undefined)
+
+  // -----------------------------------------------------------------------
+  // Report ProseMirror selection state upward for passage connection flow
+  // -----------------------------------------------------------------------
+
+  useEffect(() => {
+    if (!onSelectionChange) return
+    const view = viewRef.current
+    if (!view) return
+
+    // Poll selection on every transaction by watching the editor
+    const checkSelection = () => {
+      const sel = getSelection()
+      if (sel) {
+        onSelectionChange(node.id, sel.hasSelection, sel.from, sel.to)
+      }
+    }
+
+    // Use a MutationObserver on the editor element to detect selection changes
+    // ProseMirror updates the DOM after transactions, so we also listen for
+    // document selection changes
+    const handleSelectionChange = () => {
+      const active = document.activeElement
+      if (active && editorRef.current?.contains(active)) {
+        checkSelection()
+      } else {
+        // Editor lost focus -- report no selection
+        onSelectionChange(node.id, false, 0, 0)
+      }
+    }
+
+    document.addEventListener('selectionchange', handleSelectionChange)
+    return () => {
+      document.removeEventListener('selectionchange', handleSelectionChange)
+    }
+  }, [node.id, onSelectionChange, getSelection, viewRef, editorRef])
 
   // -----------------------------------------------------------------------
   // Register dimensions for connection line center computation
@@ -310,130 +288,6 @@ export default function NoteCard({
   useEffect(() => {
     setLocalTitle(title)
   }, [title])
-
-  // -----------------------------------------------------------------------
-  // Initialize ProseMirror editor
-  // -----------------------------------------------------------------------
-
-  useEffect(() => {
-    if (!editorRef.current) return
-
-    // Deserialize body: try JSON (rich text) first, fall back to plain text
-    const doc = deserializeBody(body) || noteSchema.node('doc', null, [
-      noteSchema.node('paragraph'),
-    ])
-
-    const state = EditorState.create({
-      doc,
-      schema: noteSchema,
-      plugins: [
-        history(),
-        // Formatting keybindings (D-23): bold, italic, headings
-        keymap({
-          'Mod-b': toggleMark(noteSchema.marks.strong),
-          'Mod-i': toggleMark(noteSchema.marks.em),
-          'Mod-1': toggleHeading(1),
-          'Mod-2': toggleHeading(2),
-          'Mod-3': toggleHeading(3),
-        }),
-        keymap({ 'Mod-z': undo, 'Mod-Shift-z': redo }),
-        keymap(baseKeymap),
-      ],
-    })
-
-    const nodeId = node.id
-    lastEmittedBodyRef.current = body
-
-    const view = new EditorView(editorRef.current, {
-      state,
-      editable: () => isEditing,
-      dispatchTransaction(tr) {
-        const newState = view.state.apply(tr)
-        view.updateState(newState)
-
-        // Transactions tagged externalSync come from the body-sync effect
-        // below (undo/redo, plugin edits): they are already saved and must
-        // not be treated as user edits.
-        if (tr.docChanged && !tr.getMeta('externalSync')) {
-          onMarkDirtyRef.current(nodeId)
-
-          if (debounceRef.current) {
-            clearTimeout(debounceRef.current)
-          }
-          debounceRef.current = setTimeout(() => {
-            debounceRef.current = null
-            onMarkCleanRef.current(nodeId)
-            const newBody = serializeBody(view)
-            lastEmittedBodyRef.current = newBody
-            onSaveRef.current(nodeId, newBody, localTitleRef.current)
-          }, 300)
-        }
-      },
-    })
-
-    viewRef.current = view
-
-    return () => {
-      if (debounceRef.current) {
-        clearTimeout(debounceRef.current)
-        debounceRef.current = null
-        onMarkCleanRef.current(nodeId)
-        if (viewRef.current) {
-          const finalBody = serializeBody(viewRef.current)
-          if (finalBody !== body) {
-            lastEmittedBodyRef.current = finalBody
-            onSaveRef.current(nodeId, finalBody, localTitleRef.current)
-          }
-        }
-      }
-      view.destroy()
-      viewRef.current = null
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [node.id])
-
-  // Sync the editor when the kernel's body changes underneath it (undo/redo,
-  // a plugin writing the property). Only act on genuinely external changes:
-  // skip echoes of our own saves and never clobber an in-progress edit.
-  useEffect(() => {
-    const view = viewRef.current
-    if (!view) return
-
-    // Echo of a body this editor emitted (App mirrors saves into `nodes`)
-    if (body === lastEmittedBodyRef.current) return
-    // The user is mid-edit; the pending debounce will save their version
-    if (debounceRef.current) return
-
-    const currentBody = JSON.stringify(view.state.doc.toJSON())
-    if (currentBody === body) {
-      lastEmittedBodyRef.current = body
-      return
-    }
-
-    const newDoc = deserializeBody(body) || noteSchema.node('doc', null, [
-      noteSchema.node('paragraph'),
-    ])
-    // Replace the document through a transaction so plugin state (history,
-    // selection mapping) is preserved instead of recreating the EditorState.
-    const tr = view.state.tr.replaceWith(0, view.state.doc.content.size, newDoc.content)
-    tr.setMeta('addToHistory', false)
-    tr.setMeta('externalSync', true)
-    view.dispatch(tr)
-    lastEmittedBodyRef.current = body
-  }, [body])
-
-  // -----------------------------------------------------------------------
-  // Update editability when isEditing changes
-  // -----------------------------------------------------------------------
-
-  useEffect(() => {
-    if (viewRef.current) {
-      viewRef.current.setProps({ editable: () => isEditing })
-      if (isEditing) {
-        viewRef.current.focus()
-      }
-    }
-  }, [isEditing])
 
   // -----------------------------------------------------------------------
   // Drag to reposition (D-01)
@@ -639,15 +493,14 @@ export default function NoteCard({
         onChange={(e) => {
           const newTitle = e.target.value
           setLocalTitle(newTitle)
-          onMarkDirtyRef.current(node.id)
-          if (debounceRef.current) clearTimeout(debounceRef.current)
-          debounceRef.current = setTimeout(() => {
-            debounceRef.current = null
-            onMarkCleanRef.current(node.id)
+          onMarkDirty(node.id)
+          if (titleDebounceRef.current) clearTimeout(titleDebounceRef.current)
+          titleDebounceRef.current = setTimeout(() => {
+            titleDebounceRef.current = null
+            onMarkClean(node.id)
             const view = viewRef.current
             if (view) {
-              const b = serializeBody(view)
-              lastEmittedBodyRef.current = b
+              const b = JSON.stringify(view.state.doc.toJSON())
               onSaveRef.current(node.id, b, newTitle)
             }
           }, 300)
@@ -676,6 +529,7 @@ export default function NoteCard({
         <NoteControls
           onConnect={onStartConnection}
           onDelete={onDeleteNote}
+          hasTextSelection={hasTextSelection}
         />
       )}
 
