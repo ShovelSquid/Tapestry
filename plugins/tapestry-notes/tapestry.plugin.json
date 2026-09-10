@@ -2,7 +2,7 @@
   "name": "tapestry-notes",
   "version": "1",
   "displayName": "Notes",
-  "main": "index.ts",
+  "main": "index.js",
   "api": "1",
   "contributions": {
     "nodeTypes": ["tapestry.notes/note@1"]

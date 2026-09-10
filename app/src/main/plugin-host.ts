@@ -197,6 +197,16 @@ export class PluginHost {
       return { status: 'failed', reason: 'Plugin entry path escapes plugin directory' }
     }
 
+    // The host loads plugins with Node's require(), which cannot parse
+    // TypeScript. Refuse non-JS entries up front with an actionable reason
+    // instead of a SyntaxError deep inside require().
+    if (!/\.c?js$/.test(entryPath)) {
+      return {
+        status: 'failed',
+        reason: `Plugin entry must be a .js/.cjs file (got ${manifest.main}); build the plugin first`,
+      }
+    }
+
     try {
       // Load the plugin module
       // eslint-disable-next-line @typescript-eslint/no-var-requires

@@ -2,7 +2,7 @@
   "name": "example-plugin",
   "version": "1",
   "displayName": "Example Property Inspector",
-  "main": "index.ts",
+  "main": "index.js",
   "api": "1",
   "contributions": {
     "nodeTypes": [],
