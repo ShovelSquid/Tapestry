@@ -14,7 +14,7 @@
  */
 
 import { readdirSync, readFileSync, existsSync } from 'fs'
-import { join, resolve } from 'path'
+import { isAbsolute, join, relative, resolve } from 'path'
 import type { IpcMain } from 'electron'
 import type {
   NodeViewContribution,
@@ -190,7 +190,12 @@ export class PluginHost {
     }
 
     // Resolve the main entry relative to the plugin directory
-    const entryPath = resolve(this.pluginsDir, name, manifest.main)
+    const pluginDir = resolve(this.pluginsDir, name)
+    const entryPath = resolve(pluginDir, manifest.main)
+    const relativeEntryPath = relative(pluginDir, entryPath)
+    if (relativeEntryPath.startsWith('..') || isAbsolute(relativeEntryPath)) {
+      return { status: 'failed', reason: 'Plugin entry path escapes plugin directory' }
+    }
 
     try {
       // Load the plugin module
