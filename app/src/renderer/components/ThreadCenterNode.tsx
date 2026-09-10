@@ -6,7 +6,9 @@
  * editable/connectable nodes using the same ProseMirror editor as notes.
  *
  * Per D-17: Auto-positioned at the midpoint between endpoints until manually
- * dragged (setting pinned=true). After dragging, keeps user's position.
+ * dragged. The drag is tracked locally and committed ONCE on pointer-up via
+ * onPinnedPositionChange, which writes position.x/position.y AND pinned=true
+ * in a single kernel commit. After that the node keeps the user's position.
  *
  * Per D-18: Empty center nodes appear on thread hover/selection; once they
  * have text they remain visible.
@@ -32,7 +34,11 @@ interface ThreadCenterProps {
   onSave: (nodeId: string, body: string, title: string) => Promise<void>
   onMarkDirty: (nodeId: string) => void
   onMarkClean: (nodeId: string) => void
-  onPositionChange: (nodeId: string, x: number, y: number) => void
+  /**
+   * Called once at the end of a drag with the final world position. The
+   * handler must persist position.x, position.y AND pinned=true together.
+   */
+  onPinnedPositionChange: (nodeId: string, x: number, y: number) => void
   onHover: (hovered: boolean) => void
   onRegisterDims: (id: string, w: number, h: number) => void
 }
@@ -55,7 +61,7 @@ export default function ThreadCenterNode({
   onSave,
   onMarkDirty,
   onMarkClean,
-  onPositionChange,
+  onPinnedPositionChange,
   onHover,
   onRegisterDims,
 }: ThreadCenterProps): React.ReactElement {
@@ -63,8 +69,18 @@ export default function ThreadCenterNode({
   const isDraggingRef = useRef(false)
   const dragStartRef = useRef({ mx: 0, my: 0, ox: 0, oy: 0 })
 
-  const posX = isPinned ? x : autoX
-  const posY = isPinned ? y : autoY
+  // Local drag position for immediate feedback; committed once on pointer-up.
+  const [localPos, setLocalPos] = useState<{ x: number; y: number } | null>(null)
+
+  const posX = localPos ? localPos.x : isPinned ? x : autoX
+  const posY = localPos ? localPos.y : isPinned ? y : autoY
+
+  // Clear the local override once the kernel's pinned position converges
+  // (same pattern as NoteCard) so there is no flicker back to autoX/autoY.
+  useEffect(() => {
+    if (!isDraggingRef.current && localPos) setLocalPos(null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [x, y, isPinned])
 
   const handleEditorSave = useCallback(
     (nid: string, newBody: string) => {
@@ -106,19 +122,23 @@ export default function ThreadCenterNode({
       if (!isDraggingRef.current) return
       const dx = (e.clientX - dragStartRef.current.mx) / zoom
       const dy = (e.clientY - dragStartRef.current.my) / zoom
-      onPositionChange(nodeId, dragStartRef.current.ox + dx, dragStartRef.current.oy + dy)
+      setLocalPos({ x: dragStartRef.current.ox + dx, y: dragStartRef.current.oy + dy })
     },
-    [nodeId, zoom, onPositionChange],
+    [zoom],
   )
 
   const handlePointerUp = useCallback(
     (e: React.PointerEvent) => {
-      if (isDraggingRef.current) {
-        isDraggingRef.current = false
-        ;(e.target as HTMLElement).releasePointerCapture(e.pointerId)
-      }
+      if (!isDraggingRef.current) return
+      isDraggingRef.current = false
+      ;(e.target as HTMLElement).releasePointerCapture(e.pointerId)
+      // Commit the final position exactly once (position + pinned=true).
+      setLocalPos((p) => {
+        if (p) onPinnedPositionChange(nodeId, p.x, p.y)
+        return p
+      })
     },
-    [],
+    [nodeId, onPinnedPositionChange],
   )
 
   const handleClick = useCallback(

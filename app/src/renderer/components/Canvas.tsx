@@ -68,6 +68,11 @@ interface CanvasProps {
   ) => void
   onWidthChange: (nodeId: string, width: number) => void
   onHeightChange?: (nodeId: string, height: number) => void
+  /**
+   * Called once when a thread center drag ends (D-17). Must persist
+   * position.x, position.y AND pinned=true in a single commit.
+   */
+  onPinnedPositionChange: (nodeId: string, x: number, y: number) => void
   onEdgeCreate: (fromId: string, toId: string) => void
   /** Called when a note is deleted via the delete bubble or keyboard (D-20/D-21). */
   onDeleteNote: (nodeId: string) => void
@@ -134,6 +139,7 @@ export default function Canvas({
   onPositionChange,
   onWidthChange,
   onHeightChange,
+  onPinnedPositionChange,
   onEdgeCreate,
   onDeleteNote,
   onPropertyEdit,
@@ -574,7 +580,7 @@ export default function Canvas({
                 onSave={onSave}
                 onMarkDirty={onMarkDirty}
                 onMarkClean={onMarkClean}
-                onPositionChange={onPositionChange}
+                onPinnedPositionChange={onPinnedPositionChange}
                 onHover={(h) => setHoveredNoteId(h ? node.id : null)}
                 onRegisterDims={registerNodeDims}
               />

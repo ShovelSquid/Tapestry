@@ -280,6 +280,59 @@ export default function App(): React.ReactElement {
   )
 
   // -----------------------------------------------------------------------
+  // Thread center pin handler (D-17): one commit with position + pinned=true
+  // -----------------------------------------------------------------------
+
+  const handlePinnedPositionChange = useCallback(
+    async (nodeId: string, newX: number, newY: number) => {
+      pendingSavesRef.current += 1
+      setSaveState('saving')
+
+      try {
+        await window.tapestry.kernel.submit(
+          'human',
+          'local',
+          'Pin thread center',
+          [
+            {
+              op: 'setProperty',
+              target: nodeId,
+              key: 'position.x',
+              type: 'real',
+              value: newX,
+            },
+            {
+              op: 'setProperty',
+              target: nodeId,
+              key: 'position.y',
+              type: 'real',
+              value: newY,
+            },
+            {
+              op: 'setProperty',
+              target: nodeId,
+              key: 'pinned',
+              type: 'bool',
+              value: true,
+            },
+          ],
+        )
+
+        pendingSavesRef.current -= 1
+        if (pendingSavesRef.current < 0) pendingSavesRef.current = 0
+        recomputeSaveState()
+
+        await refreshNodes()
+      } catch (err) {
+        pendingSavesRef.current -= 1
+        if (pendingSavesRef.current < 0) pendingSavesRef.current = 0
+        reportSaveError('Failed to pin thread center', err)
+      }
+    },
+    [recomputeSaveState, refreshNodes, reportSaveError],
+  )
+
+  // -----------------------------------------------------------------------
   // Width change handler (D-08 resize persistence)
   // -----------------------------------------------------------------------
 
@@ -709,6 +762,7 @@ export default function App(): React.ReactElement {
         onPositionChange={handlePositionChange}
         onWidthChange={handleWidthChange}
         onHeightChange={handleHeightChange}
+        onPinnedPositionChange={handlePinnedPositionChange}
         onEdgeCreate={handleEdgeCreate}
         onDeleteNote={handleDeleteNote}
         onPropertyEdit={handlePropertyEdit}
