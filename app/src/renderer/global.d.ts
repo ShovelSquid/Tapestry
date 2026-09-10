@@ -34,6 +34,8 @@ interface TapestryKernelAPI {
   getEdges(): Promise<any[]>
   status(): Promise<any>
   getFilePath(): Promise<string | null>
+  undo(): Promise<{ ok: boolean }>
+  redo(): Promise<{ ok: boolean }>
 }
 
 interface TapestryPluginsAPI {

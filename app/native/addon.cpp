@@ -236,6 +236,8 @@ public:
             InstanceMethod<&TapestryAddon::GetNode>("getNode"),
             InstanceMethod<&TapestryAddon::GetEdges>("getEdges"),
             InstanceMethod<&TapestryAddon::Status>("status"),
+            InstanceMethod<&TapestryAddon::ReplayUpTo>("replayUpTo"),
+            InstanceMethod<&TapestryAddon::GetLastSeq>("getLastSeq"),
         });
 
         auto* constructor = new Napi::FunctionReference();
@@ -460,6 +462,37 @@ public:
         obj.Set("lastGoodSeq", Napi::Number::New(env, static_cast<double>(s.lastGoodSeq)));
         obj.Set("reason", Napi::String::New(env, s.reason));
         return obj;
+    }
+
+    /**
+     * replayUpTo(seq) — rebuild the in-memory world from journal commits up
+     * to the given seq. Used by undo/redo (D-22). The journal is never modified.
+     */
+    Napi::Value ReplayUpTo(const Napi::CallbackInfo& info) {
+        Napi::Env env = info.Env();
+        if (!m_kernel) {
+            Napi::Error::New(env, "No kernel loaded").ThrowAsJavaScriptException();
+            return env.Null();
+        }
+        if (info.Length() < 1 || !info[0].IsNumber()) {
+            Napi::TypeError::New(env, "replayUpTo(seq: number)")
+                .ThrowAsJavaScriptException();
+            return env.Null();
+        }
+
+        auto seq = static_cast<CommitSeq>(info[0].As<Napi::Number>().Int64Value());
+        m_kernel->replayUpTo(seq);
+        return env.Undefined();
+    }
+
+    /** getLastSeq() -> number — the highest committed seq in the journal. */
+    Napi::Value GetLastSeq(const Napi::CallbackInfo& info) {
+        Napi::Env env = info.Env();
+        if (!m_kernel) {
+            Napi::Error::New(env, "No kernel loaded").ThrowAsJavaScriptException();
+            return env.Null();
+        }
+        return Napi::Number::New(env, static_cast<double>(m_kernel->lastSeq()));
     }
 
 private:

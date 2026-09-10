@@ -456,18 +456,109 @@ export default function App(): React.ReactElement {
   }, [])
 
   // -----------------------------------------------------------------------
-  // Keyboard: Escape ends editing (D-04)
+  // Delete note handler (D-20, D-21): submit DeleteNode op
+  // -----------------------------------------------------------------------
+
+  const handleDeleteNote = useCallback(
+    async (nodeId: string) => {
+      pendingSavesRef.current += 1
+      setSaveState('saving')
+
+      try {
+        await window.tapestry.kernel.submit(
+          'user',
+          'local',
+          'Delete note',
+          [
+            {
+              op: 'deleteNode',
+              id: nodeId,
+            },
+          ],
+        )
+
+        pendingSavesRef.current -= 1
+        if (pendingSavesRef.current < 0) pendingSavesRef.current = 0
+        recomputeSaveState()
+
+        // If we were editing this note, stop editing
+        setEditingNodeId((prev) => (prev === nodeId ? null : prev))
+
+        // Refresh nodes and edges (edges touching the deleted node are cascaded)
+        await refreshAll()
+      } catch (err) {
+        pendingSavesRef.current -= 1
+        if (pendingSavesRef.current < 0) pendingSavesRef.current = 0
+        console.error('Failed to delete note:', err)
+        setSaveState('error')
+      }
+    },
+    [recomputeSaveState, refreshAll],
+  )
+
+  // -----------------------------------------------------------------------
+  // Undo/Redo (D-22): Cmd/Ctrl+Z and Cmd/Ctrl+Shift+Z at the window level
+  // -----------------------------------------------------------------------
+
+  const handleUndo = useCallback(async () => {
+    try {
+      const result = await window.tapestry.kernel.undo()
+      if (result.ok) {
+        setEditingNodeId(null)
+        await refreshAll()
+      }
+    } catch (err) {
+      console.error('Undo failed:', err)
+    }
+  }, [refreshAll])
+
+  const handleRedo = useCallback(async () => {
+    try {
+      const result = await window.tapestry.kernel.redo()
+      if (result.ok) {
+        setEditingNodeId(null)
+        await refreshAll()
+      }
+    } catch (err) {
+      console.error('Redo failed:', err)
+    }
+  }, [refreshAll])
+
+  // -----------------------------------------------------------------------
+  // Keyboard: Escape, Undo, Redo (D-04, D-22)
   // -----------------------------------------------------------------------
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         setEditingNodeId(null)
+        return
+      }
+
+      // Cmd/Ctrl+Z for undo, Cmd/Ctrl+Shift+Z for redo (D-22)
+      // When ProseMirror has focus (user is editing text), let ProseMirror
+      // handle undo/redo for uncommitted text changes. When no editor is
+      // focused, use world-level undo/redo for committed changes.
+      const mod = e.metaKey || e.ctrlKey
+      if (mod && e.key === 'z') {
+        // Check if a ProseMirror editor has focus — if so, let it handle the key
+        const active = document.activeElement
+        const isEditorFocused = active && active.closest('.ProseMirror')
+        if (isEditorFocused) return
+
+        e.preventDefault()
+        e.stopPropagation()
+        if (e.shiftKey) {
+          handleRedo()
+        } else {
+          handleUndo()
+        }
+        return
       }
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [])
+  }, [handleUndo, handleRedo])
 
   // -----------------------------------------------------------------------
   // Render
@@ -505,6 +596,7 @@ export default function App(): React.ReactElement {
         onPositionChange={handlePositionChange}
         onWidthChange={handleWidthChange}
         onEdgeCreate={handleEdgeCreate}
+        onDeleteNote={handleDeleteNote}
         onPropertyEdit={handlePropertyEdit}
       />
     </div>

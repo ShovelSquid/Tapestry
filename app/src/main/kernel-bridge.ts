@@ -8,15 +8,26 @@
  */
 
 import { join } from 'path'
+import { existsSync } from 'fs'
 
 // ---------------------------------------------------------------------------
 // Load the native addon
 // ---------------------------------------------------------------------------
 
-// The compiled .node file lives in app/native/build/Release/ after cmake-js
-// builds it. In a packaged Electron app, the path will need adjustment — that
-// is Plan 02's concern.
-const addonPath = join(__dirname, '..', '..', 'native', 'build', 'Release', 'tapestry_addon.node')
+// In development, the compiled .node file lives at app/native/build/Release/.
+// In a packaged Electron app (via Forge), it's in the Resources directory
+// as an extraResource.
+function resolveAddonPath(): string {
+  // Packaged: process.resourcesPath points to .app/Contents/Resources
+  if (process.resourcesPath) {
+    const packagedPath = join(process.resourcesPath, 'tapestry_addon.node')
+    if (existsSync(packagedPath)) return packagedPath
+  }
+  // Development: relative to __dirname (out/main/)
+  return join(__dirname, '..', '..', 'native', 'build', 'Release', 'tapestry_addon.node')
+}
+
+const addonPath = resolveAddonPath()
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 let addon: any
@@ -83,6 +94,7 @@ export class KernelBridge {
    */
   create(path: string, worldName: string): void {
     this.instance = TapestryAddon.create(path, worldName)
+    this.syncCurrentSeq()
   }
 
   /**
@@ -90,6 +102,7 @@ export class KernelBridge {
    */
   open(path: string): void {
     this.instance = TapestryAddon.open(path)
+    this.syncCurrentSeq()
   }
 
   /**
@@ -97,7 +110,9 @@ export class KernelBridge {
    */
   submit(actorKind: string, actorId: string, message: string, ops: OpObject[]): CommitResult {
     this.ensureLoaded()
-    return this.instance.submit(actorKind, actorId, message, ops)
+    const result = this.instance.submit(actorKind, actorId, message, ops)
+    this.afterCommit(result.seq)
+    return result
   }
 
   /**
@@ -137,6 +152,61 @@ export class KernelBridge {
    */
   get isLoaded(): boolean {
     return this.instance !== null
+  }
+
+  // -----------------------------------------------------------------------
+  // Undo/Redo (D-22): navigate the commit history without erasing evidence
+  // -----------------------------------------------------------------------
+
+  /** Current replay position — the seq the world is displaying. */
+  private currentSeq: number = 0
+
+  /** Stack of seqs that have been undone so redo can reach them. */
+  private undoStack: number[] = []
+
+  /**
+   * Undo: save the current position, replay up to (current - 1).
+   * Returns true if undo succeeded, false if already at the beginning.
+   */
+  undo(): boolean {
+    this.ensureLoaded()
+    if (this.currentSeq <= 0) return false
+    this.undoStack.push(this.currentSeq)
+    this.currentSeq -= 1
+    this.instance.replayUpTo(this.currentSeq)
+    return true
+  }
+
+  /**
+   * Redo: pop from the undo stack and replay up to that seq.
+   * Returns true if redo succeeded, false if nothing to redo.
+   */
+  redo(): boolean {
+    this.ensureLoaded()
+    if (this.undoStack.length === 0) return false
+    const targetSeq = this.undoStack.pop()!
+    this.currentSeq = targetSeq
+    this.instance.replayUpTo(this.currentSeq)
+    return true
+  }
+
+  /**
+   * After a new commit, update currentSeq and clear the redo stack.
+   * A new edit after undo discards the redo stack (D-22).
+   */
+  private afterCommit(commitSeq: number): void {
+    this.currentSeq = commitSeq
+    this.undoStack = []
+  }
+
+  /**
+   * Synchronize currentSeq after opening/creating a world.
+   */
+  private syncCurrentSeq(): void {
+    if (this.instance) {
+      this.currentSeq = this.instance.getLastSeq() as number
+      this.undoStack = []
+    }
   }
 
   /**
@@ -180,6 +250,14 @@ export class KernelBridge {
 
     ipcMain.handle('kernel:status', () => {
       return bridge.status()
+    })
+
+    ipcMain.handle('kernel:undo', () => {
+      return { ok: bridge.undo() }
+    })
+
+    ipcMain.handle('kernel:redo', () => {
+      return { ok: bridge.redo() }
     })
 
     return bridge
