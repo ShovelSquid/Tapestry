@@ -5,7 +5,7 @@ current_phase: 02
 current_phase_name: Plugin Host, SDK & Feasibility Gate
 status: executing
 stopped_at: Phase 2 UI-SPEC approved
-last_updated: "2026-09-09T22:50:31.706Z"
+last_updated: "2026-09-10T04:36:48.012Z"
 last_activity: 2026-09-09
 last_activity_desc: Phase 02 execution started
 state_head: 4991dd54d359f6176bac8f525b779f828c9d4693
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-09-08)
 Phase: 02 (Plugin Host, SDK & Feasibility Gate) — EXECUTING
 Plan: 1 of 5
 Status: Executing Phase 02
-Last activity: 2026-09-09 - Completed quick task 260909-thn: Fix renderer actor kind (user -> human) so notes can be created
+Last activity: 2026-09-09 - Completed quick task 260909-u0o: Declare the Phase 2 plugin API and SDK internal for API coverage
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -109,6 +109,7 @@ None yet.
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 260909-thn | Fix renderer actor kind: send human instead of user to kernel submit so notes can be created | 2026-09-09 | a9d4f8d | [260909-thn-fix-renderer-actor-kind-send-human-inste](./quick/260909-thn-fix-renderer-actor-kind-send-human-inste/) |
+| 260909-u0o | Add Phase 2 COVERAGE.md declaring that Tapestry's plugin API and SDK are internal, not an external service integration | 2026-09-09 | cb0fe28 | [260909-u0o-add-phase-2-coverage-md-declaring-that-t](./quick/260909-u0o-add-phase-2-coverage-md-declaring-that-t/) |
 
 ## Deferred Items
 
