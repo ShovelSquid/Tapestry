@@ -151,7 +151,8 @@ function EditableValue({
 export default function FallbackNodeView({
   node,
   isSelected,
-  isHovered,
+  // isHovered is accepted (Canvas passes it) but the fallback view has no
+  // hover-only affordance yet, so it is intentionally not destructured.
   zoom,
   onBorderSelect,
   onHover,

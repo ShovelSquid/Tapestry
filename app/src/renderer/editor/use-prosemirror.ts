@@ -43,7 +43,8 @@ export interface UseProseMirrorOptions {
 }
 
 export interface UseProseMirrorResult {
-  editorRef: React.RefObject<HTMLDivElement | null>
+  /** Attach to the element that should host the editor (`<div ref={editorRef} />`). */
+  editorRef: React.RefObject<HTMLDivElement>
   viewRef: React.RefObject<EditorView | null>
   /**
    * Get the current ProseMirror text selection range.
@@ -183,7 +184,7 @@ export function useProseMirror({
   plugins: extraPlugins,
   onPassageHover,
 }: UseProseMirrorOptions): UseProseMirrorResult {
-  const editorRef = useRef<HTMLDivElement | null>(null)
+  const editorRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 

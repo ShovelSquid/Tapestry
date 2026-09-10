@@ -159,7 +159,9 @@ export default function NoteCard({
     [],
   )
 
-  const { editorRef, viewRef, getSelection, applyPassageMark, forceSave } = useProseMirror({
+  // applyPassageMark / forceSave are not destructured: the passage-connection
+  // flow that would call them is not wired yet (see CR-03 in the review).
+  const { editorRef, viewRef, getSelection } = useProseMirror({
     nodeId: node.id,
     initialBody: body,
     isEditing,
