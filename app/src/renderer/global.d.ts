@@ -75,7 +75,9 @@ interface TapestryAPI {
   plugins: TapestryPluginsAPI
   dialog: TapestryDialogAPI
   onFileOpened(callback: (filePath: string) => void): () => void
-  onPluginError(callback: (pluginName: string, message: string, canRestart: boolean) => void): () => void
+  onPluginError(
+    callback: (pluginName: string, displayName: string, message: string, canRestart: boolean) => void,
+  ): () => void
 }
 
 interface Window {

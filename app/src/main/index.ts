@@ -125,9 +125,14 @@ app.whenReady().then(async () => {
   PluginHost.registerHandlers(ipcMain, pluginHost)
 
   // Wire plugin error notifications to the renderer (D-34)
-  pluginHost.onPluginError = (pluginName: string, message: string, canRestart: boolean) => {
+  pluginHost.onPluginError = (
+    pluginName: string,
+    displayName: string,
+    message: string,
+    canRestart: boolean,
+  ) => {
     if (mainWindow) {
-      mainWindow.webContents.send('plugin-error', pluginName, message, canRestart)
+      mainWindow.webContents.send('plugin-error', pluginName, displayName, message, canRestart)
     }
   }
 

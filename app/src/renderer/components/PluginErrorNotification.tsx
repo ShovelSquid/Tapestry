@@ -18,9 +18,13 @@ import React, { useCallback, useEffect, useRef } from 'react'
 // ---------------------------------------------------------------------------
 
 interface PluginErrorNotificationProps {
+  /** Plugin id — the name the host uses for reload/enable/disable. */
   pluginName: string
+  /** Human-readable name shown to the user. */
+  displayName: string
   message: string
   canRestart: boolean
+  /** Invoked with the plugin id (never the display name). */
   onRestart: (pluginName: string) => void
   onDismiss: () => void
 }
@@ -31,6 +35,7 @@ interface PluginErrorNotificationProps {
 
 export default function PluginErrorNotification({
   pluginName,
+  displayName,
   message,
   canRestart,
   onRestart,
@@ -78,7 +83,7 @@ export default function PluginErrorNotification({
           maxWidth: 440,
         }}
       >
-        <span>{pluginName} restarted successfully.</span>
+        <span>{displayName} restarted successfully.</span>
       </div>
     )
   }

@@ -128,8 +128,15 @@ export class PluginHost {
   private pluginsDir: string
   private kernelBridge: any = null
 
-  /** Callback to notify the renderer of plugin errors (set by main process). */
-  onPluginError: ((pluginName: string, error: string, canRestart: boolean) => void) | null = null
+  /**
+   * Callback to notify the renderer of plugin errors (set by main process).
+   * Carries both the plugin id (the name used for reload/enable/disable) and
+   * the human-readable display name; the renderer must never send the
+   * display name back as an identifier.
+   */
+  onPluginError:
+    | ((pluginName: string, displayName: string, error: string, canRestart: boolean) => void)
+    | null = null
 
   constructor(pluginsDir: string) {
     this.pluginsDir = pluginsDir
@@ -426,7 +433,7 @@ export class PluginHost {
     // Notify renderer immediately
     if (this.onPluginError) {
       const displayName = this.plugins.get(name)?.manifest.displayName || name
-      this.onPluginError(displayName, `${displayName} stopped working. Restarting...`, false)
+      this.onPluginError(name, displayName, `${displayName} stopped working. Restarting...`, false)
     }
 
     // Record crash event in journal
@@ -446,7 +453,7 @@ export class PluginHost {
       // Restart succeeded — notify dismissal after delay
       if (this.onPluginError) {
         const displayName = this.plugins.get(name)?.manifest.displayName || name
-        this.onPluginError(displayName, '', false) // signal: clear notification
+        this.onPluginError(name, displayName, '', false) // signal: clear notification
       }
     } else {
       // Restart failed — disable and show Restart/Dismiss
@@ -459,6 +466,7 @@ export class PluginHost {
       if (this.onPluginError) {
         const displayName = loaded?.manifest.displayName || name
         this.onPluginError(
+          name,
           displayName,
           `${displayName} could not restart. Your work is safe.`,
           true,

@@ -52,7 +52,9 @@ export default function App(): React.ReactElement {
 
   // Plugin error notification state (D-34)
   const [pluginError, setPluginError] = useState<{
+    /** Plugin id used for reload — never the display name. */
     pluginName: string
+    displayName: string
     message: string
     canRestart: boolean
   } | null>(null)
@@ -83,7 +85,7 @@ export default function App(): React.ReactElement {
    * console.
    */
   const showAppError = useCallback((message: string) => {
-    setPluginError({ pluginName: 'Tapestry', message, canRestart: false })
+    setPluginError({ pluginName: 'tapestry', displayName: 'Tapestry', message, canRestart: false })
   }, [])
 
   /** Log a failed save, flip the indicator to "Not saved", and tell the user why. */
@@ -155,14 +157,13 @@ export default function App(): React.ReactElement {
     })
 
     // Listen for plugin error notifications (D-34)
-    const removePluginError = window.tapestry.onPluginError((pluginName, message, canRestart) => {
-      if (!message) {
-        // Empty message means restart succeeded — show brief success then dismiss
-        setPluginError({ pluginName, message: '', canRestart: false })
-      } else {
-        setPluginError({ pluginName, message, canRestart })
-      }
-    })
+    const removePluginError = window.tapestry.onPluginError(
+      (pluginName, displayName, message, canRestart) => {
+        // An empty message means the automatic restart succeeded — the
+        // notification shows a brief success state and then auto-dismisses.
+        setPluginError({ pluginName, displayName, message, canRestart })
+      },
+    )
 
     return () => {
       removeFileOpened()
@@ -488,12 +489,33 @@ export default function App(): React.ReactElement {
 
   const handlePluginRestart = useCallback(
     async (pluginName: string) => {
+      // reload() resolves with a status rather than throwing on failure;
+      // only a 'loaded' result means the restart actually worked.
       try {
-        await window.tapestry.plugins.reload(pluginName)
-        setPluginError(null)
-        await refreshPluginContributions()
+        const result = await window.tapestry.plugins.reload(pluginName)
+        if (result.status === 'loaded') {
+          setPluginError(null)
+          await refreshPluginContributions()
+        } else {
+          setPluginError(
+            (prev) =>
+              prev && {
+                ...prev,
+                message: `${prev.displayName} could not restart: ${result.reason ?? result.status}`,
+                canRestart: true,
+              },
+          )
+        }
       } catch (err) {
         console.error('Failed to restart plugin:', err)
+        setPluginError(
+          (prev) =>
+            prev && {
+              ...prev,
+              message: `${prev.displayName} could not restart: ${errorMessage(err)}`,
+              canRestart: true,
+            },
+        )
       }
     },
     [refreshPluginContributions],
@@ -622,6 +644,7 @@ export default function App(): React.ReactElement {
       {pluginError && (
         <PluginErrorNotification
           pluginName={pluginError.pluginName}
+          displayName={pluginError.displayName}
           message={pluginError.message}
           canRestart={pluginError.canRestart}
           onRestart={handlePluginRestart}

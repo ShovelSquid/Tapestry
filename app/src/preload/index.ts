@@ -94,11 +94,20 @@ const tapestryAPI = {
 
   /**
    * Listen for plugin error events from the main process (D-34).
-   * Receives plugin display name, error message, and whether restart is available.
+   * Receives the plugin id (for reload/enable/disable), its display name,
+   * the error message, and whether restart is available.
    */
-  onPluginError: (callback: (pluginName: string, message: string, canRestart: boolean) => void): (() => void) => {
-    const handler = (_event: IpcRendererEvent, pluginName: string, message: string, canRestart: boolean) => {
-      callback(pluginName, message, canRestart)
+  onPluginError: (
+    callback: (pluginName: string, displayName: string, message: string, canRestart: boolean) => void,
+  ): (() => void) => {
+    const handler = (
+      _event: IpcRendererEvent,
+      pluginName: string,
+      displayName: string,
+      message: string,
+      canRestart: boolean,
+    ) => {
+      callback(pluginName, displayName, message, canRestart)
     }
     ipcRenderer.on('plugin-error', handler)
     return () => ipcRenderer.removeListener('plugin-error', handler)
