@@ -149,11 +149,13 @@ app.whenReady().then(async () => {
       bridge.open(lastFile)
       currentFilePath = lastFile
       await pluginHost.discoverAndLoadAll(bridge)
-      // Notify renderer that a file is loaded
       if (mainWindow) {
-        mainWindow.webContents.on('did-finish-load', () => {
-          mainWindow?.webContents.send('file-opened', lastFile)
-        })
+        const sendFileOpened = () => mainWindow?.webContents.send('file-opened', lastFile)
+        if (mainWindow.webContents.isLoading()) {
+          mainWindow.webContents.once('did-finish-load', sendFileOpened)
+        } else {
+          sendFileOpened()
+        }
       }
     } catch {
       // D-03: if last file is missing/unreadable, show empty canvas
