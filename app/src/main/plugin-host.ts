@@ -766,42 +766,47 @@ export class PluginHost {
       args: Record<string, unknown>,
       selectedNodes: string[] = [],
     ) => {
-      for (const [, loaded] of host.plugins) {
-        if (loaded.status !== 'loaded') continue
-        const cmd = loaded.contributions.commands.get(commandId)
-        if (cmd) {
-          try {
-            const context = {
-              kernel: {
-                submit: (actorKind: string, actorId: string, message: string, ops: any[]) =>
-                  host.kernelBridge.submit(actorKind, actorId, message, ops),
-                getNodes: () => host.kernelBridge.getNodes(),
-                getNode: (id: string) => host.kernelBridge.getNode(id),
-                getEdges: () => host.kernelBridge.getEdges(),
-                status: () => host.kernelBridge.status(),
-              },
-              selectedNodes: Array.isArray(selectedNodes) ? selectedNodes : [],
-              arguments: args || {},
-            }
-            await cmd.handler(context)
-            return { ok: true }
-          } catch (err) {
-            const errorMsg = err instanceof Error ? err.message : String(err)
-            // Distinguish a command that legitimately failed (a kernel
-            // rejection, invalid input) from a broken plugin. Only programming
-            // errors escalate to D-34 crash handling (unload + restart);
-            // everything else is returned to the caller as a command error.
-            const isCrash =
-              err instanceof TypeError || err instanceof ReferenceError || err instanceof RangeError
-            if (isCrash) {
-              const pluginName = loaded.manifest.name
-              await host.handlePluginCrash(pluginName, errorMsg)
-            }
-            return { ok: false, error: errorMsg, crashed: isCrash }
-          }
-        }
+      // Resolve the owning plugin first, then act outside the loop: crash
+      // handling unloads and reloads the plugin, which deletes and re-inserts
+      // its map entry — mutating host.plugins while iterating it.
+      const owner = [...host.plugins.entries()].find(
+        ([, plugin]) => plugin.status === 'loaded' && plugin.contributions.commands.has(commandId),
+      )
+      if (!owner) {
+        return { ok: false, error: `Command ${commandId} not found` }
       }
-      return { ok: false, error: `Command ${commandId} not found` }
+      // pluginId is the map key (directory id) — the name reload/unload use.
+      const [pluginId, loaded] = owner
+      const cmd = loaded.contributions.commands.get(commandId)!
+
+      try {
+        const context = {
+          kernel: {
+            submit: (actorKind: string, actorId: string, message: string, ops: any[]) =>
+              host.kernelBridge.submit(actorKind, actorId, message, ops),
+            getNodes: () => host.kernelBridge.getNodes(),
+            getNode: (id: string) => host.kernelBridge.getNode(id),
+            getEdges: () => host.kernelBridge.getEdges(),
+            status: () => host.kernelBridge.status(),
+          },
+          selectedNodes: Array.isArray(selectedNodes) ? selectedNodes : [],
+          arguments: args || {},
+        }
+        await cmd.handler(context)
+        return { ok: true }
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : String(err)
+        // Distinguish a command that legitimately failed (a kernel
+        // rejection, invalid input) from a broken plugin. Only programming
+        // errors escalate to D-34 crash handling (unload + restart);
+        // everything else is returned to the caller as a command error.
+        const isCrash =
+          err instanceof TypeError || err instanceof ReferenceError || err instanceof RangeError
+        if (isCrash) {
+          await host.handlePluginCrash(pluginId, errorMsg)
+        }
+        return { ok: false, error: errorMsg, crashed: isCrash }
+      }
     })
   }
 
