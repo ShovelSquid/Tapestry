@@ -13,7 +13,7 @@
  * Per D-34: crash handling with auto-restart, then disable.
  */
 
-import { readdirSync, readFileSync, existsSync } from 'fs'
+import { readdirSync, readFileSync, existsSync, realpathSync } from 'fs'
 import { isAbsolute, join, relative, resolve, sep } from 'path'
 import type { IpcMain } from 'electron'
 import type {
@@ -368,12 +368,32 @@ export class PluginHost {
     loaded.contributions.propertyPanels.clear()
     loaded.contributions.inspectors.clear()
 
-    // Clear the require cache so a reload gets fresh code
+    // Clear the require cache so a reload gets fresh code. Evict every
+    // module under the plugin directory, not just the entry: helpers the
+    // entry require()s (./PropertyPanel, ./commands, ...) would otherwise
+    // keep running stale code after an explicit reload (D-29).
     const pluginDir = this.resolvePluginDir(name)
     if (pluginDir) {
-      const entryPath = resolve(pluginDir, loaded.manifest.main)
+      // require.cache is keyed by real path; match both the logical and the
+      // resolved directory so a symlinked plugins/ (or /tmp on macOS) works.
+      const prefixes = new Set([pluginDir + sep])
       try {
-        delete require.cache[require.resolve(entryPath)]
+        prefixes.add(realpathSync(pluginDir) + sep)
+      } catch {
+        // Directory may already be gone from disk.
+      }
+      for (const key of Object.keys(require.cache)) {
+        for (const prefix of prefixes) {
+          if (key.startsWith(prefix)) {
+            delete require.cache[key]
+            break
+          }
+        }
+      }
+      // Also evict the resolved entry path, which may live elsewhere under
+      // the plugin dir (e.g. dist/) or have been symlinked.
+      try {
+        delete require.cache[require.resolve(resolve(pluginDir, loaded.manifest.main))]
       } catch {
         // Plugin files may already be gone from disk.
       }
