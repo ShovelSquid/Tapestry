@@ -132,6 +132,8 @@ html, body, #root {
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.06);
   cursor: default;
   transition: border-color 0.15s, box-shadow 0.15s;
+  display: flex;
+  flex-direction: column;
 }
 
 .tapestry-note-card--selected {
@@ -164,23 +166,36 @@ html, body, #root {
   cursor: grabbing;
 }
 
-/* Note title */
-.tapestry-note-title {
-  font-size: 22px;
+/* Editable title input */
+.tapestry-note-title-input {
+  display: block;
+  width: 100%;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 18px;
   font-weight: 600;
   line-height: 1.25;
   color: #2C2C2C;
-  margin-bottom: 8px;
-  min-height: 1.25em;
+  margin-bottom: 6px;
+  padding: 0;
+  font-family: inherit;
 }
 
-.tapestry-note-title:empty {
-  display: none;
+.tapestry-note-title-input::placeholder {
+  color: #B0ADA6;
+  font-weight: 400;
+}
+
+.tapestry-note-title-input:read-only {
+  cursor: default;
 }
 
 /* ProseMirror editor inside note card */
 .tapestry-note-editor {
   min-height: 1.5em;
+  flex: 1;
+  overflow-y: auto;
 }
 
 .tapestry-note-editor .ProseMirror {
@@ -313,6 +328,22 @@ html, body, #root {
   bottom: 20px;
   width: 6px;
   cursor: ew-resize;
+}
+
+.tapestry-resize-handle--top {
+  top: -3px;
+  left: 20px;
+  right: 20px;
+  height: 6px;
+  cursor: ns-resize;
+}
+
+.tapestry-resize-handle--bottom {
+  bottom: -3px;
+  left: 20px;
+  right: 20px;
+  height: 6px;
+  cursor: ns-resize;
 }
 
 /* Corner handles */

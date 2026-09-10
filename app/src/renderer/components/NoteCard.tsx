@@ -66,12 +66,15 @@ interface NoteCardProps {
   onMarkClean: (nodeId: string) => void
   onPositionChange: (nodeId: string, x: number, y: number) => void
   onWidthChange: (nodeId: string, width: number) => void
+  onHeightChange?: (nodeId: string, height: number) => void
   onDeleteNote: () => void
   onHover: (hovered: boolean) => void
   onHoverDuringConnection: () => void
   onLeaveDuringConnection: () => void
   onStartConnection: () => void
   onRegisterDims: (id: string, width: number, height: number) => void
+  onDragMove?: (nodeId: string, x: number, y: number) => void
+  onDragEnd?: (nodeId: string) => void
 }
 
 // ---------------------------------------------------------------------------
@@ -143,28 +146,12 @@ function deserializeBody(body: string): any {
   return plainTextToDoc(body)
 }
 
-/**
- * Serialize ProseMirror doc to JSON string for kernel body property.
- * Also extract the title from the first line.
- */
-function serializeDoc(view: EditorView): { body: string; title: string } {
-  const doc = view.state.doc
-  const json = doc.toJSON()
-  const body = JSON.stringify(json)
-
-  // Extract title from first block's text content
-  let title = ''
-  doc.forEach((child, _offset, index) => {
-    if (index === 0 && child.textContent.trim()) {
-      title = child.textContent.trim()
-    }
-  })
-
-  return { body, title }
+function serializeBody(view: EditorView): string {
+  return JSON.stringify(view.state.doc.toJSON())
 }
 
-// Minimum width for resize (D-08)
 const MIN_WIDTH = 120
+const MIN_HEIGHT = 60
 
 // ---------------------------------------------------------------------------
 // NoteCard
@@ -185,12 +172,15 @@ export default function NoteCard({
   onMarkClean,
   onPositionChange,
   onWidthChange,
+  onHeightChange,
   onDeleteNote,
   onHover,
   onHoverDuringConnection,
   onLeaveDuringConnection,
   onStartConnection,
   onRegisterDims,
+  onDragMove,
+  onDragEnd,
 }: NoteCardProps): React.ReactElement {
   const editorRef = useRef<HTMLDivElement>(null)
   const cardRef = useRef<HTMLDivElement>(null)
@@ -210,19 +200,32 @@ export default function NoteCard({
   const storedWidth = node.props['width']
     ? Number(node.props['width'].value)
     : 0
+  const storedHeight = node.props['height']
+    ? Number(node.props['height'].value)
+    : 0
+
+  // Local title state (separate from body, editable inline)
+  const [localTitle, setLocalTitle] = useState(title)
+  const localTitleRef = useRef(title)
+  localTitleRef.current = localTitle
 
   // Local drag position for immediate feedback before kernel confirms
   const [localPos, setLocalPos] = useState<{ x: number; y: number } | null>(
     null,
   )
   const [localWidth, setLocalWidth] = useState<number | null>(null)
+  const [localHeight, setLocalHeight] = useState<number | null>(null)
   const isDraggingRef = useRef(false)
   const isResizingRef = useRef(false)
   const resizeDirRef = useRef<string>('')
   const dragStartRef = useRef({ mouseX: 0, mouseY: 0, startX: 0, startY: 0 })
   const resizeStartRef = useRef({
     mouseX: 0,
+    mouseY: 0,
     width: 0,
+    height: 0,
+    posX: 0,
+    posY: 0,
   })
 
   // Hover delay for controls (D-06: controls remain reachable)
@@ -237,10 +240,11 @@ export default function NoteCard({
   onMarkDirtyRef.current = onMarkDirty
   onMarkCleanRef.current = onMarkClean
 
-  // Effective position: local drag position takes priority
+  // Effective position: local drag/resize position takes priority
   const effectiveX = localPos ? localPos.x : x
   const effectiveY = localPos ? localPos.y : y
   const effectiveWidth = localWidth ?? (storedWidth > 0 ? storedWidth : undefined)
+  const effectiveHeight = localHeight ?? (storedHeight > 0 ? storedHeight : undefined)
 
   // -----------------------------------------------------------------------
   // Register dimensions for connection line center computation
@@ -252,6 +256,15 @@ export default function NoteCard({
       onRegisterDims(node.id, rect.width / zoom, rect.height / zoom)
     }
   })
+
+  // Clear local overrides once kernel props converge (prevents flicker)
+  useEffect(() => {
+    if (!isDraggingRef.current && !isResizingRef.current) {
+      if (localPos) setLocalPos(null)
+      if (localWidth !== null) setLocalWidth(null)
+      if (localHeight !== null) setLocalHeight(null)
+    }
+  }, [x, y, storedWidth, storedHeight])
 
   // -----------------------------------------------------------------------
   // Hover management (D-06, D-07)
@@ -292,6 +305,11 @@ export default function NoteCard({
       setShowControls(true)
     }
   }, [isSelected, isHovered])
+
+  // Sync localTitle when the title prop changes externally (undo/redo)
+  useEffect(() => {
+    setLocalTitle(title)
+  }, [title])
 
   // -----------------------------------------------------------------------
   // Initialize ProseMirror editor
@@ -345,9 +363,9 @@ export default function NoteCard({
           debounceRef.current = setTimeout(() => {
             debounceRef.current = null
             onMarkCleanRef.current(nodeId)
-            const { body: newBody, title: newTitle } = serializeDoc(view)
+            const newBody = serializeBody(view)
             lastEmittedBodyRef.current = newBody
-            onSaveRef.current(nodeId, newBody, newTitle)
+            onSaveRef.current(nodeId, newBody, localTitleRef.current)
           }, 300)
         }
       },
@@ -361,12 +379,10 @@ export default function NoteCard({
         debounceRef.current = null
         onMarkCleanRef.current(nodeId)
         if (viewRef.current) {
-          const { body: finalBody, title: finalTitle } = serializeDoc(
-            viewRef.current,
-          )
-          if (finalBody !== body || finalTitle !== title) {
+          const finalBody = serializeBody(viewRef.current)
+          if (finalBody !== body) {
             lastEmittedBodyRef.current = finalBody
-            onSaveRef.current(nodeId, finalBody, finalTitle)
+            onSaveRef.current(nodeId, finalBody, localTitleRef.current)
           }
         }
       }
@@ -442,30 +458,28 @@ export default function NoteCard({
         if (!isDraggingRef.current) return
         const dx = (me.clientX - dragStartRef.current.mouseX) / zoom
         const dy = (me.clientY - dragStartRef.current.mouseY) / zoom
-        setLocalPos({
-          x: dragStartRef.current.startX + dx,
-          y: dragStartRef.current.startY + dy,
-        })
+        const newX = dragStartRef.current.startX + dx
+        const newY = dragStartRef.current.startY + dy
+        setLocalPos({ x: newX, y: newY })
+        onDragMove?.(node.id, newX, newY)
       }
 
       const onUp = () => {
         isDraggingRef.current = false
-        document.removeEventListener('pointermove', onMove)
-        document.removeEventListener('pointerup', onUp)
+        document.removeEventListener('pointermove', onMove, true)
+        document.removeEventListener('pointerup', onUp, true)
+        onDragEnd?.(node.id)
 
-        // Persist position
         setLocalPos((pos) => {
-          if (pos) {
-            onPositionChange(node.id, pos.x, pos.y)
-          }
-          return null
+          if (pos) onPositionChange(node.id, pos.x, pos.y)
+          return pos
         })
       }
 
-      document.addEventListener('pointermove', onMove)
-      document.addEventListener('pointerup', onUp)
+      document.addEventListener('pointermove', onMove, true)
+      document.addEventListener('pointerup', onUp, true)
     },
-    [effectiveX, effectiveY, zoom, node.id, onPositionChange],
+    [effectiveX, effectiveY, zoom, node.id, onPositionChange, onDragMove, onDragEnd],
   )
 
   // -----------------------------------------------------------------------
@@ -485,46 +499,78 @@ export default function NoteCard({
         (cardRef.current
           ? cardRef.current.getBoundingClientRect().width / zoom
           : 240)
+      const currentHeight =
+        effectiveHeight ??
+        (cardRef.current
+          ? cardRef.current.getBoundingClientRect().height / zoom
+          : 100)
       resizeStartRef.current = {
         mouseX: e.clientX,
+        mouseY: e.clientY,
         width: currentWidth,
+        height: currentHeight,
+        posX: effectiveX,
+        posY: effectiveY,
       }
 
       const onMove = (me: PointerEvent) => {
         if (!isResizingRef.current) return
         const dx = (me.clientX - resizeStartRef.current.mouseX) / zoom
-        let multiplier = 1
-        if (
-          resizeDirRef.current === 'left' ||
-          resizeDirRef.current === 'top-left' ||
-          resizeDirRef.current === 'bottom-left'
-        ) {
-          multiplier = -1
+        const dy = (me.clientY - resizeStartRef.current.mouseY) / zoom
+        const dir = resizeDirRef.current
+
+        let newWidth = resizeStartRef.current.width
+        let newHeight = resizeStartRef.current.height
+        let newX = resizeStartRef.current.posX
+        let newY = resizeStartRef.current.posY
+
+        if (dir.includes('right')) {
+          newWidth = Math.max(MIN_WIDTH, resizeStartRef.current.width + dx)
         }
-        const newWidth = Math.max(
-          MIN_WIDTH,
-          resizeStartRef.current.width + dx * multiplier,
-        )
+        if (dir.includes('left')) {
+          const raw = resizeStartRef.current.width - dx
+          newWidth = Math.max(MIN_WIDTH, raw)
+          newX = resizeStartRef.current.posX + (resizeStartRef.current.width - newWidth)
+        }
+        if (dir.includes('bottom')) {
+          newHeight = Math.max(MIN_HEIGHT, resizeStartRef.current.height + dy)
+        }
+        if (dir.includes('top')) {
+          const raw = resizeStartRef.current.height - dy
+          newHeight = Math.max(MIN_HEIGHT, raw)
+          newY = resizeStartRef.current.posY + (resizeStartRef.current.height - newHeight)
+        }
+
         setLocalWidth(newWidth)
+        setLocalHeight(newHeight)
+        if (newX !== resizeStartRef.current.posX || newY !== resizeStartRef.current.posY) {
+          setLocalPos({ x: newX, y: newY })
+        }
       }
 
       const onUp = () => {
         isResizingRef.current = false
-        document.removeEventListener('pointermove', onMove)
-        document.removeEventListener('pointerup', onUp)
+        document.removeEventListener('pointermove', onMove, true)
+        document.removeEventListener('pointerup', onUp, true)
 
         setLocalWidth((w) => {
-          if (w !== null) {
-            onWidthChange(node.id, w)
-          }
-          return null
+          if (w !== null) onWidthChange(node.id, w)
+          return w
+        })
+        setLocalHeight((h) => {
+          if (h !== null) onHeightChange?.(node.id, h)
+          return h
+        })
+        setLocalPos((pos) => {
+          if (pos) onPositionChange(node.id, pos.x, pos.y)
+          return pos
         })
       }
 
-      document.addEventListener('pointermove', onMove)
-      document.addEventListener('pointerup', onUp)
+      document.addEventListener('pointermove', onMove, true)
+      document.addEventListener('pointerup', onUp, true)
     },
-    [effectiveWidth, zoom, node.id, onWidthChange],
+    [effectiveWidth, effectiveHeight, effectiveX, effectiveY, zoom, node.id, onWidthChange, onHeightChange, onPositionChange],
   )
 
   // -----------------------------------------------------------------------
@@ -565,6 +611,7 @@ export default function NoteCard({
     left: `${effectiveX}px`,
     top: `${effectiveY}px`,
     ...(effectiveWidth ? { width: `${effectiveWidth}px`, minWidth: `${MIN_WIDTH}px`, maxWidth: 'none' } : {}),
+    ...(effectiveHeight ? { height: `${effectiveHeight}px`, minHeight: `${MIN_HEIGHT}px` } : {}),
   }
 
   return (
@@ -574,11 +621,6 @@ export default function NoteCard({
       style={cardStyle}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
-      onPointerUp={(e) => {
-        if (!isConnecting) {
-          e.stopPropagation()
-        }
-      }}
     >
       {/* Drag handle area -- the top border strip */}
       <div
@@ -587,10 +629,42 @@ export default function NoteCard({
         onClick={handleBorderClick}
       />
 
-      {/* Title (read-only display derived from body) */}
-      {title && <div className="tapestry-note-title">{title}</div>}
+      {/* Editable title */}
+      <input
+        type="text"
+        className="tapestry-note-title-input"
+        value={localTitle}
+        placeholder="Untitled"
+        readOnly={!isEditing}
+        onChange={(e) => {
+          const newTitle = e.target.value
+          setLocalTitle(newTitle)
+          onMarkDirtyRef.current(node.id)
+          if (debounceRef.current) clearTimeout(debounceRef.current)
+          debounceRef.current = setTimeout(() => {
+            debounceRef.current = null
+            onMarkCleanRef.current(node.id)
+            const view = viewRef.current
+            if (view) {
+              const b = serializeBody(view)
+              lastEmittedBodyRef.current = b
+              onSaveRef.current(node.id, b, newTitle)
+            }
+          }, 300)
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault()
+            viewRef.current?.focus()
+          }
+        }}
+        onClick={(e) => {
+          e.stopPropagation()
+          if (!isEditing) onStartEditing()
+        }}
+      />
 
-      {/* ProseMirror editor */}
+      {/* ProseMirror body editor */}
       <div
         className="tapestry-note-editor"
         ref={editorRef}
@@ -605,33 +679,25 @@ export default function NoteCard({
         />
       )}
 
-      {/* Resize handles (D-08) -- only when selected */}
-      {isSelected && (
+      {/* Resize handles (D-08) -- visible on hover or selection */}
+      {showControlsBool && (
         <>
-          <div
-            className="tapestry-resize-handle tapestry-resize-handle--right"
-            onPointerDown={(e) => handleResizeStart(e, 'right')}
-          />
-          <div
-            className="tapestry-resize-handle tapestry-resize-handle--left"
-            onPointerDown={(e) => handleResizeStart(e, 'left')}
-          />
-          <div
-            className="tapestry-resize-handle tapestry-resize-handle--corner-tr"
-            onPointerDown={(e) => handleResizeStart(e, 'right')}
-          />
-          <div
-            className="tapestry-resize-handle tapestry-resize-handle--corner-tl"
-            onPointerDown={(e) => handleResizeStart(e, 'left')}
-          />
-          <div
-            className="tapestry-resize-handle tapestry-resize-handle--corner-br"
-            onPointerDown={(e) => handleResizeStart(e, 'right')}
-          />
-          <div
-            className="tapestry-resize-handle tapestry-resize-handle--corner-bl"
-            onPointerDown={(e) => handleResizeStart(e, 'left')}
-          />
+          <div className="tapestry-resize-handle tapestry-resize-handle--right"
+            onPointerDown={(e) => handleResizeStart(e, 'right')} />
+          <div className="tapestry-resize-handle tapestry-resize-handle--left"
+            onPointerDown={(e) => handleResizeStart(e, 'left')} />
+          <div className="tapestry-resize-handle tapestry-resize-handle--top"
+            onPointerDown={(e) => handleResizeStart(e, 'top')} />
+          <div className="tapestry-resize-handle tapestry-resize-handle--bottom"
+            onPointerDown={(e) => handleResizeStart(e, 'bottom')} />
+          <div className="tapestry-resize-handle tapestry-resize-handle--corner-tr"
+            onPointerDown={(e) => handleResizeStart(e, 'top-right')} />
+          <div className="tapestry-resize-handle tapestry-resize-handle--corner-tl"
+            onPointerDown={(e) => handleResizeStart(e, 'top-left')} />
+          <div className="tapestry-resize-handle tapestry-resize-handle--corner-br"
+            onPointerDown={(e) => handleResizeStart(e, 'bottom-right')} />
+          <div className="tapestry-resize-handle tapestry-resize-handle--corner-bl"
+            onPointerDown={(e) => handleResizeStart(e, 'bottom-left')} />
         </>
       )}
     </div>

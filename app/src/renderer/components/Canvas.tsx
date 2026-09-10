@@ -66,6 +66,7 @@ interface CanvasProps {
     y: number,
   ) => void
   onWidthChange: (nodeId: string, width: number) => void
+  onHeightChange?: (nodeId: string, height: number) => void
   onEdgeCreate: (fromId: string, toId: string) => void
   /** Called when a note is deleted via the delete bubble or keyboard (D-20/D-21). */
   onDeleteNote: (nodeId: string) => void
@@ -131,6 +132,7 @@ export default function Canvas({
   onMarkClean,
   onPositionChange,
   onWidthChange,
+  onHeightChange,
   onEdgeCreate,
   onDeleteNote,
   onPropertyEdit,
@@ -158,6 +160,11 @@ export default function Canvas({
   const [hoveredNoteId, setHoveredNoteId] = useState<string | null>(null)
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null)
 
+  // Live drag positions for connection line tracking during drag
+  const [dragPositions, setDragPositions] = useState<
+    Record<string, { x: number; y: number }>
+  >({})
+
   // Node dimensions cache for connection line center computation
   const nodeDimsRef = useRef<
     Map<string, { width: number; height: number }>
@@ -170,6 +177,21 @@ export default function Canvas({
     [],
   )
 
+  const handleDragMove = useCallback(
+    (nodeId: string, x: number, y: number) => {
+      setDragPositions((prev) => ({ ...prev, [nodeId]: { x, y } }))
+    },
+    [],
+  )
+
+  const handleDragEnd = useCallback((nodeId: string) => {
+    setDragPositions((prev) => {
+      const next = { ...prev }
+      delete next[nodeId]
+      return next
+    })
+  }, [])
+
   // -----------------------------------------------------------------------
   // Helper: get node center in world space
   // -----------------------------------------------------------------------
@@ -178,14 +200,15 @@ export default function Canvas({
     (nodeId: string): { x: number; y: number } | null => {
       const node = nodes.find((n) => n.id === nodeId)
       if (!node) return null
-      const px = Number(node.props['position.x']?.value ?? 0)
-      const py = Number(node.props['position.y']?.value ?? 0)
+      const dragPos = dragPositions[nodeId]
+      const px = dragPos ? dragPos.x : Number(node.props['position.x']?.value ?? 0)
+      const py = dragPos ? dragPos.y : Number(node.props['position.y']?.value ?? 0)
       const dims = nodeDimsRef.current.get(nodeId)
       const w = dims?.width ?? 240
       const h = dims?.height ?? 80
       return { x: px + w / 2, y: py + h / 2 }
     },
-    [nodes],
+    [nodes, dragPositions],
   )
 
   // -----------------------------------------------------------------------
@@ -277,26 +300,32 @@ export default function Canvas({
 
     const handleWheel = (e: WheelEvent) => {
       e.preventDefault()
-      const rect = viewport.getBoundingClientRect()
 
-      // Pointer position relative to viewport
-      const pointerX = e.clientX - rect.left
-      const pointerY = e.clientY - rect.top
+      if (e.ctrlKey) {
+        // Pinch-to-zoom on trackpad (browser sets ctrlKey for pinch gestures)
+        const rect = viewport.getBoundingClientRect()
+        const pointerX = e.clientX - rect.left
+        const pointerY = e.clientY - rect.top
 
-      setView((prev) => {
-        const delta = -e.deltaY * ZOOM_SPEED
-        const newZoom = Math.min(
-          MAX_ZOOM,
-          Math.max(MIN_ZOOM, prev.zoom * (1 + delta)),
-        )
-        const ratio = newZoom / prev.zoom
-
-        // Adjust pan so the point under the pointer stays fixed
-        const newPanX = pointerX - ratio * (pointerX - prev.panX)
-        const newPanY = pointerY - ratio * (pointerY - prev.panY)
-
-        return { panX: newPanX, panY: newPanY, zoom: newZoom }
-      })
+        setView((prev) => {
+          const delta = -e.deltaY * ZOOM_SPEED
+          const newZoom = Math.min(
+            MAX_ZOOM,
+            Math.max(MIN_ZOOM, prev.zoom * (1 + delta)),
+          )
+          const ratio = newZoom / prev.zoom
+          const newPanX = pointerX - ratio * (pointerX - prev.panX)
+          const newPanY = pointerY - ratio * (pointerY - prev.panY)
+          return { panX: newPanX, panY: newPanY, zoom: newZoom }
+        })
+      } else {
+        // Two-finger scroll on trackpad: pan the canvas
+        setView((prev) => ({
+          ...prev,
+          panX: prev.panX - e.deltaX,
+          panY: prev.panY - e.deltaY,
+        }))
+      }
     }
 
     viewport.addEventListener('wheel', handleWheel, { passive: false })
@@ -372,8 +401,9 @@ export default function Canvas({
   const handleBorderSelect = useCallback(
     (nodeId: string) => {
       setSelectedNoteId((prev) => (prev === nodeId ? null : nodeId))
+      onStopEditing()
     },
-    [],
+    [onStopEditing],
   )
 
   // -----------------------------------------------------------------------
@@ -509,13 +539,17 @@ export default function Canvas({
                 isConnectTarget={connectingHover === node.id}
                 isConnecting={connectingFrom !== null}
                 zoom={view.zoom}
-                onStartEditing={() => onStartEditing(node.id)}
+                onStartEditing={() => {
+                  setSelectedNoteId(null)
+                  onStartEditing(node.id)
+                }}
                 onBorderSelect={() => handleBorderSelect(node.id)}
                 onSave={onSave}
                 onMarkDirty={onMarkDirty}
                 onMarkClean={onMarkClean}
                 onPositionChange={onPositionChange}
                 onWidthChange={onWidthChange}
+                onHeightChange={onHeightChange}
                 onDeleteNote={() => onDeleteNote(node.id)}
                 onHover={(hovered) =>
                   setHoveredNoteId(hovered ? node.id : null)
@@ -528,6 +562,8 @@ export default function Canvas({
                 }
                 onStartConnection={() => handleStartConnection(node.id)}
                 onRegisterDims={registerNodeDims}
+                onDragMove={handleDragMove}
+                onDragEnd={handleDragEnd}
               />
             )
           }

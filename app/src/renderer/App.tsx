@@ -319,6 +319,45 @@ export default function App(): React.ReactElement {
   )
 
   // -----------------------------------------------------------------------
+  // Height change handler (D-08 resize persistence)
+  // -----------------------------------------------------------------------
+
+  const handleHeightChange = useCallback(
+    async (nodeId: string, newHeight: number) => {
+      pendingSavesRef.current += 1
+      setSaveState('saving')
+
+      try {
+        await window.tapestry.kernel.submit(
+          'human',
+          'local',
+          'Resize note height',
+          [
+            {
+              op: 'setProperty',
+              target: nodeId,
+              key: 'height',
+              type: 'real',
+              value: newHeight,
+            },
+          ],
+        )
+
+        pendingSavesRef.current -= 1
+        if (pendingSavesRef.current < 0) pendingSavesRef.current = 0
+        recomputeSaveState()
+
+        await refreshNodes()
+      } catch (err) {
+        pendingSavesRef.current -= 1
+        if (pendingSavesRef.current < 0) pendingSavesRef.current = 0
+        reportSaveError('Failed to update height', err)
+      }
+    },
+    [recomputeSaveState, refreshNodes, reportSaveError],
+  )
+
+  // -----------------------------------------------------------------------
   // Edge creation handler
   // -----------------------------------------------------------------------
 
@@ -669,6 +708,7 @@ export default function App(): React.ReactElement {
         onMarkClean={handleMarkClean}
         onPositionChange={handlePositionChange}
         onWidthChange={handleWidthChange}
+        onHeightChange={handleHeightChange}
         onEdgeCreate={handleEdgeCreate}
         onDeleteNote={handleDeleteNote}
         onPropertyEdit={handlePropertyEdit}
