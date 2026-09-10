@@ -61,6 +61,17 @@ interface PluginManifest {
 type PluginStatus = 'loaded' | 'failed' | 'disabled' | 'incompatible'
 
 /**
+ * A plugin found on disk. `dir` is the directory name under plugins/ and is
+ * the plugin's identifier everywhere in the host (map key, IPC name, path
+ * component); `manifest.name` is author-controlled metadata and is never
+ * used as a path.
+ */
+interface DiscoveredPlugin {
+  dir: string
+  manifest: PluginManifest
+}
+
+/**
  * Validate and normalize a parsed manifest. Every field that is later used
  * as a path component or string is type-checked here so a malformed manifest
  * (e.g. `"main": 1`) is reported as a failed plugin instead of throwing a
@@ -158,16 +169,24 @@ export class PluginHost {
    * tapestry.plugin.json manifest. Parse and validate each manifest.
    * Per D-30: each subdirectory with a manifest is a plugin candidate.
    */
-  discoverPlugins(): PluginManifest[] {
+  discoverPlugins(): DiscoveredPlugin[] {
     if (!existsSync(this.pluginsDir)) {
       return []
     }
 
-    const manifests: PluginManifest[] = []
-    const entries = readdirSync(this.pluginsDir, { withFileTypes: true })
+    const discovered: DiscoveredPlugin[] = []
+    // Sort so load order (and therefore contribution precedence) is
+    // deterministic rather than filesystem-dependent.
+    const entries = readdirSync(this.pluginsDir, { withFileTypes: true }).sort((a, b) =>
+      a.name.localeCompare(b.name),
+    )
 
     for (const entry of entries) {
       if (!entry.isDirectory()) continue
+      if (!isValidPluginName(entry.name)) {
+        console.warn(`[PluginHost] Skipping ${entry.name}: directory name is not a valid plugin id`)
+        continue
+      }
 
       const manifestPath = join(this.pluginsDir, entry.name, 'tapestry.plugin.json')
       if (!existsSync(manifestPath)) continue
@@ -182,14 +201,14 @@ export class PluginHost {
           continue
         }
 
-        manifests.push(parsed.manifest)
+        discovered.push({ dir: entry.name, manifest: parsed.manifest })
       } catch (err) {
         // T-02-10: malformed manifest logged and skipped
         console.warn(`[PluginHost] Skipping ${entry.name}: invalid manifest JSON`, err)
       }
     }
 
-    return manifests
+    return discovered
   }
 
   // -------------------------------------------------------------------------
@@ -197,8 +216,9 @@ export class PluginHost {
   // -------------------------------------------------------------------------
 
   /**
-   * Load a single plugin by name. Validates API version, loads the entry
-   * module, constructs a PluginContext, and calls activate().
+   * Load a single plugin by id (its directory name under plugins/). Validates
+   * API version, loads the entry module, constructs a PluginContext, and
+   * calls activate().
    *
    * Per D-34: errors during activate are caught; the plugin is marked failed.
    * Per PLUG-05: version mismatch prevents loading with a clear reason.
@@ -591,6 +611,9 @@ export class PluginHost {
    * Return a list of all known plugins and their status.
    */
   list(): Array<{
+    /** Plugin id — the directory name; use this for reload/enable/disable. */
+    id: string
+    /** Author-supplied manifest name (metadata; may differ from id). */
     name: string
     displayName: string
     version: string
@@ -600,6 +623,7 @@ export class PluginHost {
     nodeViews: Record<string, string>
   }> {
     const result: Array<{
+      id: string
       name: string
       displayName: string
       version: string
@@ -609,12 +633,13 @@ export class PluginHost {
       nodeViews: Record<string, string>
     }> = []
 
-    for (const [, loaded] of this.plugins) {
+    for (const [id, loaded] of this.plugins) {
       const views: Record<string, string> = {}
       for (const [type, contrib] of loaded.contributions.nodeViews) {
         views[type] = contrib.component
       }
       result.push({
+        id,
         name: loaded.manifest.name,
         displayName: loaded.manifest.displayName,
         version: loaded.manifest.version,
@@ -638,11 +663,11 @@ export class PluginHost {
    */
   async discoverAndLoadAll(kernelBridge: any): Promise<void> {
     this.kernelBridge = kernelBridge
-    const manifests = this.discoverPlugins()
-    const discoveredNames = new Set(manifests.map((manifest) => manifest.name))
+    const discovered = this.discoverPlugins()
+    const discoveredIds = new Set(discovered.map((plugin) => plugin.dir))
 
     for (const [name, loaded] of [...this.plugins]) {
-      if (!discoveredNames.has(name) && loaded.status === 'loaded') {
+      if (!discoveredIds.has(name) && loaded.status === 'loaded') {
         try {
           await this.unloadPlugin(name)
         } catch (err) {
@@ -653,19 +678,19 @@ export class PluginHost {
 
     // D-33: isolate each plugin so one throwing load cannot abort the rest
     // (or the world open that triggered discovery).
-    for (const manifest of manifests) {
+    for (const { dir } of discovered) {
       // Skip if already loaded
-      if (this.plugins.has(manifest.name) && this.plugins.get(manifest.name)!.status === 'loaded') {
+      if (this.plugins.get(dir)?.status === 'loaded') {
         continue
       }
       // Skip plugins the user disabled (D-32/D-35); the disabled set is authoritative
-      if (this.disabled.has(manifest.name)) {
+      if (this.disabled.has(dir)) {
         continue
       }
       try {
-        await this.loadPlugin(manifest.name)
+        await this.loadPlugin(dir)
       } catch (err) {
-        console.error(`[PluginHost] ${manifest.name} threw during load`, err)
+        console.error(`[PluginHost] ${dir} threw during load`, err)
       }
     }
   }

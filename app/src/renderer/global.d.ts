@@ -41,6 +41,9 @@ interface TapestryKernelAPI {
 interface TapestryPluginsAPI {
   list(): Promise<
     Array<{
+      /** Plugin id (directory name) — use for reload/enable/disable. */
+      id: string
+      /** Author-supplied manifest name (metadata). */
       name: string
       displayName: string
       version: string
