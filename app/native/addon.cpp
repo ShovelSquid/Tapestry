@@ -98,8 +98,9 @@ Value jsToValueInferred(Napi::Env env, Napi::Value jsVal) {
     } else if (jsVal.IsNumber()) {
         double d = jsVal.As<Napi::Number>().DoubleValue();
         // If the number is an integer and fits in int64, use Int.
+        constexpr double kMaxSafeInt64 = 9223372036854774784.0;
         if (std::floor(d) == d && d >= static_cast<double>(INT64_MIN)
-            && d <= static_cast<double>(INT64_MAX)) {
+            && d <= kMaxSafeInt64) {
             return Value::ofInt(static_cast<int64_t>(d));
         }
         return Value::ofReal(d);
