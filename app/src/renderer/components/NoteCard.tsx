@@ -27,8 +27,9 @@ import { EditorView } from 'prosemirror-view'
 import { Schema, DOMParser as ProseDOMParser } from 'prosemirror-model'
 import { schema as basicSchema } from 'prosemirror-schema-basic'
 import { keymap } from 'prosemirror-keymap'
-import { baseKeymap } from 'prosemirror-commands'
+import { baseKeymap, toggleMark, setBlockType } from 'prosemirror-commands'
 import { history, undo, redo } from 'prosemirror-history'
+import { Command } from 'prosemirror-state'
 import NoteControls from './NoteControls'
 
 // ---------------------------------------------------------------------------
@@ -86,20 +87,70 @@ function getNodeProp(
   return prop ? prop.value : fallback
 }
 
-function extractTextAndTitle(view: EditorView): { body: string; title: string } {
-  const doc = view.state.doc
-  const lines: string[] = []
-  let title = ''
+// extractTextAndTitle removed — replaced by serializeDoc for rich text (D-23)
 
-  doc.forEach((child, _offset, index) => {
-    const text = child.textContent
-    if (index === 0 && text.trim()) {
-      title = text.trim()
+// ---------------------------------------------------------------------------
+// Heading toggle command (D-23): toggle between heading level and paragraph
+// ---------------------------------------------------------------------------
+
+function toggleHeading(level: number): Command {
+  return (state, dispatch) => {
+    const { $from } = state.selection
+    const node = $from.parent
+    // If already this heading level, convert back to paragraph
+    if (node.type === noteSchema.nodes.heading && node.attrs.level === level) {
+      return setBlockType(noteSchema.nodes.paragraph)(state, dispatch)
     }
-    lines.push(text)
+    return setBlockType(noteSchema.nodes.heading, { level })(state, dispatch)
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Rich text serialization helpers (D-23)
+// ---------------------------------------------------------------------------
+
+/**
+ * Try to parse body as ProseMirror JSON. If it fails (plain text from before
+ * rich text was added), create a doc with paragraphs of text nodes.
+ */
+function deserializeBody(body: string): any {
+  if (!body) return null
+  try {
+    const parsed = JSON.parse(body)
+    // Validate it looks like a ProseMirror doc
+    if (parsed && parsed.type === 'doc') {
+      return noteSchema.nodeFromJSON(parsed)
+    }
+  } catch {
+    // Not JSON — treat as plain text
+  }
+  // Plain text fallback: split on newlines and create paragraphs
+  const element = document.createElement('div')
+  const lines = body.split('\n')
+  element.innerHTML = lines
+    .map((line) => `<p>${line || '<br>'}</p>`)
+    .join('')
+  return ProseDOMParser.fromSchema(noteSchema).parse(element)
+}
+
+/**
+ * Serialize ProseMirror doc to JSON string for kernel body property.
+ * Also extract the title from the first line.
+ */
+function serializeDoc(view: EditorView): { body: string; title: string } {
+  const doc = view.state.doc
+  const json = doc.toJSON()
+  const body = JSON.stringify(json)
+
+  // Extract title from first block's text content
+  let title = ''
+  doc.forEach((child, _offset, index) => {
+    if (index === 0 && child.textContent.trim()) {
+      title = child.textContent.trim()
+    }
   })
 
-  return { body: lines.join('\n'), title }
+  return { body, title }
 }
 
 // Minimum width for resize (D-08)
@@ -233,23 +284,24 @@ export default function NoteCard({
   useEffect(() => {
     if (!editorRef.current) return
 
-    const element = document.createElement('div')
-    if (body) {
-      const lines = body.split('\n')
-      element.innerHTML = lines
-        .map((line) => `<p>${line || '<br>'}</p>`)
-        .join('')
-    } else {
-      element.innerHTML = '<p><br></p>'
-    }
-
-    const doc = ProseDOMParser.fromSchema(noteSchema).parse(element)
+    // Deserialize body: try JSON (rich text) first, fall back to plain text
+    const doc = deserializeBody(body) || noteSchema.node('doc', null, [
+      noteSchema.node('paragraph'),
+    ])
 
     const state = EditorState.create({
       doc,
       schema: noteSchema,
       plugins: [
         history(),
+        // Formatting keybindings (D-23): bold, italic, headings
+        keymap({
+          'Mod-b': toggleMark(noteSchema.marks.strong),
+          'Mod-i': toggleMark(noteSchema.marks.em),
+          'Mod-1': toggleHeading(1),
+          'Mod-2': toggleHeading(2),
+          'Mod-3': toggleHeading(3),
+        }),
         keymap({ 'Mod-z': undo, 'Mod-Shift-z': redo }),
         keymap(baseKeymap),
       ],
@@ -273,7 +325,7 @@ export default function NoteCard({
           debounceRef.current = setTimeout(() => {
             debounceRef.current = null
             onMarkCleanRef.current(nodeId)
-            const { body: newBody, title: newTitle } = extractTextAndTitle(view)
+            const { body: newBody, title: newTitle } = serializeDoc(view)
             onSaveRef.current(nodeId, newBody, newTitle)
           }, 300)
         }
@@ -288,7 +340,7 @@ export default function NoteCard({
         debounceRef.current = null
         onMarkCleanRef.current(nodeId)
         if (viewRef.current) {
-          const { body: finalBody, title: finalTitle } = extractTextAndTitle(
+          const { body: finalBody, title: finalTitle } = serializeDoc(
             viewRef.current,
           )
           if (finalBody !== body || finalTitle !== title) {
