@@ -354,6 +354,23 @@ export default function NoteCard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [node.id])
 
+  useEffect(() => {
+    if (!viewRef.current) return
+
+    const currentBody = JSON.stringify(viewRef.current.state.doc.toJSON())
+    if (currentBody === body) return
+
+    const newDoc = deserializeBody(body) || noteSchema.node('doc', null, [
+      noteSchema.node('paragraph'),
+    ])
+    const newState = EditorState.create({
+      doc: newDoc,
+      schema: noteSchema,
+      plugins: viewRef.current.state.plugins,
+    })
+    viewRef.current.updateState(newState)
+  }, [body])
+
   // -----------------------------------------------------------------------
   // Update editability when isEditing changes
   // -----------------------------------------------------------------------
