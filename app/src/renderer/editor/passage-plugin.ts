@@ -51,26 +51,34 @@ export const passagePluginKey = new PluginKey<PassagePluginState>('passage')
 
 /**
  * Scan the entire document for passage marks and return their ranges.
+ *
+ * One entry is produced per CONTIGUOUS run of a given anchorId, not per
+ * anchorId. A passage can be split into several fragments (delete text from
+ * its middle, paste unmarked text into it, ...); merging fragments into a
+ * single [min, max] span would decorate -- and report hover for -- unmarked
+ * text in the gaps, and would compute gradient ordering from the wrong length.
  */
 function collectPassages(doc: EditorState['doc']): PassageInfo[] {
   const passages: PassageInfo[] = []
   doc.descendants((node, pos) => {
     if (!node.isInline) return
+    const end = pos + node.nodeSize
     for (const mark of node.marks) {
-      if (mark.type.name === 'passage' && mark.attrs.anchorId) {
-        // Check if we already have an entry for this anchorId that we can extend
-        const existing = passages.find((p) => p.anchorId === mark.attrs.anchorId)
-        if (existing) {
-          // Extend the range
-          existing.from = Math.min(existing.from, pos)
-          existing.to = Math.max(existing.to, pos + node.nodeSize)
-        } else {
-          passages.push({
-            anchorId: mark.attrs.anchorId,
-            from: pos,
-            to: pos + node.nodeSize,
-          })
+      if (mark.type.name !== 'passage' || !mark.attrs.anchorId) continue
+      const anchorId = mark.attrs.anchorId as string
+      // Find the most recent run with this anchorId (no Array#findLast in ES2020 lib)
+      let last: PassageInfo | null = null
+      for (let i = passages.length - 1; i >= 0; i--) {
+        if (passages[i].anchorId === anchorId) {
+          last = passages[i]
+          break
         }
+      }
+      if (last && last.to === pos) {
+        // Contiguous with the previous fragment: extend that run
+        last.to = end
+      } else {
+        passages.push({ anchorId, from: pos, to: end })
       }
     }
   })
