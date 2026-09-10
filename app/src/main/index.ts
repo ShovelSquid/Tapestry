@@ -96,6 +96,13 @@ app.whenReady().then(async () => {
   // Register plugin IPC handlers
   PluginHost.registerHandlers(ipcMain, pluginHost)
 
+  // Wire plugin error notifications to the renderer (D-34)
+  pluginHost.onPluginError = (pluginName: string, message: string, canRestart: boolean) => {
+    if (mainWindow) {
+      mainWindow.webContents.send('plugin-error', pluginName, message, canRestart)
+    }
+  }
+
   // Register file-management IPC handlers
   ipcMain.handle('kernel:getFilePath', () => {
     return currentFilePath
@@ -107,7 +114,7 @@ app.whenReady().then(async () => {
     bridge.create(path, worldName)
     currentFilePath = path
     writeLastOpened(path)
-    await pluginHost.discover(bridge)
+    await pluginHost.discoverAndLoadAll(bridge)
     return { ok: true }
   })
 
@@ -117,7 +124,7 @@ app.whenReady().then(async () => {
     bridge.open(path)
     currentFilePath = path
     writeLastOpened(path)
-    await pluginHost.discover(bridge)
+    await pluginHost.discoverAndLoadAll(bridge)
     return { ok: true }
   })
 
@@ -141,7 +148,7 @@ app.whenReady().then(async () => {
     try {
       bridge.open(lastFile)
       currentFilePath = lastFile
-      await pluginHost.discover(bridge)
+      await pluginHost.discoverAndLoadAll(bridge)
       // Notify renderer that a file is loaded
       if (mainWindow) {
         mainWindow.webContents.on('did-finish-load', () => {
