@@ -24,7 +24,8 @@ status: all_fixed
 - All per-finding verification ran in the isolated worktree: `/Users/kaelencook/Tapestry/.claude/worktrees/rf-02-17079-1789004028`
 - Required Tier 1 re-read verification was completed for every modified source section.
 - TypeScript checks were attempted in the isolated worktree with `npx tsc --noEmit`, but the worktree had no installed TypeScript compiler and `npx` resolved the unsupported placeholder `tsc@2.0.4`.
-- No main-checkout gates were run. Native C++ changes used Tier 1 verification only because no cheap standalone addon syntax check was available without the native build environment.
+- The fixer did not run main-checkout gates. Native C++ changes used Tier 1 verification only because no cheap standalone addon syntax check was available without the native build environment.
+- Orchestrator follow-up fixed the SDK source import/typecheck configuration in commit `801371a`, then ran `npm --workspace app run typecheck` in the main checkout successfully.
 - Human verification recommended for behavior/state fixes: CR-01, CR-02, CR-03, WR-05, WR-09.
 
 ## Fixed Issues
