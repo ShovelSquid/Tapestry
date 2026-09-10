@@ -45,14 +45,24 @@ const ALIGNMENTS = [
   { label: 'Right', value: 'right' },
 ]
 
+/** Vertical gap (in container-local px) between the selection top and the toolbar. */
+const TOOLBAR_OFFSET = 44
+
 interface FloatingToolbarProps {
   view: EditorView | null
   containerRef: React.RefObject<HTMLElement | null>
+  /**
+   * Canvas zoom of the ancestor `transform: scale(zoom)` container. Screen
+   * (getBoundingClientRect) deltas must be divided by it to become local
+   * offsets for `position: absolute` inside that container.
+   */
+  zoom?: number
 }
 
 export default function FloatingToolbar({
   view,
   containerRef,
+  zoom = 1,
 }: FloatingToolbarProps): React.ReactElement | null {
   const [visible, setVisible] = useState(false)
   const [position, setPosition] = useState({ top: 0, left: 0 })
@@ -103,9 +113,10 @@ export default function FloatingToolbar({
       if (!container) return
 
       const containerRect = container.getBoundingClientRect()
+      const scale = zoom > 0 ? zoom : 1
       setPosition({
-        top: start.top - containerRect.top - 44,
-        left: (start.left + end.left) / 2 - containerRect.left,
+        top: (start.top - containerRect.top) / scale - TOOLBAR_OFFSET,
+        left: ((start.left + end.left) / 2 - containerRect.left) / scale,
       })
       setVisible(true)
     }
@@ -121,7 +132,7 @@ export default function FloatingToolbar({
       view.dom.removeEventListener('mouseup', onMouseUp)
       view.dom.removeEventListener('keyup', onKeyUp)
     }
-  }, [view, containerRef])
+  }, [view, containerRef, zoom])
 
   if (!visible || !view) return null
 

@@ -189,7 +189,7 @@ export default function ThreadCenterNode({
     >
       <div ref={editorRef} className="thread-center-editor" />
       {/* Floating formatting toolbar (D-24/D-26) */}
-      {isEditing && <FloatingToolbar view={editorView} containerRef={cardRef} />}
+      {isEditing && <FloatingToolbar view={editorView} containerRef={cardRef} zoom={zoom} />}
     </div>
   )
 }

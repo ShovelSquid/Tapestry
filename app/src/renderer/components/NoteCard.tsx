@@ -566,7 +566,7 @@ export default function NoteCard({
       />
 
       {/* Floating formatting toolbar near the text selection (D-24) */}
-      {isEditing && <FloatingToolbar view={editorView} containerRef={cardRef} />}
+      {isEditing && <FloatingToolbar view={editorView} containerRef={cardRef} zoom={zoom} />}
 
       {/* Bubbly controls (D-06) */}
       {showControlsBool && (
