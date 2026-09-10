@@ -25,8 +25,10 @@
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react'
+import type { EditorView } from 'prosemirror-view'
 import { useProseMirror } from '../editor/use-prosemirror'
 import NoteControls from './NoteControls'
+import FloatingToolbar from './FloatingToolbar'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -158,6 +160,14 @@ export default function NoteCard({
     onMarkDirty,
     onMarkClean,
   })
+
+  // The EditorView is created inside the hook's effect, so expose it as state
+  // for the FloatingToolbar (D-24). This effect is declared after the hook, so
+  // it runs after the view exists (and again if node.id recreates it).
+  const [editorView, setEditorView] = useState<EditorView | null>(null)
+  useEffect(() => {
+    setEditorView(viewRef.current)
+  }, [node.id, viewRef])
 
   // Local drag position for immediate feedback before kernel confirms
   const [localPos, setLocalPos] = useState<{ x: number; y: number } | null>(
@@ -523,6 +533,9 @@ export default function NoteCard({
         ref={editorRef}
         onClick={handleEditorClick}
       />
+
+      {/* Floating formatting toolbar near the text selection (D-24) */}
+      {isEditing && <FloatingToolbar view={editorView} containerRef={cardRef} />}
 
       {/* Bubbly controls (D-06) */}
       {showControlsBool && (

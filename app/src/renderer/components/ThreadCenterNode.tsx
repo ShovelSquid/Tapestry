@@ -17,7 +17,9 @@
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react'
+import type { EditorView } from 'prosemirror-view'
 import { useProseMirror } from '../editor/use-prosemirror'
+import FloatingToolbar from './FloatingToolbar'
 
 interface ThreadCenterProps {
   nodeId: string
@@ -89,7 +91,7 @@ export default function ThreadCenterNode({
     [onSave],
   )
 
-  const { editorRef } = useProseMirror({
+  const { editorRef, viewRef } = useProseMirror({
     nodeId,
     initialBody: body,
     isEditing,
@@ -97,6 +99,12 @@ export default function ThreadCenterNode({
     onMarkDirty,
     onMarkClean,
   })
+
+  // Expose the EditorView (created in the hook's effect) for the toolbar (D-26).
+  const [editorView, setEditorView] = useState<EditorView | null>(null)
+  useEffect(() => {
+    setEditorView(viewRef.current)
+  }, [nodeId, viewRef])
 
   useEffect(() => {
     if (cardRef.current) {
@@ -107,7 +115,8 @@ export default function ThreadCenterNode({
 
   const handlePointerDown = useCallback(
     (e: React.PointerEvent) => {
-      if ((e.target as HTMLElement).closest('.ProseMirror')) return
+      // Do not start a drag from inside the editor or the floating toolbar.
+      if ((e.target as HTMLElement).closest('.ProseMirror, .floating-toolbar')) return
       if (e.button !== 0) return
       e.stopPropagation()
       isDraggingRef.current = true
@@ -179,6 +188,8 @@ export default function ThreadCenterNode({
       onMouseLeave={() => onHover(false)}
     >
       <div ref={editorRef} className="thread-center-editor" />
+      {/* Floating formatting toolbar (D-24/D-26) */}
+      {isEditing && <FloatingToolbar view={editorView} containerRef={cardRef} />}
     </div>
   )
 }
