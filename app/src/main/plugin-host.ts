@@ -129,6 +129,13 @@ export class PluginHost {
   private kernelBridge: any = null
 
   /**
+   * Plugins the user has disabled (D-32/D-35). Authoritative for discovery:
+   * discoverAndLoadAll never loads a name in this set, so a disabled plugin
+   * stays disabled across world open/create within the session.
+   */
+  private disabled = new Set<string>()
+
+  /**
    * Callback to notify the renderer of plugin errors (set by main process).
    * Carries both the plugin id (the name used for reload/enable/disable) and
    * the human-readable display name; the renderer must never send the
@@ -374,6 +381,8 @@ export class PluginHost {
    * Per D-29: reload is explicit — the developer triggers it.
    */
   async reloadPlugin(name: string): Promise<PluginLoadResult> {
+    // An explicit reload is an explicit request to run the plugin
+    this.disabled.delete(name)
     await this.unloadPlugin(name)
     return this.loadPlugin(name)
   }
@@ -388,15 +397,15 @@ export class PluginHost {
    * with actor kind "system" and actor id "tapestry".
    */
   async enablePlugin(name: string): Promise<PluginLoadResult> {
+    const wasLoaded = this.plugins.get(name)?.status === 'loaded'
+    this.disabled.delete(name)
     const result = await this.loadPlugin(name)
 
-    // Record the enable event in the journal (D-32)
-    if (this.kernelBridge && this.kernelBridge.isLoaded) {
-      try {
-        await this.kernelBridge.submit('system', 'tapestry', `enabled plugin ${name}`, [])
-      } catch (err) {
-        console.error(`[PluginHost] Failed to record enable event for ${name}:`, err)
-      }
+    // Record the enable event in the journal (D-32) — only when the plugin
+    // actually transitioned to loaded, so the readable history never asserts
+    // an enable that failed or that changed nothing.
+    if (result.status === 'loaded' && !wasLoaded) {
+      await this.recordEvent(`enabled plugin ${name}`, name)
     }
 
     return result
@@ -408,15 +417,29 @@ export class PluginHost {
    * Per D-35: disabled plugin content remains readable through fallback.
    */
   async disablePlugin(name: string): Promise<void> {
-    await this.unloadPlugin(name)
+    const existing = this.plugins.get(name)
+    const wasLoaded = existing?.status === 'loaded'
 
-    // Record the disable event in the journal (D-32)
-    if (this.kernelBridge && this.kernelBridge.isLoaded) {
-      try {
-        await this.kernelBridge.submit('system', 'tapestry', `disabled plugin ${name}`, [])
-      } catch (err) {
-        console.error(`[PluginHost] Failed to record disable event for ${name}:`, err)
-      }
+    await this.unloadPlugin(name)
+    this.disabled.add(name)
+
+    // Keep the plugin visible in list() as 'disabled' rather than letting it
+    // vanish (and be silently re-enabled by the next discovery pass).
+    const manifest = existing?.manifest ?? this.readManifestFor(name)
+    if (manifest) {
+      this.plugins.set(name, {
+        manifest,
+        instance: null,
+        status: 'disabled',
+        reason: 'Disabled by user',
+        contributions: this.createEmptyRegistry(),
+      })
+    }
+
+    // Record the disable event in the journal (D-32) — only for a real
+    // transition; disabling a plugin that was not running changes nothing.
+    if (wasLoaded) {
+      await this.recordEvent(`disabled plugin ${name}`, name)
     }
   }
 
@@ -603,6 +626,10 @@ export class PluginHost {
       if (this.plugins.has(manifest.name) && this.plugins.get(manifest.name)!.status === 'loaded') {
         continue
       }
+      // Skip plugins the user disabled (D-32/D-35); the disabled set is authoritative
+      if (this.disabled.has(manifest.name)) {
+        continue
+      }
       try {
         await this.loadPlugin(manifest.name)
       } catch (err) {
@@ -706,6 +733,36 @@ export class PluginHost {
     const rel = relative(this.pluginsDir, dir)
     if (rel !== name || isAbsolute(rel) || rel.includes(sep)) return null
     return dir
+  }
+
+  /**
+   * Record a plugin lifecycle event in the .tree journal (D-32) through
+   * kernel.submit with actor kind "system" and actor id "tapestry".
+   */
+  private async recordEvent(message: string, name: string): Promise<void> {
+    if (!this.kernelBridge || !this.kernelBridge.isLoaded) return
+    try {
+      await this.kernelBridge.submit('system', 'tapestry', message, [])
+    } catch (err) {
+      console.error(`[PluginHost] Failed to record journal event for ${name}:`, err)
+    }
+  }
+
+  /**
+   * Read and normalize the manifest for a plugin directory, or null when the
+   * plugin is unknown or its manifest is unusable.
+   */
+  private readManifestFor(name: string): PluginManifest | null {
+    const pluginDir = this.resolvePluginDir(name)
+    if (!pluginDir) return null
+    const manifestPath = join(pluginDir, 'tapestry.plugin.json')
+    if (!existsSync(manifestPath)) return null
+    try {
+      const parsed = normalizeManifest(JSON.parse(readFileSync(manifestPath, 'utf-8')))
+      return 'reason' in parsed ? null : parsed.manifest
+    } catch {
+      return null
+    }
   }
 
   /**
