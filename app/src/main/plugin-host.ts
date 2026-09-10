@@ -287,7 +287,11 @@ export class PluginHost {
 
     // Clear the require cache so a reload gets fresh code
     const entryPath = resolve(this.pluginsDir, name, loaded.manifest.main)
-    delete require.cache[require.resolve(entryPath)]
+    try {
+      delete require.cache[require.resolve(entryPath)]
+    } catch {
+      // Plugin files may already be gone from disk.
+    }
 
     this.plugins.delete(name)
   }
