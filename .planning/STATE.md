@@ -1,18 +1,18 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0
-current_phase: 02
-current_phase_name: Plugin Host, SDK & Feasibility Gate
-status: planning
+current_phase: "02.1"
+current_phase_name: Passage Anchors, Threads & Complete Rich Editing
+status: executing
 stopped_at: Phase 2.1 UI-SPEC approved
-last_updated: "2026-09-10T06:37:40.872Z"
-last_activity: 2026-09-09
-last_activity_desc: Phase 1 complete, transitioned to Phase 02
-state_head: ba938aaa56f1e77cf4bfc9c55a4fcdfd6dbaf5e1
+last_updated: "2026-09-10T08:43:37.995Z"
+last_activity: 2026-09-10
+last_activity_desc: Phase 02.1 execution started
+state_head: 12b11a8f1b722fbad883174d8f76a2ee8079d559
 progress:
   total_phases: 8
   completed_phases: 0
-  total_plans: 10
+  total_plans: 13
   completed_plans: 10
 ---
 
@@ -23,14 +23,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-09-08)
 
 **Core value:** Your world of thoughts must remain readable and under your control — in its spatial interface, its editable relationships and behavior, and its files and branching history.
-**Current focus:** Phase 02 — Plugin Host, SDK & Feasibility Gate
+**Current focus:** Phase 02.1 — Passage Anchors, Threads & Complete Rich Editing
 
 ## Current Position
 
-Phase: 02 — Plugin Host, SDK & Feasibility Gate
-Plan: Not started
-Status: Ready to plan
-Last activity: 2026-09-09 — Phase 1 complete, transitioned to Phase 02
+Phase: 02.1 (Passage Anchors, Threads & Complete Rich Editing) — EXECUTING
+Plan: 1 of 3
+Status: Executing Phase 02.1
+Last activity: 2026-09-10 — Phase 02.1 execution started
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -125,6 +125,7 @@ Items acknowledged and deferred at milestone close, most recent first:
 |-------|-------|--------|
 | 1 | verification_deferred_human | /gsd-verify-work 1 |
 | 2 | verification_deferred_human | /gsd-verify-work 2 |
+| 2.1 | verification_deferred_human | /gsd-verify-work 2.1 |
 
 ## Session Continuity
 
