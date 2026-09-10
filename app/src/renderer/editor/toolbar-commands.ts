@@ -1,7 +1,7 @@
 import { EditorView } from 'prosemirror-view'
 import { toggleMark, setBlockType } from 'prosemirror-commands'
 import { wrapInList, liftListItem } from 'prosemirror-schema-list'
-import { tapestrySchema } from './schema'
+import { tapestrySchema, DEFAULT_TEXT_COLOR, isValidTextColor, isValidFontFamily } from './schema'
 import { NodeType } from 'prosemirror-model'
 
 export function toggleBold(view: EditorView) {
@@ -80,7 +80,7 @@ export function setTextColor(view: EditorView, color: string) {
   if (from === to) return
   const tr = view.state.tr
   tr.removeMark(from, to, mark)
-  if (color !== '#2C2C2C') {
+  if (color !== DEFAULT_TEXT_COLOR && isValidTextColor(color)) {
     tr.addMark(from, to, mark.create({ color }))
   }
   view.dispatch(tr)
@@ -93,7 +93,7 @@ export function setFontFamily(view: EditorView, family: string) {
   if (from === to) return
   const tr = view.state.tr
   tr.removeMark(from, to, mark)
-  if (family) {
+  if (family && isValidFontFamily(family)) {
     tr.addMark(from, to, mark.create({ family }))
   }
   view.dispatch(tr)

@@ -21,23 +21,7 @@ import {
   isMarkActive,
   getActiveBlockType,
 } from '../editor/toolbar-commands'
-
-const TEXT_COLORS = [
-  { label: 'Default', color: '#2C2C2C' },
-  { label: 'Red', color: '#E5484D' },
-  { label: 'Orange', color: '#E76F00' },
-  { label: 'Green', color: '#2D8A4E' },
-  { label: 'Blue', color: '#4A7CFF' },
-  { label: 'Purple', color: '#7C3AED' },
-  { label: 'Light Gray', color: '#B0ADA6' },
-  { label: 'Dark Gray', color: '#6B6B6B' },
-]
-
-const FONT_FAMILIES = [
-  { label: 'System', family: '' },
-  { label: 'Serif', family: 'Georgia, serif' },
-  { label: 'Mono', family: "'SF Mono', 'Fira Code', monospace" },
-]
+import { TEXT_COLORS, FONT_FAMILIES } from '../editor/schema'
 
 const ALIGNMENTS = [
   { label: 'Left', value: null },

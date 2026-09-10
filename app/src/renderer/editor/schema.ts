@@ -52,28 +52,68 @@ export const passageMark: MarkSpec = {
   },
 }
 
+// ---------------------------------------------------------------------------
+// Text color / font family allow-lists (D-23)
+//
+// These attrs are interpolated into inline `style`. Pasted HTML (and, in
+// principle, a hand-edited .tree file) can carry arbitrary values, and the
+// renderer has no CSP, so `color: red; background: url(https://...)` would
+// persist into the world and issue a network request on every render. Only
+// values that are provably a color / a known font stack are accepted, both
+// when parsing (paste) and when rendering (already-stored data).
+// ---------------------------------------------------------------------------
+
+/** Sentinel for "no color mark": selecting it removes the mark. */
+export const DEFAULT_TEXT_COLOR = '#2C2C2C'
+
+export const TEXT_COLORS: ReadonlyArray<{ label: string; color: string }> = [
+  { label: 'Default', color: DEFAULT_TEXT_COLOR },
+  { label: 'Red', color: '#E5484D' },
+  { label: 'Orange', color: '#E76F00' },
+  { label: 'Green', color: '#2D8A4E' },
+  { label: 'Blue', color: '#4A7CFF' },
+  { label: 'Purple', color: '#7C3AED' },
+  { label: 'Light Gray', color: '#B0ADA6' },
+  { label: 'Dark Gray', color: '#6B6B6B' },
+]
+
+export const FONT_FAMILIES: ReadonlyArray<{ label: string; family: string }> = [
+  { label: 'System', family: '' },
+  { label: 'Serif', family: 'Georgia, serif' },
+  { label: 'Mono', family: "'SF Mono', 'Fira Code', monospace" },
+]
+
+const HEX_COLOR = /^#[0-9a-fA-F]{6}$/
+const ALLOWED_FONT_FAMILIES = new Set(FONT_FAMILIES.map((f) => f.family).filter(Boolean))
+
+export function isValidTextColor(value: unknown): value is string {
+  return typeof value === 'string' && HEX_COLOR.test(value)
+}
+
+export function isValidFontFamily(value: unknown): value is string {
+  return typeof value === 'string' && ALLOWED_FONT_FAMILIES.has(value)
+}
+
 /**
  * Text color mark -- user-applied text coloring (D-23).
  */
 export const textColorMark: MarkSpec = {
-  attrs: { color: { default: '#2C2C2C' } },
+  attrs: { color: { default: DEFAULT_TEXT_COLOR } },
   parseDOM: [
     {
       tag: 'span[data-text-color]',
       getAttrs(dom: HTMLElement) {
-        return { color: dom.getAttribute('data-text-color') }
+        const color = dom.getAttribute('data-text-color')
+        // `false` = this rule does not match; the span's content is kept unmarked.
+        return isValidTextColor(color) ? { color } : false
       },
     },
   ],
   toDOM(mark) {
-    return [
-      'span',
-      {
-        'data-text-color': mark.attrs.color,
-        style: `color: ${mark.attrs.color}`,
-      },
-      0,
-    ]
+    const color = mark.attrs.color
+    const attrs: Record<string, string> = { 'data-text-color': String(color) }
+    if (isValidTextColor(color)) attrs.style = `color: ${color}`
+    return ['span', attrs, 0]
   },
 }
 
@@ -86,19 +126,16 @@ export const fontFamilyMark: MarkSpec = {
     {
       tag: 'span[data-font-family]',
       getAttrs(dom: HTMLElement) {
-        return { family: dom.getAttribute('data-font-family') }
+        const family = dom.getAttribute('data-font-family')
+        return isValidFontFamily(family) ? { family } : false
       },
     },
   ],
   toDOM(mark) {
-    return [
-      'span',
-      {
-        'data-font-family': mark.attrs.family,
-        style: mark.attrs.family ? `font-family: ${mark.attrs.family}` : '',
-      },
-      0,
-    ]
+    const family = mark.attrs.family
+    const attrs: Record<string, string> = { 'data-font-family': String(family) }
+    if (isValidFontFamily(family)) attrs.style = `font-family: ${family}`
+    return ['span', attrs, 0]
   },
 }
 
