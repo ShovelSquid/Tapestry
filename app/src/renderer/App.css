@@ -475,6 +475,34 @@ html, body, #root {
   margin: 0;
 }
 
+/* ---- Lists inside editors (D-23) ----
+ * The global reset zeroes padding on every element, which removes the
+ * default padding-inline-start on ul/ol. With list-style-position: outside
+ * the markers are drawn in that (now zero-width) region and clipped by the
+ * editor's overflow, so bullets and numbers were invisible. */
+.tapestry-note-editor .ProseMirror ul,
+.tapestry-note-editor .ProseMirror ol,
+.thread-center-editor .ProseMirror ul,
+.thread-center-editor .ProseMirror ol {
+  padding-left: 1.5em;
+  margin: 0 0 4px 0;
+}
+
+.tapestry-note-editor .ProseMirror ul,
+.thread-center-editor .ProseMirror ul {
+  list-style-type: disc;
+}
+
+.tapestry-note-editor .ProseMirror ol,
+.thread-center-editor .ProseMirror ol {
+  list-style-type: decimal;
+}
+
+.tapestry-note-editor .ProseMirror li > p,
+.thread-center-editor .ProseMirror li > p {
+  margin: 0;
+}
+
 /* ---- Floating formatting toolbar (D-24/D-25) ---- */
 
 .floating-toolbar {
