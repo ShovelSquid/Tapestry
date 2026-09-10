@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-09-08)
 Phase: 02 (Plugin Host, SDK & Feasibility Gate) — EXECUTING
 Plan: 1 of 5
 Status: Executing Phase 02
-Last activity: 2026-09-09 — Phase 02 execution started
+Last activity: 2026-09-09 - Completed quick task 260909-thn: Fix renderer actor kind (user -> human) so notes can be created
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -103,6 +103,12 @@ None yet.
 - [Research] `.tree` framing/readability with real long notes, canonical hashing of unknown extension fields, and durability failure-injection design need deeper research during Phase 1 planning
 - [Research] Phase 2 needs Electron version pinning, per-plugin isolation design, and ProseMirror forge/release verification before install
 - [Research] Rule numeric contract (ranges, rounding, tick interval) needs targeted spikes during Phase 5 planning; prompt-injection boundary and policy precedence semantics during Phase 6 planning
+
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 260909-thn | Fix renderer actor kind: send human instead of user to kernel submit so notes can be created | 2026-09-09 | a9d4f8d | [260909-thn-fix-renderer-actor-kind-send-human-inste](./quick/260909-thn-fix-renderer-actor-kind-send-human-inste/) |
 
 ## Deferred Items
 
