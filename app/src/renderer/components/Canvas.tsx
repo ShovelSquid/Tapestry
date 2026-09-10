@@ -563,6 +563,16 @@ export default function Canvas({
                 ? (sourceCenter.y + destCenter.y) / 2 - 22
                 : py
 
+            // D-18: an empty (ghost) center has pointer-events: none, so it can
+            // never hover itself. Reveal it when either endpoint note is
+            // hovered, in addition to direct hover once it is visible.
+            const endpointIds = [sourceEdge?.from, destEdge?.to].filter(
+              (id): id is string => typeof id === 'string',
+            )
+            const isCenterHovered =
+              hoveredNoteId === node.id ||
+              (hoveredNoteId !== null && endpointIds.includes(hoveredNoteId))
+
             return (
               <ThreadCenterNode
                 key={node.id}
@@ -574,7 +584,7 @@ export default function Canvas({
                 autoX={autoX}
                 autoY={autoY}
                 isEditing={editingNodeId === node.id}
-                isHovered={hoveredNoteId === node.id}
+                isHovered={isCenterHovered}
                 zoom={view.zoom}
                 onStartEditing={() => onStartEditing(node.id)}
                 onSave={onSave}
