@@ -201,6 +201,12 @@ export default function NoteCard({
   const y = Number(getNodeProp(node, 'position.y', 100))
   const body = String(getNodeProp(node, 'body', ''))
   const title = String(getNodeProp(node, 'title', ''))
+
+  // The last body this editor itself emitted through onSave. When the `body`
+  // prop catches up to it, that is an echo of our own save — not an external
+  // change — and the editor must not be reset (it would drop un-debounced
+  // keystrokes, the selection, and the ProseMirror undo history).
+  const lastEmittedBodyRef = useRef<string>(body)
   const storedWidth = node.props['width']
     ? Number(node.props['width'].value)
     : 0
@@ -318,6 +324,7 @@ export default function NoteCard({
     })
 
     const nodeId = node.id
+    lastEmittedBodyRef.current = body
 
     const view = new EditorView(editorRef.current, {
       state,
@@ -326,7 +333,10 @@ export default function NoteCard({
         const newState = view.state.apply(tr)
         view.updateState(newState)
 
-        if (tr.docChanged) {
+        // Transactions tagged externalSync come from the body-sync effect
+        // below (undo/redo, plugin edits): they are already saved and must
+        // not be treated as user edits.
+        if (tr.docChanged && !tr.getMeta('externalSync')) {
           onMarkDirtyRef.current(nodeId)
 
           if (debounceRef.current) {
@@ -336,6 +346,7 @@ export default function NoteCard({
             debounceRef.current = null
             onMarkCleanRef.current(nodeId)
             const { body: newBody, title: newTitle } = serializeDoc(view)
+            lastEmittedBodyRef.current = newBody
             onSaveRef.current(nodeId, newBody, newTitle)
           }, 300)
         }
@@ -354,6 +365,7 @@ export default function NoteCard({
             viewRef.current,
           )
           if (finalBody !== body || finalTitle !== title) {
+            lastEmittedBodyRef.current = finalBody
             onSaveRef.current(nodeId, finalBody, finalTitle)
           }
         }
@@ -364,21 +376,34 @@ export default function NoteCard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [node.id])
 
+  // Sync the editor when the kernel's body changes underneath it (undo/redo,
+  // a plugin writing the property). Only act on genuinely external changes:
+  // skip echoes of our own saves and never clobber an in-progress edit.
   useEffect(() => {
-    if (!viewRef.current) return
+    const view = viewRef.current
+    if (!view) return
 
-    const currentBody = JSON.stringify(viewRef.current.state.doc.toJSON())
-    if (currentBody === body) return
+    // Echo of a body this editor emitted (App mirrors saves into `nodes`)
+    if (body === lastEmittedBodyRef.current) return
+    // The user is mid-edit; the pending debounce will save their version
+    if (debounceRef.current) return
+
+    const currentBody = JSON.stringify(view.state.doc.toJSON())
+    if (currentBody === body) {
+      lastEmittedBodyRef.current = body
+      return
+    }
 
     const newDoc = deserializeBody(body) || noteSchema.node('doc', null, [
       noteSchema.node('paragraph'),
     ])
-    const newState = EditorState.create({
-      doc: newDoc,
-      schema: noteSchema,
-      plugins: viewRef.current.state.plugins,
-    })
-    viewRef.current.updateState(newState)
+    // Replace the document through a transaction so plugin state (history,
+    // selection mapping) is preserved instead of recreating the EditorState.
+    const tr = view.state.tr.replaceWith(0, view.state.doc.content.size, newDoc.content)
+    tr.setMeta('addToHistory', false)
+    tr.setMeta('externalSync', true)
+    view.dispatch(tr)
+    lastEmittedBodyRef.current = body
   }, [body])
 
   // -----------------------------------------------------------------------

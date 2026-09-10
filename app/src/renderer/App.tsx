@@ -411,6 +411,25 @@ export default function App(): React.ReactElement {
         pendingSavesRef.current -= 1
         if (pendingSavesRef.current < 0) pendingSavesRef.current = 0
         recomputeSaveState()
+
+        // Mirror the saved values into local state so the NoteCard `body`
+        // prop does not lag the kernel until the next full refresh. A stale
+        // prop would later be mistaken for an external change and reset the
+        // editor mid-typing.
+        setNodes((prev) =>
+          prev.map((n) =>
+            n.id === nodeId
+              ? {
+                  ...n,
+                  props: {
+                    ...n.props,
+                    body: { type: 'text', value: body },
+                    title: { type: 'text', value: title },
+                  },
+                }
+              : n,
+          ),
+        )
       } catch (err) {
         pendingSavesRef.current -= 1
         if (pendingSavesRef.current < 0) pendingSavesRef.current = 0
