@@ -47,6 +47,21 @@ const tapestryAPI = {
   plugins: {
     list: (): Promise<any[]> =>
       ipcRenderer.invoke('plugin:list'),
+
+    getContributions: (): Promise<any> =>
+      ipcRenderer.invoke('plugin:getContributions'),
+
+    reload: (name: string): Promise<any> =>
+      ipcRenderer.invoke('plugin:reload', name),
+
+    enable: (name: string): Promise<any> =>
+      ipcRenderer.invoke('plugin:enable', name),
+
+    disable: (name: string): Promise<any> =>
+      ipcRenderer.invoke('plugin:disable', name),
+
+    executeCommand: (commandId: string, args?: Record<string, unknown>): Promise<any> =>
+      ipcRenderer.invoke('plugin:executeCommand', commandId, args || {}),
   },
 
   dialog: {
@@ -61,6 +76,16 @@ const tapestryAPI = {
   onFileOpened: (callback: (filePath: string) => void): void => {
     ipcRenderer.on('file-opened', (_event, filePath) => {
       callback(filePath)
+    })
+  },
+
+  /**
+   * Listen for plugin error events from the main process (D-34).
+   * Receives plugin display name, error message, and whether restart is available.
+   */
+  onPluginError: (callback: (pluginName: string, message: string, canRestart: boolean) => void): void => {
+    ipcRenderer.on('plugin-error', (_event, pluginName, message, canRestart) => {
+      callback(pluginName, message, canRestart)
     })
   },
 }

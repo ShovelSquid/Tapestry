@@ -11,6 +11,15 @@
  * these primitives, and the kernel never learns a seventh type from a plugin.
  */
 
+// Re-export contribution types so plugins can import from a single package
+export type {
+  NodeViewContribution,
+  CommandContribution,
+  CommandContext,
+  PropertyPanelContribution,
+  InspectorContribution,
+} from './contributions'
+
 // ---------------------------------------------------------------------------
 // Value types — the six kernel primitives
 // ---------------------------------------------------------------------------
@@ -161,16 +170,34 @@ export interface KernelAPI {
 /**
  * The context object passed to a plugin's activate() method. It provides
  * access to the kernel and host registration methods.
+ *
+ * Per PLUG-02: plugins register node schemas, commands, and property/UI
+ * contributions through these typed methods.
  */
 export interface PluginContext {
   /** The kernel API for reading and mutating the world. */
   kernel: KernelAPI;
 
   /**
-   * Register a component to render nodes of the given type. The component
-   * string is a module-relative path that the host resolves and loads.
+   * Register a component to render nodes of the given type.
    */
-  registerNodeView(nodeType: string, component: string): void;
+  registerNodeView(contribution: import('./contributions').NodeViewContribution): void;
+
+  /**
+   * Register a command that can be invoked by the user or other plugins.
+   * Commands must use kernel.submit for durable effects (PLUG-06, D-31).
+   */
+  registerCommand(contribution: import('./contributions').CommandContribution): void;
+
+  /**
+   * Register a property panel shown when a node of the specified type is selected.
+   */
+  registerPropertyPanel(contribution: import('./contributions').PropertyPanelContribution): void;
+
+  /**
+   * Register a general inspector panel not tied to a specific node type.
+   */
+  registerInspector(contribution: import('./contributions').InspectorContribution): void;
 }
 
 // ---------------------------------------------------------------------------
@@ -238,7 +265,7 @@ export interface PluginManifest {
   /** Entry point module path relative to the plugin root. */
   main: string;
 
-  /** The SDK API version this plugin targets (e.g. "0.1"). */
+  /** The SDK API version this plugin targets (e.g. "1"). */
   api: string;
 
   /** What the plugin contributes to the host. */

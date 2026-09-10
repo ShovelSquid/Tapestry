@@ -42,10 +42,22 @@ interface TapestryPluginsAPI {
       name: string
       displayName: string
       version: string
+      status: string
+      reason?: string
       nodeTypes: string[]
       nodeViews: Record<string, string>
     }>
   >
+  getContributions(): Promise<{
+    nodeViews: Record<string, { nodeType: string; displayName: string; component: string }>
+    commands: Record<string, { id: string; displayName: string; pluginName: string }>
+    propertyPanels: Record<string, Array<{ nodeType: string; displayName: string; component: string; pluginName: string }>>
+    inspectors: Record<string, { id: string; displayName: string; component: string; pluginName: string }>
+  }>
+  reload(name: string): Promise<{ status: string; reason?: string }>
+  enable(name: string): Promise<{ status: string; reason?: string }>
+  disable(name: string): Promise<{ ok: boolean }>
+  executeCommand(commandId: string, args?: Record<string, unknown>): Promise<{ ok: boolean; error?: string }>
 }
 
 interface TapestryDialogAPI {
@@ -57,6 +69,7 @@ interface TapestryAPI {
   plugins: TapestryPluginsAPI
   dialog: TapestryDialogAPI
   onFileOpened(callback: (filePath: string) => void): void
+  onPluginError(callback: (pluginName: string, message: string, canRestart: boolean) => void): void
 }
 
 interface Window {

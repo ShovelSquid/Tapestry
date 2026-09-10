@@ -19,6 +19,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import Canvas, { type NodeInfo, type EdgeInfo } from './components/Canvas'
 import SaveIndicator from './components/SaveIndicator'
+import PluginErrorNotification from './components/PluginErrorNotification'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -37,6 +38,16 @@ export default function App(): React.ReactElement {
   const [saveState, setSaveState] = useState<SaveState>('saved')
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null)
   const [isFileLoaded, setIsFileLoaded] = useState(false)
+
+  // Plugin contributions: maps node types to component names from loaded plugins
+  const [pluginNodeViews, setPluginNodeViews] = useState<Record<string, string>>({})
+
+  // Plugin error notification state (D-34)
+  const [pluginError, setPluginError] = useState<{
+    pluginName: string
+    message: string
+    canRestart: boolean
+  } | null>(null)
 
   // Track pending debounced saves (IPC calls in-flight)
   const pendingSavesRef = useRef(0)
@@ -89,9 +100,22 @@ export default function App(): React.ReactElement {
     }
   }, [])
 
+  const refreshPluginContributions = useCallback(async () => {
+    try {
+      const contributions = await window.tapestry.plugins.getContributions()
+      const views: Record<string, string> = {}
+      for (const [nodeType, contrib] of Object.entries(contributions.nodeViews)) {
+        views[nodeType] = (contrib as any).component
+      }
+      setPluginNodeViews(views)
+    } catch {
+      // Plugins not available yet — empty views
+    }
+  }, [])
+
   const refreshAll = useCallback(async () => {
-    await Promise.all([refreshNodes(), refreshEdges()])
-  }, [refreshNodes, refreshEdges])
+    await Promise.all([refreshNodes(), refreshEdges(), refreshPluginContributions()])
+  }, [refreshNodes, refreshEdges, refreshPluginContributions])
 
   useEffect(() => {
     refreshFilePath().then(() => refreshAll())
@@ -100,6 +124,16 @@ export default function App(): React.ReactElement {
       setFilePath(path)
       setIsFileLoaded(true)
       refreshAll()
+    })
+
+    // Listen for plugin error notifications (D-34)
+    window.tapestry.onPluginError((pluginName, message, canRestart) => {
+      if (!message) {
+        // Empty message means restart succeeded — show brief success then dismiss
+        setPluginError({ pluginName, message: '', canRestart: false })
+      } else {
+        setPluginError({ pluginName, message, canRestart })
+      }
     })
   }, [refreshAll, refreshFilePath])
 
@@ -357,6 +391,71 @@ export default function App(): React.ReactElement {
   )
 
   // -----------------------------------------------------------------------
+  // Fallback property edit handler (D-35: disabled plugin content editable)
+  // -----------------------------------------------------------------------
+
+  const handlePropertyEdit = useCallback(
+    async (
+      nodeId: string,
+      key: string,
+      type: string,
+      value: string | number | boolean,
+    ): Promise<void> => {
+      pendingSavesRef.current += 1
+      setSaveState('saving')
+
+      try {
+        await window.tapestry.kernel.submit(
+          'user',
+          'local',
+          `Edit property ${key}`,
+          [
+            {
+              op: 'setProperty',
+              target: nodeId,
+              key,
+              type,
+              value,
+            },
+          ],
+        )
+
+        pendingSavesRef.current -= 1
+        if (pendingSavesRef.current < 0) pendingSavesRef.current = 0
+        recomputeSaveState()
+        await refreshNodes()
+      } catch (err) {
+        pendingSavesRef.current -= 1
+        if (pendingSavesRef.current < 0) pendingSavesRef.current = 0
+        console.error('Failed to edit property:', err)
+        setSaveState('error')
+      }
+    },
+    [recomputeSaveState, refreshNodes],
+  )
+
+  // -----------------------------------------------------------------------
+  // Plugin error handlers (D-34)
+  // -----------------------------------------------------------------------
+
+  const handlePluginRestart = useCallback(
+    async (pluginName: string) => {
+      try {
+        await window.tapestry.plugins.reload(pluginName)
+        setPluginError(null)
+        await refreshPluginContributions()
+      } catch (err) {
+        console.error('Failed to restart plugin:', err)
+      }
+    },
+    [refreshPluginContributions],
+  )
+
+  const handlePluginErrorDismiss = useCallback(() => {
+    setPluginError(null)
+  }, [])
+
+  // -----------------------------------------------------------------------
   // Keyboard: Escape ends editing (D-04)
   // -----------------------------------------------------------------------
 
@@ -379,12 +478,24 @@ export default function App(): React.ReactElement {
       {/* Top-left: file name + save indicator (D-02, D-05) */}
       <SaveIndicator filePath={filePath} saveState={saveState} />
 
+      {/* Plugin error notification (D-34) */}
+      {pluginError && (
+        <PluginErrorNotification
+          pluginName={pluginError.pluginName}
+          message={pluginError.message}
+          canRestart={pluginError.canRestart}
+          onRestart={handlePluginRestart}
+          onDismiss={handlePluginErrorDismiss}
+        />
+      )}
+
       {/* Canvas with pan/zoom, notes, connections, and controls */}
       <Canvas
         nodes={nodes}
         edges={edges}
         editingNodeId={editingNodeId}
         isFileLoaded={isFileLoaded}
+        pluginNodeViews={pluginNodeViews}
         onStartEditing={(nodeId) => setEditingNodeId(nodeId)}
         onStopEditing={() => setEditingNodeId(null)}
         onCanvasDoubleClick={handleCanvasDoubleClick}
@@ -394,6 +505,7 @@ export default function App(): React.ReactElement {
         onPositionChange={handlePositionChange}
         onWidthChange={handleWidthChange}
         onEdgeCreate={handleEdgeCreate}
+        onPropertyEdit={handlePropertyEdit}
       />
     </div>
   )

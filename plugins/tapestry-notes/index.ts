@@ -37,7 +37,11 @@ const tapestryNotesPlugin: TapestryPlugin = {
   activate(context: PluginContext): void {
     // Register the note node type's view with the host.
     // The renderer maps this to the NoteCard React component.
-    context.registerNodeView(noteSchema.type, 'NoteCard')
+    context.registerNodeView({
+      nodeType: noteSchema.type,
+      displayName: noteSchema.displayName,
+      component: 'NoteCard',
+    })
   },
 
   deactivate(): void {
