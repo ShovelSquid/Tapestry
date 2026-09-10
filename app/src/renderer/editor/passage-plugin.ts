@@ -206,11 +206,18 @@ export function createPassagePlugin(
     props: {
       handleDOMEvents: {
         mousemove(view: EditorView, event: MouseEvent) {
+          // Never dispatch while an IME composition is in progress: changing
+          // decorations under composed text can flush or corrupt the
+          // composition (feasibility-gate acceptance criterion).
+          if (view.composing) return false
           const pos = view.posAtCoords({
             left: event.clientX,
             top: event.clientY,
           })
-          const docPos = pos ? pos.pos : null
+          // posAtCoords snaps to the nearest position when the pointer is in
+          // the margin beside a line; `inside < 0` means it is not actually
+          // over content, so treat that as no hover.
+          const docPos = pos && pos.inside >= 0 ? pos.pos : null
           const currentState = passagePluginKey.getState(view.state)
           if (currentState && currentState.hoverPos !== docPos) {
             const tr = view.state.tr.setMeta(passagePluginKey, {
