@@ -514,6 +514,13 @@ export class PluginHost {
   async discoverAndLoadAll(kernelBridge: any): Promise<void> {
     this.kernelBridge = kernelBridge
     const manifests = this.discoverPlugins()
+    const discoveredNames = new Set(manifests.map((manifest) => manifest.name))
+
+    for (const [name, loaded] of [...this.plugins]) {
+      if (!discoveredNames.has(name) && loaded.status === 'loaded') {
+        await this.unloadPlugin(name)
+      }
+    }
 
     for (const manifest of manifests) {
       // Skip if already loaded
