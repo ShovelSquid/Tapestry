@@ -60,7 +60,10 @@ function readLastOpened(): string | null {
   if (!existsSync(filePath)) return null
   try {
     const data = JSON.parse(readFileSync(filePath, 'utf-8'))
-    if (data.path && existsSync(data.path)) {
+    // Apply the same well-formedness rules as the IPC validator; the home
+    // restriction is not applied because the user may have chosen a location
+    // outside home through the native dialog in an earlier session.
+    if (isWellFormedTreePath(data.path) && existsSync(data.path)) {
       return data.path
     }
   } catch {
@@ -77,11 +80,28 @@ function writeLastOpened(treePath: string): void {
   }
 }
 
-function validateTreePath(filePath: string): boolean {
+/**
+ * Paths the user explicitly chose through a native dialog (or that were
+ * restored from last-opened.json) this session. The renderer may only ask
+ * the kernel to create/open a .tree file at one of these or under home, so
+ * the save dialog and validateTreePath can never disagree: whatever location
+ * the user picked is accepted, and a fabricated path outside home is not.
+ */
+const approvedPaths = new Set<string>()
+
+/** Absolute, ends in .tree, no ".." segments. Shared by every path check. */
+function isWellFormedTreePath(filePath: unknown): filePath is string {
   if (!filePath || typeof filePath !== 'string') return false
+  if (!isAbsolute(filePath)) return false
+  if (filePath.split(/[\\/]/).includes('..')) return false
+  return resolve(filePath).endsWith('.tree')
+}
+
+function validateTreePath(filePath: string): boolean {
+  if (!isWellFormedTreePath(filePath)) return false
 
   const normalized = resolve(filePath)
-  if (!normalized.endsWith('.tree')) return false
+  if (approvedPaths.has(normalized)) return true
 
   const home = resolve(app.getPath('home'))
   const relativeToHome = relative(home, normalized)
@@ -175,7 +195,16 @@ app.whenReady().then(async () => {
       defaultPath: 'untitled.tree',
       filters: [{ name: 'Tapestry World', extensions: ['tree'] }],
     })
-    return { canceled: result.canceled, filePath: result.filePath }
+    if (result.canceled || !result.filePath) {
+      return { canceled: true, filePath: undefined }
+    }
+    // Normalize to the .tree extension (not every platform's dialog appends
+    // the filter extension) and approve the user's choice so kernel:create
+    // accepts exactly the path the dialog returned.
+    let filePath = resolve(result.filePath)
+    if (!filePath.endsWith('.tree')) filePath = `${filePath}.tree`
+    approvedPaths.add(filePath)
+    return { canceled: false, filePath }
   })
 
   // Create the window
@@ -184,6 +213,8 @@ app.whenReady().then(async () => {
   // Try to reopen the last file (D-03)
   const lastFile = readLastOpened()
   if (lastFile) {
+    // The restored path was chosen by the user in an earlier session
+    approvedPaths.add(resolve(lastFile))
     // Open the kernel first; only a kernel failure means "no file loaded".
     let opened = false
     try {

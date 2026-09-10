@@ -189,7 +189,9 @@ export default function App(): React.ReactElement {
           setFilePath(result.filePath)
           setIsFileLoaded(true)
         } catch (err) {
-          console.error('Failed to create world:', err)
+          // Show the reason (invalid location, file already exists, ...)
+          // instead of silently doing nothing on double-click.
+          reportSaveError('Could not create world', err)
           return
         }
       }
