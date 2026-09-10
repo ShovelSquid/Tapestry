@@ -6,12 +6,12 @@
     {
       "number": "1",
       "name": "Deterministic Core & Readable Format",
-      "status": "in_progress"
+      "status": "complete"
     },
     {
       "number": "2",
       "name": "Plugin Host, SDK & Feasibility Gate",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "number": "2.1",
@@ -46,8 +46,8 @@
   ],
   "next": {
     "command": "/gsd:progress --next",
-    "label": "Advance to the next step",
-    "reason": "Phase 02 of 8 · executing"
+    "label": "Advance to the next step (plan phase 02)",
+    "reason": "Phase 02 of 8 — needs a plan"
   },
-  "updated_at": "2026-09-09T22:50:31.736Z"
+  "updated_at": "2026-09-10T06:01:23.615Z"
 }
