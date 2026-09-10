@@ -200,7 +200,7 @@ export default function App(): React.ReactElement {
       try {
         setSaveState('saving')
         const commitResult = await window.tapestry.kernel.submit(
-          'user',
+          'human',
           'local',
           'Create note',
           [
@@ -243,7 +243,7 @@ export default function App(): React.ReactElement {
 
       try {
         await window.tapestry.kernel.submit(
-          'user',
+          'human',
           'local',
           'Move note',
           [
@@ -290,7 +290,7 @@ export default function App(): React.ReactElement {
 
       try {
         await window.tapestry.kernel.submit(
-          'user',
+          'human',
           'local',
           'Resize note',
           [
@@ -329,7 +329,7 @@ export default function App(): React.ReactElement {
 
       try {
         await window.tapestry.kernel.submit(
-          'user',
+          'human',
           'local',
           'Connect notes',
           [
@@ -390,7 +390,7 @@ export default function App(): React.ReactElement {
 
       try {
         await window.tapestry.kernel.submit(
-          'user',
+          'human',
           'local',
           'Update note text',
           [
@@ -458,7 +458,7 @@ export default function App(): React.ReactElement {
 
       try {
         await window.tapestry.kernel.submit(
-          'user',
+          'human',
           'local',
           `Edit property ${key}`,
           [
@@ -538,7 +538,7 @@ export default function App(): React.ReactElement {
 
       try {
         await window.tapestry.kernel.submit(
-          'user',
+          'human',
           'local',
           'Delete note',
           [
