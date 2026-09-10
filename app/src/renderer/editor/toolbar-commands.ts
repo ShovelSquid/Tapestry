@@ -1,6 +1,6 @@
 import { EditorView } from 'prosemirror-view'
-import { toggleMark, setBlockType, wrapIn, lift } from 'prosemirror-commands'
-import { wrapInList } from 'prosemirror-schema-list'
+import { toggleMark, setBlockType } from 'prosemirror-commands'
+import { wrapInList, liftListItem } from 'prosemirror-schema-list'
 import { tapestrySchema } from './schema'
 import { NodeType } from 'prosemirror-model'
 
@@ -32,31 +32,46 @@ export function setParagraph(view: EditorView) {
 }
 
 export function toggleBulletList(view: EditorView) {
-  const listType = tapestrySchema.nodes.bullet_list
-  if (isInList(view, listType)) {
-    lift(view.state, view.dispatch)
-  } else {
-    wrapInList(listType)(view.state, view.dispatch)
-  }
-  view.focus()
+  toggleList(view, tapestrySchema.nodes.bullet_list)
 }
 
 export function toggleOrderedList(view: EditorView) {
-  const listType = tapestrySchema.nodes.ordered_list
-  if (isInList(view, listType)) {
-    lift(view.state, view.dispatch)
+  toggleList(view, tapestrySchema.nodes.ordered_list)
+}
+
+/**
+ * Toggle the list type of the block containing the selection.
+ *
+ * - Already in a list of `listType`  -> lift the item out (liftListItem is the
+ *   multi-item-aware list command; generic `lift` only lifted one paragraph).
+ * - In the *other* list type          -> convert that list in place instead of
+ *   nesting a new list inside the current item.
+ * - Not in a list                     -> wrap in a new list.
+ *
+ * Only the immediately enclosing list is considered (not any ancestor), so
+ * toggling inside a nested list acts on the nested list.
+ */
+function toggleList(view: EditorView, listType: NodeType) {
+  const { bullet_list, ordered_list, list_item } = tapestrySchema.nodes
+  const { $from } = view.state.selection
+  const range = $from.blockRange()
+
+  // The block's parent is the list_item (range.depth); its parent is the list.
+  const listDepth = range && range.depth >= 1 ? range.depth - 1 : -1
+  const parentList = listDepth >= 0 ? $from.node(listDepth) : null
+
+  if (parentList && parentList.type === listType) {
+    liftListItem(list_item)(view.state, view.dispatch)
+  } else if (
+    parentList &&
+    listDepth >= 1 &&
+    (parentList.type === bullet_list || parentList.type === ordered_list)
+  ) {
+    view.dispatch(view.state.tr.setNodeMarkup($from.before(listDepth), listType))
   } else {
     wrapInList(listType)(view.state, view.dispatch)
   }
   view.focus()
-}
-
-function isInList(view: EditorView, listType: NodeType): boolean {
-  const { $from } = view.state.selection
-  for (let d = $from.depth; d > 0; d--) {
-    if ($from.node(d).type === listType) return true
-  }
-  return false
 }
 
 export function setTextColor(view: EditorView, color: string) {
