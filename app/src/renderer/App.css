@@ -378,3 +378,65 @@ html, body, #root {
   left: -3px;
   cursor: nesw-resize;
 }
+
+/* ---- Passage marks (D-11, D-13, UI-SPEC) ---- */
+
+.passage-mark {
+  background-color: rgba(74, 124, 255, 0.08);
+  border-radius: 2px;
+  transition: background-color 150ms ease;
+}
+
+.passage-mark:hover {
+  background-color: rgba(74, 124, 255, 0.15);
+}
+
+.passage-mark.active {
+  background-color: rgba(74, 124, 255, 0.25);
+}
+
+/* ---- Thread center node (D-16/D-17/D-18) ---- */
+
+.thread-center-node {
+  background: #ffffff;
+  border: 1.5px solid #C8C5BE;
+  border-radius: 8px;
+  padding: 8px;
+  cursor: grab;
+  transition: border-color 150ms ease, box-shadow 150ms ease, opacity 150ms ease;
+}
+
+.thread-center-node.ghost {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.thread-center-node.hovered,
+.thread-center-node.ghost.hovered {
+  opacity: 1;
+  pointer-events: auto;
+  border-color: #4A7CFF;
+}
+
+.thread-center-node.editing {
+  opacity: 1;
+  pointer-events: auto;
+  border-color: #4A7CFF;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  cursor: default;
+}
+
+.thread-center-editor {
+  min-height: 28px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.thread-center-editor .ProseMirror {
+  outline: none;
+  min-height: 28px;
+}
+
+.thread-center-editor .ProseMirror p {
+  margin: 0;
+}

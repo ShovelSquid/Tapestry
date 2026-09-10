@@ -22,6 +22,7 @@ import React, {
 import NoteCard from './NoteCard'
 import FallbackNodeView from './FallbackNodeView'
 import ConnectionLine from './ConnectionLine'
+import ThreadCenterNode from './ThreadCenterNode'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -524,8 +525,64 @@ export default function Canvas({
           )}
         </svg>
 
+        {/* Thread center nodes (D-16/D-17/D-18) */}
+        {nodes
+          .filter((n) => n.type.includes('thread-center'))
+          .map((node) => {
+            const px = Number(node.props['position.x']?.value ?? 0)
+            const py = Number(node.props['position.y']?.value ?? 0)
+            const isPinned = node.props['pinned']?.value === true || node.props['pinned']?.value === 'true'
+            const bodyVal = node.props['body']?.value
+            const body = typeof bodyVal === 'string' ? bodyVal : ''
+
+            const sourceEdge = edges.find(
+              (e) => e.label === 'thread-arm' && e.to === node.id,
+            )
+            const destEdge = edges.find(
+              (e) => e.label === 'thread-arm' && e.from === node.id,
+            )
+            const sourceCenter = sourceEdge
+              ? getNodeCenter(sourceEdge.from)
+              : null
+            const destCenter = destEdge
+              ? getNodeCenter(destEdge.to)
+              : null
+
+            const autoX =
+              sourceCenter && destCenter
+                ? (sourceCenter.x + destCenter.x) / 2 - 100
+                : px
+            const autoY =
+              sourceCenter && destCenter
+                ? (sourceCenter.y + destCenter.y) / 2 - 22
+                : py
+
+            return (
+              <ThreadCenterNode
+                key={node.id}
+                nodeId={node.id}
+                body={body}
+                x={px}
+                y={py}
+                isPinned={isPinned}
+                autoX={autoX}
+                autoY={autoY}
+                isEditing={editingNodeId === node.id}
+                isHovered={hoveredNoteId === node.id}
+                zoom={view.zoom}
+                onStartEditing={() => onStartEditing(node.id)}
+                onSave={onSave}
+                onMarkDirty={onMarkDirty}
+                onMarkClean={onMarkClean}
+                onPositionChange={onPositionChange}
+                onHover={(h) => setHoveredNoteId(h ? node.id : null)}
+                onRegisterDims={registerNodeDims}
+              />
+            )
+          })}
+
         {/* Node cards -- render NoteCard for known types, FallbackNodeView otherwise (D-33) */}
-        {nodes.map((node) => {
+        {nodes.filter((n) => !n.type.includes('thread-center')).map((node) => {
           const hasPlugin = !!pluginNodeViews[node.type]
 
           if (hasPlugin) {
