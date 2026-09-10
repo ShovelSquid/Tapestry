@@ -466,3 +466,156 @@ html, body, #root {
 .thread-center-editor .ProseMirror p {
   margin: 0;
 }
+
+/* ---- Floating formatting toolbar (D-24/D-25) ---- */
+
+.floating-toolbar {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: #FFFFFF;
+  border: 1px solid #E0DDD7;
+  border-radius: 8px;
+  padding: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  z-index: 50;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+.ft-btn {
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 600;
+  color: #2C2C2C;
+  transition: background 100ms ease;
+}
+
+.ft-btn:hover {
+  background: #F0EDE8;
+}
+
+.ft-btn.active {
+  background: #EDF2FF;
+  color: #4A7CFF;
+}
+
+.ft-sep {
+  width: 1px;
+  height: 20px;
+  background: #E0DDD7;
+  margin: 0 2px;
+}
+
+.ft-submenu-wrap {
+  position: relative;
+}
+
+.ft-submenu {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-top: 4px;
+  background: #FFFFFF;
+  border: 1px solid #E0DDD7;
+  border-radius: 8px;
+  padding: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  z-index: 51;
+  min-width: 80px;
+}
+
+.ft-sub-btn {
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+  padding: 6px 12px;
+  text-align: left;
+  cursor: pointer;
+  font-size: 13px;
+  color: #2C2C2C;
+  white-space: nowrap;
+  transition: background 100ms ease;
+}
+
+.ft-sub-btn:hover {
+  background: #F0EDE8;
+}
+
+.ft-sub-btn.active {
+  background: #EDF2FF;
+  color: #4A7CFF;
+}
+
+.ft-color-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+  min-width: auto;
+  flex-direction: unset;
+}
+
+.ft-color-swatch {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: border-color 100ms ease, transform 100ms ease;
+}
+
+.ft-color-swatch:hover {
+  border-color: #4A7CFF;
+  transform: scale(1.15);
+}
+
+/* ---- Passage chooser (D-15) ---- */
+
+.passage-chooser {
+  background: #FFFFFF;
+  border: 1px solid #E0DDD7;
+  border-radius: 8px;
+  padding: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  z-index: 60;
+  min-width: 160px;
+}
+
+.passage-chooser-header {
+  font-size: 11px;
+  font-weight: 600;
+  color: #6B6B6B;
+  padding: 4px 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.passage-chooser-item {
+  display: block;
+  width: 100%;
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+  padding: 6px 8px;
+  text-align: left;
+  cursor: pointer;
+  font-size: 13px;
+  color: #2C2C2C;
+}
+
+.passage-chooser-item:hover {
+  background: #EDF2FF;
+}
