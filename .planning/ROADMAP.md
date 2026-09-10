@@ -71,7 +71,7 @@ Plans:
   4. A plugin with an unavailable API/schema/artifact version produces a clear compatibility result; recorded behavior is never silently substituted
   5. Every plugin-originated durable change passes through a validated, recorded core transaction, and a failed transaction leaves the prior state intact
 
-**Plans**: 4/5 plans executed
+**Plans**: 5/5 plans executed
 
 Plans:
 **Wave 1**
@@ -92,7 +92,7 @@ Plans:
 
 **Wave 5**
 
-- [ ] 02-05-PLAN.md — Deletion, undo, basic rich text, packaged app + feasibility evidence
+- [x] 02-05-PLAN.md — Deletion, undo, basic rich text, packaged app + feasibility evidence
 
 **UI hint**: yes
 
@@ -203,7 +203,7 @@ Phases execute in numeric order: 1 → 2 → 2.1 → 3 → 4 → 5 → 6 → 7
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Deterministic Core & Readable Format | 5/5 | In Progress|  |
-| 2. Plugin Host, SDK & Feasibility Gate | 4/5 | In Progress|  |
+| 2. Plugin Host, SDK & Feasibility Gate | 5/5 | In Progress|  |
 | 2.1. Passage Anchors, Threads & Complete Rich Editing | 0/TBD | Not started | - |
 | 3. Branching History & Deterministic Replay | 0/TBD | Not started | - |
 | 4. Spatial Notebook | 0/TBD | Not started | - |
