@@ -395,6 +395,32 @@ html, body, #root {
   background-color: rgba(74, 124, 255, 0.25);
 }
 
+/* ---- Gradient-of-focus passage decorations (D-14, UI-SPEC) ---- */
+/* Applied as inline decorations by the passage ProseMirror plugin.  */
+
+.tapestry-passage-idle {
+  background-color: rgba(74, 124, 255, 0.08);
+  border-radius: 2px;
+}
+
+.tapestry-passage-active {
+  background-color: rgba(74, 124, 255, 0.25);
+  box-shadow: inset 2px 0 0 0 rgba(74, 124, 255, 0.80);
+  border-radius: 2px;
+}
+
+.tapestry-passage-level1 {
+  background-color: rgba(74, 124, 255, 0.15);
+  box-shadow: inset 2px 0 0 0 rgba(74, 124, 255, 0.50);
+  border-radius: 2px;
+}
+
+.tapestry-passage-level2 {
+  background-color: rgba(74, 124, 255, 0.10);
+  box-shadow: inset 2px 0 0 0 rgba(74, 124, 255, 0.30);
+  border-radius: 2px;
+}
+
 /* ---- Thread center node (D-16/D-17/D-18) ---- */
 
 .thread-center-node {

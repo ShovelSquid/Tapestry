@@ -19,6 +19,7 @@ import { baseKeymap, toggleMark, setBlockType } from 'prosemirror-commands'
 import { history, undo, redo } from 'prosemirror-history'
 import type { Command } from 'prosemirror-state'
 import { tapestrySchema } from './schema'
+import { createPassagePlugin } from './passage-plugin'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -33,6 +34,12 @@ export interface UseProseMirrorOptions {
   onMarkClean: (nodeId: string) => void
   /** Extra ProseMirror plugins (e.g. placeholder plugin) */
   plugins?: Plugin[]
+  /**
+   * Called when the active (innermost) passage at the pointer changes.
+   * Receives the anchorId or null when leaving all passages.
+   * Lets Canvas highlight the corresponding thread and remote endpoint (D-13).
+   */
+  onPassageHover?: (anchorId: string | null) => void
 }
 
 export interface UseProseMirrorResult {
@@ -117,6 +124,7 @@ export function useProseMirror({
   onMarkDirty,
   onMarkClean,
   plugins: extraPlugins,
+  onPassageHover,
 }: UseProseMirrorOptions): UseProseMirrorResult {
   const editorRef = useRef<HTMLDivElement | null>(null)
   const viewRef = useRef<EditorView | null>(null)
@@ -138,6 +146,10 @@ export function useProseMirror({
   const nodeIdRef = useRef(nodeId)
   nodeIdRef.current = nodeId
 
+  // Stable ref for the passage hover callback
+  const onPassageHoverRef = useRef(onPassageHover)
+  onPassageHoverRef.current = onPassageHover
+
   // -----------------------------------------------------------------------
   // Initialize ProseMirror editor
   // -----------------------------------------------------------------------
@@ -149,7 +161,14 @@ export function useProseMirror({
       tapestrySchema.node('paragraph'),
     ])
 
+    // Passage plugin: gradient-of-focus decorations + hover tracking (D-14).
+    // The callback is wrapped so the plugin always calls the latest ref.
+    const passagePlugin = createPassagePlugin((anchorId) => {
+      onPassageHoverRef.current?.(anchorId)
+    })
+
     const builtinPlugins = [
+      passagePlugin,
       history(),
       // Formatting keybindings (D-23): bold, italic, headings, undo/redo
       keymap({
