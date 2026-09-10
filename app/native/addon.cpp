@@ -372,6 +372,7 @@ public:
         const auto& world = m_kernel->world();
         auto ids = world.nodeIds();
         auto arr = Napi::Array::New(env, ids.size());
+        uint32_t outIdx = 0;
         for (size_t i = 0; i < ids.size(); i++) {
             const auto* node = world.node(ids[i]);
             if (!node) continue;
@@ -379,8 +380,9 @@ public:
             obj.Set("id", Napi::String::New(env, format(node->id)));
             obj.Set("type", Napi::String::New(env, node->type));
             obj.Set("props", propsToJS(env, node->props));
-            arr.Set(static_cast<uint32_t>(i), obj);
+            arr.Set(outIdx++, obj);
         }
+        arr.Set("length", Napi::Number::New(env, outIdx));
         return arr;
     }
 
@@ -426,6 +428,7 @@ public:
         const auto& world = m_kernel->world();
         auto ids = world.edgeIds();
         auto arr = Napi::Array::New(env, ids.size());
+        uint32_t outIdx = 0;
         for (size_t i = 0; i < ids.size(); i++) {
             const auto* edge = world.edge(ids[i]);
             if (!edge) continue;
@@ -435,8 +438,9 @@ public:
             obj.Set("to", Napi::String::New(env, format(edge->to)));
             obj.Set("label", Napi::String::New(env, edge->label));
             obj.Set("props", propsToJS(env, edge->props));
-            arr.Set(static_cast<uint32_t>(i), obj);
+            arr.Set(outIdx++, obj);
         }
+        arr.Set("length", Napi::Number::New(env, outIdx));
         return arr;
     }
 
