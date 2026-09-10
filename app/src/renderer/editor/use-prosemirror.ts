@@ -13,7 +13,7 @@
 import { useCallback, useEffect, useRef } from 'react'
 import { EditorState, Plugin, Transaction } from 'prosemirror-state'
 import { EditorView } from 'prosemirror-view'
-import { Node as ProseMirrorNode } from 'prosemirror-model'
+import { Node as ProseMirrorNode, Fragment, Slice } from 'prosemirror-model'
 import { keymap } from 'prosemirror-keymap'
 import { baseKeymap, toggleMark, setBlockType } from 'prosemirror-commands'
 import { history, undo, redo } from 'prosemirror-history'
@@ -112,6 +112,38 @@ function serializeBody(view: EditorView): string {
   return JSON.stringify(view.state.doc.toJSON())
 }
 
+/**
+ * Remove passage marks from a fragment, recursively.
+ *
+ * Passage anchorIds must be unique endpoints of a thread. ProseMirror's
+ * clipboard serializer emits the data-passage-id span and parseDOM recreates
+ * the mark, so copy/paste (or drag/drop) would otherwise clone an anchorId
+ * into a second region of this or another note.
+ */
+function stripPassageMarks(fragment: Fragment): Fragment {
+  const passage = tapestrySchema.marks.passage
+  const nodes: ProseMirrorNode[] = []
+  fragment.forEach((node) => {
+    if (node.isText) {
+      // Text nodes have no content; only their mark set changes.
+      nodes.push(node.mark(passage.removeFromSet(node.marks)))
+      return
+    }
+    const unmarked = node.isInline ? node.mark(passage.removeFromSet(node.marks)) : node
+    nodes.push(unmarked.copy(stripPassageMarks(unmarked.content)))
+  })
+  return Fragment.fromArray(nodes)
+}
+
+/** Plugin: pasted/dropped content never carries passage marks (WR-08). */
+const stripPastedPassagesPlugin = new Plugin({
+  props: {
+    transformPasted(slice: Slice): Slice {
+      return new Slice(stripPassageMarks(slice.content), slice.openStart, slice.openEnd)
+    },
+  },
+})
+
 // ---------------------------------------------------------------------------
 // Hook
 // ---------------------------------------------------------------------------
@@ -169,6 +201,7 @@ export function useProseMirror({
 
     const builtinPlugins = [
       passagePlugin,
+      stripPastedPassagesPlugin,
       history(),
       // Formatting keybindings (D-23): bold, italic, headings, undo/redo
       keymap({
