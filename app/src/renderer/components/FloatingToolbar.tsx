@@ -6,7 +6,7 @@
  * ThreadCenterNode editors (D-26).
  */
 
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import type { EditorView } from 'prosemirror-view'
 import {
   toggleBold,
@@ -59,6 +59,17 @@ export default function FloatingToolbar({
   const [openSubmenu, setOpenSubmenu] = useState<string | null>(null)
   const submenuTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const toolbarRef = useRef<HTMLDivElement>(null)
+
+  // Active-state indicators (bold/italic/block type) are read from view.state
+  // during render. Toolbar buttons use onMouseDown+preventDefault, so the
+  // following mouseup lands on the button, not view.dom, and no selection
+  // listener fires. Bump a counter after every command to re-render.
+  const [, bump] = useReducer((n: number) => n + 1, 0)
+  const run = useCallback((e: React.MouseEvent, command: () => void) => {
+    e.preventDefault()
+    command()
+    bump()
+  }, [])
 
   const clearSubmenuTimer = useCallback(() => {
     if (submenuTimerRef.current) {
@@ -128,14 +139,14 @@ export default function FloatingToolbar({
     >
       <button
         className={`ft-btn ${boldActive ? 'active' : ''}`}
-        onMouseDown={(e) => { e.preventDefault(); toggleBold(view) }}
+        onMouseDown={(e) => run(e, () => toggleBold(view))}
         title="Bold"
       >
         <strong>B</strong>
       </button>
       <button
         className={`ft-btn ${italicActive ? 'active' : ''}`}
-        onMouseDown={(e) => { e.preventDefault(); toggleItalic(view) }}
+        onMouseDown={(e) => run(e, () => toggleItalic(view))}
         title="Italic"
       >
         <em>I</em>
@@ -155,13 +166,13 @@ export default function FloatingToolbar({
         {openSubmenu === 'heading' && (
           <div className="ft-submenu">
             <button className={`ft-sub-btn ${blockType === 'h1' ? 'active' : ''}`}
-              onMouseDown={(e) => { e.preventDefault(); setHeading(view, 1) }}>H1</button>
+              onMouseDown={(e) => run(e, () => setHeading(view, 1))}>H1</button>
             <button className={`ft-sub-btn ${blockType === 'h2' ? 'active' : ''}`}
-              onMouseDown={(e) => { e.preventDefault(); setHeading(view, 2) }}>H2</button>
+              onMouseDown={(e) => run(e, () => setHeading(view, 2))}>H2</button>
             <button className={`ft-sub-btn ${blockType === 'h3' ? 'active' : ''}`}
-              onMouseDown={(e) => { e.preventDefault(); setHeading(view, 3) }}>H3</button>
+              onMouseDown={(e) => run(e, () => setHeading(view, 3))}>H3</button>
             <button className="ft-sub-btn"
-              onMouseDown={(e) => { e.preventDefault(); setParagraph(view) }}>¶</button>
+              onMouseDown={(e) => run(e, () => setParagraph(view))}>¶</button>
           </div>
         )}
       </div>
@@ -178,9 +189,9 @@ export default function FloatingToolbar({
         {openSubmenu === 'list' && (
           <div className="ft-submenu">
             <button className={`ft-sub-btn ${blockType === 'bullet' ? 'active' : ''}`}
-              onMouseDown={(e) => { e.preventDefault(); toggleBulletList(view) }}>• List</button>
+              onMouseDown={(e) => run(e, () => toggleBulletList(view))}>• List</button>
             <button className={`ft-sub-btn ${blockType === 'ordered' ? 'active' : ''}`}
-              onMouseDown={(e) => { e.preventDefault(); toggleOrderedList(view) }}>1. List</button>
+              onMouseDown={(e) => run(e, () => toggleOrderedList(view))}>1. List</button>
           </div>
         )}
       </div>
@@ -204,7 +215,7 @@ export default function FloatingToolbar({
                 className="ft-color-swatch"
                 style={{ backgroundColor: c.color }}
                 title={c.label}
-                onMouseDown={(e) => { e.preventDefault(); setTextColor(view, c.color) }}
+                onMouseDown={(e) => run(e, () => setTextColor(view, c.color))}
               />
             ))}
           </div>
@@ -222,7 +233,7 @@ export default function FloatingToolbar({
           <div className="ft-submenu">
             {ALIGNMENTS.map((a) => (
               <button key={a.label} className="ft-sub-btn"
-                onMouseDown={(e) => { e.preventDefault(); setAlignment(view, a.value) }}>
+                onMouseDown={(e) => run(e, () => setAlignment(view, a.value))}>
                 {a.label}
               </button>
             ))}
@@ -242,7 +253,7 @@ export default function FloatingToolbar({
             {FONT_FAMILIES.map((f) => (
               <button key={f.label} className="ft-sub-btn"
                 style={{ fontFamily: f.family || 'inherit' }}
-                onMouseDown={(e) => { e.preventDefault(); setFontFamily(view, f.family) }}>
+                onMouseDown={(e) => run(e, () => setFontFamily(view, f.family))}>
                 {f.label}
               </button>
             ))}
