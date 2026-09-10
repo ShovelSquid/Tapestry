@@ -159,7 +159,7 @@ export function createPassagePlugin(
       },
 
       apply(tr, prev, _oldState, newState): PassagePluginState {
-        let { hoverPos, allPassages, activeAnchorId } = prev
+        let { hoverPos, allPassages } = prev
 
         // Rescan passages if the document changed
         if (tr.docChanged) {
@@ -194,13 +194,24 @@ export function createPassagePlugin(
           }
         }
 
-        // Fire callback if the active passage changed
-        if (newActiveAnchorId !== activeAnchorId && onPassageHover) {
-          onPassageHover(newActiveAnchorId)
-        }
-
         return { hoverPos, allPassages, activeAnchorId: newActiveAnchorId }
       },
+    },
+
+    // Side effects belong in the view lifecycle, not in state.apply, which
+    // must be pure: ProseMirror may apply a transaction more than once
+    // (appendTransaction re-runs) or speculatively without the state ever
+    // becoming current. Notify only when the active passage of the *committed*
+    // state actually changed.
+    view() {
+      return {
+        update(view: EditorView, prevState: EditorState) {
+          if (!onPassageHover) return
+          const prev = passagePluginKey.getState(prevState)?.activeAnchorId ?? null
+          const next = passagePluginKey.getState(view.state)?.activeAnchorId ?? null
+          if (prev !== next) onPassageHover(next)
+        },
+      }
     },
 
     props: {
