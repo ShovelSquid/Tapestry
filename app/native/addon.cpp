@@ -68,23 +68,66 @@ Napi::Object propsToJS(Napi::Env env, const std::map<std::string, Value>& props)
     return obj;
 }
 
+// ---------------------------------------------------------------------------
+// Input validation helpers
+//
+// The addon is compiled with NAPI_DISABLE_CPP_EXCEPTIONS: a failed As<>()
+// cast does not throw, it sets a pending JS exception and returns a default.
+// Throwing a second time while one is pending is a fatal N-API error that
+// aborts the whole process, so every conversion below checks the JS type
+// first, throws at most once, and returns immediately afterwards.
+// ---------------------------------------------------------------------------
+
+/** Throw a JS TypeError unless an exception is already pending. */
+void throwTypeError(Napi::Env env, const std::string& message) {
+    if (!env.IsExceptionPending()) {
+        Napi::TypeError::New(env, message).ThrowAsJavaScriptException();
+    }
+}
+
+/** Read a required string field from a JS object. Throws and returns false on failure. */
+bool requireString(Napi::Env env, Napi::Object obj, const char* key, std::string& out) {
+    Napi::Value v = obj.Get(key);
+    if (!v.IsString()) {
+        throwTypeError(env, std::string("Expected string field '") + key + "'");
+        return false;
+    }
+    out = v.As<Napi::String>().Utf8Value();
+    return true;
+}
+
 /** Convert a JS value to a kernel Value based on type information. */
 Value jsToValue(Napi::Env env, const std::string& typeStr, Napi::Value jsVal) {
-    if (typeStr == "text") {
-        return Value::ofText(jsVal.As<Napi::String>().Utf8Value());
+    if (typeStr == "text" || typeStr == "ref" || typeStr == "time") {
+        if (!jsVal.IsString()) {
+            throwTypeError(env, typeStr + " value must be a string");
+            return Value::ofText("");
+        }
+        std::string s = jsVal.As<Napi::String>().Utf8Value();
+        if (typeStr == "text") return Value::ofText(s);
+        if (typeStr == "ref") return Value::ofRef(s);
+        return Value::ofTime(s);
     } else if (typeStr == "int") {
+        if (!jsVal.IsNumber()) {
+            throwTypeError(env, "int value must be a number");
+            return Value::ofText("");
+        }
         auto num = jsVal.As<Napi::Number>().Int64Value();
         return Value::ofInt(num);
     } else if (typeStr == "real") {
+        if (!jsVal.IsNumber()) {
+            throwTypeError(env, "real value must be a number");
+            return Value::ofText("");
+        }
         return Value::ofReal(jsVal.As<Napi::Number>().DoubleValue());
     } else if (typeStr == "bool") {
+        if (!jsVal.IsBoolean()) {
+            throwTypeError(env, "bool value must be a boolean");
+            return Value::ofText("");
+        }
         return Value::ofBool(jsVal.As<Napi::Boolean>().Value());
-    } else if (typeStr == "ref") {
-        return Value::ofRef(jsVal.As<Napi::String>().Utf8Value());
-    } else if (typeStr == "time") {
-        return Value::ofTime(jsVal.As<Napi::String>().Utf8Value());
     }
-    Napi::TypeError::New(env, "Unknown value type: " + typeStr).ThrowAsJavaScriptException();
+    throwTypeError(env, "Unknown value type: " + typeStr);
     return Value::ofText("");
 }
 
@@ -107,8 +150,7 @@ Value jsToValueInferred(Napi::Env env, Napi::Value jsVal) {
     } else if (jsVal.IsBoolean()) {
         return Value::ofBool(jsVal.As<Napi::Boolean>().Value());
     }
-    Napi::TypeError::New(env, "Cannot infer kernel value type from JS value")
-        .ThrowAsJavaScriptException();
+    throwTypeError(env, "Cannot infer kernel value type from JS value");
     return Value::ofText("");
 }
 
@@ -121,8 +163,7 @@ Target parseTarget(Napi::Env env, const std::string& targetStr) {
         auto eid = parseEdgeId(targetStr);
         if (eid) return *eid;
     }
-    Napi::TypeError::New(env, "Invalid target id: " + targetStr)
-        .ThrowAsJavaScriptException();
+    throwTypeError(env, "Invalid target id: " + targetStr);
     return NodeId{0};
 }
 
@@ -130,95 +171,129 @@ Target parseTarget(Napi::Env env, const std::string& targetStr) {
  * Convert a JS property object to a C++ property map. The JS object can be:
  *   { key: { type: "text", value: "hello" } }   — explicit type
  *   { key: "hello" }                              — inferred type
+ * Returns early (with a pending JS exception) on the first malformed entry.
  */
 std::map<std::string, Value> jsPropsToMap(Napi::Env env, Napi::Object jsProps) {
     std::map<std::string, Value> result;
     auto names = jsProps.GetPropertyNames();
     for (uint32_t i = 0; i < names.Length(); i++) {
-        std::string key = names.Get(i).As<Napi::String>().Utf8Value();
+        Napi::Value keyVal = names.Get(i);
+        if (!keyVal.IsString()) {
+            throwTypeError(env, "Property keys must be strings");
+            return result;
+        }
+        std::string key = keyVal.As<Napi::String>().Utf8Value();
         Napi::Value propVal = jsProps.Get(key);
         if (propVal.IsObject() && !propVal.IsNull()) {
             auto propObj = propVal.As<Napi::Object>();
             if (propObj.Has("type") && propObj.Has("value")) {
-                std::string typeStr = propObj.Get("type").As<Napi::String>().Utf8Value();
+                std::string typeStr;
+                if (!requireString(env, propObj, "type", typeStr)) return result;
                 result[key] = jsToValue(env, typeStr, propObj.Get("value"));
+                if (env.IsExceptionPending()) return result;
                 continue;
             }
         }
         result[key] = jsToValueInferred(env, propVal);
+        if (env.IsExceptionPending()) return result;
     }
     return result;
 }
 
-/** Convert a single JS op object to a kernel Op variant. */
+/**
+ * Convert a single JS op object to a kernel Op variant. Every field is
+ * type-checked before it is read; on the first malformed field a JS
+ * TypeError is thrown and a placeholder op is returned — callers must check
+ * env.IsExceptionPending() before using the result.
+ */
 Op jsToOp(Napi::Env env, Napi::Object jsOp) {
-    std::string verb = jsOp.Get("op").As<Napi::String>().Utf8Value();
+    std::string verb;
+    if (!requireString(env, jsOp, "op", verb)) return Advance{0};
 
     if (verb == "createNode") {
         CreateNode cn;
         cn.id = NodeId{0}; // kernel assigns
-        cn.type = jsOp.Get("type").As<Napi::String>().Utf8Value();
+        if (!requireString(env, jsOp, "type", cn.type)) return Advance{0};
         if (jsOp.Has("props") && jsOp.Get("props").IsObject()) {
             cn.props = jsPropsToMap(env, jsOp.Get("props").As<Napi::Object>());
+            if (env.IsExceptionPending()) return Advance{0};
         }
         return cn;
     } else if (verb == "setProperty") {
         SetProperty sp;
-        sp.target = parseTarget(env, jsOp.Get("target").As<Napi::String>().Utf8Value());
-        sp.key = jsOp.Get("key").As<Napi::String>().Utf8Value();
-        std::string typeStr = jsOp.Get("type").As<Napi::String>().Utf8Value();
+        std::string targetStr;
+        if (!requireString(env, jsOp, "target", targetStr)) return Advance{0};
+        sp.target = parseTarget(env, targetStr);
+        if (env.IsExceptionPending()) return Advance{0};
+        if (!requireString(env, jsOp, "key", sp.key)) return Advance{0};
+        std::string typeStr;
+        if (!requireString(env, jsOp, "type", typeStr)) return Advance{0};
         sp.value = jsToValue(env, typeStr, jsOp.Get("value"));
+        if (env.IsExceptionPending()) return Advance{0};
         return sp;
     } else if (verb == "unsetProperty") {
         UnsetProperty up;
-        up.target = parseTarget(env, jsOp.Get("target").As<Napi::String>().Utf8Value());
-        up.key = jsOp.Get("key").As<Napi::String>().Utf8Value();
+        std::string targetStr;
+        if (!requireString(env, jsOp, "target", targetStr)) return Advance{0};
+        up.target = parseTarget(env, targetStr);
+        if (env.IsExceptionPending()) return Advance{0};
+        if (!requireString(env, jsOp, "key", up.key)) return Advance{0};
         return up;
     } else if (verb == "createEdge") {
         CreateEdge ce;
         ce.id = EdgeId{0}; // kernel assigns
-        auto fromId = parseNodeId(jsOp.Get("from").As<Napi::String>().Utf8Value());
-        auto toId = parseNodeId(jsOp.Get("to").As<Napi::String>().Utf8Value());
+        std::string fromStr;
+        std::string toStr;
+        if (!requireString(env, jsOp, "from", fromStr)) return Advance{0};
+        if (!requireString(env, jsOp, "to", toStr)) return Advance{0};
+        auto fromId = parseNodeId(fromStr);
+        auto toId = parseNodeId(toStr);
         if (!fromId) {
-            Napi::TypeError::New(env, "Invalid 'from' node id in createEdge")
-                .ThrowAsJavaScriptException();
+            throwTypeError(env, "Invalid 'from' node id in createEdge");
             return Advance{0};
         }
         if (!toId) {
-            Napi::TypeError::New(env, "Invalid 'to' node id in createEdge")
-                .ThrowAsJavaScriptException();
+            throwTypeError(env, "Invalid 'to' node id in createEdge");
             return Advance{0};
         }
         ce.from = *fromId;
         ce.to = *toId;
-        ce.label = jsOp.Get("label").As<Napi::String>().Utf8Value();
+        if (!requireString(env, jsOp, "label", ce.label)) return Advance{0};
         if (jsOp.Has("props") && jsOp.Get("props").IsObject()) {
             ce.props = jsPropsToMap(env, jsOp.Get("props").As<Napi::Object>());
+            if (env.IsExceptionPending()) return Advance{0};
         }
         return ce;
     } else if (verb == "deleteNode") {
-        auto nid = parseNodeId(jsOp.Get("id").As<Napi::String>().Utf8Value());
+        std::string idStr;
+        if (!requireString(env, jsOp, "id", idStr)) return Advance{0};
+        auto nid = parseNodeId(idStr);
         if (!nid) {
-            Napi::TypeError::New(env, "Invalid node id in deleteNode")
-                .ThrowAsJavaScriptException();
+            throwTypeError(env, "Invalid node id in deleteNode");
             return Advance{0};
         }
         return DeleteNode{*nid};
     } else if (verb == "deleteEdge") {
-        auto eid = parseEdgeId(jsOp.Get("id").As<Napi::String>().Utf8Value());
+        std::string idStr;
+        if (!requireString(env, jsOp, "id", idStr)) return Advance{0};
+        auto eid = parseEdgeId(idStr);
         if (!eid) {
-            Napi::TypeError::New(env, "Invalid edge id in deleteEdge")
-                .ThrowAsJavaScriptException();
+            throwTypeError(env, "Invalid edge id in deleteEdge");
             return Advance{0};
         }
         return DeleteEdge{*eid};
     } else if (verb == "advance") {
+        Napi::Value ticksVal = jsOp.Get("ticks");
+        if (!ticksVal.IsNumber()) {
+            throwTypeError(env, "advance.ticks must be a number");
+            return Advance{0};
+        }
         Advance adv;
-        adv.ticks = static_cast<Tick>(jsOp.Get("ticks").As<Napi::Number>().Int64Value());
+        adv.ticks = static_cast<Tick>(ticksVal.As<Napi::Number>().Int64Value());
         return adv;
     }
 
-    Napi::TypeError::New(env, "Unknown op verb: " + verb).ThrowAsJavaScriptException();
+    throwTypeError(env, "Unknown op verb: " + verb);
     return Advance{0};
 }
 
@@ -315,7 +390,11 @@ public:
             Napi::Error::New(env, "No kernel loaded").ThrowAsJavaScriptException();
             return env.Null();
         }
-        if (info.Length() < 4) {
+        // Validate every argument before any conversion or kernel access. A
+        // non-array `ops` used to fall through to Kernel::submit with zero
+        // ops, durably appending an empty commit before the error reached JS.
+        if (info.Length() < 4 || !info[0].IsString() || !info[1].IsString()
+            || !info[2].IsString() || !info[3].IsArray()) {
             Napi::TypeError::New(env,
                 "submit(actorKind: string, actorId: string, message: string, ops: Op[])")
                 .ThrowAsJavaScriptException();
@@ -328,10 +407,18 @@ public:
         proposal.message = info[2].As<Napi::String>().Utf8Value();
 
         auto jsOps = info[3].As<Napi::Array>();
-        for (uint32_t i = 0; i < jsOps.Length(); i++) {
-            proposal.ops.push_back(jsToOp(env, jsOps.Get(i).As<Napi::Object>()));
+        const uint32_t opCount = jsOps.Length();
+        for (uint32_t i = 0; i < opCount; i++) {
+            Napi::Value el = jsOps.Get(i);
+            if (!el.IsObject() || el.IsNull()) {
+                throwTypeError(env, "op " + std::to_string(i) + " must be an object");
+                return env.Null();
+            }
+            proposal.ops.push_back(jsToOp(env, el.As<Napi::Object>()));
             if (env.IsExceptionPending()) return env.Null();
         }
+        // Never touch the kernel while a JS exception is pending.
+        if (env.IsExceptionPending()) return env.Null();
 
         auto result = m_kernel->submit(proposal);
         if (!result.ok()) {
