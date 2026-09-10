@@ -63,7 +63,7 @@ interface TapestryPluginsAPI {
     commandId: string,
     args?: Record<string, unknown>,
     selectedNodes?: string[],
-  ): Promise<{ ok: boolean; error?: string }>
+  ): Promise<{ ok: boolean; error?: string; crashed?: boolean }>
 }
 
 interface TapestryDialogAPI {

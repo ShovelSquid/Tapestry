@@ -673,10 +673,17 @@ export class PluginHost {
             return { ok: true }
           } catch (err) {
             const errorMsg = err instanceof Error ? err.message : String(err)
-            // D-34: command handler crash triggers plugin crash handling
-            const pluginName = loaded.manifest.name
-            await host.handlePluginCrash(pluginName, errorMsg)
-            return { ok: false, error: errorMsg }
+            // Distinguish a command that legitimately failed (a kernel
+            // rejection, invalid input) from a broken plugin. Only programming
+            // errors escalate to D-34 crash handling (unload + restart);
+            // everything else is returned to the caller as a command error.
+            const isCrash =
+              err instanceof TypeError || err instanceof ReferenceError || err instanceof RangeError
+            if (isCrash) {
+              const pluginName = loaded.manifest.name
+              await host.handlePluginCrash(pluginName, errorMsg)
+            }
+            return { ok: false, error: errorMsg, crashed: isCrash }
           }
         }
       }
