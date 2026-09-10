@@ -60,6 +60,45 @@ interface PluginManifest {
 
 type PluginStatus = 'loaded' | 'failed' | 'disabled' | 'incompatible'
 
+/**
+ * Validate and normalize a parsed manifest. Every field that is later used
+ * as a path component or string is type-checked here so a malformed manifest
+ * (e.g. `"main": 1`) is reported as a failed plugin instead of throwing a
+ * TypeError out of the host (D-33: a broken plugin never prevents the world
+ * from opening).
+ */
+function normalizeManifest(raw: unknown): { manifest: PluginManifest } | { reason: string } {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return { reason: 'manifest is not a JSON object' }
+  }
+  const m = raw as Record<string, unknown>
+  if (typeof m.name !== 'string' || typeof m.version !== 'string' || typeof m.main !== 'string') {
+    return { reason: 'manifest missing required string fields (name, version, main)' }
+  }
+
+  const rawContributions = m.contributions
+  const contributions: PluginManifest['contributions'] =
+    rawContributions && typeof rawContributions === 'object' && !Array.isArray(rawContributions)
+      ? { ...(rawContributions as PluginManifest['contributions']) }
+      : { nodeTypes: [] }
+  if (!Array.isArray(contributions.nodeTypes)) contributions.nodeTypes = []
+
+  let api = ''
+  if (typeof m.api === 'string') api = m.api
+  else if (typeof m.api === 'number') api = String(m.api)
+
+  return {
+    manifest: {
+      name: m.name,
+      version: m.version,
+      displayName: typeof m.displayName === 'string' ? m.displayName : m.name,
+      main: m.main,
+      api,
+      contributions,
+    },
+  }
+}
+
 interface PluginLoadResult {
   status: PluginStatus
   reason?: string
@@ -121,27 +160,15 @@ export class PluginHost {
 
       try {
         const raw = readFileSync(manifestPath, 'utf-8')
-        const manifest: PluginManifest = JSON.parse(raw)
 
-        // Validate required fields (T-02-10: malformed manifest protection)
-        if (!manifest.name || !manifest.version || !manifest.main) {
-          console.warn(
-            `[PluginHost] Skipping ${entry.name}: manifest missing required fields (name, version, main)`,
-          )
+        // Validate required fields and types (T-02-10: malformed manifest protection)
+        const parsed = normalizeManifest(JSON.parse(raw))
+        if ('reason' in parsed) {
+          console.warn(`[PluginHost] Skipping ${entry.name}: ${parsed.reason}`)
           continue
         }
 
-        // Default api to empty string if missing (will fail version check)
-        if (!manifest.api) {
-          manifest.api = ''
-        }
-
-        // Default contributions
-        if (!manifest.contributions) {
-          manifest.contributions = { nodeTypes: [] }
-        }
-
-        manifests.push(manifest)
+        manifests.push(parsed.manifest)
       } catch (err) {
         // T-02-10: malformed manifest logged and skipped
         console.warn(`[PluginHost] Skipping ${entry.name}: invalid manifest JSON`, err)
@@ -182,7 +209,11 @@ export class PluginHost {
 
     let manifest: PluginManifest
     try {
-      manifest = JSON.parse(readFileSync(manifestPath, 'utf-8'))
+      const parsed = normalizeManifest(JSON.parse(readFileSync(manifestPath, 'utf-8')))
+      if ('reason' in parsed) {
+        return { status: 'failed', reason: `Invalid manifest: ${parsed.reason}` }
+      }
+      manifest = parsed.manifest
     } catch (err) {
       return { status: 'failed', reason: `Invalid manifest JSON: ${err}` }
     }
@@ -211,17 +242,18 @@ export class PluginHost {
     const entryPath = resolve(pluginDir, manifest.main)
     const relativeEntryPath = relative(pluginDir, entryPath)
     if (relativeEntryPath.startsWith('..') || isAbsolute(relativeEntryPath)) {
-      return { status: 'failed', reason: 'Plugin entry path escapes plugin directory' }
+      return this.recordFailure(name, manifest, 'Plugin entry path escapes plugin directory')
     }
 
     // The host loads plugins with Node's require(), which cannot parse
     // TypeScript. Refuse non-JS entries up front with an actionable reason
     // instead of a SyntaxError deep inside require().
     if (!/\.c?js$/.test(entryPath)) {
-      return {
-        status: 'failed',
-        reason: `Plugin entry must be a .js/.cjs file (got ${manifest.main}); build the plugin first`,
-      }
+      return this.recordFailure(
+        name,
+        manifest,
+        `Plugin entry must be a .js/.cjs file (got ${manifest.main}); build the plugin first`,
+      )
     }
 
     try {
@@ -548,16 +580,26 @@ export class PluginHost {
 
     for (const [name, loaded] of [...this.plugins]) {
       if (!discoveredNames.has(name) && loaded.status === 'loaded') {
-        await this.unloadPlugin(name)
+        try {
+          await this.unloadPlugin(name)
+        } catch (err) {
+          console.error(`[PluginHost] ${name} threw during unload`, err)
+        }
       }
     }
 
+    // D-33: isolate each plugin so one throwing load cannot abort the rest
+    // (or the world open that triggered discovery).
     for (const manifest of manifests) {
       // Skip if already loaded
       if (this.plugins.has(manifest.name) && this.plugins.get(manifest.name)!.status === 'loaded') {
         continue
       }
-      await this.loadPlugin(manifest.name)
+      try {
+        await this.loadPlugin(manifest.name)
+      } catch (err) {
+        console.error(`[PluginHost] ${manifest.name} threw during load`, err)
+      }
     }
   }
 
@@ -649,6 +691,22 @@ export class PluginHost {
     const rel = relative(this.pluginsDir, dir)
     if (rel !== name || isAbsolute(rel) || rel.includes(sep)) return null
     return dir
+  }
+
+  /**
+   * Record a plugin as failed (so it stays visible in list() with a reason)
+   * and return the matching load result.
+   */
+  private recordFailure(name: string, manifest: PluginManifest, reason: string): PluginLoadResult {
+    console.warn(`[PluginHost] ${name}: ${reason}`)
+    this.plugins.set(name, {
+      manifest,
+      instance: null,
+      status: 'failed',
+      reason,
+      contributions: this.createEmptyRegistry(),
+    })
+    return { status: 'failed', reason }
   }
 
   private createEmptyRegistry(): ContributionRegistry {

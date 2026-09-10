@@ -100,6 +100,19 @@ let bridge: KernelBridge
 let pluginHost: PluginHost
 let currentFilePath: string | null = null
 
+/**
+ * Discover and load plugins for the currently open world without letting a
+ * plugin failure surface as a world-open failure (D-33: a broken plugin never
+ * prevents the world from opening).
+ */
+async function loadPluginsSafely(): Promise<void> {
+  try {
+    await pluginHost.discoverAndLoadAll(bridge)
+  } catch (err) {
+    console.error('[Main] Plugin discovery failed:', err)
+  }
+}
+
 app.whenReady().then(async () => {
   // Register kernel IPC handlers
   bridge = KernelBridge.registerHandlers(ipcMain)
@@ -132,7 +145,7 @@ app.whenReady().then(async () => {
     bridge.create(path, worldName)
     currentFilePath = path
     writeLastOpened(path)
-    await pluginHost.discoverAndLoadAll(bridge)
+    await loadPluginsSafely()
     return { ok: true }
   })
 
@@ -145,7 +158,7 @@ app.whenReady().then(async () => {
     bridge.open(path)
     currentFilePath = path
     writeLastOpened(path)
-    await pluginHost.discoverAndLoadAll(bridge)
+    await loadPluginsSafely()
     return { ok: true }
   })
 
@@ -166,10 +179,20 @@ app.whenReady().then(async () => {
   // Try to reopen the last file (D-03)
   const lastFile = readLastOpened()
   if (lastFile) {
+    // Open the kernel first; only a kernel failure means "no file loaded".
+    let opened = false
     try {
       bridge.open(lastFile)
       currentFilePath = lastFile
-      await pluginHost.discoverAndLoadAll(bridge)
+      opened = true
+    } catch {
+      // D-03: if last file is missing/unreadable, show empty canvas
+      currentFilePath = null
+    }
+
+    if (opened) {
+      // Plugin problems must not be mistaken for a missing file (D-33)
+      await loadPluginsSafely()
       if (mainWindow) {
         const sendFileOpened = () => mainWindow?.webContents.send('file-opened', lastFile)
         if (mainWindow.webContents.isLoading()) {
@@ -178,9 +201,6 @@ app.whenReady().then(async () => {
           sendFileOpened()
         }
       }
-    } catch {
-      // D-03: if last file is missing/unreadable, show empty canvas
-      currentFilePath = null
     }
   }
 })
