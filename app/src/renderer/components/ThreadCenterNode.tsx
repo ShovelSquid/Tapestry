@@ -19,6 +19,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import type { EditorView } from 'prosemirror-view'
 import { useProseMirror } from '../editor/use-prosemirror'
+import { tapestrySchema } from '../editor/schema'
 import FloatingToolbar from './FloatingToolbar'
 
 interface ThreadCenterProps {
@@ -47,6 +48,24 @@ interface ThreadCenterProps {
 
 const THREAD_CENTER_WIDTH = 200
 const THREAD_CENTER_MIN_HEIGHT = 44
+
+/**
+ * D-18 is about TEXT, not serialization shape: a center that had a character
+ * typed and deleted is saved as an empty ProseMirror doc and must return to
+ * the ghost state. Plain-text (legacy) bodies count as text if non-blank.
+ */
+function bodyHasText(body: string): boolean {
+  if (!body) return false
+  try {
+    const json = JSON.parse(body)
+    if (json && typeof json === 'object' && json.type === 'doc') {
+      return tapestrySchema.nodeFromJSON(json).textContent.trim().length > 0
+    }
+  } catch {
+    // not JSON (or not a valid doc) -- fall through to the plain-text test
+  }
+  return body.trim().length > 0
+}
 
 export default function ThreadCenterNode({
   nodeId,
@@ -159,7 +178,7 @@ export default function ThreadCenterNode({
     [onStartEditing],
   )
 
-  const isEmpty = !body || body === '""' || body === ''
+  const isEmpty = !bodyHasText(body)
   const showOnlyOnHover = isEmpty && !isEditing
 
   return (
