@@ -24,7 +24,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { EditorState } from 'prosemirror-state'
 import { EditorView } from 'prosemirror-view'
-import { Schema, DOMParser as ProseDOMParser } from 'prosemirror-model'
+import { Schema } from 'prosemirror-model'
 import { schema as basicSchema } from 'prosemirror-schema-basic'
 import { keymap } from 'prosemirror-keymap'
 import { baseKeymap, toggleMark, setBlockType } from 'prosemirror-commands'
@@ -110,6 +110,21 @@ function toggleHeading(level: number): Command {
 // ---------------------------------------------------------------------------
 
 /**
+ * Build a ProseMirror doc from plain text, one paragraph per line. The text
+ * is inserted as text nodes through the schema — never parsed as HTML — so
+ * a hand-edited .tree file or a plugin-written body cannot inject markup or
+ * script into the renderer.
+ */
+function plainTextToDoc(body: string) {
+  const paragraphs = body.split('\n').map((line) =>
+    line
+      ? noteSchema.node('paragraph', null, [noteSchema.text(line)])
+      : noteSchema.node('paragraph'),
+  )
+  return noteSchema.node('doc', null, paragraphs)
+}
+
+/**
  * Try to parse body as ProseMirror JSON. If it fails (plain text from before
  * rich text was added), create a doc with paragraphs of text nodes.
  */
@@ -125,12 +140,7 @@ function deserializeBody(body: string): any {
     // Not JSON — treat as plain text
   }
   // Plain text fallback: split on newlines and create paragraphs
-  const element = document.createElement('div')
-  const lines = body.split('\n')
-  element.innerHTML = lines
-    .map((line) => `<p>${line || '<br>'}</p>`)
-    .join('')
-  return ProseDOMParser.fromSchema(noteSchema).parse(element)
+  return plainTextToDoc(body)
 }
 
 /**
