@@ -21,7 +21,7 @@ import type {
   CommandContribution,
   PropertyPanelContribution,
   InspectorContribution,
-} from '../../sdk/src/contributions'
+} from '../../../sdk/src/contributions'
 
 // ---------------------------------------------------------------------------
 // Constants
