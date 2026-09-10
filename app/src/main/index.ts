@@ -10,7 +10,7 @@
  */
 
 import { app, BrowserWindow, ipcMain, dialog } from 'electron'
-import { join } from 'path'
+import { isAbsolute, join, relative, resolve, sep } from 'path'
 import { readFileSync, writeFileSync, existsSync } from 'fs'
 import { KernelBridge } from './kernel-bridge'
 import { PluginHost } from './plugin-host'
@@ -77,6 +77,21 @@ function writeLastOpened(treePath: string): void {
   }
 }
 
+function validateTreePath(filePath: string): boolean {
+  if (!filePath || typeof filePath !== 'string') return false
+
+  const normalized = resolve(filePath)
+  if (!normalized.endsWith('.tree')) return false
+
+  const home = resolve(app.getPath('home'))
+  const relativeToHome = relative(home, normalized)
+  return (
+    relativeToHome !== '..' &&
+    !relativeToHome.startsWith(`..${sep}`) &&
+    !isAbsolute(relativeToHome)
+  )
+}
+
 // ---------------------------------------------------------------------------
 // App lifecycle
 // ---------------------------------------------------------------------------
@@ -111,6 +126,9 @@ app.whenReady().then(async () => {
   // Override kernel:create to track file path and discover plugins
   ipcMain.removeHandler('kernel:create')
   ipcMain.handle('kernel:create', async (_event, path: string, worldName: string) => {
+    if (!validateTreePath(path)) {
+      throw new Error('Invalid .tree file path')
+    }
     bridge.create(path, worldName)
     currentFilePath = path
     writeLastOpened(path)
@@ -121,6 +139,9 @@ app.whenReady().then(async () => {
   // Override kernel:open to track file path and discover plugins
   ipcMain.removeHandler('kernel:open')
   ipcMain.handle('kernel:open', async (_event, path: string) => {
+    if (!validateTreePath(path)) {
+      throw new Error('Invalid .tree file path')
+    }
     bridge.open(path)
     currentFilePath = path
     writeLastOpened(path)
