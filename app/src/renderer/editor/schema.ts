@@ -103,8 +103,16 @@ export const fontFamilyMark: MarkSpec = {
 }
 
 // ---------------------------------------------------------------------------
-// Extended paragraph with alignment (D-23)
+// Extended paragraph and heading with alignment (D-23)
 // ---------------------------------------------------------------------------
+
+const ALIGN_VALUES = new Set(['left', 'center', 'right', 'justify'])
+
+/** Read a text-align value from a parsed element, allow-listed. */
+function parseAlign(dom: HTMLElement): string | null {
+  const v = dom.style.textAlign
+  return v && ALIGN_VALUES.has(v) ? v : null
+}
 
 const baseParagraph = basicSchema.spec.nodes.get('paragraph')!
 const alignedParagraph: NodeSpec = {
@@ -114,7 +122,7 @@ const alignedParagraph: NodeSpec = {
     {
       tag: 'p',
       getAttrs(dom: HTMLElement) {
-        return { align: dom.style.textAlign || null }
+        return { align: parseAlign(dom) }
       },
     },
   ],
@@ -127,6 +135,29 @@ const alignedParagraph: NodeSpec = {
   },
 }
 
+// The basic heading spec only declares `level`; NodeType.create() drops any
+// undeclared attr, so setAlignment on a heading silently did nothing. Give
+// headings the same align attr (and rendering) as paragraphs.
+const baseHeading = basicSchema.spec.nodes.get('heading')!
+const alignedHeading: NodeSpec = {
+  ...baseHeading,
+  attrs: { level: { default: 1 }, align: { default: null } },
+  parseDOM: [1, 2, 3, 4, 5, 6].map((level) => ({
+    tag: `h${level}`,
+    getAttrs(dom: HTMLElement) {
+      return { level, align: parseAlign(dom) }
+    },
+  })),
+  toDOM(node) {
+    const tag = `h${node.attrs.level}`
+    const align = node.attrs.align
+    if (align) {
+      return [tag, { style: `text-align: ${align}` }, 0]
+    }
+    return [tag, 0]
+  },
+}
+
 // ---------------------------------------------------------------------------
 // Compose the schema
 // ---------------------------------------------------------------------------
@@ -134,8 +165,10 @@ const alignedParagraph: NodeSpec = {
 // Add list nodes (ordered, bullet, listItem) to basic schema nodes
 const listNodes = addListNodes(basicSchema.spec.nodes, 'paragraph block*', 'block')
 
-// Override the paragraph with alignment support
-const nodesWithAlign = listNodes.update('paragraph', alignedParagraph)
+// Override paragraph and heading with alignment support
+const nodesWithAlign = listNodes
+  .update('paragraph', alignedParagraph)
+  .update('heading', alignedHeading)
 
 // Compose marks: passage before link, then textColor and fontFamily at the end
 const marks = basicSchema.spec.marks

@@ -14,14 +14,20 @@ export function toggleItalic(view: EditorView) {
   view.focus()
 }
 
+/** Alignment of the block containing the selection head, preserved on block-type changes. */
+function currentAlign(view: EditorView): string | null {
+  const { $from } = view.state.selection
+  return ($from.parent.attrs.align as string | null | undefined) ?? null
+}
+
 export function setHeading(view: EditorView, level: number) {
   const node = tapestrySchema.nodes.heading
-  setBlockType(node, { level })(view.state, view.dispatch)
+  setBlockType(node, { level, align: currentAlign(view) })(view.state, view.dispatch)
   view.focus()
 }
 
 export function setParagraph(view: EditorView) {
-  setBlockType(tapestrySchema.nodes.paragraph)(view.state, view.dispatch)
+  setBlockType(tapestrySchema.nodes.paragraph, { align: currentAlign(view) })(view.state, view.dispatch)
   view.focus()
 }
 
