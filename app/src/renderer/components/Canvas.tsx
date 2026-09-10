@@ -120,6 +120,14 @@ const MIN_ZOOM = 0.1
 const MAX_ZOOM = 5
 const ZOOM_SPEED = 0.001
 
+/** Fallback thread-center size until the node registers its real dims. */
+const THREAD_CENTER_FALLBACK_WIDTH = 200
+const THREAD_CENTER_FALLBACK_HEIGHT = 44
+
+function isThreadCenter(n: NodeInfo): boolean {
+  return n.type.includes('thread-center')
+}
+
 // ---------------------------------------------------------------------------
 // Canvas
 // ---------------------------------------------------------------------------
@@ -449,6 +457,50 @@ export default function Canvas({
     height: '100%',
   }
 
+  // -----------------------------------------------------------------------
+  // Thread-center auto positions (D-17), computed ONCE per render and shared
+  // by the edge layer and the node layer. An unpinned center is RENDERED at
+  // the midpoint of its endpoints, not at its stored position.x/y, so edges
+  // must resolve its center from here or the thread-arm lines terminate at a
+  // phantom point that drifts whenever an endpoint note moves.
+  // -----------------------------------------------------------------------
+
+  const threadCenterAuto = new Map<
+    string,
+    { left: number; top: number; width: number; height: number }
+  >()
+  for (const node of nodes) {
+    if (!isThreadCenter(node)) continue
+    const dims = nodeDimsRef.current.get(node.id)
+    const width = dims?.width ?? THREAD_CENTER_FALLBACK_WIDTH
+    const height = dims?.height ?? THREAD_CENTER_FALLBACK_HEIGHT
+    const px = Number(node.props['position.x']?.value ?? 0)
+    const py = Number(node.props['position.y']?.value ?? 0)
+    const isPinned =
+      node.props['pinned']?.value === true || node.props['pinned']?.value === 'true'
+
+    let left = px
+    let top = py
+    if (!isPinned) {
+      const sourceEdge = edges.find((e) => e.label === 'thread-arm' && e.to === node.id)
+      const destEdge = edges.find((e) => e.label === 'thread-arm' && e.from === node.id)
+      const sourceCenter = sourceEdge ? getNodeCenter(sourceEdge.from) : null
+      const destCenter = destEdge ? getNodeCenter(destEdge.to) : null
+      if (sourceCenter && destCenter) {
+        left = (sourceCenter.x + destCenter.x) / 2 - width / 2
+        top = (sourceCenter.y + destCenter.y) / 2 - height / 2
+      }
+    }
+    threadCenterAuto.set(node.id, { left, top, width, height })
+  }
+
+  /** Node center that honors the displayed (auto) position of thread centers. */
+  const resolveNodeCenter = (nodeId: string): { x: number; y: number } | null => {
+    const auto = threadCenterAuto.get(nodeId)
+    if (auto) return { x: auto.left + auto.width / 2, y: auto.top + auto.height / 2 }
+    return getNodeCenter(nodeId)
+  }
+
   // Build connecting-mode temporary line data
   let tempConnectionLine: {
     x1: number
@@ -506,8 +558,8 @@ export default function Canvas({
           }}
         >
           {edges.map((edge) => {
-            const from = getNodeCenter(edge.from)
-            const to = getNodeCenter(edge.to)
+            const from = resolveNodeCenter(edge.from)
+            const to = resolveNodeCenter(edge.to)
             if (!from || !to) return null
             return (
               <ConnectionLine
@@ -533,7 +585,7 @@ export default function Canvas({
 
         {/* Thread center nodes (D-16/D-17/D-18) */}
         {nodes
-          .filter((n) => n.type.includes('thread-center'))
+          .filter(isThreadCenter)
           .map((node) => {
             const px = Number(node.props['position.x']?.value ?? 0)
             const py = Number(node.props['position.y']?.value ?? 0)
@@ -547,21 +599,11 @@ export default function Canvas({
             const destEdge = edges.find(
               (e) => e.label === 'thread-arm' && e.from === node.id,
             )
-            const sourceCenter = sourceEdge
-              ? getNodeCenter(sourceEdge.from)
-              : null
-            const destCenter = destEdge
-              ? getNodeCenter(destEdge.to)
-              : null
 
-            const autoX =
-              sourceCenter && destCenter
-                ? (sourceCenter.x + destCenter.x) / 2 - 100
-                : px
-            const autoY =
-              sourceCenter && destCenter
-                ? (sourceCenter.y + destCenter.y) / 2 - 22
-                : py
+            // Same auto position the edge layer used (see threadCenterAuto).
+            const auto = threadCenterAuto.get(node.id)
+            const autoX = auto ? auto.left : px
+            const autoY = auto ? auto.top : py
 
             // D-18: an empty (ghost) center has pointer-events: none, so it can
             // never hover itself. Reveal it when either endpoint note is
@@ -598,7 +640,7 @@ export default function Canvas({
           })}
 
         {/* Node cards -- render NoteCard for known types, FallbackNodeView otherwise (D-33) */}
-        {nodes.filter((n) => !n.type.includes('thread-center')).map((node) => {
+        {nodes.filter((n) => !isThreadCenter(n)).map((node) => {
           const hasPlugin = !!pluginNodeViews[node.type]
 
           if (hasPlugin) {
