@@ -28,6 +28,14 @@ import PluginErrorNotification from './components/PluginErrorNotification'
 type SaveState = 'saved' | 'saving' | 'error'
 
 // ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
+}
+
+// ---------------------------------------------------------------------------
 // App
 // ---------------------------------------------------------------------------
 
@@ -67,6 +75,26 @@ export default function App(): React.ReactElement {
       setSaveState('saved')
     }
   }, [])
+
+  /**
+   * Surface an application-level error to the user through the notification
+   * banner (reused from the plugin crash UI). Kernel rejections — e.g. a
+   * commit refused while history is rewound — must not disappear into the
+   * console.
+   */
+  const showAppError = useCallback((message: string) => {
+    setPluginError({ pluginName: 'Tapestry', message, canRestart: false })
+  }, [])
+
+  /** Log a failed save, flip the indicator to "Not saved", and tell the user why. */
+  const reportSaveError = useCallback(
+    (action: string, err: unknown) => {
+      console.error(`${action}:`, err)
+      setSaveState('error')
+      showAppError(`${action}: ${errorMessage(err)}`)
+    },
+    [showAppError],
+  )
 
   // -----------------------------------------------------------------------
   // Load state on mount
@@ -195,11 +223,10 @@ export default function App(): React.ReactElement {
           setEditingNodeId(commitResult.nodeIds[0])
         }
       } catch (err) {
-        console.error('Failed to create note:', err)
-        setSaveState('error')
+        reportSaveError('Failed to create note', err)
       }
     },
-    [isFileLoaded, recomputeSaveState, refreshAll],
+    [isFileLoaded, recomputeSaveState, refreshAll, reportSaveError],
   )
 
   // -----------------------------------------------------------------------
@@ -243,11 +270,10 @@ export default function App(): React.ReactElement {
       } catch (err) {
         pendingSavesRef.current -= 1
         if (pendingSavesRef.current < 0) pendingSavesRef.current = 0
-        console.error('Failed to update position:', err)
-        setSaveState('error')
+        reportSaveError('Failed to update position', err)
       }
     },
-    [recomputeSaveState, refreshNodes],
+    [recomputeSaveState, refreshNodes, reportSaveError],
   )
 
   // -----------------------------------------------------------------------
@@ -283,11 +309,10 @@ export default function App(): React.ReactElement {
       } catch (err) {
         pendingSavesRef.current -= 1
         if (pendingSavesRef.current < 0) pendingSavesRef.current = 0
-        console.error('Failed to update width:', err)
-        setSaveState('error')
+        reportSaveError('Failed to update width', err)
       }
     },
-    [recomputeSaveState, refreshNodes],
+    [recomputeSaveState, refreshNodes, reportSaveError],
   )
 
   // -----------------------------------------------------------------------
@@ -322,11 +347,10 @@ export default function App(): React.ReactElement {
       } catch (err) {
         pendingSavesRef.current -= 1
         if (pendingSavesRef.current < 0) pendingSavesRef.current = 0
-        console.error('Failed to create edge:', err)
-        setSaveState('error')
+        reportSaveError('Failed to create edge', err)
       }
     },
-    [recomputeSaveState, refreshEdges],
+    [recomputeSaveState, refreshEdges, reportSaveError],
   )
 
   // -----------------------------------------------------------------------
@@ -390,11 +414,10 @@ export default function App(): React.ReactElement {
       } catch (err) {
         pendingSavesRef.current -= 1
         if (pendingSavesRef.current < 0) pendingSavesRef.current = 0
-        console.error('Failed to save note:', err)
-        setSaveState('error')
+        reportSaveError('Failed to save note', err)
       }
     },
-    [recomputeSaveState],
+    [recomputeSaveState, reportSaveError],
   )
 
   // -----------------------------------------------------------------------
@@ -434,11 +457,10 @@ export default function App(): React.ReactElement {
       } catch (err) {
         pendingSavesRef.current -= 1
         if (pendingSavesRef.current < 0) pendingSavesRef.current = 0
-        console.error('Failed to edit property:', err)
-        setSaveState('error')
+        reportSaveError('Failed to edit property', err)
       }
     },
-    [recomputeSaveState, refreshNodes],
+    [recomputeSaveState, refreshNodes, reportSaveError],
   )
 
   // -----------------------------------------------------------------------
@@ -496,11 +518,10 @@ export default function App(): React.ReactElement {
       } catch (err) {
         pendingSavesRef.current -= 1
         if (pendingSavesRef.current < 0) pendingSavesRef.current = 0
-        console.error('Failed to delete note:', err)
-        setSaveState('error')
+        reportSaveError('Failed to delete note', err)
       }
     },
-    [recomputeSaveState, refreshAll],
+    [recomputeSaveState, refreshAll, reportSaveError],
   )
 
   // -----------------------------------------------------------------------
@@ -516,8 +537,9 @@ export default function App(): React.ReactElement {
       }
     } catch (err) {
       console.error('Undo failed:', err)
+      showAppError(`Undo failed: ${errorMessage(err)}`)
     }
-  }, [refreshAll])
+  }, [refreshAll, showAppError])
 
   const handleRedo = useCallback(async () => {
     try {
@@ -528,8 +550,9 @@ export default function App(): React.ReactElement {
       }
     } catch (err) {
       console.error('Redo failed:', err)
+      showAppError(`Redo failed: ${errorMessage(err)}`)
     }
-  }, [refreshAll])
+  }, [refreshAll, showAppError])
 
   // -----------------------------------------------------------------------
   // Keyboard: Escape, Undo, Redo (D-04, D-22)

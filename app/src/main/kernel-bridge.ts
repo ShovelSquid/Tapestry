@@ -110,6 +110,18 @@ export class KernelBridge {
    */
   submit(actorKind: string, actorId: string, message: string, ops: OpObject[]): CommitResult {
     this.ensureLoaded()
+    // A commit is always appended after the journal head (seq = lastSeq + 1,
+    // parent = lastDigest). While the world is rewound by undo, the kernel
+    // validates the proposal against the rewound world but appends it after
+    // the commits that were "undone"; the next open replays every commit in
+    // order, the new one fails to apply, and the journal is marked Corrupt.
+    // Until undo is implemented as compensating commits or a real branch,
+    // refuse to commit from a rewound position.
+    if (this.currentSeq !== (this.instance.getLastSeq() as number)) {
+      throw new Error(
+        'Cannot commit while history is rewound; redo to the latest change or discard the undo first',
+      )
+    }
     const result = this.instance.submit(actorKind, actorId, message, ops)
     this.afterCommit(result.seq)
     return result
