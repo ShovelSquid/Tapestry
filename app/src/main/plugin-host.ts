@@ -209,6 +209,16 @@ export class PluginHost {
       return { status: 'failed', reason: 'No kernel bridge available' }
     }
 
+    // Never activate a plugin twice: the entry module is served from
+    // require.cache, so a second activate() would run on the same module
+    // object and the first instance's deactivate() would never be called
+    // (leaking timers, subscriptions, listeners). Use reloadPlugin() to
+    // deliberately restart a running plugin.
+    const existing = this.plugins.get(name)
+    if (existing?.status === 'loaded') {
+      return { status: 'loaded' }
+    }
+
     // Resolve the plugin directory; rejects names that would escape plugins/
     const pluginDir = this.resolvePluginDir(name)
     if (!pluginDir) {
@@ -399,7 +409,9 @@ export class PluginHost {
   async enablePlugin(name: string): Promise<PluginLoadResult> {
     const wasLoaded = this.plugins.get(name)?.status === 'loaded'
     this.disabled.delete(name)
-    const result = await this.loadPlugin(name)
+    // Enabling an already-running plugin restarts it (deactivate, then
+    // activate) rather than activating it a second time.
+    const result = wasLoaded ? await this.reloadPlugin(name) : await this.loadPlugin(name)
 
     // Record the enable event in the journal (D-32) — only when the plugin
     // actually transitioned to loaded, so the readable history never asserts
