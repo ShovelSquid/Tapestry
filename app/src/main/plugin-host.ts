@@ -14,7 +14,7 @@
  */
 
 import { readdirSync, readFileSync, existsSync } from 'fs'
-import { isAbsolute, join, relative, resolve } from 'path'
+import { isAbsolute, join, relative, resolve, sep } from 'path'
 import type { IpcMain } from 'electron'
 import type {
   NodeViewContribution,
@@ -29,6 +29,18 @@ import type {
 
 /** Supported API versions. Phase 2 only supports version "1". */
 const SUPPORTED_API_VERSIONS = ['1']
+
+/**
+ * A plugin name is a single path segment: it is joined into a filesystem
+ * path under plugins/ and drives require(), so it must never contain
+ * separators, "..", or leading dots. Names arrive unvalidated over IPC.
+ */
+const PLUGIN_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/
+
+/** Whether a plugin name is safe to use as a directory name under plugins/. */
+export function isValidPluginName(name: unknown): name is string {
+  return typeof name === 'string' && PLUGIN_NAME_RE.test(name) && !name.includes('..')
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -156,8 +168,14 @@ export class PluginHost {
       return { status: 'failed', reason: 'No kernel bridge available' }
     }
 
+    // Resolve the plugin directory; rejects names that would escape plugins/
+    const pluginDir = this.resolvePluginDir(name)
+    if (!pluginDir) {
+      return { status: 'failed', reason: 'Invalid plugin name' }
+    }
+
     // Find the manifest on disk
-    const manifestPath = join(this.pluginsDir, name, 'tapestry.plugin.json')
+    const manifestPath = join(pluginDir, 'tapestry.plugin.json')
     if (!existsSync(manifestPath)) {
       return { status: 'failed', reason: `Manifest not found at ${manifestPath}` }
     }
@@ -190,7 +208,6 @@ export class PluginHost {
     }
 
     // Resolve the main entry relative to the plugin directory
-    const pluginDir = resolve(this.pluginsDir, name)
     const entryPath = resolve(pluginDir, manifest.main)
     const relativeEntryPath = relative(pluginDir, entryPath)
     if (relativeEntryPath.startsWith('..') || isAbsolute(relativeEntryPath)) {
@@ -296,11 +313,14 @@ export class PluginHost {
     loaded.contributions.inspectors.clear()
 
     // Clear the require cache so a reload gets fresh code
-    const entryPath = resolve(this.pluginsDir, name, loaded.manifest.main)
-    try {
-      delete require.cache[require.resolve(entryPath)]
-    } catch {
-      // Plugin files may already be gone from disk.
+    const pluginDir = this.resolvePluginDir(name)
+    if (pluginDir) {
+      const entryPath = resolve(pluginDir, loaded.manifest.main)
+      try {
+        delete require.cache[require.resolve(entryPath)]
+      } catch {
+        // Plugin files may already be gone from disk.
+      }
     }
 
     this.plugins.delete(name)
@@ -557,15 +577,20 @@ export class PluginHost {
       return host.getContributions()
     })
 
-    ipcMain.handle('plugin:reload', async (_event, name: string) => {
+    // Plugin names arrive from the renderer unvalidated; reject anything that
+    // is not a single safe path segment before it reaches the filesystem.
+    ipcMain.handle('plugin:reload', async (_event, name: unknown) => {
+      if (!isValidPluginName(name)) return { status: 'failed', reason: 'Invalid plugin name' }
       return host.reloadPlugin(name)
     })
 
-    ipcMain.handle('plugin:enable', async (_event, name: string) => {
+    ipcMain.handle('plugin:enable', async (_event, name: unknown) => {
+      if (!isValidPluginName(name)) return { status: 'failed', reason: 'Invalid plugin name' }
       return host.enablePlugin(name)
     })
 
-    ipcMain.handle('plugin:disable', async (_event, name: string) => {
+    ipcMain.handle('plugin:disable', async (_event, name: unknown) => {
+      if (!isValidPluginName(name)) return { ok: false, error: 'Invalid plugin name' }
       await host.disablePlugin(name)
       return { ok: true }
     })
@@ -612,6 +637,19 @@ export class PluginHost {
   // -------------------------------------------------------------------------
   // Helpers
   // -------------------------------------------------------------------------
+
+  /**
+   * Resolve a plugin name to its directory under pluginsDir, or null when the
+   * name is not a single safe path segment or the resolved directory is not a
+   * direct child of pluginsDir (defense in depth against traversal).
+   */
+  private resolvePluginDir(name: string): string | null {
+    if (!isValidPluginName(name)) return null
+    const dir = resolve(this.pluginsDir, name)
+    const rel = relative(this.pluginsDir, dir)
+    if (rel !== name || isAbsolute(rel) || rel.includes(sep)) return null
+    return dir
+  }
 
   private createEmptyRegistry(): ContributionRegistry {
     return {
