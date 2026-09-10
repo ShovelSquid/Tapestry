@@ -154,7 +154,9 @@ export default function App(): React.ReactElement {
         if (result.canceled || !result.filePath) return
 
         try {
-          await window.tapestry.kernel.create(result.filePath, 'My World')
+          const fileName = result.filePath.split('/').pop()?.replace(/\.tree$/, '') ?? 'untitled'
+          const worldName = fileName.replace(/[^A-Za-z0-9_-]/g, '_')
+          await window.tapestry.kernel.create(result.filePath, worldName)
           setFilePath(result.filePath)
           setIsFileLoaded(true)
         } catch (err) {
