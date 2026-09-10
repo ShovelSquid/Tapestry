@@ -77,7 +77,12 @@ export default function FloatingToolbar({
   useEffect(() => {
     if (!view) { setVisible(false); return }
 
+    // Guards the deferred update() calls below against running after cleanup
+    // (unmount or view change), when the EditorView may already be destroyed.
+    let disposed = false
+
     const update = () => {
+      if (disposed) return
       const { from, to, empty } = view.state.selection
       if (empty) { setVisible(false); return }
 
@@ -94,12 +99,16 @@ export default function FloatingToolbar({
       setVisible(true)
     }
 
-    const plugin = view.dom.addEventListener('mouseup', () => setTimeout(update, 10))
-    const keyup = view.dom.addEventListener('keyup', () => setTimeout(update, 10))
+    // Defer slightly so the selection has settled before measuring it.
+    const onMouseUp = () => setTimeout(update, 10)
+    const onKeyUp = () => setTimeout(update, 10)
+    view.dom.addEventListener('mouseup', onMouseUp)
+    view.dom.addEventListener('keyup', onKeyUp)
 
     return () => {
-      view.dom.removeEventListener('mouseup', update)
-      view.dom.removeEventListener('keyup', update)
+      disposed = true
+      view.dom.removeEventListener('mouseup', onMouseUp)
+      view.dom.removeEventListener('keyup', onKeyUp)
     }
   }, [view, containerRef])
 
