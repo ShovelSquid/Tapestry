@@ -31,86 +31,59 @@ interface ExamplePropertyPanelProps {
 function ExamplePropertyPanel({ node }: ExamplePropertyPanelProps) {
   const entries = Object.entries(node.props)
 
-  return {
-    type: 'div',
-    props: {
-      style: {
+  return (
+    <div
+      style={{
         padding: '12px',
         fontFamily:
           "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
         fontSize: '13px',
         color: '#2C2C2C',
-      },
-      children: [
-        // Header
-        {
-          type: 'div',
-          props: {
-            key: 'header',
-            style: {
-              fontWeight: 600,
-              fontSize: '14px',
-              marginBottom: '8px',
-              paddingBottom: '6px',
-              borderBottom: '1px solid #E0DDD7',
-            },
-            children: `Properties (${entries.length})`,
-          },
-        },
-        // Property list
-        ...entries.map(([key, prop]) => ({
-          type: 'div',
-          props: {
-            key,
-            style: {
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              padding: '4px 0',
-              borderBottom: '1px solid #F5F5F5',
-            },
-            children: [
-              // Key
-              {
-                type: 'span',
-                props: {
-                  key: 'k',
-                  style: { fontWeight: 500, color: '#555' },
-                  children: key,
-                },
-              },
-              // Type tag + value
-              {
-                type: 'span',
-                props: {
-                  key: 'v',
-                  style: { fontFamily: 'monospace', fontSize: '12px', color: '#777' },
-                  children: `[${prop.type}] ${String(prop.value)}`,
-                },
-              },
-            ],
-          },
-        })),
-        // Empty state
-        ...(entries.length === 0
-          ? [
-              {
-                type: 'div',
-                props: {
-                  key: 'empty',
-                  style: {
-                    color: '#999',
-                    fontStyle: 'italic',
-                    padding: '8px 0',
-                  },
-                  children: 'No properties',
-                },
-              },
-            ]
-          : []),
-      ],
-    },
-  }
+      }}
+    >
+      <div
+        style={{
+          fontWeight: 600,
+          fontSize: '14px',
+          marginBottom: '8px',
+          paddingBottom: '6px',
+          borderBottom: '1px solid #E0DDD7',
+        }}
+      >
+        Properties ({entries.length})
+      </div>
+
+      {entries.map(([key, prop]) => (
+        <div
+          key={key}
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            padding: '4px 0',
+            borderBottom: '1px solid #F5F5F5',
+          }}
+        >
+          <span style={{ fontWeight: 500, color: '#555' }}>{key}</span>
+          <span style={{ fontFamily: 'monospace', fontSize: '12px', color: '#777' }}>
+            [{prop.type}] {String(prop.value)}
+          </span>
+        </div>
+      ))}
+
+      {entries.length === 0 && (
+        <div
+          style={{
+            color: '#999',
+            fontStyle: 'italic',
+            padding: '8px 0',
+          }}
+        >
+          No properties
+        </div>
+      )}
+    </div>
+  )
 }
 
 export default ExamplePropertyPanel
