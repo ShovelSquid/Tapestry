@@ -308,6 +308,22 @@ export class PluginHost {
 
       const contributions = this.createEmptyRegistry()
 
+      // Contribution collisions are rejected at registration time instead of
+      // being resolved silently by map iteration order in getContributions().
+      // Throwing here fails this plugin's activation with a reason naming the
+      // owner; the first registrant (deterministic: discovery is sorted by
+      // directory name) keeps the contribution.
+      const findOwner = (
+        kind: 'nodeViews' | 'commands' | 'inspectors',
+        key: string,
+      ): string | null => {
+        for (const [otherId, other] of this.plugins) {
+          if (otherId === name || other.status !== 'loaded') continue
+          if (other.contributions[kind].has(key)) return otherId
+        }
+        return null
+      }
+
       // Build the PluginContext per the SDK contract
       // D-31: KernelAPI has NO journal-level methods (no raw read/write/truncate/repair/saveAs)
       const context = {
@@ -320,9 +336,19 @@ export class PluginHost {
           status: () => this.kernelBridge.status(),
         },
         registerNodeView: (contribution: NodeViewContribution) => {
+          const owner = findOwner('nodeViews', contribution.nodeType)
+          if (owner) {
+            throw new Error(
+              `Node view for ${contribution.nodeType} is already registered by plugin ${owner}`,
+            )
+          }
           contributions.nodeViews.set(contribution.nodeType, contribution)
         },
         registerCommand: (contribution: CommandContribution) => {
+          const owner = findOwner('commands', contribution.id)
+          if (owner) {
+            throw new Error(`Command ${contribution.id} is already registered by plugin ${owner}`)
+          }
           contributions.commands.set(contribution.id, contribution)
         },
         registerPropertyPanel: (contribution: PropertyPanelContribution) => {
@@ -331,6 +357,10 @@ export class PluginHost {
           contributions.propertyPanels.set(contribution.nodeType, existing)
         },
         registerInspector: (contribution: InspectorContribution) => {
+          const owner = findOwner('inspectors', contribution.id)
+          if (owner) {
+            throw new Error(`Inspector ${contribution.id} is already registered by plugin ${owner}`)
+          }
           contributions.inspectors.set(contribution.id, contribution)
         },
       }
