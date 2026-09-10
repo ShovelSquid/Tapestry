@@ -379,6 +379,14 @@ html, body, #root {
   cursor: nesw-resize;
 }
 
+/* Body is a ProseMirror doc that failed schema validation: shown raw, read-only */
+.tapestry-editor-unreadable .ProseMirror {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 12px;
+  color: #6B6B6B;
+  cursor: not-allowed;
+}
+
 /* ---- Passage marks (D-11, D-13, UI-SPEC) ---- */
 
 .passage-mark {

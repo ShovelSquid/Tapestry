@@ -91,22 +91,47 @@ function plainTextToDoc(body: string): ProseMirrorNode {
   return tapestrySchema.node('doc', null, paragraphs)
 }
 
-/**
- * Try to parse body as ProseMirror JSON. If it fails (plain text from before
- * rich text was added), create a doc with paragraphs of text nodes.
- */
-function deserializeBody(body: string): ProseMirrorNode | null {
-  if (!body) return null
-  try {
-    const parsed = JSON.parse(body)
-    if (parsed && parsed.type === 'doc') {
-      return tapestrySchema.nodeFromJSON(parsed)
-    }
-  } catch {
-    // Not JSON -- treat as plain text
-  }
-  return plainTextToDoc(body)
+interface DeserializedBody {
+  doc: ProseMirrorNode | null
+  /**
+   * True when the body IS a ProseMirror JSON doc but failed schema validation
+   * (unknown node/mark from a newer plugin version, corrupted attrs). The doc
+   * is then the raw JSON as plain text and the editor must be read-only so
+   * the readable body is never overwritten by an escaped blob.
+   */
+  schemaError: boolean
 }
+
+/**
+ * Parse body as ProseMirror JSON. Two distinct failure modes:
+ *   - not JSON at all      -> legacy plain text, one paragraph per line
+ *   - JSON but bad schema  -> plain-text fallback + schemaError (read-only)
+ */
+function deserializeBody(body: string): DeserializedBody {
+  if (!body) return { doc: null, schemaError: false }
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(body)
+  } catch {
+    // Not JSON -- plain text from before rich text was added
+    return { doc: plainTextToDoc(body), schemaError: false }
+  }
+  if (parsed && typeof parsed === 'object' && (parsed as { type?: unknown }).type === 'doc') {
+    try {
+      return { doc: tapestrySchema.nodeFromJSON(parsed), schemaError: false }
+    } catch (err) {
+      console.error(
+        '[tapestry] Note body is a ProseMirror document but failed schema validation; ' +
+          'showing it read-only to avoid overwriting it.',
+        err,
+      )
+      return { doc: plainTextToDoc(body), schemaError: true }
+    }
+  }
+  return { doc: plainTextToDoc(body), schemaError: false }
+}
+
+const UNREADABLE_CLASS = 'tapestry-editor-unreadable'
 
 function serializeBody(view: EditorView): string {
   return JSON.stringify(view.state.doc.toJSON())
@@ -182,6 +207,10 @@ export function useProseMirror({
   const onPassageHoverRef = useRef(onPassageHover)
   onPassageHoverRef.current = onPassageHover
 
+  // Set when the current body failed schema validation (see deserializeBody).
+  // While true the editor is read-only and never emits saves.
+  const schemaErrorRef = useRef(false)
+
   // -----------------------------------------------------------------------
   // Initialize ProseMirror editor
   // -----------------------------------------------------------------------
@@ -189,7 +218,10 @@ export function useProseMirror({
   useEffect(() => {
     if (!editorRef.current) return
 
-    const doc = deserializeBody(initialBody) || tapestrySchema.node('doc', null, [
+    const initial = deserializeBody(initialBody)
+    schemaErrorRef.current = initial.schemaError
+    editorRef.current.classList.toggle(UNREADABLE_CLASS, initial.schemaError)
+    const doc = initial.doc || tapestrySchema.node('doc', null, [
       tapestrySchema.node('paragraph'),
     ])
 
@@ -230,14 +262,15 @@ export function useProseMirror({
 
     const view = new EditorView(editorRef.current, {
       state,
-      editable: () => isEditing,
+      editable: () => isEditing && !schemaErrorRef.current,
       dispatchTransaction(tr: Transaction) {
         const newState = view.state.apply(tr)
         view.updateState(newState)
 
         // Transactions tagged externalSync come from the body-sync effect
         // below: they are already saved and must not be treated as user edits.
-        if (tr.docChanged && !tr.getMeta('externalSync')) {
+        // A schema-invalid body is read-only and must never be re-saved.
+        if (tr.docChanged && !tr.getMeta('externalSync') && !schemaErrorRef.current) {
           onMarkDirtyRef.current(nid)
 
           if (debounceRef.current) {
@@ -294,7 +327,10 @@ export function useProseMirror({
       return
     }
 
-    const newDoc = deserializeBody(initialBody) || tapestrySchema.node('doc', null, [
+    const next = deserializeBody(initialBody)
+    schemaErrorRef.current = next.schemaError
+    editorRef.current?.classList.toggle(UNREADABLE_CLASS, next.schemaError)
+    const newDoc = next.doc || tapestrySchema.node('doc', null, [
       tapestrySchema.node('paragraph'),
     ])
     const tr = view.state.tr.replaceWith(0, view.state.doc.content.size, newDoc.content)
@@ -310,8 +346,8 @@ export function useProseMirror({
 
   useEffect(() => {
     if (viewRef.current) {
-      viewRef.current.setProps({ editable: () => isEditing })
-      if (isEditing) {
+      viewRef.current.setProps({ editable: () => isEditing && !schemaErrorRef.current })
+      if (isEditing && !schemaErrorRef.current) {
         viewRef.current.focus()
       }
     }
@@ -338,7 +374,7 @@ export function useProseMirror({
 
   const forceSave = useCallback(() => {
     const view = viewRef.current
-    if (!view) return
+    if (!view || schemaErrorRef.current) return
     if (debounceRef.current) {
       clearTimeout(debounceRef.current)
       debounceRef.current = null
