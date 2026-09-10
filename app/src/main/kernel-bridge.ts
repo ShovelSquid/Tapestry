@@ -8,15 +8,26 @@
  */
 
 import { join } from 'path'
+import { existsSync } from 'fs'
 
 // ---------------------------------------------------------------------------
 // Load the native addon
 // ---------------------------------------------------------------------------
 
-// The compiled .node file lives in app/native/build/Release/ after cmake-js
-// builds it. In a packaged Electron app, the path will need adjustment — that
-// is Plan 02's concern.
-const addonPath = join(__dirname, '..', '..', 'native', 'build', 'Release', 'tapestry_addon.node')
+// In development, the compiled .node file lives at app/native/build/Release/.
+// In a packaged Electron app (via Forge), it's in the Resources directory
+// as an extraResource.
+function resolveAddonPath(): string {
+  // Packaged: process.resourcesPath points to .app/Contents/Resources
+  if (process.resourcesPath) {
+    const packagedPath = join(process.resourcesPath, 'tapestry_addon.node')
+    if (existsSync(packagedPath)) return packagedPath
+  }
+  // Development: relative to __dirname (out/main/)
+  return join(__dirname, '..', '..', 'native', 'build', 'Release', 'tapestry_addon.node')
+}
+
+const addonPath = resolveAddonPath()
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 let addon: any

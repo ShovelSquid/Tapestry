@@ -5,6 +5,7 @@ node_modules/
 app/native/build/
 app/dist/
 app/out/
+app/forge-out/
 sdk/dist/
 tapestry/build-kernel/
 
