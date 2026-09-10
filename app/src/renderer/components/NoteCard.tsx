@@ -540,8 +540,9 @@ export default function NoteCard({
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
       onPointerUp={(e) => {
-        // When in connecting mode and pointer released on this note
-        e.stopPropagation()
+        if (!isConnecting) {
+          e.stopPropagation()
+        }
       }}
     >
       {/* Drag handle area -- the top border strip */}
