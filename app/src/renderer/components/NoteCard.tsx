@@ -143,6 +143,13 @@ export default function NoteCard({
   // Ref for onSave callback used by the title debounce and the hook's save
   const onSaveRef = useRef(onSave)
   onSaveRef.current = onSave
+  const onMarkCleanRef = useRef(onMarkClean)
+  onMarkCleanRef.current = onMarkClean
+
+  // Latest body prop, used as a fallback when flushing a title save after
+  // the editor view has already been destroyed.
+  const bodyRef = useRef(body)
+  bodyRef.current = body
 
   // ----- Shared ProseMirror hook (D-26) -----
   const handleEditorSave = useCallback(
@@ -168,6 +175,30 @@ export default function NoteCard({
   useEffect(() => {
     setEditorView(viewRef.current)
   }, [node.id, viewRef])
+
+  // Remember the most recent view. The hook nulls viewRef in its own cleanup,
+  // but a destroyed EditorView still exposes its final state.doc, which lets
+  // the title flush below serialize the real body regardless of cleanup order.
+  const lastViewRef = useRef<EditorView | null>(null)
+  if (viewRef.current) lastViewRef.current = viewRef.current
+
+  // D-02 autosave: a title edit is debounced 300ms. If the card unmounts (or
+  // switches node) inside that window the timer used to fire against a dead
+  // view: it called onMarkClean ("Saved") and then skipped onSave, silently
+  // losing the title. Flush the pending title save on cleanup instead.
+  useEffect(() => {
+    const nodeId = node.id
+    return () => {
+      if (!titleDebounceRef.current) return
+      clearTimeout(titleDebounceRef.current)
+      titleDebounceRef.current = null
+      onMarkCleanRef.current(nodeId)
+      const view = viewRef.current ?? lastViewRef.current
+      const b = view ? JSON.stringify(view.state.doc.toJSON()) : bodyRef.current
+      onSaveRef.current(nodeId, b, localTitleRef.current)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [node.id])
 
   // Local drag position for immediate feedback before kernel confirms
   const [localPos, setLocalPos] = useState<{ x: number; y: number } | null>(
