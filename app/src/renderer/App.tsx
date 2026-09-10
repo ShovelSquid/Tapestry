@@ -120,14 +120,14 @@ export default function App(): React.ReactElement {
   useEffect(() => {
     refreshFilePath().then(() => refreshAll())
 
-    window.tapestry.onFileOpened((path: string) => {
+    const removeFileOpened = window.tapestry.onFileOpened((path: string) => {
       setFilePath(path)
       setIsFileLoaded(true)
       refreshAll()
     })
 
     // Listen for plugin error notifications (D-34)
-    window.tapestry.onPluginError((pluginName, message, canRestart) => {
+    const removePluginError = window.tapestry.onPluginError((pluginName, message, canRestart) => {
       if (!message) {
         // Empty message means restart succeeded — show brief success then dismiss
         setPluginError({ pluginName, message: '', canRestart: false })
@@ -135,6 +135,11 @@ export default function App(): React.ReactElement {
         setPluginError({ pluginName, message, canRestart })
       }
     })
+
+    return () => {
+      removeFileOpened()
+      removePluginError()
+    }
   }, [refreshAll, refreshFilePath])
 
   // -----------------------------------------------------------------------

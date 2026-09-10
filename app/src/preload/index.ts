@@ -7,6 +7,7 @@
  */
 
 import { contextBridge, ipcRenderer } from 'electron'
+import type { IpcRendererEvent } from 'electron'
 
 // ---------------------------------------------------------------------------
 // Tapestry API exposed to the renderer
@@ -79,20 +80,24 @@ const tapestryAPI = {
    * Listen for file-opened events from the main process
    * (e.g. when reopening the last file on launch).
    */
-  onFileOpened: (callback: (filePath: string) => void): void => {
-    ipcRenderer.on('file-opened', (_event, filePath) => {
+  onFileOpened: (callback: (filePath: string) => void): (() => void) => {
+    const handler = (_event: IpcRendererEvent, filePath: string) => {
       callback(filePath)
-    })
+    }
+    ipcRenderer.on('file-opened', handler)
+    return () => ipcRenderer.removeListener('file-opened', handler)
   },
 
   /**
    * Listen for plugin error events from the main process (D-34).
    * Receives plugin display name, error message, and whether restart is available.
    */
-  onPluginError: (callback: (pluginName: string, message: string, canRestart: boolean) => void): void => {
-    ipcRenderer.on('plugin-error', (_event, pluginName, message, canRestart) => {
+  onPluginError: (callback: (pluginName: string, message: string, canRestart: boolean) => void): (() => void) => {
+    const handler = (_event: IpcRendererEvent, pluginName: string, message: string, canRestart: boolean) => {
       callback(pluginName, message, canRestart)
-    })
+    }
+    ipcRenderer.on('plugin-error', handler)
+    return () => ipcRenderer.removeListener('plugin-error', handler)
   },
 }
 
