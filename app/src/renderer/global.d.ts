@@ -59,7 +59,11 @@ interface TapestryPluginsAPI {
   reload(name: string): Promise<{ status: string; reason?: string }>
   enable(name: string): Promise<{ status: string; reason?: string }>
   disable(name: string): Promise<{ ok: boolean }>
-  executeCommand(commandId: string, args?: Record<string, unknown>): Promise<{ ok: boolean; error?: string }>
+  executeCommand(
+    commandId: string,
+    args?: Record<string, unknown>,
+    selectedNodes?: string[],
+  ): Promise<{ ok: boolean; error?: string }>
 }
 
 interface TapestryDialogAPI {

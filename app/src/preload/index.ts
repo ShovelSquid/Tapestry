@@ -67,8 +67,12 @@ const tapestryAPI = {
     disable: (name: string): Promise<any> =>
       ipcRenderer.invoke('plugin:disable', name),
 
-    executeCommand: (commandId: string, args?: Record<string, unknown>): Promise<any> =>
-      ipcRenderer.invoke('plugin:executeCommand', commandId, args || {}),
+    executeCommand: (
+      commandId: string,
+      args?: Record<string, unknown>,
+      selectedNodes?: string[],
+    ): Promise<any> =>
+      ipcRenderer.invoke('plugin:executeCommand', commandId, args || {}, selectedNodes || []),
   },
 
   dialog: {

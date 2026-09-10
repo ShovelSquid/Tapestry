@@ -554,7 +554,12 @@ export class PluginHost {
     })
 
     // Execute a registered command by id
-    ipcMain.handle('plugin:executeCommand', async (_event, commandId: string, args: Record<string, unknown>) => {
+    ipcMain.handle('plugin:executeCommand', async (
+      _event,
+      commandId: string,
+      args: Record<string, unknown>,
+      selectedNodes: string[] = [],
+    ) => {
       for (const [, loaded] of host.plugins) {
         if (loaded.status !== 'loaded') continue
         const cmd = loaded.contributions.commands.get(commandId)
@@ -569,7 +574,7 @@ export class PluginHost {
                 getEdges: () => host.kernelBridge.getEdges(),
                 status: () => host.kernelBridge.status(),
               },
-              selectedNodes: [] as string[],
+              selectedNodes: Array.isArray(selectedNodes) ? selectedNodes : [],
               arguments: args || {},
             }
             await cmd.handler(context)
