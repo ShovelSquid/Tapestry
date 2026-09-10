@@ -85,6 +85,36 @@ void throwTypeError(Napi::Env env, const std::string& message) {
     }
 }
 
+/** Throw a JS RangeError unless an exception is already pending. */
+void throwRangeError(Napi::Env env, const std::string& message) {
+    if (!env.IsExceptionPending()) {
+        Napi::RangeError::New(env, message).ThrowAsJavaScriptException();
+    }
+}
+
+/** Largest magnitude a JS number represents exactly as an integer (2^53). */
+constexpr double kMaxSafeInteger = 9007199254740992.0;
+
+/**
+ * Read a JS number as an exact integer. Int64Value() silently truncates
+ * fractions and saturates out-of-range values, which would write a number
+ * the user never entered into the readable history. Rejects non-numbers,
+ * NaN/Infinity, fractional values, and magnitudes above 2^53.
+ */
+bool requireSafeInteger(Napi::Env env, Napi::Value v, const char* what, int64_t& out) {
+    if (!v.IsNumber()) {
+        throwTypeError(env, std::string(what) + " must be a number");
+        return false;
+    }
+    double d = v.As<Napi::Number>().DoubleValue();
+    if (!std::isfinite(d) || std::floor(d) != d || d < -kMaxSafeInteger || d > kMaxSafeInteger) {
+        throwRangeError(env, std::string(what) + " must be a safe integer");
+        return false;
+    }
+    out = static_cast<int64_t>(d);
+    return true;
+}
+
 /** Read a required string field from a JS object. Throws and returns false on failure. */
 bool requireString(Napi::Env env, Napi::Object obj, const char* key, std::string& out) {
     Napi::Value v = obj.Get(key);
@@ -108,11 +138,8 @@ Value jsToValue(Napi::Env env, const std::string& typeStr, Napi::Value jsVal) {
         if (typeStr == "ref") return Value::ofRef(s);
         return Value::ofTime(s);
     } else if (typeStr == "int") {
-        if (!jsVal.IsNumber()) {
-            throwTypeError(env, "int value must be a number");
-            return Value::ofText("");
-        }
-        auto num = jsVal.As<Napi::Number>().Int64Value();
+        int64_t num = 0;
+        if (!requireSafeInteger(env, jsVal, "int value", num)) return Value::ofText("");
         return Value::ofInt(num);
     } else if (typeStr == "real") {
         if (!jsVal.IsNumber()) {
@@ -283,13 +310,14 @@ Op jsToOp(Napi::Env env, Napi::Object jsOp) {
         }
         return DeleteEdge{*eid};
     } else if (verb == "advance") {
-        Napi::Value ticksVal = jsOp.Get("ticks");
-        if (!ticksVal.IsNumber()) {
-            throwTypeError(env, "advance.ticks must be a number");
+        int64_t ticks = 0;
+        if (!requireSafeInteger(env, jsOp.Get("ticks"), "advance.ticks", ticks)) return Advance{0};
+        if (ticks < 0) {
+            throwRangeError(env, "advance.ticks must be a non-negative integer");
             return Advance{0};
         }
         Advance adv;
-        adv.ticks = static_cast<Tick>(ticksVal.As<Napi::Number>().Int64Value());
+        adv.ticks = static_cast<Tick>(ticks);
         return adv;
     }
 
@@ -572,8 +600,13 @@ public:
             return env.Null();
         }
 
-        auto seq = static_cast<CommitSeq>(info[0].As<Napi::Number>().Int64Value());
-        m_kernel->replayUpTo(seq);
+        int64_t seqValue = 0;
+        if (!requireSafeInteger(env, info[0], "replayUpTo seq", seqValue)) return env.Null();
+        if (seqValue < 0) {
+            throwRangeError(env, "replayUpTo seq must be a non-negative integer");
+            return env.Null();
+        }
+        m_kernel->replayUpTo(static_cast<CommitSeq>(seqValue));
         return env.Undefined();
     }
 
