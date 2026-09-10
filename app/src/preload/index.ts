@@ -42,6 +42,12 @@ const tapestryAPI = {
 
     getFilePath: (): Promise<string | null> =>
       ipcRenderer.invoke('kernel:getFilePath'),
+
+    undo: (): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke('kernel:undo'),
+
+    redo: (): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke('kernel:redo'),
   },
 
   plugins: {

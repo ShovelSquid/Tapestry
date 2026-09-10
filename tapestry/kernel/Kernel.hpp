@@ -65,6 +65,13 @@ public:
     const World& world() const { return m_world; }
     const JournalStatus& status() const { return m_journal->status(); }
     const Journal& journal() const { return *m_journal; }
+    CommitSeq lastSeq() const { return m_journal->lastSeq(); }
+
+    // Replay the journal's verified commits up to (and including) maxSeq,
+    // rebuilding the world from scratch. Used by undo/redo to navigate
+    // through the commit history without modifying the journal. The journal
+    // remains unchanged — only the in-memory world is reset and rebuilt.
+    void replayUpTo(CommitSeq maxSeq);
 
     // Explicit repair of a torn tail (Journal::repair), the sidecar stamped
     // with this kernel's clock. The world does not change: it never held

@@ -67,6 +67,8 @@ interface CanvasProps {
   ) => void
   onWidthChange: (nodeId: string, width: number) => void
   onEdgeCreate: (fromId: string, toId: string) => void
+  /** Called when a note is deleted via the delete bubble or keyboard (D-20/D-21). */
+  onDeleteNote: (nodeId: string) => void
   /** Called when a fallback node property is edited inline (D-35). */
   onPropertyEdit?: (nodeId: string, key: string, type: string, value: string | number | boolean) => void
 }
@@ -130,6 +132,7 @@ export default function Canvas({
   onPositionChange,
   onWidthChange,
   onEdgeCreate,
+  onDeleteNote,
   onPropertyEdit,
 }: CanvasProps): React.ReactElement {
   const viewportRef = useRef<HTMLDivElement>(null)
@@ -374,6 +377,28 @@ export default function Canvas({
   )
 
   // -----------------------------------------------------------------------
+  // Keyboard Delete/Backspace: delete selected note structure (D-21)
+  // Only when a note is selected (border-clicked) and ProseMirror is NOT
+  // focused. When the editor has focus, these keys edit text only.
+  // -----------------------------------------------------------------------
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (!selectedNoteId) return
+      // If ProseMirror (or any input/textarea) has focus, let it handle the key
+      if (editingNodeId) return
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        e.preventDefault()
+        e.stopPropagation()
+        onDeleteNote(selectedNoteId)
+        setSelectedNoteId(null)
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [selectedNoteId, editingNodeId, onDeleteNote])
+
+  // -----------------------------------------------------------------------
   // Render
   // -----------------------------------------------------------------------
 
@@ -491,6 +516,7 @@ export default function Canvas({
                 onMarkClean={onMarkClean}
                 onPositionChange={onPositionChange}
                 onWidthChange={onWidthChange}
+                onDeleteNote={() => onDeleteNote(node.id)}
                 onHover={(hovered) =>
                   setHoveredNoteId(hovered ? node.id : null)
                 }

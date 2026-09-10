@@ -171,6 +171,28 @@ Expected<CommitResult, Rejection> Kernel::submit(const Proposal& proposal) {
     return result;
 }
 
+void Kernel::replayUpTo(CommitSeq maxSeq) {
+    World fresh;
+    for (std::size_t index = 0; index < m_journal->commitCount(); ++index) {
+        const CommitRecord& commit = m_journal->commits()[index];
+        if (commit.seq > maxSeq) break;
+        World scratch = fresh;
+        bool ok = true;
+        for (const Op& original : commit.ops) {
+            Op op = original;
+            if (auto rejection = scratch.prepare(op)) {
+                ok = false;
+                break;
+            }
+            scratch.apply(op);
+        }
+        if (ok) {
+            fresh = std::move(scratch);
+        }
+    }
+    m_world = std::move(fresh);
+}
+
 RepairResult Kernel::repair() { return m_journal->repair(m_clock->now()); }
 
 std::optional<IoError> Kernel::saveAs(const std::filesystem::path& path) const { return m_journal->saveAs(path); }

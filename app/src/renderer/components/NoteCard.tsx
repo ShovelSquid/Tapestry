@@ -65,6 +65,7 @@ interface NoteCardProps {
   onMarkClean: (nodeId: string) => void
   onPositionChange: (nodeId: string, x: number, y: number) => void
   onWidthChange: (nodeId: string, width: number) => void
+  onDeleteNote: () => void
   onHover: (hovered: boolean) => void
   onHoverDuringConnection: () => void
   onLeaveDuringConnection: () => void
@@ -123,6 +124,7 @@ export default function NoteCard({
   onMarkClean,
   onPositionChange,
   onWidthChange,
+  onDeleteNote,
   onHover,
   onHoverDuringConnection,
   onLeaveDuringConnection,
@@ -494,11 +496,7 @@ export default function NoteCard({
       {showControlsBool && (
         <NoteControls
           onConnect={onStartConnection}
-          onDelete={() => {
-            console.warn(
-              `Delete not yet implemented for note ${node.id} (deferred to Plan 05, D-20/D-21/D-22)`,
-            )
-          }}
+          onDelete={onDeleteNote}
         />
       )}
 
