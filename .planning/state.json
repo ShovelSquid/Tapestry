@@ -16,7 +16,7 @@
     {
       "number": "2.1",
       "name": "Passage Anchors, Threads & Complete Rich Editing",
-      "status": "pending"
+      "status": "in_progress"
     },
     {
       "number": "3",
@@ -45,9 +45,9 @@
     }
   ],
   "next": {
-    "command": "/gsd:progress --next",
-    "label": "Advance to the next step",
-    "reason": "Phase 02.1 of 8 · executing"
+    "command": "/gsd:progress",
+    "label": "Show progress",
+    "reason": "Unsure of state — showing progress"
   },
-  "updated_at": "2026-09-10T08:43:38.057Z"
+  "updated_at": "2026-09-15T17:18:44.070Z"
 }

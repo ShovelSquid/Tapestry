@@ -16,6 +16,8 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 1: Deterministic Core & Readable Format** - Transaction kernel, provenance-carrying world model, and the durable human-readable `.tree` journal (completed 2026-09-09)
 - [ ] **Phase 2: Plugin Host, SDK & Feasibility Gate** - Versioned public plugin API, local dev loop, lifecycle safety, and the toolkit-deciding vertical slice
 - [ ] **Phase 2.1: Passage Anchors, Threads & Complete Rich Editing** - Passage-level linking, thread center nodes, gradient-of-focus hover hierarchy, and complete formatting toolbar with universal editing (INSERTED)
+- [ ] **Phase 2.2: Obsidian Bridge** - Agent MCP bridge, then a two-way Obsidian vault tree, on one shared command set with honest provenance for agent and observed edits (INSERTED)
+- [ ] **Phase 2.3: Time Threads** - Live z-axis writing threads: one note and its history, per-letter timing, side-view read-back (INSERTED)
 - [ ] **Phase 3: Branching History & Deterministic Replay** - History navigation, fork-preserving branches, snapshots, and replay from recorded inputs
 - [ ] **Phase 4: Spatial Notebook** - Bundled note, drawing, property, and provenance-display plugins delivering the usable spatial workspace
 - [ ] **Phase 5: Deterministic Rule Engine** - Typed rule inputs/outputs, fixed-step simulation, forces, and explicit failure semantics
@@ -115,6 +117,38 @@ Plans:
 - [x] 02.1-01-PLAN.md
 - [x] 02.1-02-PLAN.md
 - [x] 02.1-03-PLAN.md
+
+**UI hint**: yes
+
+### Phase 2.2: Obsidian Bridge (INSERTED)
+
+**Goal**: Outside writers reach a Tapestry world through one shared set of note and connection commands. First, agents (Claude, ChatGPT, others) connect over an MCP bridge: each is distinctly attributed as `actor plugin agent.<name>`, and every note they create grows from an existing note. Then an Obsidian vault becomes its own tree that faithfully mirrors its Markdown files, edits from either Tapestry or Obsidian reach the files, observed edits carry honest provenance, and several trees share one space in separate frames.
+**Mode:** mvp
+**Depends on**: Phase 2
+**Requirements**: TBD
+**Success Criteria** (what must be TRUE):
+
+  Derived by plan-phase from `.planning/phases/02.2-obsidian-bridge/02.2-CONTEXT.md` (D-01..D-34, discussed with Kaelen 2026-09-15).
+
+**Plans**: TBD
+
+- [ ] TBD (run $gsd-plan-phase 2.2 to break down)
+
+**UI hint**: yes
+
+### Phase 2.3: Time Threads (INSERTED)
+
+**Goal**: A thread is a single note with its full history, optionally shared by a user and an agent. It is written live along the z-axis in the note typer (a dot every 1/60 s, each letter placed at the moment it was typed) and read back in a left-to-right side view, where dashes mark where writing timed out and timed back in
+**Mode:** mvp
+**Depends on**: Phase 2.2
+**Requirements**: TBD
+**Success Criteria** (what must be TRUE):
+
+  TBD in /gsd-discuss-phase 2.3 with Kaelen (not skipped). Includes renaming Phase 2.1's thread-center/thread-arm (time threads keep the name "thread"). Description: `~/Tapestry Tales/Connections/Concept - Thread Type.md`; rendering spikes in `.planning/spikes/`.
+
+**Plans**: TBD
+
+- [ ] TBD (run $gsd-plan-phase 2.3 to break down)
 
 **UI hint**: yes
 

@@ -1,19 +1,19 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0
-current_phase: "02.1"
-current_phase_name: Passage Anchors, Threads & Complete Rich Editing
-status: executing
-stopped_at: Phase 2.1 UI-SPEC approved
-last_updated: "2026-09-15T08:52:06.333Z"
-last_activity: 2026-09-10
-last_activity_desc: Phase 02.1 execution started
-state_head: "0bb66383cda6470ab800d0b3062431d2f1b907bb"
+current_phase: "02.2"
+current_phase_name: Obsidian Bridge
+status: discussing
+stopped_at: Phase 2.2 context gathered
+last_updated: "2026-09-15T17:19:50.924Z"
+last_activity: 2026-09-15
+last_activity_desc: Phase 02.2 Obsidian Bridge inserted
+state_head: 65877de387b00c2639aecef9deb773133b4bb78c
 progress:
-  total_phases: 8
+  total_phases: 10
   completed_phases: 0
   total_plans: 13
-  completed_plans: 10
+  completed_plans: 13
 ---
 
 # Project State
@@ -23,14 +23,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-09-08)
 
 **Core value:** Your world of thoughts must remain readable and under your control — in its spatial interface, its editable relationships and behavior, and its files and branching history.
-**Current focus:** Phase 02.1 — Passage Anchors, Threads & Complete Rich Editing
+**Current focus:** Phase 02.2 — Obsidian Bridge
 
 ## Current Position
 
-Phase: 02.1 (Passage Anchors, Threads & Complete Rich Editing) — EXECUTING
-Plan: 1 of 3
-Status: Executing Phase 02.1
-Last activity: 2026-09-10 — Phase 02.1 execution started
+Phase: 02.2 (Obsidian Bridge) — DISCUSSING
+Plan: not planned yet (discuss first)
+Status: Discussing Phase 02.2 with Kaelen (02.1 code complete, awaiting human verification)
+Last activity: 2026-09-15 — Phase 02.2 Obsidian Bridge inserted
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -112,6 +112,12 @@ None yet.
 | 260909-u0o | Add Phase 2 COVERAGE.md declaring that Tapestry's plugin API and SDK are internal, not an external service integration | 2026-09-09 | cb0fe28 | [260909-u0o-add-phase-2-coverage-md-declaring-that-t](./quick/260909-u0o-add-phase-2-coverage-md-declaring-that-t/) |
 | 3 | Move development scope constraint to the primary checkout (PROJECT.md, CLAUDE.md) | 2026-09-15 | 0bb6638 | — |
 
+### Roadmap Evolution
+
+- Phase 02.2 inserted after Phase 2: Obsidian Bridge: two-way connection between an Obsidian Markdown vault and a Tapestry world (Kaelen, 2026-09-15; discuss with Kaelen, not skipped) (URGENT)
+- Phase 2.3 inserted after Phase 2.2: Time Threads: live z-axis writing threads split out of the 2.2 discussion (Kaelen, 2026-09-15); discuss with Kaelen before planning
+- Phase 2.2 edited: goal reworded to cover the agent MCP bridge plus the Obsidian bridge (02.2-CONTEXT D-01)
+
 ## Deferred Items
 
 Items acknowledged and deferred at milestone close, most recent first:
@@ -130,6 +136,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-10T06:37:40.815Z
-Stopped at: Phase 2.1 UI-SPEC approved
-Resume file: .planning/phases/02.1-passage-anchors-threads-complete-rich-editing/02.1-UI-SPEC.md
+Last session: 2026-09-15T17:18:43.487Z
+Stopped at: Phase 2.2 context gathered
+Resume file: .planning/phases/02.2-obsidian-bridge/02.2-CONTEXT.md
