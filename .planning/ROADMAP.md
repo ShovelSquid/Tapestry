@@ -130,9 +130,70 @@ Plans:
 
   Derived by plan-phase from `.planning/phases/02.2-obsidian-bridge/02.2-CONTEXT.md` (D-01..D-34, discussed with Kaelen 2026-09-15).
 
-**Plans**: TBD
+  1. An agent connected over MCP (Claude Code or any local MCP client, through the stdio shim) can list trees, read and search notes, grow a new note that is created already connected to an existing note, change only notes it created, and connect any notes; agent commits read `actor plugin agent.<name>` and human commits read `actor human user.<name>`
+  2. Adding an Obsidian vault creates `<vault>/<vault name>.tree` and a frame whose notes mirror each `.md` file's exact text, with folders as groups, `[[links]]` as connections labeled with their literal line, tags and frontmatter as properties, file notes and placeholders
+  3. Changes made to the vault while Tapestry is open or closed are recorded, grouped per moment, as `obsidian.bridge` (author unknown) or as `agent.<name>` when the sign-in log proves it; renames keep the note, deletions cut its connections, and everything stays in history
+  4. Edits, retitles, moves, new notes, connections and placeholder typing made in Tapestry reach the vault's files after a short pause; when a file changed first, the file wins and the Tapestry edit stays in history; undo writes files back
+  5. Several trees share one space in non-overlapping frames that reopen where they were; connections between trees are recorded in both trees and cut in both when a note is deleted; dragging a note into another frame copies it, asking before any formatting would be lost
 
-- [ ] TBD (run $gsd-plan-phase 2.2 to break down)
+**Plans**: 14 plans
+
+Plans:
+**Wave 1**
+
+- [ ] 02.2-01-PLAN.md — Tracer: host-stamped actors (`user.<name>`, plugins bound to their id), first-run name prompt, vitest harness
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 02.2-02-PLAN.md — Authorship from the journal (history index, tree identity, next ids) and provenance footers
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 02.2-03-PLAN.md — Tracer: MCP stdio shim -> Unix socket -> shared note commands; create_note grown from a note as `agent.<name>`
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 02.2-04-PLAN.md — Full agent tool set with own-notes-only edits, Agents panel, connect command, forest bar
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
+- [ ] 02.2-05-PLAN.md — Several trees in one space: tree-scoped IPC, frames, push-apart, settings restore
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
+- [ ] 02.2-06-PLAN.md — Forest bar and tree lifecycle: Add tree, Tree options, unavailable trees, empty state, announcements
+
+**Wave 7** *(blocked on Wave 6 completion)*
+
+- [ ] 02.2-07-PLAN.md — Tracer: Obsidian vault mirror tree (House Party), links/tags/frontmatter/files/placeholders, catch-up, reader's guide
+
+**Wave 8** *(blocked on Wave 7 completion)*
+
+- [ ] 02.2-08-PLAN.md — Vault presentation: folder groups, verbatim note view, placeholders, file notes, literal-line connections, tag filter
+
+**Wave 9** *(blocked on Wave 8 completion)*
+
+- [ ] 02.2-09-PLAN.md — Live vault sync: watcher, grouped moments, renames, deletions, sign-in log attribution
+
+**Wave 10** *(blocked on Wave 9 completion)*
+
+- [ ] 02.2-10-PLAN.md — Tapestry -> vault writes: debounced atomic edits, file wins, retitle as rename, delete to Trash, vault undo
+
+**Wave 11** *(blocked on Wave 10 completion)*
+
+- [ ] 02.2-11-PLAN.md — Vault structure writes: new notes in groups, moves between folders, link lines, placeholder typing
+
+**Wave 12** *(blocked on Wave 11 completion)*
+
+- [ ] 02.2-12-PLAN.md — Agents write to the source online and offline, sign-in log, world outbox (ChatGPT deferred)
+
+**Wave 13** *(blocked on Wave 12 completion)*
+
+- [ ] 02.2-13-PLAN.md — Cross-tree connections recorded in both trees, remote stubs, cuts and crash repair
+
+**Wave 14** *(blocked on Wave 13 completion)*
+
+- [ ] 02.2-14-PLAN.md — Copies between trees with grew-from connections and the never-silent Markdown loss dialog
 
 **UI hint**: yes
 
