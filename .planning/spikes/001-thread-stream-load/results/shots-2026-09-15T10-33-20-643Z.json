@@ -1,0 +1,178 @@
+{
+  "log": [
+    {
+      "at": "2026-09-15T10:32:48.781Z",
+      "category": "renderer",
+      "webgl2": true,
+      "gpu": "ANGLE (Apple, ANGLE Metal Renderer: Apple M4, Unspecified Version)",
+      "dpr": 2,
+      "size": [
+        1400,
+        872
+      ]
+    },
+    {
+      "at": "2026-09-15T10:32:48.812Z",
+      "category": "load",
+      "load": "empty",
+      "mode": "procedural",
+      "buildMs": 0.09999999403953552,
+      "chunks": 1,
+      "glyphs": 0,
+      "dots": 0
+    },
+    {
+      "at": "2026-09-15T10:32:50.331Z",
+      "category": "load",
+      "load": "8h-continuous",
+      "mode": "procedural",
+      "buildMs": 17.400000005960464,
+      "chunks": 49,
+      "glyphs": 77761,
+      "dots": 1728000
+    },
+    {
+      "at": "2026-09-15T10:32:54.118Z",
+      "category": "shot",
+      "name": "a-procedural-8hc-live",
+      "load": "8h-continuous",
+      "mode": "procedural",
+      "view": "live",
+      "file": "/Users/kaelencook/Tapestry/.planning/spikes/001-thread-stream-load/results/shots/a-procedural-8hc-live.png",
+      "t": 28803.787
+    },
+    {
+      "at": "2026-09-15T10:32:57.907Z",
+      "category": "shot",
+      "name": "b-procedural-8hc-side-full",
+      "load": "8h-continuous",
+      "mode": "procedural",
+      "view": "side",
+      "seconds": "full",
+      "file": "/Users/kaelencook/Tapestry/.planning/spikes/001-thread-stream-load/results/shots/b-procedural-8hc-side-full.png",
+      "t": 28807.575299999997
+    },
+    {
+      "at": "2026-09-15T10:32:57.911Z",
+      "category": "load",
+      "load": "8h",
+      "mode": "procedural",
+      "buildMs": 4,
+      "chunks": 81,
+      "glyphs": 36121,
+      "dots": 812236
+    },
+    {
+      "at": "2026-09-15T10:33:01.689Z",
+      "category": "shot",
+      "name": "c-procedural-8h-side-40min",
+      "load": "8h",
+      "mode": "procedural",
+      "view": "side",
+      "seconds": 2400,
+      "center": "third",
+      "file": "/Users/kaelencook/Tapestry/.planning/spikes/001-thread-stream-load/results/shots/c-procedural-8h-side-40min.png",
+      "t": 28803.778400000007
+    },
+    {
+      "at": "2026-09-15T10:33:01.693Z",
+      "category": "load",
+      "load": "8h-continuous",
+      "mode": "procedural",
+      "buildMs": 4.200000002980232,
+      "chunks": 49,
+      "glyphs": 77761,
+      "dots": 1728000
+    },
+    {
+      "at": "2026-09-15T10:33:05.472Z",
+      "category": "shot",
+      "name": "d-procedural-8hc-side-20s",
+      "load": "8h-continuous",
+      "mode": "procedural",
+      "view": "side",
+      "seconds": 20,
+      "center": "end",
+      "file": "/Users/kaelencook/Tapestry/.planning/spikes/001-thread-stream-load/results/shots/d-procedural-8hc-side-20s.png",
+      "t": 28803.7785
+    },
+    {
+      "at": "2026-09-15T10:33:09.257Z",
+      "category": "shot",
+      "name": "e-procedural-8hc-side-1s",
+      "load": "8h-continuous",
+      "mode": "procedural",
+      "view": "side",
+      "seconds": 1,
+      "center": "end",
+      "file": "/Users/kaelencook/Tapestry/.planning/spikes/001-thread-stream-load/results/shots/e-procedural-8hc-side-1s.png",
+      "t": 28807.5635
+    },
+    {
+      "at": "2026-09-15T10:33:09.257Z",
+      "category": "load",
+      "load": "empty",
+      "mode": "procedural",
+      "buildMs": 0,
+      "chunks": 1,
+      "glyphs": 0,
+      "dots": 0
+    },
+    {
+      "at": "2026-09-15T10:33:13.042Z",
+      "category": "shot",
+      "name": "f-procedural-empty-side-1s",
+      "load": "empty",
+      "mode": "procedural",
+      "view": "side",
+      "seconds": 1,
+      "center": "end",
+      "file": "/Users/kaelencook/Tapestry/.planning/spikes/001-thread-stream-load/results/shots/f-procedural-empty-side-1s.png",
+      "t": 3.7846000000089406
+    },
+    {
+      "at": "2026-09-15T10:33:13.067Z",
+      "category": "load",
+      "load": "8h-continuous",
+      "mode": "points",
+      "buildMs": 25,
+      "chunks": 49,
+      "glyphs": 77761,
+      "dots": 1728000
+    },
+    {
+      "at": "2026-09-15T10:33:16.847Z",
+      "category": "shot",
+      "name": "g-points-8hc-side-1s",
+      "load": "8h-continuous",
+      "mode": "points",
+      "view": "side",
+      "seconds": 1,
+      "center": "end",
+      "file": "/Users/kaelencook/Tapestry/.planning/spikes/001-thread-stream-load/results/shots/g-points-8hc-side-1s.png",
+      "t": 28803.780799999997
+    },
+    {
+      "at": "2026-09-15T10:33:16.848Z",
+      "category": "load",
+      "load": "1h",
+      "mode": "procedural",
+      "buildMs": 0.3999999910593033,
+      "chunks": 13,
+      "glyphs": 4735,
+      "dots": 100549
+    },
+    {
+      "at": "2026-09-15T10:33:20.642Z",
+      "category": "shot",
+      "name": "h-procedural-1h-side-6s-letters",
+      "load": "1h",
+      "mode": "procedural",
+      "view": "side",
+      "seconds": 6,
+      "center": "keys",
+      "file": "/Users/kaelencook/Tapestry/.planning/spikes/001-thread-stream-load/results/shots/h-procedural-1h-side-6s-letters.png",
+      "t": 3603.794400000006
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "name": "tapestry-spikes",
+  "private": true,
+  "description": "Throwaway GSD spikes for Tapestry. Not part of the app build.",
+  "dependencies": {
+    "three": "0.186.0",
+    "troika-three-text": "0.52.5"
+  }
+}
