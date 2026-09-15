@@ -17,7 +17,7 @@ Tapestry is a spatial second brain built on a small extensible core, where peopl
 - **Plugins from the beginning:** Features extend a versioned public API. First-party plugins exercise the same API as third-party plugins; adding a normal feature must not require a core fork.
 - **Developer accessibility:** Plugin authors need a short development loop and clear examples, without having to build the native application to try an extension.
 - **Usable UI:** The initial milestone includes actual editing, spatial interaction, rule effects, and timeline navigation, not only backend demonstrations.
-- **Development scope:** Work remains in the current Conductor workspace. Do not rename its branch or write planning artifacts into the primary checkout.
+- **Development scope:** Work happens in the primary checkout `/Users/kaelencook/Tapestry` on branch `phase-2-implementation-v1`, where `.planning/` now lives (the `auckland` Conductor workspace was removed; changed with Kaelen's approval 2026-09-15). Do not rename the branch.
 - **Unspecified:** No delivery date, budget, monetization model, AI provider, final UI toolkit, or universal cross-platform replay guarantee has been chosen.
 
 <!-- GSD:project-end -->
