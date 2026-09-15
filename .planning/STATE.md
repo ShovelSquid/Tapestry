@@ -5,10 +5,10 @@ current_phase: "02.1"
 current_phase_name: Passage Anchors, Threads & Complete Rich Editing
 status: executing
 stopped_at: Phase 2.1 UI-SPEC approved
-last_updated: "2026-09-10T08:43:37.995Z"
+last_updated: "2026-09-15T08:52:06.333Z"
 last_activity: 2026-09-10
 last_activity_desc: Phase 02.1 execution started
-state_head: 12b11a8f1b722fbad883174d8f76a2ee8079d559
+state_head: "0bb66383cda6470ab800d0b3062431d2f1b907bb"
 progress:
   total_phases: 8
   completed_phases: 0
@@ -110,6 +110,7 @@ None yet.
 |---|-------------|------|--------|-----------|
 | 260909-thn | Fix renderer actor kind: send human instead of user to kernel submit so notes can be created | 2026-09-09 | a9d4f8d | [260909-thn-fix-renderer-actor-kind-send-human-inste](./quick/260909-thn-fix-renderer-actor-kind-send-human-inste/) |
 | 260909-u0o | Add Phase 2 COVERAGE.md declaring that Tapestry's plugin API and SDK are internal, not an external service integration | 2026-09-09 | cb0fe28 | [260909-u0o-add-phase-2-coverage-md-declaring-that-t](./quick/260909-u0o-add-phase-2-coverage-md-declaring-that-t/) |
+| 3 | Move development scope constraint to the primary checkout (PROJECT.md, CLAUDE.md) | 2026-09-15 | 0bb6638 | — |
 
 ## Deferred Items
 
