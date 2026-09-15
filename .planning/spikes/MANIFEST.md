@@ -11,11 +11,12 @@ Tapestry's thread type (Kaelen, 2026-09-15; see `Tapestry Tales/Connections/Conc
 - Scope for this session: load (001) and glyph legibility (002a/002b) only (Kaelen, 2026-09-15)
 - Thread data is sessions and keystrokes, never per-dot records; dots are drawn procedurally from time × speed (spike 001)
 - Multi-hour threads use hour-block times and a moving render origin to stay precise on float32 GPUs (spike 001)
+- Thread letters are instanced quads from one glyph atlas in a single draw call, never one text object per keystroke (spikes 002a/002b)
 
 ## Spikes
 
 | # | Idea | Name | Type | Validates | Verdict | Tags |
 |---|------|------|------|-----------|---------|------|
 | 001 | thread-rendering | thread-stream-load | standard | Given a WebGL thread in Electron, when it gains 60 dots/s plus a glyph per keystroke fast-forwarded to 1 h (216k dots) and 8 h, then it holds 60 fps with bounded memory, fading and distance collapse | ✓ VALIDATED (procedural ribbon: 60 fps, 0 dropped, 0.9 MB at 8 h continuous; explicit points ✗ 10–20 fps at 8 h) | webgl, electron, performance |
-| 002a | thread-rendering | glyphs-sdf | comparison | Given letters along the thread, when drawn with an SDF glyph atlas (troika-three-text) along the z-axis and from the side, then text is crisp at all zooms | PENDING | webgl, text, sdf |
-| 002b | thread-rendering | glyphs-canvas-atlas | comparison | Same as 002a with a canvas texture atlas and instanced quads (no text library) | PENDING | webgl, text, instancing |
+| 002a | thread-rendering | glyphs-sdf | comparison | Given letters along the thread, when drawn with an SDF glyph atlas (troika-three-text) along the z-axis and from the side, then text is crisp at all zooms | ✗ INVALIDATED (sharpest letters, but 4–5.5 fps and 850 MB at 78 k letters; one Text per keystroke doesn't scale) | webgl, text, sdf |
+| 002b | thread-rendering | glyphs-canvas-atlas | comparison | Same as 002a with a canvas texture atlas and instanced quads (no text library) | ✓ WINNER (60 fps, 0 dropped, 42–50 MB at 78 k letters; legible 8–24 px, soft when magnified ≥48 px) | webgl, text, instancing |

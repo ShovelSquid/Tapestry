@@ -1,0 +1,60 @@
+{
+  "log": [
+    {
+      "at": "2026-09-15T10:50:08.004Z",
+      "category": "load",
+      "name": "1h",
+      "buildMs": 0.5999999940395355,
+      "glyphs": 4725,
+      "gpuBufferMB": 0.0720977783203125
+    },
+    {
+      "at": "2026-09-15T10:50:09.627Z",
+      "category": "shot",
+      "name": "live",
+      "sidePx": 16
+    },
+    {
+      "at": "2026-09-15T10:50:11.228Z",
+      "category": "shot",
+      "name": "live-oblique",
+      "sidePx": 16
+    },
+    {
+      "at": "2026-09-15T10:50:12.821Z",
+      "category": "shot",
+      "name": "side-8px",
+      "sidePx": 8
+    },
+    {
+      "at": "2026-09-15T10:50:14.422Z",
+      "category": "shot",
+      "name": "side-12px",
+      "sidePx": 12
+    },
+    {
+      "at": "2026-09-15T10:50:16.023Z",
+      "category": "shot",
+      "name": "side-16px",
+      "sidePx": 16
+    },
+    {
+      "at": "2026-09-15T10:50:17.640Z",
+      "category": "shot",
+      "name": "side-24px",
+      "sidePx": 24
+    },
+    {
+      "at": "2026-09-15T10:50:19.240Z",
+      "category": "shot",
+      "name": "side-48px",
+      "sidePx": 48
+    },
+    {
+      "at": "2026-09-15T10:50:20.839Z",
+      "category": "shot",
+      "name": "side-120px",
+      "sidePx": 120
+    }
+  ]
+}
