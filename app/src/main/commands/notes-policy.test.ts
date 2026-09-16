@@ -21,6 +21,7 @@ import { makeTempDir } from '../../../test/helpers/temp-tree'
 import { TreeRegistry, type OpenTree } from '../trees/registry'
 import { agentActor, humanActor, type Actor } from './actor'
 import { ConnectionCommands } from './connections'
+import { AGENT_NOTES_OPEN_TO_AGENTS } from './locks'
 import { NoteCommands, docJsonToPlainText, plainTextToDocJson } from './notes'
 
 const CLAUDE = agentActor('claude')
@@ -163,9 +164,7 @@ describe("an agent changing a note it did not create", () => {
     })
 
     expect(result.ok).toBe(false)
-    expect(result.ok === false && result.error).toBe(
-      'agent.claude may only change notes it created; n1 was created by user.kaelen',
-    )
+    expect(result.ok === false && result.error).toBe('n1 text is locked by user.kaelen')
     // Nothing was appended, and the note still says what Kaelen wrote.
     expect(worldFingerprint()).toEqual(before)
     expect(bodyTextOf('n1')).toBe('Written by Kaelen')
@@ -198,10 +197,12 @@ describe("an agent changing a note it did not create", () => {
   })
 
   /**
-   * D-06: agents are distinguishable from each other, so "only notes it
-   * created" is per agent, not "any agent may change any agent's note".
+   * 02.2 D-06 still makes agents distinguishable from each other. 02.4 D-06
+   * makes a note an agent created open to every agent by default, so whether
+   * another agent may change it follows AGENT_NOTES_OPEN_TO_AGENTS. When the
+   * constant is false, the note is locked to the agent that created it.
    */
-  it('refuses one agent changing another agent\'s note', () => {
+  it("lets one agent update another agent's note unless it is locked (AGENT_NOTES_OPEN_TO_AGENTS)", () => {
     const before = worldFingerprint()
 
     const result = notes.updateNote(CHATGPT, {
@@ -210,12 +211,18 @@ describe("an agent changing a note it did not create", () => {
       text: 'ChatGPT was here',
     })
 
-    expect(result.ok).toBe(false)
-    expect(result.ok === false && result.error).toBe(
-      `agent.chatgpt may only change notes it created; ${claudeNote} was created by agent.claude`,
-    )
-    expect(worldFingerprint()).toEqual(before)
-    expect(bodyTextOf(claudeNote)).toBe('Grown by Claude')
+    if (AGENT_NOTES_OPEN_TO_AGENTS) {
+      expect(result.ok).toBe(true)
+      expect(bodyTextOf(claudeNote)).toBe('ChatGPT was here')
+      expect(lastCommitBlock()).toContain('actor plugin agent.chatgpt')
+    } else {
+      expect(result.ok).toBe(false)
+      expect(result.ok === false && result.error).toBe(
+        `${claudeNote} text is locked by agent.claude`,
+      )
+      expect(worldFingerprint()).toEqual(before)
+      expect(bodyTextOf(claudeNote)).toBe('Grown by Claude')
+    }
   })
 
   it('refuses a note that is not live at all', () => {
