@@ -136,7 +136,7 @@ Plans:
   4. Edits, retitles, moves, new notes, connections and placeholder typing made in Tapestry reach the vault's files after a short pause; when a file changed first, the file wins and the Tapestry edit stays in history; undo writes files back
   5. Several trees share one space in non-overlapping frames that reopen where they were; connections between trees are recorded in both trees and cut in both when a note is deleted; dragging a note into another frame copies it, asking before any formatting would be lost
 
-**Plans**: 1/16 plans executed
+**Plans**: 2/16 plans executed
 
 Plans:
 **Wave 1**
@@ -145,7 +145,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 02.2-02-PLAN.md — Authorship from the journal (history index, tree identity, next ids) and provenance footers
+- [x] 02.2-02-PLAN.md — Authorship from the journal (history index, tree identity, next ids) and provenance footers
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
