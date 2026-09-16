@@ -18,6 +18,9 @@ Tapestry's thread type (Kaelen, 2026-09-15; see `Tapestry Tales/Connections/Conc
 - Thread letters and the note typer use the same font files, or the same word looks like two typefaces (spike 003b)
 - Letters are grapheme clusters, not code points; colour emoji are bitmap cells in the same atlas, flagged per letter (spike 003)
 - Joining scripts (Arabic) can't be read along the line, because each letter sits at its own keystroke time; the text window carries them (spike 003)
+- Letters are drawn from ProseMirror transaction steps, not key events, so typing, paste, undo and input methods all flow through one path, independent of the 300 ms save debounce (spike 004)
+- Drawing a keystroke costs ~0.3 ms in the editor and lands within one frame at 40 keys/s over 8 h of history (spike 004)
+- A large paste arrives as one transaction and lands as one cluster; it can cost a dropped frame only while its glyphs are new (spike 004)
 
 ## Spikes
 
@@ -28,4 +31,4 @@ Tapestry's thread type (Kaelen, 2026-09-15; see `Tapestry Tales/Connections/Conc
 | 002b | thread-rendering | glyphs-canvas-atlas | comparison | Same as 002a with a canvas texture atlas and instanced quads (no text library) | ✓ WINNER (60 fps, 0 dropped, 42–50 MB at 78 k letters; legible 8–24 px, soft when magnified ≥48 px) | webgl, text, instancing |
 | 003a | thread-rendering | sharp-glyphs-sdf | comparison | Given instanced glyph quads, when the atlas holds SDF glyphs generated at runtime, then letters stay razor-sharp from 8 to 240 px at 60 fps with 78 k letters, and new glyphs (emoji, non-Latin) are added on first use | ⚠ PARTIAL (60 fps, 0.5 ms/glyph, browser font fallback and shaped clusters; but edges ripple and corners round at 120–240 px) | webgl, text, sdf, instancing, unicode |
 | 003b | thread-rendering | sharp-glyphs-msdf | comparison | Same as 003a with an MSDF atlas (plus bitmap fallback for colour emoji) | ✓ WINNER (straight edges and true corners at 240 px, 60 fps; but 7.7–8.1 ms/glyph, 122–127 MB, font files only, no cluster shaping) | webgl, text, msdf, instancing, wasm, unicode |
-| 004 | thread-rendering | typer-over-live-thread | standard | Given the ProseMirror typer over a live 60 fps WebGL thread, when typing fast, composing with an IME, and pasting, then each letter lands on the line within one frame with no input lag or dropped frames | PENDING | electron, prosemirror, webgl, input |
+| 004 | thread-rendering | typer-over-live-thread | standard | Given the ProseMirror typer over a live 60 fps WebGL thread, when typing fast, composing with an IME, and pasting, then each letter lands on the line within one frame with no input lag or dropped frames | ✓ VALIDATED (key→painted 7–9 ms median, ≤16.9 ms max at 20–40 keys/s over 8 h of history; paste of 2000 chars applies in ~3 ms as one cluster; IME composition awaiting Kaelen's hand check) | electron, prosemirror, webgl, input, latency |

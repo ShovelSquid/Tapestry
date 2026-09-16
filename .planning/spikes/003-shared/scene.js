@@ -61,7 +61,7 @@ function mulberry32(seed) {
 
 // Same rhythm as spikes 001/002 (sessions of 2–15 min, 1–20 min away, bursts of
 // 5–40 s at 3–8 keys/s); 12 % of bursts are CJK from a 600-character pool.
-function generateKeys(hours, continuous = false) {
+export function generateKeys(hours, continuous = false) {
   const random = mulberry32(7)
   const latinShow = graphemes(SHOWCASE_LATIN)
   const showcase = [...latinShow, ...graphemes(SHOWCASE_UNICODE)]

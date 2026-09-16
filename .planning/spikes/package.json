@@ -5,6 +5,14 @@
   "dependencies": {
     "@mapbox/tiny-sdf": "2.2.0",
     "msdfgen-wasm": "1.0.0",
+    "prosemirror-commands": "1.7.2",
+    "prosemirror-history": "1.5.0",
+    "prosemirror-keymap": "1.2.3",
+    "prosemirror-model": "1.25.11",
+    "prosemirror-schema-basic": "1.2.4",
+    "prosemirror-state": "1.4.4",
+    "prosemirror-transform": "1.12.1",
+    "prosemirror-view": "1.42.3",
     "three": "0.186.0",
     "troika-three-text": "0.52.5"
   }

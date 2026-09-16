@@ -8,7 +8,7 @@
 //   node_modules/.bin/electron .planning/spikes/002a-glyphs-sdf/main.cjs [--shots | --bench] [--no-typing]
 //   node_modules/.bin/electron .planning/spikes/002b-glyphs-canvas-atlas/main.cjs [--shots | --bench]
 //   node_modules/.bin/electron .planning/spikes/002-shared/compare.cjs
-const { app, BrowserWindow, ipcMain } = require('electron')
+const { app, BrowserWindow, ipcMain, clipboard } = require('electron')
 const http = require('http')
 const fs = require('fs')
 const path = require('path')
@@ -20,6 +20,7 @@ const TYPES = {
   '.js': 'text/javascript',
   '.mjs': 'text/javascript',
   '.json': 'application/json',
+  '.css': 'text/css',
   '.ttf': 'font/ttf',
   '.png': 'image/png',
 }
@@ -71,6 +72,25 @@ module.exports = function launch(variant, page = 'index.html') {
     const file = path.join(resultsDir(), `${name}-${new Date().toISOString().replace(/[:.]/g, '-')}.json`)
     fs.writeFileSync(file, JSON.stringify(data, null, 2))
     return file
+  })
+
+  // Spike 004 drives real Chromium input through the browser's own pipeline,
+  // so typing latency is measured end to end rather than simulated in the page.
+  ipcMain.handle('send-input', (_event, events) => {
+    for (const input of [].concat(events)) win.webContents.sendInputEvent(input)
+    return true
+  })
+
+  // sendInputEvent can't trigger clipboard shortcuts (Cmd+V reaches the page as a
+  // key event, not a paste), so scripted runs ask the webContents to do the edit.
+  ipcMain.handle('edit-command', (_event, { command }) => {
+    win.webContents[command]()
+    return true
+  })
+
+  ipcMain.handle('set-clipboard', (_event, { text }) => {
+    clipboard.writeText(text)
+    return text.length
   })
 
   ipcMain.on('done', (_event, { lines }) => {
