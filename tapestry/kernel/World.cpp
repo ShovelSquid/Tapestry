@@ -314,4 +314,184 @@ void World::apply(const Op& op) {
     }, op);
 }
 
+World::Transaction World::begin() { return Transaction(*this); }
+
+World::Transaction::Transaction(World& world)
+    : m_world(world),
+      m_savedNextNode(world.m_nextNode),
+      m_savedNextEdge(world.m_nextEdge),
+      m_savedTick(world.m_tick) {}
+
+World::Transaction::~Transaction() {
+    if (m_open) {
+        rollback();
+    }
+}
+
+std::optional<Rejection> World::Transaction::prepare(Op& op) const { return m_world.prepare(op); }
+
+void World::Transaction::apply(const Op& op) {
+    // Saved first, applied second: once World::apply has run, what the op
+    // replaced or removed is gone.
+    record(op);
+    m_world.apply(op);
+}
+
+void World::Transaction::commit() {
+    m_savedNodes.clear();
+    m_savedEdges.clear();
+    m_savedNodeProps.clear();
+    m_savedEdgeProps.clear();
+    m_open = false;
+}
+
+void World::Transaction::rollback() {
+    // Pass one: whole entities, each back to the state it was in the first
+    // time this commit touched it.
+    for (auto& [id, saved] : m_savedNodes) {
+        if (saved.value) {
+            m_world.m_nodes[id] = std::move(*saved.value);
+        } else {
+            m_world.m_nodes.erase(id);
+        }
+        if (saved.tombstoned) {
+            m_world.m_deletedNodes.insert(id);
+        } else {
+            m_world.m_deletedNodes.erase(id);
+        }
+    }
+    for (auto& [id, saved] : m_savedEdges) {
+        if (saved.value) {
+            m_world.m_edges[id] = std::move(*saved.value);
+        } else {
+            m_world.m_edges.erase(id);
+        }
+        if (saved.tombstoned) {
+            m_world.m_deletedEdges.insert(id);
+        } else {
+            m_world.m_deletedEdges.erase(id);
+        }
+    }
+
+    // Pass two: single properties, into the entities pass one just restored.
+    // An entity that is not live now was absent when this commit found it, so
+    // there is nothing left for its properties to be restored into.
+    for (auto& [slot, previous] : m_savedNodeProps) {
+        const auto found = m_world.m_nodes.find(slot.first);
+        if (found == m_world.m_nodes.end()) {
+            continue;
+        }
+        if (previous) {
+            found->second.props[slot.second] = std::move(*previous);
+        } else {
+            found->second.props.erase(slot.second);
+        }
+    }
+    for (auto& [slot, previous] : m_savedEdgeProps) {
+        const auto found = m_world.m_edges.find(slot.first);
+        if (found == m_world.m_edges.end()) {
+            continue;
+        }
+        if (previous) {
+            found->second.props[slot.second] = std::move(*previous);
+        } else {
+            found->second.props.erase(slot.second);
+        }
+    }
+
+    m_world.m_nextNode = m_savedNextNode;
+    m_world.m_nextEdge = m_savedNextEdge;
+    m_world.m_tick = m_savedTick;
+    commit();
+}
+
+void World::Transaction::saveNode(NodeId id) {
+    if (m_savedNodes.find(id) != m_savedNodes.end()) {
+        return; // First touch wins: it holds the state the commit started from.
+    }
+    Saved<Node> saved;
+    const auto found = m_world.m_nodes.find(id);
+    if (found != m_world.m_nodes.end()) {
+        saved.value = found->second;
+    }
+    saved.tombstoned = m_world.m_deletedNodes.count(id) != 0;
+    m_savedNodes.emplace(id, std::move(saved));
+}
+
+void World::Transaction::saveEdge(EdgeId id) {
+    if (m_savedEdges.find(id) != m_savedEdges.end()) {
+        return;
+    }
+    Saved<Edge> saved;
+    const auto found = m_world.m_edges.find(id);
+    if (found != m_world.m_edges.end()) {
+        saved.value = found->second;
+    }
+    saved.tombstoned = m_world.m_deletedEdges.count(id) != 0;
+    m_savedEdges.emplace(id, std::move(saved));
+}
+
+void World::Transaction::saveProperty(const Target& target, const std::string& key) {
+    if (const auto* nodeId = std::get_if<NodeId>(&target)) {
+        auto slot = std::make_pair(*nodeId, key);
+        if (m_savedNodeProps.find(slot) != m_savedNodeProps.end()) {
+            return;
+        }
+        std::optional<Value> previous;
+        const auto found = m_world.m_nodes.find(*nodeId);
+        if (found != m_world.m_nodes.end()) {
+            const auto held = found->second.props.find(key);
+            if (held != found->second.props.end()) {
+                previous = held->second;
+            }
+        }
+        m_savedNodeProps.emplace(std::move(slot), std::move(previous));
+        return;
+    }
+    const EdgeId edgeId = std::get<EdgeId>(target);
+    auto slot = std::make_pair(edgeId, key);
+    if (m_savedEdgeProps.find(slot) != m_savedEdgeProps.end()) {
+        return;
+    }
+    std::optional<Value> previous;
+    const auto found = m_world.m_edges.find(edgeId);
+    if (found != m_world.m_edges.end()) {
+        const auto held = found->second.props.find(key);
+        if (held != found->second.props.end()) {
+            previous = held->second;
+        }
+    }
+    m_savedEdgeProps.emplace(std::move(slot), std::move(previous));
+}
+
+// What one op can change, and therefore all that has to be copied to undo it.
+// One branch per alternative and no default branch, as everywhere else the
+// kernel visits an Op, so an eighth verb is a compile error here too rather
+// than an op whose footprint is silently empty.
+void World::Transaction::record(const Op& op) {
+    std::visit(Overload{
+        // prepare() has already assigned the id, so there is one to save.
+        [&](const CreateNode& create) { saveNode(create.id); },
+        // One property, not the whole node or edge holding it.
+        [&](const SetProperty& set) { saveProperty(set.target, set.key); },
+        [&](const UnsetProperty& unset) { saveProperty(unset.target, unset.key); },
+        [&](const CreateEdge& create) { saveEdge(create.id); },
+        [&](const DeleteNode& del) {
+            saveNode(del.id);
+            // The cascade apply() is about to perform. No line in the file
+            // names these edges, so this scan is the only thing that can bring
+            // them back — and it is the same scan apply() already does for
+            // this op, so it adds no order of growth.
+            for (const auto& [live, touching] : m_world.m_edges) {
+                if (touching.from == del.id || touching.to == del.id) {
+                    saveEdge(live);
+                }
+            }
+        },
+        [&](const DeleteEdge& del) { saveEdge(del.id); },
+        // Nothing: the tick was saved when the transaction opened.
+        [](const Advance&) {},
+    }, op);
+}
+
 } // namespace tapestry::kernel

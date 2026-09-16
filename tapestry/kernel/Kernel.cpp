@@ -1,6 +1,10 @@
 // The single-writer transaction kernel. submit() is the only way anything
-// changes, and its order is fixed: validate on a scratch copy, encode, write
-// and sync through the journal, and only then swap the scratch copy in.
+// changes, and its order is fixed: validate and apply through a
+// World::Transaction that saves just the nodes and edges each op touches,
+// encode, write and sync through the journal, and only then commit the
+// transaction. Anything that returns before that restores the world from the
+// saved copies, so atomicity costs one commit's footprint rather than a copy
+// of the whole world.
 
 #include "kernel/Kernel.hpp"
 
@@ -90,21 +94,23 @@ Expected<std::unique_ptr<Kernel>, OpenFailure> Kernel::fromJournal(std::unique_p
     std::unique_ptr<Clock> clock) {
     std::unique_ptr<Kernel> kernel(new Kernel(std::move(journal), std::move(clock)));
     // Replay every verified commit with its committed ids, one commit at a
-    // time on a scratch copy so a commit that will not apply leaves the world
-    // at the previous commit rather than half-way through. A verified record
-    // the world refuses is corruption of the history, not a crash.
+    // time inside its own transaction so a commit that will not apply leaves
+    // the world at the previous commit rather than half-way through: the
+    // transaction's destructor restores what the refused commit had already
+    // touched. A verified record the world refuses is corruption of the
+    // history, not a crash.
     for (std::size_t index = 0; index < kernel->m_journal->commitCount(); ++index) {
         const CommitRecord commit = kernel->m_journal->commits()[index];
-        World scratch = kernel->m_world;
+        World::Transaction transaction = kernel->m_world.begin();
         for (const Op& original : commit.ops) {
             Op op = original;
-            if (auto rejection = scratch.prepare(op)) {
+            if (auto rejection = transaction.prepare(op)) {
                 kernel->m_journal->markCorrupt(commit.seq, "apply: " + rejection->detail);
                 return kernel;
             }
-            scratch.apply(op);
+            transaction.apply(op);
         }
-        kernel->m_world = std::move(scratch);
+        transaction.commit();
     }
     return kernel;
 }
@@ -127,13 +133,21 @@ Expected<CommitResult, Rejection> Kernel::submit(const Proposal& proposal) {
         return Rejection{Kind::BadValue, "message exceeds " + std::to_string(tree::kMaxLineBytes) + " bytes"};
     }
 
-    // 1. Validate every op on a scratch copy; ids are assigned here.
-    World scratch = m_world;
+    // The tick this commit applies at, read before any op moves it: a commit
+    // carrying `advance 3` still applies at the tick before the move, and the
+    // next commit's tick line shows the new value. The world now changes in
+    // place, so reading it after the loop would write a tick line no reader
+    // could decode — a reopen would fail TickMismatch on our own file.
+    const Tick tickBefore = m_world.tick();
+
+    // 1. Validate and apply every op inside a transaction, which saves what
+    //    each op touches; ids are assigned here.
+    World::Transaction transaction = m_world.begin();
     CommitRecord record;
     CommitResult result;
     for (const Op& original : proposal.ops) {
         Op op = original;
-        if (auto rejection = scratch.prepare(op)) {
+        if (auto rejection = transaction.prepare(op)) {
             return *rejection;
         }
         if (const auto* create = std::get_if<CreateNode>(&op)) {
@@ -141,7 +155,7 @@ Expected<CommitResult, Rejection> Kernel::submit(const Proposal& proposal) {
         } else if (const auto* edge = std::get_if<CreateEdge>(&op)) {
             result.edgeIds.push_back(edge->id);
         }
-        scratch.apply(op);
+        transaction.apply(op);
         record.ops.push_back(std::move(op));
     }
 
@@ -150,7 +164,7 @@ Expected<CommitResult, Rejection> Kernel::submit(const Proposal& proposal) {
     record.parent = m_journal->lastDigest();
     record.branch = "main";
     record.recorded = m_clock->now();
-    record.tick = m_world.tick();
+    record.tick = tickBefore;
     record.actor = proposal.actor;
     record.message = proposal.message;
     const tree::Encoded encoded = tree::encodeCommit(record);
@@ -164,8 +178,9 @@ Expected<CommitResult, Rejection> Kernel::submit(const Proposal& proposal) {
         return Rejection{Kind::Io, failure->what};
     }
 
-    // 4. Only now does the world move.
-    m_world = std::move(scratch);
+    // 4. Only now is the change kept: commit() drops the saved copies, so
+    //    nothing can put the world back afterwards.
+    transaction.commit();
     result.seq = record.seq;
     result.digest = encoded.digest;
     return result;
@@ -176,18 +191,20 @@ void Kernel::replayUpTo(CommitSeq maxSeq) {
     for (std::size_t index = 0; index < m_journal->commitCount(); ++index) {
         const CommitRecord& commit = m_journal->commits()[index];
         if (commit.seq > maxSeq) break;
-        World scratch = fresh;
+        // A commit whose op is refused is skipped whole: the transaction goes
+        // out of scope without commit() and puts back what it had applied.
+        World::Transaction transaction = fresh.begin();
         bool ok = true;
         for (const Op& original : commit.ops) {
             Op op = original;
-            if (auto rejection = scratch.prepare(op)) {
+            if (transaction.prepare(op).has_value()) {
                 ok = false;
                 break;
             }
-            scratch.apply(op);
+            transaction.apply(op);
         }
         if (ok) {
-            fresh = std::move(scratch);
+            transaction.commit();
         }
     }
     m_world = std::move(fresh);

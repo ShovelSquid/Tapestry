@@ -54,11 +54,17 @@ public:
         std::unique_ptr<Sink> sink, std::unique_ptr<Clock> clock = nullptr);
 
     // The only mutation path, in this fixed order: refuse unless the journal
-    // is Ok; validate the actor; prepare and apply every op on a scratch copy
-    // of the world (assigning ids); build the record (seq = lastSeq + 1,
-    // parent = lastDigest, branch main, recorded = clock now, tick = the
-    // world's tick); encode; Journal::append (write, then sync); and only
-    // then replace the world with the scratch copy. A Rejection or an I/O
+    // is Ok; validate the actor; prepare and apply every op through a
+    // World::Transaction, which saves the nodes and edges each op touches
+    // before changing the world in place (assigning ids); build the record
+    // (seq = lastSeq + 1, parent = lastDigest, branch main, recorded = clock
+    // now, tick = the tick the world held before this commit's advance ops,
+    // captured before the loop); encode; Journal::append (write, then sync);
+    // and only then commit the transaction, dropping the saved copies. Every
+    // earlier return rolls the world back from those copies, so what is
+    // copied is one commit's footprint rather than the whole world, so a
+    // world with a long history reopens in time linear in its ops rather
+    // than squared. A Rejection or an I/O
     // error at any point leaves both the file and world() exactly as before.
     Expected<CommitResult, Rejection> submit(const Proposal& proposal);
 
