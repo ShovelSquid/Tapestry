@@ -18,6 +18,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [ ] **Phase 2.1: Passage Anchors, Threads & Complete Rich Editing** - Passage-level linking, thread center nodes, gradient-of-focus hover hierarchy, and complete formatting toolbar with universal editing (INSERTED)
 - [ ] **Phase 2.2: Obsidian Bridge** - Agent MCP bridge, then a two-way Obsidian vault tree, on one shared command set with honest provenance for agent and observed edits (INSERTED)
 - [ ] **Phase 2.3: Time Threads** - Live z-axis writing threads: one note and its history, per-letter timing, side-view read-back (INSERTED)
+- [ ] **Phase 2.4: Lock Model** - Allow unless locked: lock aspects replace the D-05 authorship gate for agent note commands (INSERTED)
 - [ ] **Phase 3: Branching History & Deterministic Replay** - History navigation, fork-preserving branches, snapshots, and replay from recorded inputs
 - [ ] **Phase 4: Spatial Notebook** - Bundled note, drawing, property, and provenance-display plugins delivering the usable spatial workspace
 - [ ] **Phase 5: Deterministic Rule Engine** - Typed rule inputs/outputs, fixed-step simulation, forces, and explicit failure semantics
@@ -257,6 +258,24 @@ Plans:
 - [ ] 02.3-09-PLAN.md — Vault threads: `.md` keeps only current text, timings live in the vault tree, Obsidian edits arrive as observed clusters (D-25)
 
 **UI hint**: yes
+
+### Phase 2.4: Lock Model (INSERTED)
+
+**Goal**: Agents may change any note that is not locked against them. A lock, not authorship, decides who may write: user notes start with their text and deletion locked, agent notes start open, and an explicit lock on a note can close it, open it, or name who else may write
+**Depends on**: Phase 2.2 (the agent note commands and D-05 gate this phase replaces)
+**Requirements**: none owned — applies the project's Control constraint ("users can edit … guessing policies") to agent writes; no v1 requirement ID covers permissions yet
+**Design**: `~/Tapestry Tales/Connections/Spec - Locks and Rank.md`, `~/Tapestry Tales/Connections/Plan - Lock Model Implementation.md`. Supersedes 02.2 D-05 (Kaelen, 2026-09-16); collides with 02.3 D-22, recorded only
+**Success Criteria** (what must be TRUE):
+  1. An agent is refused when it updates, renames or deletes a note a person wrote, and a refusal writes nothing to the `.tree` file
+  2. An agent may update another agent's note unless that note is locked; the switch for this default is one named constant
+  3. An explicit `lock.text` or `lock.delete` on a note refuses every actor except its owner and anyone on its `.allow` list, and the literal `open` unlocks a default lock; locking text leaves deletion unaffected and vice versa
+  4. Whether user notes start delete-locked is one named constant, and every refusal names the aspect and the lock's owner
+**Follow-ups** (later slices, not this phase): rank auto-lock when a person sets rank (needs a per-property last writer in the history index); a `setLock` command so only an owner can remove a lock (needs Decision Register #19, the `lock.*` naming, a one-way door); thread and tree scopes, and the Tapestry scope once Phase 2.6 creates the Tapestry tree
+**Plans**: 0 plans
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 2.4 to break down)
 
 ### Phase 3: Branching History & Deterministic Replay
 

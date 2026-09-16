@@ -10,7 +10,7 @@ last_activity: 2026-09-15
 last_activity_desc: Phase 02.2 execution started
 state_head: c3f4f3d6c993f90c55415c6117705b124bb9667a
 progress:
-  total_phases: 10
+  total_phases: 11
   completed_phases: 0
   total_plans: 38
   completed_plans: 20
@@ -23,7 +23,7 @@ progress:
 See: .planning/PROJECT.md (updated 2026-09-08)
 
 **Core value:** Your world of thoughts must remain readable and under your control — in its spatial interface, its editable relationships and behavior, and its files and branching history.
-**Current focus:** Phase 02.2 — Obsidian Bridge
+**Current focus:** Phase 02.4 — Lock Model (ws/notifications-rank)
 
 ## Current Position
 
@@ -150,6 +150,7 @@ None yet.
 - Phase 02.2 inserted after Phase 2: Obsidian Bridge: two-way connection between an Obsidian Markdown vault and a Tapestry world (Kaelen, 2026-09-15; discuss with Kaelen, not skipped) (URGENT)
 - Phase 2.3 inserted after Phase 2.2: Time Threads: live z-axis writing threads split out of the 2.2 discussion (Kaelen, 2026-09-15); discuss with Kaelen before planning
 - Phase 2.2 edited: goal reworded to cover the agent MCP bridge plus the Obsidian bridge (02.2-CONTEXT D-01)
+- Phase 2.4 inserted after Phase 2.3: Lock Model: allow unless locked; lock aspects replace the D-05 authorship gate (Kaelen, 2026-09-16)
 
 ## Deferred Items
 
