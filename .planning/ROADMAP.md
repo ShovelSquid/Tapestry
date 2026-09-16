@@ -265,12 +265,12 @@ Plans:
 **Mode:** mvp
 **Depends on**: Phase 2.4 (lock model — `lock.layout`, built on `ws/notifications-rank`)
 **Requirements**: none owned — exercises PROV-01/03, TREE-01/02 and PLUG-03 through integration
-**Design source**: `~/Tapestry Tales/Connections/Spec - Agent Spatial Verbs.md` (Decision Register #8, #10, #11, #12)
+**Design source**: `~/Tapestry Tales/Connections/Spec - Agent Spatial Verbs.md` (Decision Register #8, #10, #11, #12); split from the anchor-cursor phase pending #22
 **Success Criteria** (what must be TRUE):
 
-  1. An agent calling `look(tree, from, [toward], [limit])` receives its neighbours nearest-first — each with `note`, `space`, `relation` (`near`, `beyond`, `overlapping`, `contains`, `contained-by`), `order` and `guess` — and receives coordinates **only** for placements it may write; there is no hard ceiling on `limit` (spec §2.1, §3; #10, #11)
-  2. An agent calling `place(tree, note, where)` with `{ near }`, `{ on }` or `{ beyond, from }` — ids only, `.strict()` — moves the note; `create_note` accepts the same optional `where`, and without it behaves exactly as today (`{ near: grewFrom }`) (spec §4)
-  3. An agent's placement records the relation it stated and derives the coordinates, so the note keeps following its anchor until a person drags it, after which it is a fixed position; closing, reopening and replaying reproduce the same positions without consulting any model (spec §4.1, §4.2)
+  1. An agent calling `look(tree, from, [toward], [limit])` receives its neighbours in the same tree nearest-first — each with `note`, `space`, `relation` (`near`, `beyond`, `overlapping`, `contains`, `contained-by`), `order` and `guess` — and receives coordinates **only** for placements it may write, which before Phase 2.4 is none; there is no hard ceiling on `limit` (spec §2.1, §3; #10, #11; D-14)
+  2. An agent calling `place(tree, note, where)` with `{ near }` or `{ beyond, from }` — ids only, `.strict()` — moves the note; `create_note` accepts the same optional `where`, and without it behaves exactly as today; `{ on }` is deferred to the placement-edges phase (spec §4; D-11)
+  3. A note placed `near` its `grew-from` parent is written with the resolved position and `pinned false` and is drawn beside that parent wherever it moves, until a person drags it (`pinned true`); every other placement is fixed; a note with no `pinned` key never moves on its own; closing, reopening and replaying reproduce the stored positions without consulting any model (D-01..D-08)
   4. Every refusal returns `{ ok: false, error }` naming what was wrong, and commits nothing: an unknown or unplaced anchor, a note placed relative to itself, and a placement held by `lock.layout` — whose message names the lock's owner. An agent cannot move a user-made note by default, because its layout starts locked (spec §5; #8)
   5. No new kernel verb or value type is added; placements remain node properties (`position.x/y`), and nothing starts the frozen migration onto placement edges (spec §6, §7)
   6. `facing` is **not** in this phase; D-27's `direction` stays unwritten by agents until the anchor-cursor phase (#12)
