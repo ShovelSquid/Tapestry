@@ -214,6 +214,7 @@ export default function TreeFrame({
         onPointerLeave={() => onFrameHover(false)}
       >
         <FrameHeader
+          treeId={tree.id}
           name={tree.name}
           kind={tree.kind}
           saveState={tree.saveState}

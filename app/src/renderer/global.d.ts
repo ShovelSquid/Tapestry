@@ -110,6 +110,8 @@ interface TapestryTreesAPI {
     worldName: string,
   ): Promise<{ ok: boolean; treeId?: string; error?: string }>
   close(treeId: string): Promise<{ ok: boolean; error?: string }>
+  /** Show the tree's file in Finder. The renderer names an id, never a path. */
+  reveal(treeId: string): Promise<{ ok: boolean; error?: string }>
   setFrame(treeId: string, x: number, y: number): Promise<{ ok: boolean; error?: string }>
 }
 

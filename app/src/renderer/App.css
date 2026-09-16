@@ -1045,6 +1045,87 @@ html, body, #root {
 }
 
 /* ------------------------------------------------------------------------ */
+/* Small popover menus -- the PassageChooser surface, shared by the forest    */
+/* bar's Add tree menu and each frame's Tree options menu                     */
+/* ------------------------------------------------------------------------ */
+
+.tapestry-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 200px;
+  background: #FFFFFF;
+  border: 1px solid #E0DDD7;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  padding: 4px;
+  z-index: 210;
+}
+
+/* Under a right-aligned button (the frame's Tree options), the menu hangs
+   from the same edge rather than off the side of the frame. */
+.tapestry-menu--right {
+  left: auto;
+  right: 0;
+}
+
+/* 0 12px inset: menu items and buttons indent their labels identically. */
+.tapestry-menu-item {
+  display: block;
+  width: 100%;
+  padding: 6px 12px;
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  font-family: inherit;
+  /* Label role: 13/400/1.4 */
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: #2C2C2C;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.tapestry-menu-item:hover {
+  background: #F0EDE8;
+}
+
+/* 32px icon-only control, carried from the 02.1 toolbar hit target. */
+.tapestry-icon-button {
+  width: 32px;
+  height: 32px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: #6B6B6B;
+  cursor: pointer;
+}
+
+/* The frame surface is already #F0EDE8, so the hover needs its own step. */
+.tapestry-icon-button:hover {
+  background: #E7E3DC;
+}
+
+.tapestry-menu-item:focus-visible,
+.tapestry-icon-button:focus-visible {
+  outline: 2px solid #4A7CFF;
+  outline-offset: 2px;
+}
+
+/* Anchors the Tree options menu to its button inside the header row. */
+.tapestry-frame-menu-wrap {
+  position: relative;
+  flex: none;
+  display: inline-flex;
+}
+
+/* ------------------------------------------------------------------------ */
 /* Agents panel -- popover on the PassageChooser surface                     */
 /* ------------------------------------------------------------------------ */
 

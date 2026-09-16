@@ -89,6 +89,10 @@ const tapestryAPI = {
     close: (treeId: string): Promise<{ ok: boolean; error?: string }> =>
       ipcRenderer.invoke('trees:close', treeId),
 
+    /** Show the tree's `.tree` file in Finder. Main resolves the path. */
+    reveal: (treeId: string): Promise<{ ok: boolean; error?: string }> =>
+      ipcRenderer.invoke('trees:reveal', treeId),
+
     setFrame: (
       treeId: string,
       x: number,
