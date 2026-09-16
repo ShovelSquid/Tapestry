@@ -334,6 +334,30 @@ export class KernelBridge {
   }
 
   /**
+   * Discard a pending redo, returning the world to the journal head.
+   *
+   * A commit cannot be appended while the display sits behind the head (see
+   * submit), so a write arriving from outside the renderer — an agent through
+   * the MCP bridge — would otherwise be refused for a reason that has nothing
+   * to do with the agent (research Pitfall 10). Returning to the latest state
+   * first lets the write land; the caller is responsible for telling Kaelen
+   * that redo is gone (UA-14), because silently losing it would be the worse
+   * half of this trade.
+   *
+   * Returns false when there was nothing rewound, so the caller can tell a
+   * reconciled write from an ordinary one.
+   */
+  discardRedo(): boolean {
+    this.ensureLoaded()
+    if (!this.isRewound) return false
+    const lastSeq = this.instance.getLastSeq() as number
+    this.instance.replayUpTo(lastSeq)
+    this.currentSeq = lastSeq
+    this.undoStack = []
+    return true
+  }
+
+  /**
    * After a new commit, update currentSeq and clear the redo stack.
    * A new edit after undo discards the redo stack (D-22).
    */

@@ -61,6 +61,64 @@ export const ReadNoteArgs = z
   })
   .strict()
 
+/** search_notes (D-05): reading is unrestricted, so this searches every tree. */
+export const SearchNotesArgs = z
+  .object({
+    tree: z.string().min(1).max(200).optional(),
+    query: z.string().min(1).max(200),
+    limit: z.number().int().min(1).max(100).optional(),
+  })
+  .strict()
+
+/** update_note (D-05): only a note the calling agent created. */
+export const UpdateNoteArgs = z
+  .object({
+    tree: z.string().min(1).max(200),
+    note: z.string().min(1).max(1024),
+    text: z.string().max(1000000),
+  })
+  .strict()
+
+/** rename_note (D-05): only a note the calling agent created. */
+export const RenameNoteArgs = z
+  .object({
+    tree: z.string().min(1).max(200),
+    note: z.string().min(1).max(1024),
+    title: z.string().min(1).max(200),
+  })
+  .strict()
+
+/** delete_note (D-05): only a note the calling agent created. */
+export const DeleteNoteArgs = z
+  .object({
+    tree: z.string().min(1).max(200),
+    note: z.string().min(1).max(1024),
+  })
+  .strict()
+
+/**
+ * One end of a connection, named by tree and note.
+ *
+ * Endpoints are tree-qualified even though both must currently be in the same
+ * tree, so Plan 15 can allow cross-tree links (D-16) without changing the
+ * shape an agent has already learned.
+ */
+const ConnectionEndpointArgs = z
+  .object({
+    tree: z.string().min(1).max(200),
+    note: z.string().min(1).max(1024),
+  })
+  .strict()
+
+/** connect_notes (D-05): connecting is unrestricted; any notes may be joined. */
+export const ConnectNotesArgs = z
+  .object({
+    from: ConnectionEndpointArgs,
+    to: ConnectionEndpointArgs,
+    label: z.string().min(1).max(80).optional(),
+  })
+  .strict()
+
 // ---------------------------------------------------------------------------
 // Tool table
 // ---------------------------------------------------------------------------
@@ -71,6 +129,29 @@ export const ReadNoteArgs = z
  */
 export const TOOL_DEFINITIONS: readonly ToolDefinition[] = Object.freeze([
   {
+    name: 'list_trees',
+    title: 'List the trees open in Tapestry',
+    description: 'Lists the trees currently open in Tapestry, with the name to pass as `tree`.',
+    schema: ListTreesArgs,
+    annotations: { readOnlyHint: true },
+  },
+  {
+    name: 'search_notes',
+    title: 'Search notes by title and text',
+    description:
+      'Searches note titles and text for a case-insensitive substring, across every open tree or one named tree. You may search any note, including notes you did not create.',
+    schema: SearchNotesArgs,
+    annotations: { readOnlyHint: true },
+  },
+  {
+    name: 'read_note',
+    title: 'Read a note with its author and connections',
+    description:
+      'Reads a note: its title, text, the actor that created it, and the notes it connects to. You may read any note, including notes you did not create.',
+    schema: ReadNoteArgs,
+    annotations: { readOnlyHint: true },
+  },
+  {
     name: 'create_note',
     title: 'Create a note grown from an existing note',
     description:
@@ -79,18 +160,35 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = Object.freeze([
     annotations: {},
   },
   {
-    name: 'list_trees',
-    title: 'List the trees open in Tapestry',
-    description: 'Lists the trees currently open in Tapestry, with the name to pass as `tree`.',
-    schema: ListTreesArgs,
-    annotations: { readOnlyHint: true },
+    name: 'update_note',
+    title: 'Replace the text of a note you created',
+    description:
+      'Replaces a note\'s text. You may edit only notes you created; editing a note created by the user or by another agent is refused and nothing is written.',
+    schema: UpdateNoteArgs,
+    annotations: { destructiveHint: false },
   },
   {
-    name: 'read_note',
-    title: 'Read a note with its author and connections',
+    name: 'rename_note',
+    title: 'Retitle a note you created',
     description:
-      'Reads a note: its title, text, the actor that created it, and the notes it connects to.',
-    schema: ReadNoteArgs,
-    annotations: { readOnlyHint: true },
+      'Changes a note\'s title. You may rename only notes you created; renaming a note created by the user or by another agent is refused and nothing is written.',
+    schema: RenameNoteArgs,
+    annotations: {},
+  },
+  {
+    name: 'delete_note',
+    title: 'Delete a note you created',
+    description:
+      'Deletes a note and its connections. You may delete only notes you created; deleting a note created by the user or by another agent is refused and nothing is written. The note stays in the tree\'s history either way.',
+    schema: DeleteNoteArgs,
+    annotations: { destructiveHint: true },
+  },
+  {
+    name: 'connect_notes',
+    title: 'Connect two notes',
+    description:
+      'Connects two notes in the same tree, optionally with a short label. Connections may join any notes, including notes you did not create.',
+    schema: ConnectNotesArgs,
+    annotations: {},
   },
 ])

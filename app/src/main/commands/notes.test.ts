@@ -160,7 +160,14 @@ describe('createFrom refusals', () => {
     expect(worldFingerprint()).toEqual(before)
   })
 
-  it('refuses a commit while history is rewound', () => {
+  /**
+   * Plan 03 refused this outright. Plan 04 reconciles instead (UA-14): the
+   * tree returns to its latest state and the write lands, because refusing an
+   * agent for a reason that is nothing to do with it — Kaelen happened to
+   * press undo — loses the agent's work silently. The discarded redo is
+   * announced through onRedoDiscarded, asserted in notes-policy.test.ts.
+   */
+  it('reconciles a rewound tree rather than refusing the commit', () => {
     expect(tree.bridge.undo()).toBe(true)
     const before = worldFingerprint()
 
@@ -171,11 +178,9 @@ describe('createFrom refusals', () => {
       text: 'hi',
     })
 
-    expect(result.ok).toBe(false)
-    expect(result.ok === false && result.error).toContain('showing an earlier state of notes')
-    expect(statSync(treePath).size).toBe(before.size)
-
-    tree.bridge.redo()
+    expect(result.ok).toBe(true)
+    expect(tree.bridge.isRewound).toBe(false)
+    expect(statSync(treePath).size).toBeGreaterThan(before.size)
   })
 })
 

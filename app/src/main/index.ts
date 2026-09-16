@@ -23,8 +23,9 @@ import { PluginHost } from './plugin-host'
 import { SettingsStore, suggestUserName } from './settings'
 import { agentActor, humanActor, type Actor } from './commands/actor'
 import { TreeRegistry, type OpenTree } from './trees/registry'
-import { NoteCommands } from './commands/notes'
-import { runAgentTool } from './commands/agent-tools'
+import { NoteCommands, type CommandHooks } from './commands/notes'
+import { ConnectionCommands } from './commands/connections'
+import { runAgentTool, type AgentCommands } from './commands/agent-tools'
 import { AgentRegistry, agentSocketPath } from './agents/registry'
 import { AgentSocketServer } from './agents/socket-server'
 
@@ -243,17 +244,32 @@ app.whenReady().then(async () => {
   // A commit that did not come from the renderer still has to show up there.
   // The command layer reports every landed commit, and main forwards the tree
   // it landed in, so the canvas refreshes without Kaelen doing anything.
-  const noteCommands = new NoteCommands(registry, {
+  const commandHooks: CommandHooks = {
     onCommitted: (treeId) => {
       mainWindow?.webContents.send('tree-changed', treeId)
     },
-  })
+    // An agent's write had to return a rewound tree to its latest state, so
+    // the redo Kaelen could have used is gone. Saying so is the whole point:
+    // losing a redo silently would be the failure UA-14 describes.
+    onRedoDiscarded: (treeId, actor) => {
+      mainWindow?.webContents.send('redo-discarded', {
+        treeId,
+        treeName: registry.get(treeId)?.name ?? treeId,
+        actorId: actor.id,
+      })
+    },
+  }
+
+  const agentCommands: AgentCommands = {
+    notes: new NoteCommands(registry, commandHooks),
+    connections: new ConnectionCommands(registry, commandHooks),
+  }
 
   agentServer = new AgentSocketServer({
     socketPath: agentSocketPath(app.getPath('userData')),
     agents,
     // The agent name comes from the verified token, never from the request.
-    dispatch: (name, tool, args) => runAgentTool(noteCommands, agentActor(name), tool, args),
+    dispatch: (name, tool, args) => runAgentTool(agentCommands, agentActor(name), tool, args),
   })
 
   /**

@@ -22,6 +22,7 @@ import { join, resolve } from 'node:path'
 import { makeTempDir } from '../../../test/helpers/temp-tree'
 import { TreeRegistry } from '../trees/registry'
 import { NoteCommands } from '../commands/notes'
+import { ConnectionCommands } from '../commands/connections'
 import { runAgentTool } from '../commands/agent-tools'
 import { AgentRegistry, agentSocketPath } from '../agents/registry'
 import { AgentSocketServer } from '../agents/socket-server'
@@ -93,7 +94,10 @@ describe('MCP shim over stdio', () => {
     const agents = new AgentRegistry(join(dir, 'agents.json'))
     const { token } = agents.create('claude')
 
-    const commands = new NoteCommands(registry)
+    const commands = {
+      notes: new NoteCommands(registry),
+      connections: new ConnectionCommands(registry),
+    }
     server = new AgentSocketServer({
       socketPath: agentSocketPath(dir),
       agents,
@@ -168,16 +172,35 @@ describe('MCP shim over stdio', () => {
     }
   })
 
-  it('advertises create_note and no actor argument anywhere', async () => {
+  it('advertises exactly the eight tools, with no actor argument anywhere', async () => {
     const listed = await request(2, 'tools/list', {})
     expect(listed.error).toBeUndefined()
 
-    const tools: Array<{ name: string; inputSchema?: { properties?: Record<string, unknown> } }> =
-      listed.result.tools
-    const names = tools.map((t) => t.name)
-    expect(names).toContain('create_note')
-    expect(names).toContain('list_trees')
-    expect(names).toContain('read_note')
+    const tools: Array<{
+      name: string
+      inputSchema?: { properties?: Record<string, unknown> }
+      annotations?: { readOnlyHint?: boolean; destructiveHint?: boolean }
+    }> = listed.result.tools
+
+    // Exactly these, so a tool added later has to be a deliberate decision
+    // rather than something that appeared in the agent's reach unnoticed.
+    expect([...tools.map((t) => t.name)].sort()).toEqual([
+      'connect_notes',
+      'create_note',
+      'delete_note',
+      'list_trees',
+      'read_note',
+      'rename_note',
+      'search_notes',
+      'update_note',
+    ])
+
+    const byName = new Map(tools.map((t) => [t.name, t]))
+    for (const readOnly of ['list_trees', 'search_notes', 'read_note']) {
+      expect(byName.get(readOnly)?.annotations?.readOnlyHint).toBe(true)
+    }
+    expect(byName.get('delete_note')?.annotations?.destructiveHint).toBe(true)
+    expect(byName.get('update_note')?.annotations?.destructiveHint).toBe(false)
 
     // D-06: an agent must not be able to name who it is.
     for (const tool of tools) {

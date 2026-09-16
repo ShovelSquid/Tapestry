@@ -9,11 +9,21 @@
  * The actor is supplied by the caller (the socket server, from the token) and
  * never read from `args`. No schema has an actor field, and each is `.strict()`,
  * so an `actor` key is a validation failure rather than something to ignore.
+ *
+ * Every tool lands in the shared command layer (D-01). The D-05 ownership rule
+ * lives there, not here, so it holds for any transport a later plan adds.
  */
 
 import type { Actor } from './actor'
+import type { ConnectionCommands, ConnectionEndpoint } from './connections'
 import type { CommandResult, NoteCommands } from './notes'
 import { TOOL_DEFINITIONS } from '../mcp/schemas'
+
+/** The command layer an agent reaches: notes and the connections between them. */
+export interface AgentCommands {
+  notes: NoteCommands
+  connections: ConnectionCommands
+}
 
 /** Flatten a zod failure into one readable line. */
 function zodMessage(issues: ReadonlyArray<{ path: PropertyKey[]; message: string }>): string {
@@ -32,7 +42,7 @@ function zodMessage(issues: ReadonlyArray<{ path: PropertyKey[]; message: string
  * request cannot take down the socket server handling it.
  */
 export function runAgentTool(
-  commands: NoteCommands,
+  commands: AgentCommands,
   actor: Actor,
   tool: string,
   args: unknown,
@@ -48,15 +58,44 @@ export function runAgentTool(
   }
 
   switch (tool) {
+    case 'list_trees':
+      return commands.notes.listTrees()
+
+    case 'search_notes':
+      return commands.notes.searchNotes(
+        parsed.data as { tree?: string; query: string; limit?: number },
+      )
+
+    case 'read_note':
+      return commands.notes.readNote(parsed.data as { tree: string; note: string })
+
     case 'create_note':
-      return commands.createFrom(
+      return commands.notes.createFrom(
         actor,
         parsed.data as { tree: string; grewFrom: string; title: string; text: string },
       )
-    case 'list_trees':
-      return commands.listTrees()
-    case 'read_note':
-      return commands.readNote(parsed.data as { tree: string; note: string })
+
+    case 'update_note':
+      return commands.notes.updateNote(
+        actor,
+        parsed.data as { tree: string; note: string; text: string },
+      )
+
+    case 'rename_note':
+      return commands.notes.renameNote(
+        actor,
+        parsed.data as { tree: string; note: string; title: string },
+      )
+
+    case 'delete_note':
+      return commands.notes.deleteNote(actor, parsed.data as { tree: string; note: string })
+
+    case 'connect_notes':
+      return commands.connections.connect(
+        actor,
+        parsed.data as { from: ConnectionEndpoint; to: ConnectionEndpoint; label?: string },
+      )
+
     default:
       return { ok: false, error: `Unknown tool: ${tool}` }
   }
