@@ -499,9 +499,9 @@ html, body, #root {
   border-radius: 2px;
 }
 
-/* ---- Thread center node (D-16/D-17/D-18) ---- */
+/* ---- Knot node (D-16/D-17/D-18) ---- */
 
-.thread-center-node {
+.knot-node {
   background: #ffffff;
   border: 1.5px solid #C8C5BE;
   border-radius: 8px;
@@ -510,19 +510,19 @@ html, body, #root {
   transition: border-color 150ms ease, box-shadow 150ms ease, opacity 150ms ease;
 }
 
-.thread-center-node.ghost {
+.knot-node.ghost {
   opacity: 0;
   pointer-events: none;
 }
 
-.thread-center-node.hovered,
-.thread-center-node.ghost.hovered {
+.knot-node.hovered,
+.knot-node.ghost.hovered {
   opacity: 1;
   pointer-events: auto;
   border-color: #4A7CFF;
 }
 
-.thread-center-node.editing {
+.knot-node.editing {
   opacity: 1;
   pointer-events: auto;
   border-color: #4A7CFF;
@@ -530,18 +530,18 @@ html, body, #root {
   cursor: default;
 }
 
-.thread-center-editor {
+.knot-editor {
   min-height: 28px;
   font-size: 13px;
   line-height: 1.5;
 }
 
-.thread-center-editor .ProseMirror {
+.knot-editor .ProseMirror {
   outline: none;
   min-height: 28px;
 }
 
-.thread-center-editor .ProseMirror p {
+.knot-editor .ProseMirror p {
   margin: 0;
 }
 
@@ -552,24 +552,24 @@ html, body, #root {
  * editor's overflow, so bullets and numbers were invisible. */
 .tapestry-note-editor .ProseMirror ul,
 .tapestry-note-editor .ProseMirror ol,
-.thread-center-editor .ProseMirror ul,
-.thread-center-editor .ProseMirror ol {
+.knot-editor .ProseMirror ul,
+.knot-editor .ProseMirror ol {
   padding-left: 1.5em;
   margin: 0 0 4px 0;
 }
 
 .tapestry-note-editor .ProseMirror ul,
-.thread-center-editor .ProseMirror ul {
+.knot-editor .ProseMirror ul {
   list-style-type: disc;
 }
 
 .tapestry-note-editor .ProseMirror ol,
-.thread-center-editor .ProseMirror ol {
+.knot-editor .ProseMirror ol {
   list-style-type: decimal;
 }
 
 .tapestry-note-editor .ProseMirror li > p,
-.thread-center-editor .ProseMirror li > p {
+.knot-editor .ProseMirror li > p {
   margin: 0;
 }
 

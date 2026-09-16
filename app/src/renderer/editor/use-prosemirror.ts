@@ -1,7 +1,7 @@
 /**
  * useProseMirror -- shared React hook encapsulating ProseMirror lifecycle.
  *
- * Consumed by NoteCard and ThreadCenterNode (D-26 universal editing).
+ * Consumed by NoteCard and KnotNode (D-26 universal editing).
  * Handles: editor creation, debounced autosave (D-02), external body sync
  * (undo/redo, plugin writes), formatting keybindings (D-23), and editability
  * toggling.

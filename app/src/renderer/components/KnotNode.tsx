@@ -1,8 +1,8 @@
 /**
- * ThreadCenterNode -- an editable node positioned between two linked notes,
- * representing a thread's center that can hold text about the relationship.
+ * KnotNode -- an editable node sitting between two linked notes: the knot of
+ * a connection, holding text about the relationship it ties together.
  *
- * Per D-16: Thread center nodes hold text about the thread and are ordinary
+ * Per D-16: Knots hold text about the connection and are ordinary
  * editable/connectable nodes using the same ProseMirror editor as notes.
  *
  * Per D-17: Auto-positioned at the midpoint between endpoints until manually
@@ -10,8 +10,11 @@
  * onPinnedPositionChange, which writes position.x/position.y AND pinned=true
  * in a single kernel commit. After that the node keeps the user's position.
  *
- * Per D-18: Empty center nodes appear on thread hover/selection; once they
+ * Per D-18: Empty knots appear on connection hover/selection; once they
  * have text they remain visible.
+ *
+ * Per 02.3 D-26: this is the knot and its two edges are knot-ties. The word
+ * "thread" now names a time thread only, and never this feature.
  *
  * Per D-26: Same editor behavior as NoteCard via shared useProseMirror hook.
  */
@@ -22,7 +25,7 @@ import { useProseMirror } from '../editor/use-prosemirror'
 import { tapestrySchema } from '../editor/schema'
 import FloatingToolbar from './FloatingToolbar'
 
-interface ThreadCenterProps {
+interface KnotProps {
   nodeId: string
   body: string
   x: number
@@ -46,11 +49,20 @@ interface ThreadCenterProps {
   onRegisterDims: (id: string, w: number, h: number) => void
 }
 
-const THREAD_CENTER_WIDTH = 200
-const THREAD_CENTER_MIN_HEIGHT = 44
+export const KNOT_WIDTH = 200
+export const KNOT_MIN_HEIGHT = 44
 
 /**
- * D-18 is about TEXT, not serialization shape: a center that had a character
+ * The knot's node type and its tie edge label (D-26). One module owns both
+ * spellings so a second copy cannot drift away from this one. Consumers must
+ * compare the node type with `===` against KNOT_TYPE — a substring test on the
+ * four-letter word would also match unrelated future types.
+ */
+export const KNOT_TYPE = 'tapestry.notes/knot@1'
+export const KNOT_TIE_LABEL = 'knot-tie'
+
+/**
+ * D-18 is about TEXT, not serialization shape: a knot that had a character
  * typed and deleted is saved as an empty ProseMirror doc and must return to
  * the ghost state. Plain-text (legacy) bodies count as text if non-blank.
  */
@@ -67,7 +79,7 @@ function bodyHasText(body: string): boolean {
   return body.trim().length > 0
 }
 
-export default function ThreadCenterNode({
+export default function KnotNode({
   nodeId,
   body,
   x,
@@ -85,7 +97,7 @@ export default function ThreadCenterNode({
   onPinnedPositionChange,
   onHover,
   onRegisterDims,
-}: ThreadCenterProps): React.ReactElement {
+}: KnotProps): React.ReactElement {
   const cardRef = useRef<HTMLDivElement>(null)
   const isDraggingRef = useRef(false)
   const dragStartRef = useRef({ mx: 0, my: 0, ox: 0, oy: 0 })
@@ -185,7 +197,7 @@ export default function ThreadCenterNode({
     <div
       ref={cardRef}
       className={[
-        'thread-center-node',
+        'knot-node',
         isEditing ? 'editing' : '',
         isHovered ? 'hovered' : '',
         showOnlyOnHover ? 'ghost' : '',
@@ -196,8 +208,8 @@ export default function ThreadCenterNode({
         position: 'absolute',
         left: posX,
         top: posY,
-        width: THREAD_CENTER_WIDTH,
-        minHeight: THREAD_CENTER_MIN_HEIGHT,
+        width: KNOT_WIDTH,
+        minHeight: KNOT_MIN_HEIGHT,
       }}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
@@ -206,7 +218,7 @@ export default function ThreadCenterNode({
       onMouseEnter={() => onHover(true)}
       onMouseLeave={() => onHover(false)}
     >
-      <div ref={editorRef} className="thread-center-editor" />
+      <div ref={editorRef} className="knot-editor" />
       {/* Floating formatting toolbar (D-24/D-26) */}
       {isEditing && <FloatingToolbar view={editorView} containerRef={cardRef} zoom={zoom} />}
     </div>

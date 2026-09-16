@@ -1,7 +1,7 @@
 /**
  * Shared ProseMirror schema for Tapestry editors.
  *
- * Consumed identically by NoteCard and ThreadCenterNode (D-26 universal editing).
+ * Consumed identically by NoteCard and KnotNode (D-26 universal editing).
  * Defines the passage mark (D-09, D-11, D-12), text formatting marks (D-23),
  * aligned paragraphs, and list nodes.
  *

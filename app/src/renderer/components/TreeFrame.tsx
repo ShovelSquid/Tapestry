@@ -16,7 +16,7 @@ import React from 'react'
 import NoteCard from './NoteCard'
 import FallbackNodeView from './FallbackNodeView'
 import ConnectionLine from './ConnectionLine'
-import ThreadCenterNode from './ThreadCenterNode'
+import KnotNode from './KnotNode'
 import FrameHeader from './FrameHeader'
 import type { ForestTree, NodeRef } from '../state/use-forest'
 import { nodeKey } from '../state/use-forest'
@@ -256,7 +256,7 @@ export default function TreeFrame({
             (hoveredKey !== null && endpointKeys.includes(hoveredKey))
 
           return (
-            <ThreadCenterNode
+            <KnotNode
               key={node.id}
               nodeId={node.id}
               body={body}
