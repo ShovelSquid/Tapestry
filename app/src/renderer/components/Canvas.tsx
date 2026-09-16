@@ -82,6 +82,12 @@ interface CanvasProps {
   onMarkDirty: (ref: NodeRef) => void
   onMarkClean: (ref: NodeRef) => void
   onPositionChange: (ref: NodeRef, x: number, y: number) => void
+  /**
+   * Called when a person drops, or left/top-resizes, a note that follows its
+   * parent (D-03, D-16). Must persist position.x, position.y AND pinned=true
+   * in a single commit, so the note stops following.
+   */
+  onTakeOverPosition: (ref: NodeRef, x: number, y: number) => void
   onWidthChange: (ref: NodeRef, width: number) => void
   onHeightChange: (ref: NodeRef, height: number) => void
   /**
@@ -182,6 +188,7 @@ export default function Canvas({
   onMarkDirty,
   onMarkClean,
   onPositionChange,
+  onTakeOverPosition,
   onWidthChange,
   onHeightChange,
   onPinnedPositionChange,
@@ -660,6 +667,10 @@ export default function Canvas({
     // space re-settles on the same rule a frame drag uses.
     onPositionChange: (ref, x, y) => {
       onPositionChange(ref, x, y)
+      settleFrames(ref.treeId)
+    },
+    onTakeOverPosition: (ref, x, y) => {
+      onTakeOverPosition(ref, x, y)
       settleFrames(ref.treeId)
     },
     onWidthChange: (ref, width) => {

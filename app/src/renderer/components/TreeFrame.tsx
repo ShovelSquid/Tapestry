@@ -39,6 +39,8 @@ export interface TreeFrameHandlers {
   onMarkDirty: (ref: NodeRef) => void
   onMarkClean: (ref: NodeRef) => void
   onPositionChange: (ref: NodeRef, x: number, y: number) => void
+  /** A person moved a following note: position and pinned=true (D-03, D-16). */
+  onTakeOverPosition: (ref: NodeRef, x: number, y: number) => void
   onWidthChange: (ref: NodeRef, width: number) => void
   onHeightChange: (ref: NodeRef, height: number) => void
   onPinnedPositionChange: (ref: NodeRef, x: number, y: number) => void
@@ -114,6 +116,19 @@ export default function TreeFrame({
 }: TreeFrameProps): React.ReactElement {
   const refFor = (nodeId: string): NodeRef => ({ treeId: tree.id, nodeId })
   const keyFor = (nodeId: string): string => nodeKey(refFor(nodeId))
+
+  /**
+   * A person's drop (or left/top resize) of a note. A note that is visibly
+   * following its parent is taken over and pinned (D-03, D-16); any other
+   * note moves exactly as before (D-02).
+   */
+  const writePosition = (nodeId: string, x: number, y: number): void => {
+    if (displayPositions.get(nodeId)?.following === true) {
+      handlers.onTakeOverPosition(refFor(nodeId), x, y)
+    } else {
+      handlers.onPositionChange(refFor(nodeId), x, y)
+    }
+  }
 
   /** A note's center in this tree's local coordinates. */
   const getNodeCenter = (nodeId: string): { x: number; y: number } | null => {
@@ -313,9 +328,7 @@ export default function TreeFrame({
                 onSave={(nodeId, body, title) => handlers.onSave(refFor(nodeId), body, title)}
                 onMarkDirty={(nodeId) => handlers.onMarkDirty(refFor(nodeId))}
                 onMarkClean={(nodeId) => handlers.onMarkClean(refFor(nodeId))}
-                onPositionChange={(nodeId, x, y) =>
-                  handlers.onPositionChange(refFor(nodeId), x, y)
-                }
+                onPositionChange={writePosition}
                 onWidthChange={(nodeId, width) => handlers.onWidthChange(refFor(nodeId), width)}
                 onHeightChange={(nodeId, height) =>
                   handlers.onHeightChange(refFor(nodeId), height)
@@ -345,9 +358,7 @@ export default function TreeFrame({
               zoom={zoom}
               onBorderSelect={() => handlers.onBorderSelect(refFor(node.id))}
               onHover={(hovered) => handlers.onHover(refFor(node.id), hovered)}
-              onPositionChange={(nodeId, x, y) =>
-                handlers.onPositionChange(refFor(nodeId), x, y)
-              }
+              onPositionChange={writePosition}
               onRegisterDims={(nodeId, w, h) => handlers.onRegisterDims(refFor(nodeId), w, h)}
               onPropertyEdit={(nodeId, k, t, v) =>
                 handlers.onPropertyEdit(refFor(nodeId), k, t, v)
