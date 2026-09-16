@@ -239,7 +239,15 @@ app.whenReady().then(async () => {
   // -------------------------------------------------------------------------
 
   const agents = new AgentRegistry(join(app.getPath('userData'), 'agents.json'))
-  const noteCommands = new NoteCommands(registry)
+
+  // A commit that did not come from the renderer still has to show up there.
+  // The command layer reports every landed commit, and main forwards the tree
+  // it landed in, so the canvas refreshes without Kaelen doing anything.
+  const noteCommands = new NoteCommands(registry, {
+    onCommitted: (treeId) => {
+      mainWindow?.webContents.send('tree-changed', treeId)
+    },
+  })
 
   agentServer = new AgentSocketServer({
     socketPath: agentSocketPath(app.getPath('userData')),

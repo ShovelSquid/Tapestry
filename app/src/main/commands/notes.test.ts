@@ -286,6 +286,43 @@ describe('listTrees', () => {
 })
 
 // ---------------------------------------------------------------------------
+// Commit hooks — what tells the renderer to refresh
+// ---------------------------------------------------------------------------
+
+describe('commit hooks', () => {
+  it('reports a landed commit once, and a refused one never', () => {
+    const seen: Array<{ treeId: string; actorId: string; seq: number }> = []
+    const hooked = new NoteCommands(registry, {
+      onCommitted: (treeId, actor, result) => {
+        seen.push({ treeId, actorId: actor.id, seq: result.seq })
+      },
+    })
+
+    const created = hooked.createFrom(CLAUDE, {
+      tree: 'notes',
+      grewFrom: 'n1',
+      title: 'Luna',
+      text: 'hi',
+    })
+    expect(created.ok).toBe(true)
+    expect(seen).toHaveLength(1)
+    expect(seen[0].treeId).toBe(tree.id)
+    expect(seen[0].actorId).toBe('agent.claude')
+
+    const refused = hooked.createFrom(CLAUDE, {
+      tree: 'notes',
+      grewFrom: 'n99',
+      title: 'Nope',
+      text: 'hi',
+    })
+    expect(refused.ok).toBe(false)
+    // Still one. A refusal must never look like a change to the renderer,
+    // or the canvas would flicker on every rejected agent request.
+    expect(seen).toHaveLength(1)
+  })
+})
+
+// ---------------------------------------------------------------------------
 // Body text round-trip (D-12)
 // ---------------------------------------------------------------------------
 

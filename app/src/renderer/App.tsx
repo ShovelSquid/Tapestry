@@ -190,6 +190,13 @@ export default function App(): React.ReactElement {
       refreshAll()
     })
 
+    // A commit from outside this window — an agent writing through the MCP
+    // bridge — refreshes the canvas in place. The history effect below follows
+    // the nodes change, so provenance updates with it.
+    const removeTreeChanged = window.tapestry.onTreeChanged(() => {
+      refreshAll()
+    })
+
     // Listen for plugin error notifications (D-34)
     const removePluginError = window.tapestry.onPluginError(
       (pluginName, displayName, message, canRestart) => {
@@ -201,6 +208,7 @@ export default function App(): React.ReactElement {
 
     return () => {
       removeFileOpened()
+      removeTreeChanged()
       removePluginError()
     }
   }, [refreshAll, refreshFilePath])

@@ -105,6 +105,19 @@ const tapestryAPI = {
   },
 
   /**
+   * Listen for commits that landed from outside the renderer — an agent
+   * through the MCP bridge, or a plugin. Carries the id of the tree that
+   * changed so the canvas can refresh.
+   */
+  onTreeChanged: (callback: (treeId: string) => void): (() => void) => {
+    const handler = (_event: IpcRendererEvent, treeId: string) => {
+      callback(treeId)
+    }
+    ipcRenderer.on('tree-changed', handler)
+    return () => ipcRenderer.removeListener('tree-changed', handler)
+  },
+
+  /**
    * Listen for plugin error events from the main process (D-34).
    * Receives the plugin id (for reload/enable/disable), its display name,
    * the error message, and whether restart is available.

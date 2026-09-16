@@ -119,6 +119,8 @@ interface TapestryAPI {
   dialog: TapestryDialogAPI
   settings: TapestrySettingsAPI
   onFileOpened(callback: (filePath: string) => void): () => void
+  /** A commit landed in a tree from outside the renderer (an agent, a plugin). */
+  onTreeChanged(callback: (treeId: string) => void): () => void
   onPluginError(
     callback: (pluginName: string, displayName: string, message: string, canRestart: boolean) => void,
   ): () => void
