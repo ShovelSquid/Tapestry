@@ -4,11 +4,11 @@ milestone: v1.0
 current_phase: "02.2"
 current_phase_name: Obsidian Bridge
 status: discussing
-stopped_at: Phase 2.2 context gathered
-last_updated: "2026-09-15T17:19:50.924Z"
+stopped_at: Phase 2.2 UI-SPEC approved
+last_updated: "2026-09-15T18:56:35.558Z"
 last_activity: 2026-09-15
 last_activity_desc: Phase 02.2 Obsidian Bridge inserted
-state_head: 65877de387b00c2639aecef9deb773133b4bb78c
+state_head: d58d9d2d78853e154ae68492da6c8b8d85b666b6
 progress:
   total_phases: 10
   completed_phases: 0
@@ -136,6 +136,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-15T17:18:43.487Z
-Stopped at: Phase 2.2 context gathered
-Resume file: .planning/phases/02.2-obsidian-bridge/02.2-CONTEXT.md
+Last session: 2026-09-15T18:56:35.332Z
+Stopped at: Phase 2.2 UI-SPEC approved
+Resume file: .planning/phases/02.2-obsidian-bridge/02.2-UI-SPEC.md
