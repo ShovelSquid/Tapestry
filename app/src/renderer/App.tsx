@@ -20,6 +20,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import Canvas, { type NodeInfo, type EdgeInfo } from './components/Canvas'
 import SaveIndicator from './components/SaveIndicator'
 import PluginErrorNotification from './components/PluginErrorNotification'
+import NamePromptDialog from './components/NamePromptDialog'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -58,6 +59,13 @@ export default function App(): React.ReactElement {
   const [saveState, setSaveState] = useState<SaveState>('saved')
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null)
   const [isFileLoaded, setIsFileLoaded] = useState(false)
+
+  // The name every change is signed with (D-07). Null means "not chosen yet",
+  // which is what makes the first-run prompt appear; nameLoaded keeps the
+  // prompt from flashing before settings have been read.
+  const [userName, setUserName] = useState<string | null>(null)
+  const [suggestedName, setSuggestedName] = useState('')
+  const [nameLoaded, setNameLoaded] = useState(false)
 
   // Plugin contributions: maps node types to component names from loaded plugins
   const [pluginNodeViews, setPluginNodeViews] = useState<Record<string, string>>({})
@@ -182,6 +190,42 @@ export default function App(): React.ReactElement {
       removePluginError()
     }
   }, [refreshAll, refreshFilePath])
+
+  // -----------------------------------------------------------------------
+  // User name (D-07)
+  // -----------------------------------------------------------------------
+
+  useEffect(() => {
+    let cancelled = false
+    window.tapestry.settings
+      .getUserName()
+      .then(({ userName: stored, suggested }) => {
+        if (cancelled) return
+        setUserName(stored)
+        setSuggestedName(suggested)
+      })
+      .catch(() => {
+        // Settings unreadable: fall through to the prompt rather than
+        // letting changes be made under an unknown name.
+        if (!cancelled) setSuggestedName('')
+      })
+      .finally(() => {
+        if (!cancelled) setNameLoaded(true)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  /** Save the chosen name; resolves to an error to display, or null. */
+  const handleSaveUserName = useCallback(async (name: string): Promise<string | null> => {
+    const result = await window.tapestry.settings.setUserName(name)
+    if (result.ok) {
+      setUserName(name)
+      return null
+    }
+    return result.error ?? 'Could not save your name.'
+  }, [])
 
   // -----------------------------------------------------------------------
   // Create note on double-click (D-04)
@@ -737,6 +781,16 @@ export default function App(): React.ReactElement {
           canRestart={pluginError.canRestart}
           onRestart={handlePluginRestart}
           onDismiss={handlePluginErrorDismiss}
+        />
+      )}
+
+      {/* First-run name prompt (D-07). Its overlay covers the canvas, so no
+          change can be made before a name exists to sign it with. */}
+      {nameLoaded && userName === null && (
+        <NamePromptDialog
+          mode="first-run"
+          initialName={suggestedName}
+          onSave={handleSaveUserName}
         />
       )}
 

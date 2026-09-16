@@ -655,3 +655,155 @@ html, body, #root {
 .passage-chooser-item:hover {
   background: #EDF2FF;
 }
+
+/* ------------------------------------------------------------------------ */
+/* Dialogs (shared shell) -- UI-SPEC "Dialogs (shared shell)"                */
+/* ------------------------------------------------------------------------ */
+
+.tapestry-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(44, 44, 44, 0.24);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Above the plugin error notification (10000) so a modal is never buried. */
+  z-index: 10001;
+}
+
+.tapestry-dialog {
+  background: #FFFFFF;
+  border: 1px solid #E0DDD7;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  width: 440px;
+  padding: 24px;
+}
+
+/* Heading role: 22/600/1.25 */
+.tapestry-dialog-title {
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.25;
+  color: #2C2C2C;
+}
+
+.tapestry-dialog-body {
+  margin-top: 16px;
+}
+
+/* Body role: 16/400/1.5 */
+.tapestry-dialog-text {
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.5;
+  color: #2C2C2C;
+}
+
+.tapestry-dialog-buttons {
+  margin-top: 24px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* ------------------------------------------------------------------------ */
+/* Dialog form fields                                                        */
+/* ------------------------------------------------------------------------ */
+
+/* Label role: 13/400/1.4 */
+.tapestry-field-label {
+  display: block;
+  margin-top: 16px;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: #6B6B6B;
+}
+
+.tapestry-field-input {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  padding: 6px 8px;
+  font-family: inherit;
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.5;
+  color: #2C2C2C;
+  background: #FFFFFF;
+  border: 1px solid #E0DDD7;
+  border-radius: 8px;
+}
+
+.tapestry-field-input::placeholder {
+  color: #B0ADA6;
+}
+
+/* The exact line this name will write into the .tree file. */
+.tapestry-dialog-preview {
+  margin-top: 8px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: #6B6B6B;
+  word-break: break-all;
+}
+
+.tapestry-field-error {
+  margin-top: 4px;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: #E5484D;
+}
+
+/* ------------------------------------------------------------------------ */
+/* Buttons                                                                   */
+/* ------------------------------------------------------------------------ */
+
+.tapestry-button--primary,
+.tapestry-button--secondary,
+.tapestry-button--destructive {
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.tapestry-button--primary {
+  background: #4A7CFF;
+  color: #FFFFFF;
+  border: none;
+}
+
+.tapestry-button--primary:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.tapestry-button--secondary {
+  background: #FFFFFF;
+  color: #2C2C2C;
+  border: 1px solid #E0DDD7;
+}
+
+.tapestry-button--destructive {
+  background: #E5484D;
+  color: #FFFFFF;
+  border: none;
+}
+
+/* Keyboard focus ring for the controls this phase adds. */
+.tapestry-button--primary:focus-visible,
+.tapestry-button--secondary:focus-visible,
+.tapestry-button--destructive:focus-visible,
+.tapestry-field-input:focus-visible {
+  outline: 2px solid #4A7CFF;
+  outline-offset: 2px;
+}

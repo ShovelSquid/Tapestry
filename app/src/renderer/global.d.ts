@@ -72,10 +72,17 @@ interface TapestryDialogAPI {
   showSave(): Promise<{ canceled: boolean; filePath?: string }>
 }
 
+interface TapestrySettingsAPI {
+  /** The stored name (null before first run) and a suggestion to prefill. */
+  getUserName(): Promise<{ userName: string | null; suggested: string }>
+  setUserName(name: string): Promise<{ ok: boolean; error?: string }>
+}
+
 interface TapestryAPI {
   kernel: TapestryKernelAPI
   plugins: TapestryPluginsAPI
   dialog: TapestryDialogAPI
+  settings: TapestrySettingsAPI
   onFileOpened(callback: (filePath: string) => void): () => void
   onPluginError(
     callback: (pluginName: string, displayName: string, message: string, canRestart: boolean) => void,

@@ -12,9 +12,11 @@
 import { app, BrowserWindow, ipcMain, dialog } from 'electron'
 import { isAbsolute, join, relative, resolve, sep } from 'path'
 import { readFileSync, writeFileSync, existsSync } from 'fs'
+import { execFileSync } from 'child_process'
+import { userInfo } from 'os'
 import { KernelBridge } from './kernel-bridge'
 import { PluginHost } from './plugin-host'
-import { SettingsStore } from './settings'
+import { SettingsStore, suggestUserName } from './settings'
 import { humanActor, type Actor } from './commands/actor'
 
 // ---------------------------------------------------------------------------
@@ -135,6 +137,22 @@ async function loadPluginsSafely(): Promise<void> {
   }
 }
 
+/**
+ * The macOS account's full name ("Kaelen Cook"), or null.
+ *
+ * Used only to prefill the first-run prompt, so every failure mode — another
+ * platform, a missing `id`, a slow directory lookup — is simply "no
+ * suggestion" rather than an error the user has to read.
+ */
+function readMacFullName(): string | null {
+  if (process.platform !== 'darwin') return null
+  try {
+    return execFileSync('id', ['-F'], { encoding: 'utf-8', timeout: 2000 }).trim() || null
+  } catch {
+    return null
+  }
+}
+
 app.whenReady().then(async () => {
   // Settings (D-07): the stored user name signs every human commit.
   const settings = new SettingsStore(app.getPath('userData'))
@@ -179,6 +197,25 @@ app.whenReady().then(async () => {
       mainWindow.webContents.send('plugin-error', pluginName, displayName, message, canRestart)
     }
   }
+
+  // Name settings (D-07). The renderer reads and sets the name, but never
+  // uses it to build an actor: getHumanActor above is the only place that
+  // happens.
+  ipcMain.handle('settings:getUserName', () => {
+    return {
+      userName: settings.getUserName(),
+      suggested: suggestUserName(readMacFullName(), userInfo().username),
+    }
+  })
+
+  ipcMain.handle('settings:setUserName', (_event, name: unknown) => {
+    try {
+      settings.setUserName(name)
+      return { ok: true }
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) }
+    }
+  })
 
   // Register file-management IPC handlers
   ipcMain.handle('kernel:getFilePath', () => {

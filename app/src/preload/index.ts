@@ -79,6 +79,15 @@ const tapestryAPI = {
       ipcRenderer.invoke('dialog:showSave'),
   },
 
+  settings: {
+    /** The stored name, plus a suggestion for the first-run prompt. */
+    getUserName: (): Promise<{ userName: string | null; suggested: string }> =>
+      ipcRenderer.invoke('settings:getUserName'),
+
+    setUserName: (name: string): Promise<{ ok: boolean; error?: string }> =>
+      ipcRenderer.invoke('settings:setUserName', name),
+  },
+
   /**
    * Listen for file-opened events from the main process
    * (e.g. when reopening the last file on launch).
