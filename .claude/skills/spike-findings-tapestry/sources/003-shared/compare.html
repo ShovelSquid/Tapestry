@@ -1,0 +1,36 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Spike 003 — sharp glyphs, SDF vs MSDF</title>
+    <style>
+      body { margin: 0; padding: 16px 20px 40px; background: #0d0f14; color: #cfd6e6; font: 13px/1.5 system-ui, sans-serif; }
+      h1 { font-size: 16px; margin: 0 0 4px; }
+      p { margin: 0 0 16px; color: #8b93a6; }
+      section { margin: 0 0 22px; }
+      h2 { font: 600 12px ui-monospace, Menlo, monospace; margin: 0 0 6px; color: #aab3c5; }
+      .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+      figure { margin: 0; }
+      figcaption { font-size: 11px; color: #8b93a6; margin-bottom: 4px; }
+      img { width: 100%; image-rendering: pixelated; border: 1px solid #262b36; border-radius: 4px; background: #000; }
+      a { color: #8fb3ff; }
+    </style>
+  </head>
+  <body>
+    <h1>Spike 003 — which letters stay sharp?</h1>
+    <p>Same letters, size and camera. Left: SDF atlas from browser text (003a, tiny-sdf). Right: MSDF atlas from font files (003b, msdfgen-wasm). Emoji are colour bitmaps in both. Crops are at full device resolution; click one for the whole window.</p>
+    <main id="views"></main>
+    <script>
+      const views = ['live', 'live-oblique', 'side-8px', 'side-16px', 'side-24px', 'side-48px', 'side-120px', 'side-240px', 'unicode-48px', 'unicode-240px', 'unicode-16px']
+      const main = document.getElementById('views')
+      for (const view of views) {
+        const section = document.createElement('section')
+        section.innerHTML = `<h2>${view}</h2><div class="pair">` +
+          [['003a-sharp-glyphs-sdf', '003a · SDF (tiny-sdf)'], ['003b-sharp-glyphs-msdf', '003b · MSDF (msdfgen-wasm)']]
+            .map(([dir, label]) => `<figure><figcaption>${label}</figcaption><a href="/${dir}/results/shots/${view}.png" target="_blank"><img src="/${dir}/results/shots/${view}-crop.png" alt="${label} ${view}"></a></figure>`)
+            .join('') + '</div>'
+        main.append(section)
+      }
+    </script>
+  </body>
+</html>

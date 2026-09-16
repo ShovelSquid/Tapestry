@@ -36,6 +36,8 @@ Patterns and stack choices established across spike sessions. New spikes follow 
 - **Letters are grapheme clusters** (`Intl.Segmenter`), so emoji, flags and combining marks count as one letter (spike 003).
 - **Centre zoomed side views within a minute of the render origin,** or float32 positions wobble before the renderer is at fault (spikes 001, 003).
 - **Centre a zoomed side view on a specific glyph**, not on a span's midpoint: past about 120 px per em the gap between letters can exceed the visible width, and the camera lands in empty space (spikes 003, 007).
+- **Vary a scripted load through the page URL** (`?hours=`, `?snapshot=`, `?cells=`) rather than editing the page, so one build serves every benchmark row (spikes 007, 008, 011).
+- **Benchmark rows run about 4 s each after a 1 s warm-up**, reporting median fps, p95/p99 and the share of frames over 25 ms; a HUD carries the same figures live so an interactive run is comparable to a scripted one (spikes 001, 003a, 003b, 005, 011).
 
 ## Tools & Libraries
 - **three.js 0.186.0 gotchas:**
