@@ -54,6 +54,7 @@ export default function App(): React.ReactElement {
     submitChange,
     markDirty,
     markClean,
+    setFrameLocal,
   } = useForest()
 
   const [editingRef, setEditingRef] = useState<NodeRef | null>(null)
@@ -535,18 +536,11 @@ export default function App(): React.ReactElement {
   // a name exists, which is exactly while the first-run prompt is up.
   const currentUserActorId = userName !== null ? `user.${userName}` : null
 
-  // Until Plan 06 moves save state into each frame header, the forest bar
-  // still shows one tree's: the most recently opened, which is the tree the
-  // single-world flow would have had open anyway.
-  const primaryTree = trees.length > 0 ? trees[trees.length - 1] : null
-
   return (
     <div className="tapestry-app">
-      {/* Top-left chrome: save state, agents, and the name changes are signed
-          with. Plan 06 moves save state into per-frame headers. */}
+      {/* Top-left chrome: agents, and the name changes are signed with. Save
+          state lives in each frame's header now, one per tree. */}
       <ForestBar
-        filePath={primaryTree?.path ?? null}
-        saveState={primaryTree?.saveState ?? 'saved'}
         agents={agents}
         agentsEnabled={agentsEnabled}
         userName={userName}
@@ -599,6 +593,7 @@ export default function App(): React.ReactElement {
         onEdgeCreate={handleEdgeCreate}
         onDeleteNote={handleDeleteNote}
         onPropertyEdit={handlePropertyEdit}
+        onFrameMove={setFrameLocal}
       />
     </div>
   )

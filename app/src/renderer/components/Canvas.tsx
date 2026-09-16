@@ -22,7 +22,15 @@ import ConnectionLine from './ConnectionLine'
 import TreeFrame, { type TreeFrameHandlers } from './TreeFrame'
 import type { ForestTree, NodeRef } from '../state/use-forest'
 import { nodeKey } from '../state/use-forest'
-import { computeFrameBounds, type ContentBox, type FrameRect } from '../layout/frames'
+import {
+  FRAME_GAP,
+  computeFrameBounds,
+  placeNewFrame,
+  pushApart,
+  type ContentBox,
+  type FrameRect,
+  type PositionedRect,
+} from '../layout/frames'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -90,6 +98,8 @@ interface CanvasProps {
     type: string,
     value: string | number | boolean,
   ) => void
+  /** Move a frame in renderer state only; the canvas persists the final spot. */
+  onFrameMove: (treeId: string, x: number, y: number) => void
 }
 
 // ---------------------------------------------------------------------------
@@ -174,6 +184,7 @@ export default function Canvas({
   onEdgeCreate,
   onDeleteNote,
   onPropertyEdit,
+  onFrameMove,
 }: CanvasProps): React.ReactElement {
   const viewportRef = useRef<HTMLDivElement>(null)
   const [view, setView] = useState<ViewTransform>({ panX: 0, panY: 0, zoom: 1 })
@@ -196,6 +207,17 @@ export default function Canvas({
   const [dragPositions, setDragPositions] = useState<
     Record<string, { x: number; y: number }>
   >({})
+
+  // Frame-level state (D-15). A frame is dragged by its header, selected by a
+  // click on it, and never deleted by the Delete key.
+  const [draggingTreeId, setDraggingTreeId] = useState<string | null>(null)
+  const [selectedTreeId, setSelectedTreeId] = useState<string | null>(null)
+  const [hoveredTreeId, setHoveredTreeId] = useState<string | null>(null)
+  const frameDragRef = useRef({ startX: 0, startY: 0, originX: 0, originY: 0, moved: false })
+
+  // Trees the renderer has already placed with real bounds, so a frame is
+  // repositioned once when it appears and not on every later render.
+  const placedRef = useRef(new Set<string>())
 
   // Node dimensions cache for connection-line centers, keyed by nodeKey.
   const nodeDimsRef = useRef<Map<string, { width: number; height: number }>>(new Map())
@@ -272,6 +294,101 @@ export default function Canvas({
     [view.panX, view.panY, view.zoom],
   )
 
+  /** Every frame's world rect, in the shape push-apart works on. */
+  const positionedRects = (): PositionedRect[] => {
+    const rects: PositionedRect[] = []
+    for (const tree of trees) {
+      const rect = frameRects.get(tree.id)
+      if (rect) rects.push({ id: tree.id, ...rect })
+    }
+    return rects
+  }
+
+  /**
+   * Settle the space around the frame that just moved (D-15).
+   *
+   * pushApart works in rect space, but what persists is a frame's origin, so
+   * each displaced frame's origin moves by the same delta its rect did. Every
+   * frame that yields is written, so the arrangement on screen is the one that
+   * reopens next launch.
+   */
+  const settleFrames = (movedTreeId: string) => {
+    const rects = positionedRects()
+    const displaced = pushApart(rects, movedTreeId)
+
+    for (const [id, next] of displaced) {
+      const before = rects.find((rect) => rect.id === id)
+      const tree = trees.find((t) => t.id === id)
+      if (!before || !tree) continue
+
+      const x = tree.frame.x + (next.x - before.x)
+      const y = tree.frame.y + (next.y - before.y)
+      onFrameMove(id, x, y)
+      void window.tapestry.trees.setFrame(id, x, y)
+    }
+  }
+
+  /**
+   * A tree the renderer has not placed yet gets a real spot.
+   *
+   * Main puts a new tree at a provisional frame computed from stored positions
+   * alone, which cannot know how large the existing frames actually are. Once
+   * the renderer has measured them, a frame that landed within the gap of
+   * another is moved clear and the corrected position is persisted.
+   */
+  useEffect(() => {
+    if (trees.length === 0) return
+    const rects = positionedRects()
+
+    for (const tree of trees) {
+      if (placedRef.current.has(tree.id)) continue
+      placedRef.current.add(tree.id)
+
+      const mine = rects.find((rect) => rect.id === tree.id)
+      const others = rects.filter((rect) => rect.id !== tree.id)
+      if (!mine || others.length === 0) continue
+
+      const clashes = others.some(
+        (other) =>
+          mine.x - FRAME_GAP < other.x + other.width &&
+          other.x < mine.x + mine.width + FRAME_GAP &&
+          mine.y - FRAME_GAP < other.y + other.height &&
+          other.y < mine.y + mine.height + FRAME_GAP,
+      )
+      if (!clashes) continue
+
+      const spot = placeNewFrame(others)
+      const x = tree.frame.x + (spot.x - mine.x)
+      const y = tree.frame.y + (spot.y - mine.y)
+      onFrameMove(tree.id, x, y)
+      void window.tapestry.trees.setFrame(tree.id, x, y)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trees, onFrameMove])
+
+  /** Pointer down on a frame's header band: the start of a frame drag. */
+  const handleFrameHeaderPointerDown = (
+    treeId: string,
+    e: React.PointerEvent<HTMLDivElement>,
+  ) => {
+    if (e.button !== 0) return
+    const tree = trees.find((t) => t.id === treeId)
+    if (!tree) return
+
+    // The header is not canvas background: dragging it must not also pan.
+    e.stopPropagation()
+    e.preventDefault()
+    frameDragRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      originX: tree.frame.x,
+      originY: tree.frame.y,
+      moved: false,
+    }
+    setDraggingTreeId(treeId)
+    e.currentTarget.setPointerCapture(e.pointerId)
+  }
+
   // -----------------------------------------------------------------------
   // Pan handlers
   // -----------------------------------------------------------------------
@@ -296,6 +413,21 @@ export default function Canvas({
 
   const handlePointerMove = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
+      // A frame drag moves the whole tree with its notes and connections, so
+      // it is applied to the frame origin rather than to any note.
+      if (draggingTreeId) {
+        const dx = (e.clientX - frameDragRef.current.startX) / view.zoom
+        const dy = (e.clientY - frameDragRef.current.startY) / view.zoom
+        // A few pixels of travel separates a drag from a click that selects.
+        if (Math.abs(dx) > 2 || Math.abs(dy) > 2) frameDragRef.current.moved = true
+        onFrameMove(
+          draggingTreeId,
+          frameDragRef.current.originX + dx,
+          frameDragRef.current.originY + dy,
+        )
+        return
+      }
+
       if (connectingFrom) {
         const world = pointerWorld(e.clientX, e.clientY)
         if (world) setConnectingLine(world)
@@ -310,14 +442,31 @@ export default function Canvas({
         panY: panStartRef.current.panY + dy,
       }))
     },
-    [connectingFrom, pointerWorld],
+    [connectingFrom, pointerWorld, draggingTreeId, onFrameMove, view.zoom],
   )
 
-  const handlePointerUp = useCallback(
-    (e: React.PointerEvent<HTMLDivElement>) => {
+  // Not memoised: the drop needs this render's frame rects, and a stale
+  // closure would settle the space against where the frames used to be.
+  const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    {
       if (isPanningRef.current) {
         isPanningRef.current = false
         ;(e.target as HTMLElement).releasePointerCapture(e.pointerId)
+      }
+
+      if (draggingTreeId) {
+        const tree = trees.find((t) => t.id === draggingTreeId)
+        if (tree) {
+          if (frameDragRef.current.moved) {
+            void window.tapestry.trees.setFrame(tree.id, tree.frame.x, tree.frame.y)
+            settleFrames(draggingTreeId)
+          } else {
+            // Pressing the header without moving it selects the frame.
+            setSelectedTreeId(draggingTreeId)
+          }
+        }
+        setDraggingTreeId(null)
+        return
       }
 
       if (connectingFrom) {
@@ -331,9 +480,8 @@ export default function Canvas({
         setConnectingLine(null)
         setConnectingHover(null)
       }
-    },
-    [connectingFrom, connectingHover, onEdgeCreate],
-  )
+    }
+  }
 
   // -----------------------------------------------------------------------
   // Zoom handler (wheel)
@@ -384,6 +532,7 @@ export default function Canvas({
       if (!isBackground(e.target as HTMLElement, viewportRef.current)) return
       onStopEditing()
       selectNote(null)
+      setSelectedTreeId(null)
     },
     [onStopEditing, selectNote],
   )
@@ -492,9 +641,20 @@ export default function Canvas({
     onSave,
     onMarkDirty,
     onMarkClean,
-    onPositionChange,
-    onWidthChange,
-    onHeightChange,
+    // A note landing or resizing can grow its frame into a neighbour, so the
+    // space re-settles on the same rule a frame drag uses.
+    onPositionChange: (ref, x, y) => {
+      onPositionChange(ref, x, y)
+      settleFrames(ref.treeId)
+    },
+    onWidthChange: (ref, width) => {
+      onWidthChange(ref, width)
+      settleFrames(ref.treeId)
+    },
+    onHeightChange: (ref, height) => {
+      onHeightChange(ref, height)
+      settleFrames(ref.treeId)
+    },
     onPinnedPositionChange,
     onDeleteNote,
     onPropertyEdit,
@@ -568,6 +728,11 @@ export default function Canvas({
               currentUserActorId={currentUserActorId}
               dragPositions={dragPositions}
               getDims={getDims}
+              isSelected={selectedTreeId === tree.id}
+              isHovered={hoveredTreeId === tree.id}
+              isDragging={draggingTreeId === tree.id}
+              onHeaderPointerDown={(e) => handleFrameHeaderPointerDown(tree.id, e)}
+              onFrameHover={(hovered) => setHoveredTreeId(hovered ? tree.id : null)}
               handlers={handlers}
             />
           )

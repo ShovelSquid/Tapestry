@@ -1,10 +1,9 @@
 /**
  * ForestBar -- the top-left chrome (UI-SPEC "Forest bar").
  *
- * It replaces the standalone SaveIndicator position and contains it, so the
- * corner holds one row rather than several things each claiming 16px. Plan 05
- * moves the save states into per-frame headers; until then the indicator rides
- * along here.
+ * Save state used to live here, in one indicator for one world. The space now
+ * holds several trees, so each frame's header carries its own status and this
+ * corner holds only what is true of the whole space.
  *
  * Two controls: the Agents button, whose label is itself the bridge's status,
  * and the name button, which shows the actor id every change of Kaelen's is
@@ -12,15 +11,10 @@
  */
 
 import React, { useCallback, useRef, useState } from 'react'
-import SaveIndicator from './SaveIndicator'
 import AgentsPanel from './AgentsPanel'
 import NamePromptDialog from './NamePromptDialog'
 
-type SaveState = 'saved' | 'saving' | 'error'
-
 interface ForestBarProps {
-  filePath: string | null
-  saveState: SaveState
   agents: TapestryAgentSummary[]
   agentsEnabled: boolean
   /** Null while the first-run prompt is still up. */
@@ -46,8 +40,6 @@ function agentsButtonText(enabled: boolean, agents: TapestryAgentSummary[]): str
 }
 
 export default function ForestBar({
-  filePath,
-  saveState,
   agents,
   agentsEnabled,
   userName,
@@ -69,8 +61,6 @@ export default function ForestBar({
 
   return (
     <div className="tapestry-forest-bar">
-      <SaveIndicator filePath={filePath} saveState={saveState} />
-
       <span className="tapestry-forest-popover-anchor">
         <button
           ref={agentsButtonRef}

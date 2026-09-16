@@ -17,6 +17,7 @@ import NoteCard from './NoteCard'
 import FallbackNodeView from './FallbackNodeView'
 import ConnectionLine from './ConnectionLine'
 import ThreadCenterNode from './ThreadCenterNode'
+import FrameHeader from './FrameHeader'
 import type { ForestTree, NodeRef } from '../state/use-forest'
 import { nodeKey } from '../state/use-forest'
 import type { FrameRect } from '../layout/frames'
@@ -73,6 +74,13 @@ interface TreeFrameProps {
   /** Live drag positions, keyed by nodeKey. */
   dragPositions: Record<string, { x: number; y: number }>
   getDims: (key: string) => { width: number; height: number } | undefined
+  /** Frame-level state, which drives the border treatment (UI-SPEC). */
+  isSelected: boolean
+  isHovered: boolean
+  isDragging: boolean
+  /** Pointer down on the header band: the start of a frame drag. */
+  onHeaderPointerDown: (e: React.PointerEvent<HTMLDivElement>) => void
+  onFrameHover: (hovered: boolean) => void
   handlers: TreeFrameHandlers
 }
 
@@ -89,6 +97,11 @@ export default function TreeFrame({
   currentUserActorId,
   dragPositions,
   getDims,
+  isSelected,
+  isHovered,
+  isDragging,
+  onHeaderPointerDown,
+  onFrameHover,
   handlers,
 }: TreeFrameProps): React.ReactElement {
   const refFor = (nodeId: string): NodeRef => ({ treeId: tree.id, nodeId })
@@ -161,9 +174,19 @@ export default function TreeFrame({
     transform: `translate(${tree.frame.x - rect.x}px, ${tree.frame.y - rect.y}px)`,
   }
 
+  // Dragging outranks selected, which outranks hovered: the strongest thing
+  // true of the frame right now is what its border should say.
+  const stateClass = isDragging
+    ? ' tapestry-tree-frame--dragging'
+    : isSelected
+      ? ' tapestry-tree-frame--selected'
+      : isHovered
+        ? ' tapestry-tree-frame--hovered'
+        : ''
+
   return (
     <div
-      className="tapestry-tree-frame"
+      className={`tapestry-tree-frame${stateClass}`}
       data-tree-id={tree.id}
       style={{
         position: 'absolute',
@@ -173,11 +196,16 @@ export default function TreeFrame({
         height: rect.height,
       }}
     >
-      {/* Header band. Plan 06 adds the Tree options button to its right. */}
-      <div className="tapestry-frame-header">
-        <span className="tapestry-frame-name" title={tree.name}>
-          {tree.name}
-        </span>
+      <div
+        onPointerEnter={() => onFrameHover(true)}
+        onPointerLeave={() => onFrameHover(false)}
+      >
+        <FrameHeader
+          name={tree.name}
+          kind={tree.kind}
+          saveState={tree.saveState}
+          onPointerDown={onHeaderPointerDown}
+        />
       </div>
 
       <div className="tapestry-tree-frame-content" style={contentStyle}>

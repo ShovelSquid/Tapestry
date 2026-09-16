@@ -78,46 +78,9 @@ html, body, #root {
   color: #6B6B6B;
 }
 
-/* Save indicator -- top-left corner (D-05) */
-.tapestry-save-indicator {
-  position: absolute;
-  top: 16px;
-  left: 16px;
-  z-index: 100;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  pointer-events: none;
-}
-
-.tapestry-file-name {
-  font-size: 13px;
-  font-weight: 400;
-  line-height: 1.4;
-  color: #6B6B6B;
-  max-width: 200px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.tapestry-save-state {
-  font-size: 13px;
-  font-weight: 400;
-  line-height: 1.4;
-}
-
-.tapestry-save-state--saved {
-  color: #6B6B6B;
-}
-
-.tapestry-save-state--saving {
-  color: #6B6B6B;
-}
-
-.tapestry-save-state--error {
-  color: #E5484D;
-}
+/* The save indicator that used to sit in this corner is gone: the space holds
+   several trees, so each frame's header carries its own status instead. See
+   .tapestry-frame-status below. */
 
 /* ------------------------------------------------------------------------ */
 /* Tree frames (D-15) -- one per open tree, holding that tree's notes         */
@@ -142,6 +105,21 @@ html, body, #root {
   position: absolute;
 }
 
+/* Frame states (UI-SPEC "Tree frame visual states"). Dragging and selected
+   both use the 2px accent border; only dragging adds the lift. */
+.tapestry-tree-frame--hovered {
+  border: 1px solid #B0ADA6;
+}
+
+.tapestry-tree-frame--selected {
+  border: 2px solid #4A7CFF;
+}
+
+.tapestry-tree-frame--dragging {
+  border: 2px solid #4A7CFF;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+}
+
 /* 64px band, 16px horizontal padding, 4px row gap (Spacing Scale 3xl/md/xs) */
 .tapestry-frame-header {
   position: absolute;
@@ -155,9 +133,23 @@ html, body, #root {
   justify-content: center;
   gap: 4px;
   padding: 0 16px;
-  /* Plan 06 makes the header a drag handle; until then it never swallows a
-     pan that starts on the frame background. */
-  pointer-events: none;
+  /* The header is the frame's drag handle. */
+  cursor: grab;
+  user-select: none;
+}
+
+.tapestry-tree-frame--dragging .tapestry-frame-header {
+  cursor: grabbing;
+}
+
+/* Row 1: name, with the right slot Plan 06 fills. Row 2: kind, then status. */
+.tapestry-frame-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  /* sm token, the gap between kind label and status */
+  gap: 8px;
+  min-width: 0;
 }
 
 /* Note Title role: 18/600/1.25 */
@@ -169,6 +161,32 @@ html, body, #root {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Label role: 13/400/1.4, Muted */
+.tapestry-frame-kind {
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: #6B6B6B;
+  white-space: nowrap;
+}
+
+/* Status truncates at 320px: the declared exception, sized so it stays on one
+   line inside the 480px minimum frame. Full text rides in the title tooltip. */
+.tapestry-frame-status {
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: #6B6B6B;
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tapestry-frame-status--error {
+  color: #E5484D;
 }
 
 /* Note card -- secondary color #FFFFFF */
@@ -929,7 +947,8 @@ html, body, #root {
 /* ------------------------------------------------------------------------ */
 /* Forest bar -- top-left chrome (UI-SPEC "Forest bar")                      */
 /*                                                                           */
-/* It takes over the corner the SaveIndicator used to hold alone, and now    */
+/* It holds only what is true of the whole space; per-tree save status now   */
+/* lives in each frame's header (.tapestry-frame-status).                    */
 /* contains it, so the indicator's own absolute placement is neutralised      */
 /* here rather than by changing that component.                              */
 /* ------------------------------------------------------------------------ */
@@ -943,10 +962,6 @@ html, body, #root {
   align-items: center;
   /* sm token */
   gap: 8px;
-}
-
-.tapestry-forest-bar .tapestry-save-indicator {
-  position: static;
 }
 
 .tapestry-forest-popover-anchor {
