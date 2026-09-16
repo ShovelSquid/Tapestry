@@ -32,12 +32,17 @@ import {
   rectGap,
   resolveBeyond,
   resolveNear,
+  resolveWhere,
   storedRect,
+  whereRefusalText,
   type PlacementPoint,
   type PlacementEdge,
   type PlacementNode,
   type PlacementProp,
   type PlacementRect,
+  type WhereOutcome,
+  type WherePlacement,
+  type WhereRefusal,
 } from './placement'
 
 /** A placed note at x, y with any extra stored properties. */
@@ -584,5 +589,227 @@ describe('displayPositions: following notes (D-05)', () => {
       if (entry) expect(entry.following).toBe(isFollowing(n, world, edges2))
     }
     expect(forward.get('n10')).toMatchObject({ following: true, x: 360 })
+  })
+})
+
+// ---------------------------------------------------------------------------
+// resolveWhere (D-01, D-06, D-08, D-12, D-14)
+// ---------------------------------------------------------------------------
+
+const TALL: Record<string, PlacementProp> = { height: { type: 'real', value: 20000 } }
+
+function where(
+  nodes: PlacementNode[],
+  edges: PlacementEdge[],
+  subject: PlacementNode,
+  placement: WherePlacement,
+): WhereOutcome {
+  return resolveWhere({ nodes, edges }, subject, placement)
+}
+
+/** `subject` with the resolved spot stored and `pinned` bool false, as place would write it. */
+function storedFollowing(subject: PlacementNode, x: number, y: number): PlacementNode {
+  return {
+    ...subject,
+    props: {
+      ...subject.props,
+      'position.x': { type: 'real', value: x },
+      'position.y': { type: 'real', value: y },
+      pinned: { type: 'bool', value: false },
+    },
+  }
+}
+
+describe('resolveWhere: following (D-01)', () => {
+  it('follows for near its own grew-from parent, at the right of the parent', () => {
+    const n2 = node('n2', 2000, 2000)
+    expect(where([node('n1', 0, 0), n2], [grew('e1', 'n2', 'n1')], n2, { near: 'n1' })).toEqual({
+      ok: true,
+      x: 360,
+      y: 0,
+      follows: true,
+    })
+  })
+
+  it('draws a following note exactly where its stored spot says once stored (D-06)', () => {
+    const n1 = node('n1', 30, 40)
+    const n2 = node('n2', 2000, 2000)
+    const edges = [grew('e1', 'n2', 'n1')]
+    const outcome = where([n1, n2], edges, n2, { near: 'n1' })
+    expect(outcome.ok).toBe(true)
+    if (!outcome.ok) return
+    const committed = [n1, storedFollowing(n2, outcome.x, outcome.y)]
+    expect(displayPositions(committed, edges, NO_OVERRIDES).get('n2')).toEqual({
+      x: outcome.x,
+      y: outcome.y,
+      following: true,
+      followSpot: { x: outcome.x, y: outcome.y },
+    })
+  })
+
+  it('resolves before a higher-id follower, so the drawn spot matches the stored spot', () => {
+    const n1 = node('n1', 0, 0)
+    const n2 = node('n2', 2000, 2000)
+    const n3 = node('n3', 0, 500, FOLLOWS)
+    const edges = [grew('e1', 'n2', 'n1'), grew('e2', 'n3', 'n1')]
+    expect(displayPositions([n1, n2, n3], edges, NO_OVERRIDES).get('n3')).toMatchObject({ x: 360, y: 0 })
+
+    const outcome = where([n1, n2, n3], edges, n2, { near: 'n1' })
+    expect(outcome).toEqual({ ok: true, x: 360, y: 0, follows: true })
+
+    const after = displayPositions([n1, storedFollowing(n2, 360, 0), n3], edges, NO_OVERRIDES)
+    expect(after.get('n2')).toMatchObject({ x: 360, y: 0, following: true, followSpot: { x: 360, y: 0 } })
+    expect(after.get('n3')).toMatchObject({ x: 360, y: 144, following: true })
+  })
+
+  it('follows in the create case, where the subject is not yet in the world', () => {
+    const subject: PlacementNode = loose('n2')
+    expect(where([node('n1', 0, 0)], [grew('e1', 'n2', 'n1')], subject, { near: 'n1' })).toEqual({
+      ok: true,
+      x: 360,
+      y: 0,
+      follows: true,
+    })
+  })
+})
+
+describe('resolveWhere: fixed placements', () => {
+  it('stays fixed for near any other note', () => {
+    const n2 = node('n2', 2000, 2000)
+    expect(
+      where([node('n1', 0, 0), n2, node('n3', 0, 500)], [grew('e1', 'n2', 'n1')], n2, { near: 'n3' }),
+    ).toEqual({ ok: true, x: 360, y: 500, follows: false })
+  })
+
+  it('stays fixed for near a grew-from parent with a higher id', () => {
+    const n1 = node('n1', 2000, 2000)
+    expect(where([n1, node('n2', 0, 0)], [grew('e1', 'n1', 'n2')], n1, { near: 'n2' })).toEqual({
+      ok: true,
+      x: 360,
+      y: 0,
+      follows: false,
+    })
+  })
+
+  it('stays fixed for beyond, even beyond its own parent', () => {
+    const n2 = node('n2', 2000, 2000)
+    expect(
+      where([node('n1', 0, 0), n2, node('n3', -400, 0)], [grew('e1', 'n2', 'n1')], n2, {
+        beyond: 'n1',
+        from: 'n3',
+      }),
+    ).toEqual({ ok: true, x: 360, y: 0, follows: false })
+  })
+
+  it("never counts the subject's own current rect as an obstacle", () => {
+    const n2 = node('n2', 100, 0)
+    expect(where([node('n1', 0, 0), n2], [], n2, { near: 'n1' })).toEqual({
+      ok: true,
+      x: 360,
+      y: 0,
+      follows: false,
+    })
+  })
+
+  it('steps down past a blocker in the fixed view', () => {
+    const n2 = node('n2', 2000, 2000)
+    expect(where([node('n1', 0, 0), n2, node('n3', 360, 0)], [], n2, { near: 'n1' })).toEqual({
+      ok: true,
+      x: 360,
+      y: 144,
+      follows: false,
+    })
+  })
+})
+
+describe('resolveWhere refusals', () => {
+  const n1 = node('n1', 0, 0)
+  const n2 = node('n2', 2000, 2000)
+  const base = [n1, n2, node('n3', -400, 0), loose('n4'), knot('n5', 0, 900)]
+
+  const cases: Array<[string, PlacementNode[], PlacementEdge[], WherePlacement, WhereRefusal]> = [
+    ['near an id not in the world', base, [], { near: 'n99' }, { ok: false, reason: 'not-live', role: 'near', anchor: 'n99' }],
+    ['beyond an id not in the world', base, [], { beyond: 'n99', from: 'n1' }, { ok: false, reason: 'not-live', role: 'beyond', anchor: 'n99', from: 'n1' }],
+    ['from an id not in the world', base, [], { beyond: 'n1', from: 'n98' }, { ok: false, reason: 'not-live', role: 'from', anchor: 'n98', from: 'n98' }],
+    ['near the subject itself', base, [], { near: 'n2' }, { ok: false, reason: 'self', role: 'near', anchor: 'n2' }],
+    ['beyond the subject itself', base, [], { beyond: 'n2', from: 'n1' }, { ok: false, reason: 'self', role: 'beyond', anchor: 'n2', from: 'n1' }],
+    ['from the subject itself', base, [], { beyond: 'n1', from: 'n2' }, { ok: false, reason: 'self', role: 'from', anchor: 'n2', from: 'n2' }],
+    ['beyond and from the same note', base, [], { beyond: 'n3', from: 'n3' }, { ok: false, reason: 'same-note', role: 'beyond', anchor: 'n3', from: 'n3' }],
+    ['near an unplaced note', base, [], { near: 'n4' }, { ok: false, reason: 'not-placed', role: 'near', anchor: 'n4' }],
+    ['near a knot', base, [], { near: 'n5' }, { ok: false, reason: 'not-placed', role: 'near', anchor: 'n5' }],
+    ['from an unplaced note', base, [], { beyond: 'n1', from: 'n4' }, { ok: false, reason: 'not-placed', role: 'from', anchor: 'n4', from: 'n4' }],
+    ['near a fully blocked column (no-clear-spot)', [n1, n2, node('n6', 360, 0, TALL)], [], { near: 'n1' }, { ok: false, reason: 'no-clear-spot', role: 'near', anchor: 'n1' }],
+    ['near its own parent with a fully blocked column (no-clear-spot)', [n1, n2, node('n6', 360, 0, TALL)], [grew('e1', 'n2', 'n1')], { near: 'n1' }, { ok: false, reason: 'no-clear-spot', role: 'near', anchor: 'n1' }],
+    ['beyond with a fully blocked column (no-clear-spot)', [n1, n2, node('n3', -400, 0), node('n6', 360, 0, TALL)], [], { beyond: 'n1', from: 'n3' }, { ok: false, reason: 'no-clear-spot', role: 'beyond', anchor: 'n1', from: 'n3' }],
+    ['two distinct notes with the same centre (no-line)', [n1, n2, node('n3', 0, 0)], [], { beyond: 'n1', from: 'n3' }, { ok: false, reason: 'no-line', role: 'beyond', anchor: 'n1', from: 'n3' }],
+    ['near a note too far out to add to (not-finite)', [node('n1', 1e308, 0, { width: { type: 'real', value: 1e308 } }), n2], [], { near: 'n1' }, { ok: false, reason: 'not-finite', role: 'near', anchor: 'n1' }],
+    ['near its own parent too far out (not-finite)', [node('n1', 1e308, 0, { width: { type: 'real', value: 1e308 } }), n2], [grew('e1', 'n2', 'n1')], { near: 'n1' }, { ok: false, reason: 'not-finite', role: 'near', anchor: 'n1' }],
+    ['beyond along an overflowing line (not-finite)', [node('n1', 1e200, 0), n2, node('n3', -1e200, 0)], [], { beyond: 'n1', from: 'n3' }, { ok: false, reason: 'not-finite', role: 'beyond', anchor: 'n1', from: 'n3' }],
+  ]
+
+  for (const [name, nodes, edges, placement, expected] of cases) {
+    it(`refuses ${name}`, () => {
+      expect(where(nodes, edges, n2, placement)).toEqual(expected)
+    })
+  }
+
+  it('turns every refusal into its exact sentence', () => {
+    const text = (refusal: WhereRefusal) => whereRefusalText(refusal, 'n2', 'notes')
+    expect(text({ ok: false, reason: 'not-live', role: 'near', anchor: 'n99' })).toBe(
+      'near n99 is not a live note in notes',
+    )
+    expect(text({ ok: false, reason: 'not-live', role: 'from', anchor: 'n98', from: 'n98' })).toBe(
+      'from n98 is not a live note in notes',
+    )
+    expect(text({ ok: false, reason: 'not-placed', role: 'near', anchor: 'n4' })).toBe(
+      'near n4 is not placed in notes',
+    )
+    expect(text({ ok: false, reason: 'self', role: 'near', anchor: 'n2' })).toBe(
+      'n2 cannot be placed relative to itself',
+    )
+    expect(text({ ok: false, reason: 'same-note', role: 'beyond', anchor: 'n4', from: 'n4' })).toBe(
+      'beyond n4 from n4 names the same note twice',
+    )
+    expect(text({ ok: false, reason: 'no-clear-spot', role: 'near', anchor: 'n1' })).toBe(
+      'no clear spot near n1 in notes',
+    )
+    expect(text({ ok: false, reason: 'no-clear-spot', role: 'beyond', anchor: 'n1', from: 'n3' })).toBe(
+      'no clear spot beyond n1 from n3 in notes',
+    )
+    expect(text({ ok: false, reason: 'no-line', role: 'beyond', anchor: 'n1', from: 'n3' })).toBe(
+      'beyond n1 from n3 has no line to extend in notes',
+    )
+    expect(text({ ok: false, reason: 'not-finite', role: 'near', anchor: 'n1' })).toBe(
+      'no finite spot near n1 in notes',
+    )
+    expect(text({ ok: false, reason: 'not-finite', role: 'beyond', anchor: 'n1', from: 'n3' })).toBe(
+      'no finite spot beyond n1 from n3 in notes',
+    )
+  })
+
+  it('carries no digit in any refusal sentence once node ids are removed (D-14)', () => {
+    for (const [, nodes, edges, placement] of cases) {
+      const outcome = where(nodes, edges, n2, placement)
+      expect(outcome.ok).toBe(false)
+      if (outcome.ok) continue
+      const sentence = whereRefusalText(outcome, 'n2', 'notes')
+      expect(sentence.replace(/\b[ne][1-9][0-9]*\b/g, '')).not.toMatch(/[0-9]/)
+    }
+  })
+
+  it('returns only finite spots when it succeeds', () => {
+    const worlds: Array<[PlacementNode[], PlacementEdge[], WherePlacement]> = [
+      [[n1, n2], [grew('e1', 'n2', 'n1')], { near: 'n1' }],
+      [[n1, n2, node('n3', -300, -300)], [], { beyond: 'n1', from: 'n3' }],
+      [[n1, n2, node('n3', 0.1, 0.7)], [], { beyond: 'n1', from: 'n3' }],
+      [[node('n1', -1e150, 1e150), n2], [], { near: 'n1' }],
+    ]
+    for (const [nodes, edges, placement] of worlds) {
+      const outcome = where(nodes, edges, n2, placement)
+      expect(outcome.ok).toBe(true)
+      if (!outcome.ok) continue
+      expect(Number.isFinite(outcome.x)).toBe(true)
+      expect(Number.isFinite(outcome.y)).toBe(true)
+    }
   })
 })

@@ -513,3 +513,168 @@ export function displayPositions(
 
   return spots
 }
+
+// ---------------------------------------------------------------------------
+// Relations to spots (D-01, D-06, D-08, D-12, D-14)
+// ---------------------------------------------------------------------------
+
+/** Where a note is asked to go: near one note, or beyond one note seen from another. */
+export type WherePlacement = { near: string } | { beyond: string; from: string }
+
+/** Which anchor of a placement a refusal is about. */
+export type WhereRole = 'near' | 'beyond' | 'from'
+
+/** Why a placement was refused. `from` is set for the beyond forms. */
+export interface WhereRefusal {
+  ok: false
+  reason: 'not-live' | 'not-placed' | 'self' | 'same-note' | SpotFailure
+  role: WhereRole
+  anchor: string
+  from?: string
+}
+
+/** A resolved placement: the spot to store and whether the note will follow. */
+export type WhereOutcome = { ok: true; x: number; y: number; follows: boolean } | WhereRefusal
+
+/** The tree a placement is resolved in, as it is now. */
+export interface WhereWorld {
+  nodes: readonly PlacementNode[]
+  edges: readonly PlacementEdge[]
+}
+
+/**
+ * Resolve a placement into the spot to store on `subject` (D-09, D-10), and
+ * whether the note will follow its parent afterwards (D-01: only for near its
+ * own grew-from parent).
+ *
+ * `world` is the tree as it is now. For `place` it includes the subject; for
+ * `create_note` it does not, and the caller adds the new note's grew-from
+ * edge to `world.edges`. Anchors are looked up only in `world.nodes` (D-12).
+ *
+ * For the follow case the answer comes from `displayPositions` on a
+ * simulated world in which the subject already follows. That world differs
+ * from the committed one only in the subject's stored position, which the
+ * follower rule never reads while a clear spot exists, so the spot stored
+ * here is the spot drawn afterwards (D-06, D-08). Resolving it against the
+ * fixed view instead would be wrong: there, higher-id followers block the
+ * subject, although once it follows it is resolved before them.
+ *
+ * The result is the same for any input order and never depends on anything
+ * but the arguments.
+ */
+export function resolveWhere(world: WhereWorld, subject: PlacementNode, where: WherePlacement): WhereOutcome {
+  const beyondForm = 'beyond' in where
+  const anchors: Array<{ role: WhereRole; id: string }> = beyondForm
+    ? [
+        { role: 'beyond', id: where.beyond },
+        { role: 'from', id: where.from },
+      ]
+    : [{ role: 'near', id: where.near }]
+  const refuse = (reason: WhereRefusal['reason'], role: WhereRole, anchor: string): WhereRefusal =>
+    beyondForm ? { ok: false, reason, role, anchor, from: where.from } : { ok: false, reason, role, anchor }
+
+  // (1) Every anchor is live in this tree.
+  const liveIds = new Set<string>()
+  for (const node of world.nodes) liveIds.add(node.id)
+  for (const anchor of anchors) {
+    if (!liveIds.has(anchor.id)) return refuse('not-live', anchor.role, anchor.id)
+  }
+
+  // (2) No anchor is the subject.
+  for (const anchor of anchors) {
+    if (anchor.id === subject.id) return refuse('self', anchor.role, anchor.id)
+  }
+
+  // (3) Beyond and from are two notes.
+  if ('beyond' in where && where.beyond === where.from) {
+    return refuse('same-note', 'beyond', where.beyond)
+  }
+
+  // (4) The fixed view: the tree without the subject, as it is drawn now.
+  const others = world.nodes.filter((node) => node.id !== subject.id)
+  const byId = new Map<string, PlacementNode>()
+  for (const node of others) {
+    if (!byId.has(node.id)) byId.set(node.id, node)
+  }
+  const fixedView = displayPositions(others, world.edges, new Map())
+  const obstacles: PlacementRect[] = []
+  for (const node of [...others].sort((a, b) => compareIds(a.id, b.id))) {
+    const spot = fixedView.get(node.id)
+    if (spot !== undefined && !isKnot(node)) obstacles.push(rectAt(spot, noteSize(node)))
+  }
+  const anchorRects = new Map<string, PlacementRect>()
+  for (const anchor of anchors) {
+    const node = byId.get(anchor.id)
+    const spot = fixedView.get(anchor.id)
+    if (node === undefined || spot === undefined || isKnot(node)) {
+      return refuse('not-placed', anchor.role, anchor.id)
+    }
+    anchorRects.set(anchor.id, rectAt(spot, noteSize(node)))
+  }
+
+  const size = noteSize(subject)
+
+  // (5) Near.
+  if (!('beyond' in where)) {
+    const anchorRect = anchorRects.get(where.near)!
+    if (grewFromParent(subject, world.edges) === where.near) {
+      // The subject as it will be once it follows. Its stored position is
+      // kept when it has one; otherwise it borrows the anchor's corner, so
+      // any notes that follow the subject treat it as placed, as they will
+      // once the resolved spot is stored.
+      const simulatedProps: Record<string, PlacementProp> = {
+        ...subject.props,
+        pinned: { type: 'bool', value: false },
+      }
+      if (!isPlaced(subject)) {
+        simulatedProps['position.x'] = { type: 'real', value: anchorRect.x }
+        simulatedProps['position.y'] = { type: 'real', value: anchorRect.y }
+      }
+      const simulated: PlacementNode = { id: subject.id, type: subject.type, props: simulatedProps }
+      const simulatedNodes = [...others, simulated]
+      if (isFollowing(simulated, simulatedNodes, world.edges)) {
+        const drawn = displayPositions(simulatedNodes, world.edges, new Map()).get(subject.id)
+        const followSpot = drawn === undefined ? null : drawn.followSpot
+        if (followSpot !== null) {
+          return { ok: true, x: followSpot.x, y: followSpot.y, follows: true }
+        }
+        // Tell an unreachable column apart from one that is only crowded.
+        const bare = resolveNear(anchorRect, size, [])
+        return refuse(bare.ok ? 'no-clear-spot' : bare.reason, 'near', where.near)
+      }
+    }
+    const spot = resolveNear(anchorRect, size, obstacles)
+    if (!spot.ok) return refuse(spot.reason, 'near', where.near)
+    return { ok: true, x: spot.x, y: spot.y, follows: false }
+  }
+
+  // (6) Beyond: always fixed.
+  const spot = resolveBeyond(anchorRects.get(where.beyond)!, anchorRects.get(where.from)!, size, obstacles)
+  if (!spot.ok) return refuse(spot.reason, 'beyond', where.beyond)
+  return { ok: true, x: spot.x, y: spot.y, follows: false }
+}
+
+/**
+ * The sentence an agent sees for a refused placement. It names note ids and
+ * the tree, and never a coordinate (D-14).
+ */
+export function whereRefusalText(refusal: WhereRefusal, subjectId: string, treeName: string): string {
+  const relation =
+    refusal.role === 'near' ? `near ${refusal.anchor}` : `beyond ${refusal.anchor} from ${refusal.from ?? refusal.anchor}`
+  switch (refusal.reason) {
+    case 'not-live':
+      return `${refusal.role} ${refusal.anchor} is not a live note in ${treeName}`
+    case 'not-placed':
+      return `${refusal.role} ${refusal.anchor} is not placed in ${treeName}`
+    case 'self':
+      return `${subjectId} cannot be placed relative to itself`
+    case 'same-note':
+      return `beyond ${refusal.anchor} from ${refusal.from ?? refusal.anchor} names the same note twice`
+    case 'no-clear-spot':
+      return `no clear spot ${relation} in ${treeName}`
+    case 'no-line':
+      return `${relation} has no line to extend in ${treeName}`
+    case 'not-finite':
+      return `no finite spot ${relation} in ${treeName}`
+  }
+}
