@@ -273,6 +273,34 @@ export default function App(): React.ReactElement {
   }, [addTreeToSpace])
 
   /**
+   * Mirror an Obsidian vault as its own tree (D-10, D-13).
+   *
+   * Its failure copy is deliberately not the `.tree` file-open copy: when a
+   * vault will not open, the first thing anyone wants to know is whether their
+   * notes are still there, so the sentence says so.
+   *
+   * The confirmation dialog the UI-SPEC describes is Plan 08; this is the
+   * tracer path — choose the folder, and the vault becomes a frame.
+   */
+  const handleAddVault = useCallback(async () => {
+    const picked = await window.tapestry.dialog.showOpenVaultFolder()
+    if (picked.canceled || !picked.folderPath) return
+
+    const added = await window.tapestry.vault.add(picked.folderPath)
+    if (!added.ok || !added.treeId) {
+      setNotice(
+        `Could not add ${fileNameOf(picked.folderPath)} as a tree -- ` +
+          `${added.error ?? 'unknown error'} Nothing in the vault was changed.`,
+      )
+      return
+    }
+
+    // The tree has to be in local state before its frame can be panned to.
+    await refreshAll()
+    setPendingPanTreeId(added.treeId)
+  }, [refreshAll])
+
+  /**
    * Pan to a newly added frame once the space knows about it.
    *
    * Deferred by one animation frame on purpose: main places a new frame from
@@ -637,6 +665,7 @@ export default function App(): React.ReactElement {
           userName={userName}
           onSaveUserName={handleSaveUserName}
           onAgentsRefresh={refreshAgents}
+          onAddVault={handleAddVault}
           onOpenWorld={handleOpenWorld}
           onNewWorld={handleNewWorld}
         />

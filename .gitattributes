@@ -1,0 +1,13 @@
+# The vault fixture's bytes ARE the test.
+#
+# app/test/fixtures/vault-sample reproduces the file shapes a mirrored Obsidian
+# vault has to survive: one file ending in CRLF throughout, one ending with no
+# newline byte at all, and one holding a bare `TEXT` line. mirror.test.ts asserts
+# that each note's `md.text` is byte-equal to its file after a close and reopen.
+#
+# Git's line-ending normalisation would quietly rewrite exactly those bytes on a
+# checkout where `core.autocrlf` is enabled (the Windows default), turning a
+# byte-exactness test into one that passes by accident or fails for a reason
+# that has nothing to do with the mirror. `-text` pins the working-tree bytes to
+# the committed bytes; diffs still read as text.
+app/test/fixtures/vault-sample/** -text
