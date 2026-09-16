@@ -21,6 +21,7 @@ import FrameHeader from './FrameHeader'
 import type { ForestTree, NodeRef } from '../state/use-forest'
 import { nodeKey } from '../state/use-forest'
 import type { FrameRect } from '../layout/frames'
+import type { DisplaySpot } from '../layout/placement'
 import type { NodeInfo } from './Canvas'
 
 /** Fallback thread-center size until the node registers its real dims. */
@@ -73,6 +74,12 @@ interface TreeFrameProps {
   currentUserActorId: string | null
   /** Live drag positions, keyed by nodeKey. */
   dragPositions: Record<string, { x: number; y: number }>
+  /**
+   * Where each note in this tree is drawn, keyed by bare node id (D-05). The
+   * single source of a note's drawn spot, computed once in Canvas so frame
+   * bounds, edges and cards agree on where a following note is.
+   */
+  displayPositions: ReadonlyMap<string, DisplaySpot>
   getDims: (key: string) => { width: number; height: number } | undefined
   /** Frame-level state, which drives the border treatment (UI-SPEC). */
   isSelected: boolean
@@ -96,6 +103,7 @@ export default function TreeFrame({
   pluginNodeViews,
   currentUserActorId,
   dragPositions,
+  displayPositions,
   getDims,
   isSelected,
   isHovered,
@@ -112,8 +120,9 @@ export default function TreeFrame({
     const node = tree.nodes.find((n) => n.id === nodeId)
     if (!node) return null
     const drag = dragPositions[keyFor(nodeId)]
-    const px = drag ? drag.x : Number(node.props['position.x']?.value ?? 0)
-    const py = drag ? drag.y : Number(node.props['position.y']?.value ?? 0)
+    const spot = displayPositions.get(nodeId)
+    const px = spot ? spot.x : drag ? drag.x : Number(node.props['position.x']?.value ?? 0)
+    const py = spot ? spot.y : drag ? drag.y : Number(node.props['position.y']?.value ?? 0)
     const dims = getDims(keyFor(nodeId))
     return { x: px + (dims?.width ?? 240) / 2, y: py + (dims?.height ?? 80) / 2 }
   }
@@ -290,6 +299,7 @@ export default function TreeFrame({
               <NoteCard
                 key={node.id}
                 node={node}
+                displayPosition={displayPositions.get(node.id)?.followSpot ?? undefined}
                 isEditing={editingKey === key}
                 isHovered={hoveredKey === key}
                 isSelected={selectedKey === key}
@@ -329,6 +339,7 @@ export default function TreeFrame({
             <FallbackNodeView
               key={node.id}
               node={node}
+              displayPosition={displayPositions.get(node.id)?.followSpot ?? undefined}
               isSelected={selectedKey === key}
               isHovered={hoveredKey === key}
               zoom={zoom}
