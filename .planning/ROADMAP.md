@@ -266,17 +266,19 @@ Plans:
 **Requirements**: none owned — applies the project's Control constraint ("users can edit … guessing policies") to agent writes; no v1 requirement ID covers permissions yet
 **Design**: `~/Tapestry Tales/Connections/Spec - Locks and Rank.md`, `~/Tapestry Tales/Connections/Plan - Lock Model Implementation.md`. Supersedes 02.2 D-05 (Kaelen, 2026-09-16); collides with 02.3 D-22, recorded only
 **Success Criteria** (what must be TRUE):
+
   1. An agent is refused when it updates, renames or deletes a note that no agent created (a person's, the Obsidian bridge's, another plugin's), and a refusal writes nothing to the `.tree` file
   2. An agent may update another agent's note unless that note is locked; the switch for this default is one named constant
   3. An explicit `lock.text` or `lock.delete` on a note refuses every actor except its owner and anyone on its `.allow` list, and the literal `open` unlocks a default lock; locking text leaves deletion unaffected and vice versa
   4. Whether non-agent notes start delete-locked is one named constant, and every refusal names the aspect and the lock's owner
+
 **Follow-ups** (later slices, not this phase): rank auto-lock when a person sets rank (needs a per-property last writer in the history index); a `setLock` command so only an owner can remove a lock (needs Decision Register #19, the `lock.*` naming, a one-way door); thread and tree scopes, and the Tapestry scope once Phase 2.6 creates the Tapestry tree
-**Plans**: 2 plans
+**Plans**: 1/2 plans executed
 
 Plans:
 **Wave 1**
 
-- [ ] 02.4-01-PLAN.md — Tracer: lock resolver (`locks.ts`, both PENDING constants, fail-closed values) wired into update_note, then rename→text / delete→delete through one gate; authorship gate retired; policy tests rewritten test-first
+- [x] 02.4-01-PLAN.md — Tracer: lock resolver (`locks.ts`, both PENDING constants, fail-closed values) wired into update_note, then rename→text / delete→delete through one gate; authorship gate retired; policy tests rewritten test-first
 
 **Wave 2** *(blocked on Wave 1 completion)*
 

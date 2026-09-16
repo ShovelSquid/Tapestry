@@ -23,7 +23,7 @@ progress:
 See: .planning/PROJECT.md (updated 2026-09-08)
 
 **Core value:** Your world of thoughts must remain readable and under your control — in its spatial interface, its editable relationships and behavior, and its files and branching history.
-**Current focus:** Phase 02.4 — Lock Model (ws/notifications-rank)
+**Current focus:** Phase 02.4 — Lock Model
 
 ## Current Position
 
