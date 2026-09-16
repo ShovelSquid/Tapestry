@@ -4,16 +4,16 @@ milestone: v1.0
 current_phase: "02.2"
 current_phase_name: Obsidian Bridge
 status: executing
-stopped_at: Completed 02.2-06-PLAN.md
-last_updated: "2026-09-16T06:37:59.575Z"
+stopped_at: Completed 02.2-07-PLAN.md
+last_updated: "2026-09-16T07:00:27.729Z"
 last_activity: 2026-09-15
 last_activity_desc: Phase 02.2 execution started
-state_head: 679827b905071242a8fa694a6f9b9f80c832ece1
+state_head: c3f4f3d6c993f90c55415c6117705b124bb9667a
 progress:
   total_phases: 10
   completed_phases: 0
   total_plans: 38
-  completed_plans: 19
+  completed_plans: 20
 ---
 
 # Project State
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-09-08)
 ## Current Position
 
 Phase: 02.2 (Obsidian Bridge) — EXECUTING
-Plan: 4 of 16
+Plan: 5 of 16
 Status: Ready to execute
 Last activity: 2026-09-15 — Phase 02.2 execution started
 
@@ -69,6 +69,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 02.2 P04 | 25 min | 3 tasks | 21 files |
 | Phase 02.2 P05 | 25 min | 2 tasks | 19 files |
 | Phase 02.2 P06 | 40 min | 3 tasks | 13 files |
+| Phase 02.2 P07 | 35 min | 1 tasks | 26 files |
 
 ## Accumulated Context
 
@@ -119,6 +120,10 @@ Recent decisions affecting current work:
 - [Phase 02.2]: A tree that will not open stays in the space as an unavailable entry with the kernel's reason (damaged/locked/missing); a non-Ok journal is closed again immediately so nothing can append to it, and nothing is ever repaired automatically
 - [Phase 02.2]: TreeRegistry.list() stays bridge-bearing and unavailable trees surface through summary(), because the agent command layer iterates list() and reads .bridge
 - [Phase 02.2]: Locked trees are detected by the kernel's real phrase 'another process holds the journal lock' — the word 'locked' never appears in that message, so the plan's stated heuristic would have mislabelled every locked tree as damaged
+- [Phase 02.2]: Vault trees record what the files contain: every key starting md. is the file's, every other key is Tapestry's (02.2-07, D-10/D-14)
+- [Phase 02.2]: The vault test fixture is synthetic and authored in-repo; no House Party content enters git history, and .gitattributes pins its bytes so normalisation cannot rewrite the shapes under test (02.2-07)
+- [Phase 02.2]: A plugin's registered node-view name now selects a component through NODE_VIEW_COMPONENTS; an unmapped name falls back to the readable card instead of rendering as a NoteCard (02.2-07)
+- [Phase 02.2]: The Obsidian mirror refuses bytes it would have to change in order to store them, rather than transcoding them (02.2-07, D-12)
 
 ### Pending Todos
 
@@ -164,6 +169,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-16T06:37:59.496Z
-Stopped at: Completed 02.2-06-PLAN.md
+Last session: 2026-09-16T06:54:29.284Z
+Stopped at: Completed 02.2-07-PLAN.md
 Resume file: None
