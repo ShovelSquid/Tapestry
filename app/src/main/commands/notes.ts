@@ -19,9 +19,6 @@ import type { CommitResult, NodeData, OpObject } from '../kernel-bridge'
 import type { OpenTree, TreeKind, TreeRegistry } from '../trees/registry'
 import { checkLock, isAgentActor, type LockAspect } from './locks'
 
-/** Moved to locks.ts; re-exported so existing importers keep working. */
-export { isAgentActor } from './locks'
-
 // ---------------------------------------------------------------------------
 // Result convention (plugin-host.ts lines 736-800)
 // ---------------------------------------------------------------------------
