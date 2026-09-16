@@ -3,6 +3,8 @@
   "private": true,
   "description": "Throwaway GSD spikes for Tapestry. Not part of the app build.",
   "dependencies": {
+    "@mapbox/tiny-sdf": "2.2.0",
+    "msdfgen-wasm": "1.0.0",
     "three": "0.186.0",
     "troika-three-text": "0.52.5"
   }

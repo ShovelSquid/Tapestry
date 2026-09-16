@@ -1,0 +1,109 @@
+{
+  "log": [
+    {
+      "at": "2026-09-15T20:14:40.960Z",
+      "category": "layer-ready",
+      "ms": 10
+    },
+    {
+      "at": "2026-09-15T20:14:41.217Z",
+      "category": "load",
+      "name": "1h",
+      "buildMs": 255,
+      "glyphs": 4408,
+      "letters": 5359,
+      "atlasCells": 475,
+      "atlasOverflow": 0,
+      "rasterCount": 476,
+      "rasterMsAvg": 0.5237394959172782,
+      "rasterMsMax": 114.29999999701977,
+      "rasterMsLast": 0.29999999701976776,
+      "liveCopies": 0,
+      "liveCopyMsAvg": 0,
+      "instanceMB": 0.23541259765625,
+      "mipmaps": true,
+      "clipped": 0
+    },
+    {
+      "at": "2026-09-15T20:14:42.836Z",
+      "category": "shot",
+      "name": "live",
+      "sidePx": 16
+    },
+    {
+      "at": "2026-09-15T20:14:44.451Z",
+      "category": "shot",
+      "name": "live-oblique",
+      "sidePx": 16
+    },
+    {
+      "at": "2026-09-15T20:14:46.072Z",
+      "category": "shot",
+      "name": "side-8px",
+      "sidePx": 8
+    },
+    {
+      "at": "2026-09-15T20:14:47.688Z",
+      "category": "shot",
+      "name": "side-16px",
+      "sidePx": 16
+    },
+    {
+      "at": "2026-09-15T20:14:49.291Z",
+      "category": "shot",
+      "name": "side-24px",
+      "sidePx": 24
+    },
+    {
+      "at": "2026-09-15T20:14:50.921Z",
+      "category": "shot",
+      "name": "side-48px",
+      "sidePx": 48
+    },
+    {
+      "at": "2026-09-15T20:14:52.542Z",
+      "category": "shot",
+      "name": "side-120px",
+      "sidePx": 120
+    },
+    {
+      "at": "2026-09-15T20:14:54.168Z",
+      "category": "shot",
+      "name": "side-240px",
+      "sidePx": 240
+    },
+    {
+      "at": "2026-09-15T20:14:55.788Z",
+      "category": "shot",
+      "name": "unicode-48px",
+      "sidePx": 48
+    },
+    {
+      "at": "2026-09-15T20:14:57.412Z",
+      "category": "shot",
+      "name": "unicode-240px",
+      "sidePx": 240
+    },
+    {
+      "at": "2026-09-15T20:14:59.039Z",
+      "category": "shot",
+      "name": "unicode-16px",
+      "sidePx": 16
+    }
+  ],
+  "stats": {
+    "glyphs": 4491,
+    "letters": 5457,
+    "atlasCells": 475,
+    "atlasOverflow": 0,
+    "rasterCount": 476,
+    "rasterMsAvg": 0.5237394959172782,
+    "rasterMsMax": 114.29999999701977,
+    "rasterMsLast": 0.29999999701976776,
+    "liveCopies": 0,
+    "liveCopyMsAvg": 0,
+    "instanceMB": 0.23984527587890625,
+    "mipmaps": true,
+    "clipped": 0
+  }
+}

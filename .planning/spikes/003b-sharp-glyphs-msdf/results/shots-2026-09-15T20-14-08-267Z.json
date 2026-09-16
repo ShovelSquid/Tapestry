@@ -1,0 +1,123 @@
+{
+  "log": [
+    {
+      "at": "2026-09-15T20:13:46.594Z",
+      "category": "layer-ready",
+      "ms": 41.900000005960464
+    },
+    {
+      "at": "2026-09-15T20:13:50.345Z",
+      "category": "load",
+      "name": "1h",
+      "buildMs": 3748.7000000029802,
+      "glyphs": 4408,
+      "letters": 5359,
+      "atlasCells": 475,
+      "atlasOverflow": 0,
+      "rasterCount": 476,
+      "rasterMsAvg": 7.86050420166815,
+      "rasterMsMax": 23.400000005960464,
+      "rasterMsLast": 0.29999999701976776,
+      "liveCopies": 0,
+      "liveCopyMsAvg": 0,
+      "instanceMB": 0.23541259765625,
+      "mipmaps": true,
+      "fontLoadMs": 29.5,
+      "reducedClusters": 1,
+      "fallbackGlyphs": 434,
+      "missing": 0,
+      "clipped": 0,
+      "loadGlyphMs": 20.900000035762787,
+      "generateMs": 3699.9000000059605,
+      "preprocess": false
+    },
+    {
+      "at": "2026-09-15T20:13:51.980Z",
+      "category": "shot",
+      "name": "live",
+      "sidePx": 16
+    },
+    {
+      "at": "2026-09-15T20:13:53.617Z",
+      "category": "shot",
+      "name": "live-oblique",
+      "sidePx": 16
+    },
+    {
+      "at": "2026-09-15T20:13:55.248Z",
+      "category": "shot",
+      "name": "side-8px",
+      "sidePx": 8
+    },
+    {
+      "at": "2026-09-15T20:13:56.878Z",
+      "category": "shot",
+      "name": "side-16px",
+      "sidePx": 16
+    },
+    {
+      "at": "2026-09-15T20:13:58.491Z",
+      "category": "shot",
+      "name": "side-24px",
+      "sidePx": 24
+    },
+    {
+      "at": "2026-09-15T20:14:00.109Z",
+      "category": "shot",
+      "name": "side-48px",
+      "sidePx": 48
+    },
+    {
+      "at": "2026-09-15T20:14:01.758Z",
+      "category": "shot",
+      "name": "side-120px",
+      "sidePx": 120
+    },
+    {
+      "at": "2026-09-15T20:14:03.382Z",
+      "category": "shot",
+      "name": "side-240px",
+      "sidePx": 240
+    },
+    {
+      "at": "2026-09-15T20:14:05.009Z",
+      "category": "shot",
+      "name": "unicode-48px",
+      "sidePx": 48
+    },
+    {
+      "at": "2026-09-15T20:14:06.651Z",
+      "category": "shot",
+      "name": "unicode-240px",
+      "sidePx": 240
+    },
+    {
+      "at": "2026-09-15T20:14:08.267Z",
+      "category": "shot",
+      "name": "unicode-16px",
+      "sidePx": 16
+    }
+  ],
+  "stats": {
+    "glyphs": 4483,
+    "letters": 5458,
+    "atlasCells": 475,
+    "atlasOverflow": 0,
+    "rasterCount": 476,
+    "rasterMsAvg": 7.86050420166815,
+    "rasterMsMax": 23.400000005960464,
+    "rasterMsLast": 0.29999999701976776,
+    "liveCopies": 0,
+    "liveCopyMsAvg": 0,
+    "instanceMB": 0.23941802978515625,
+    "mipmaps": true,
+    "fontLoadMs": 29.5,
+    "reducedClusters": 1,
+    "fallbackGlyphs": 434,
+    "missing": 0,
+    "clipped": 0,
+    "loadGlyphMs": 20.900000035762787,
+    "generateMs": 3699.9000000059605,
+    "preprocess": false
+  }
+}
