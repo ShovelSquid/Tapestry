@@ -21,7 +21,8 @@ import { userInfo } from 'os'
 import { KernelBridge } from './kernel-bridge'
 import { PluginHost } from './plugin-host'
 import { SettingsStore, suggestUserName } from './settings'
-import { agentActor, humanActor, type Actor } from './commands/actor'
+import { agentActor, humanActor, isValidActorName, type Actor } from './commands/actor'
+import { buildConnectCommand } from './agents/connect-command'
 import { TreeRegistry, type OpenTree } from './trees/registry'
 import { NoteCommands, type CommandHooks } from './commands/notes'
 import { ConnectionCommands } from './commands/connections'
@@ -284,7 +285,99 @@ app.whenReady().then(async () => {
     }
   }
 
-  await startAgentBridgeSafely()
+  /** The Agents panel re-reads its list whenever this fires. */
+  function notifyAgentsChanged(): void {
+    mainWindow?.webContents.send('agents-changed')
+  }
+
+  agentServer.onConnectionsChanged(notifyAgentsChanged)
+
+  // The switch is honoured from launch: with agents turned off, no socket is
+  // opened at all, rather than opened and then refused.
+  if (settings.read().agentsEnabled) {
+    await startAgentBridgeSafely()
+  }
+
+  // -------------------------------------------------------------------------
+  // Agents IPC — connect, list, remove, and the bridge switch
+  // -------------------------------------------------------------------------
+
+  ipcMain.handle('agents:list', () => {
+    const states = new Map(
+      (agentServer?.connectionStates() ?? []).map((state) => [state.name, state]),
+    )
+    return agents.list().map((agent) => ({
+      name: agent.name,
+      createdAt: agent.createdAt,
+      connected: states.get(agent.name)?.connected ?? false,
+      lastConnectedAt: agent.lastConnectedAt,
+    }))
+  })
+
+  ipcMain.handle('agents:create', (_event, name: unknown) => {
+    // Validated here as well as in the dialog: the renderer decides what to
+    // enable, main decides what exists (T-02.2-22).
+    if (!isValidActorName(name)) {
+      return {
+        ok: false,
+        error: 'Use lowercase letters, numbers, - or _ (1 to 32 characters).',
+      }
+    }
+
+    try {
+      const { token } = agents.create(name)
+      const command = buildConnectCommand({
+        token,
+        userDataDir: app.getPath('userData'),
+        isPackaged: app.isPackaged,
+        appPath: app.getAppPath(),
+        execPath: process.execPath,
+        resourcesPath: process.resourcesPath,
+      })
+      notifyAgentsChanged()
+      // The token travels back exactly once, inside the command; it is never
+      // stored in plaintext, so this is the only chance to show it.
+      return { ok: true, name, command }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      if (message.includes('already exists')) {
+        return { ok: false, error: `agent.${name} already exists. Choose another name.` }
+      }
+      return { ok: false, error: message }
+    }
+  })
+
+  ipcMain.handle('agents:remove', (_event, name: unknown) => {
+    if (typeof name !== 'string') return { ok: false }
+    // The stored digest goes with it, so the token stops verifying on the
+    // agent's very next request (T-02.2-19). Its past commits stay in history.
+    const ok = agents.remove(name)
+    if (ok) notifyAgentsChanged()
+    return { ok }
+  })
+
+  ipcMain.handle('agents:getEnabled', () => {
+    return settings.read().agentsEnabled
+  })
+
+  ipcMain.handle('agents:setEnabled', async (_event, enabled: unknown) => {
+    if (typeof enabled !== 'boolean') {
+      return { ok: false, error: 'enabled must be true or false' }
+    }
+
+    settings.update((current) => ({ ...current, agentsEnabled: enabled }))
+
+    if (enabled) {
+      await startAgentBridgeSafely()
+    } else {
+      // Closing removes the socket file, so an agent cannot reach the command
+      // layer at all while the switch is off.
+      await agentServer?.close()
+    }
+
+    notifyAgentsChanged()
+    return { ok: true }
+  })
 
   // Name settings (D-07). The renderer reads and sets the name, but never
   // uses it to build an actor: getHumanActor above is the only place that

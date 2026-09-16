@@ -39,6 +39,25 @@ export interface AgentSocketServerOptions {
 const DEFAULT_MAX_LINE_BYTES = 4 * 1024 * 1024
 const NEWLINE = 0x0a
 
+/**
+ * How recently a request must have arrived for an agent to read as connected.
+ *
+ * The shim opens one connection per call and closes it again, so an open
+ * socket is not what "connected" means here — a recent request is.
+ */
+const CONNECTED_WINDOW_MS = 120_000
+
+/** How often an agent that has gone quiet is noticed to have idled out. */
+const IDLE_CHECK_MS = 30_000
+
+/** What the Agents panel shows for one agent. */
+export interface AgentConnectionState {
+  name: string
+  connected: boolean
+  /** ISO timestamp, persisted across restarts, or null if it never has. */
+  lastConnectedAt: string | null
+}
+
 export class AgentSocketServer {
   private readonly socketPath: string
   private readonly agents: AgentRegistry
@@ -46,6 +65,16 @@ export class AgentSocketServer {
   private readonly maxLineBytes: number
   private server: Server | null = null
   private readonly sockets = new Set<Socket>()
+
+  /** When each agent's last authenticated request arrived. */
+  private readonly lastSeen = new Map<string, number>()
+
+  /** Agents currently shown as connected, so a change can be detected. */
+  private readonly connectedNames = new Set<string>()
+
+  private readonly connectionListeners = new Set<() => void>()
+
+  private idleTimer: ReturnType<typeof setInterval> | null = null
 
   constructor(options: AgentSocketServerOptions) {
     this.socketPath = options.socketPath
@@ -101,9 +130,21 @@ export class AgentSocketServer {
     }
 
     chmodSync(this.socketPath, 0o600)
+
+    // An agent that simply stops calling has to stop reading as connected.
+    // unref'd so this timer alone never holds the process open.
+    this.idleTimer = setInterval(() => this.sweepIdle(), IDLE_CHECK_MS)
+    this.idleTimer.unref?.()
   }
 
   async close(): Promise<void> {
+    if (this.idleTimer) {
+      clearInterval(this.idleTimer)
+      this.idleTimer = null
+    }
+    this.lastSeen.clear()
+    this.connectedNames.clear()
+
     for (const socket of [...this.sockets]) {
       socket.destroy()
     }
@@ -205,6 +246,9 @@ export class AgentSocketServer {
       return
     }
 
+    // Only a request that passed identity counts as this agent being here.
+    this.noteSeen(agent.name)
+
     try {
       this.agents.markConnected(agent.name, new Date())
     } catch (err) {
@@ -221,6 +265,70 @@ export class AgentSocketServer {
         ok: false,
         error: err instanceof Error ? err.message : String(err),
       })
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Connection status (Agents panel)
+  // -------------------------------------------------------------------------
+
+  /**
+   * Every known agent, with whether it is connected right now.
+   *
+   * `connected` is observed — a request carrying that agent's token arrived
+   * within the window — while `lastConnectedAt` is the persisted time, so an
+   * agent that has not called since the app started still shows when it last
+   * did rather than looking as though it never had.
+   */
+  connectionStates(now: number = Date.now()): AgentConnectionState[] {
+    return this.agents.list().map((agent) => {
+      const seen = this.lastSeen.get(agent.name)
+      return {
+        name: agent.name,
+        connected: seen !== undefined && now - seen <= CONNECTED_WINDOW_MS,
+        lastConnectedAt: agent.lastConnectedAt ?? null,
+      }
+    })
+  }
+
+  /** Subscribe to connect/idle-out changes. Returns an unsubscribe function. */
+  onConnectionsChanged(listener: () => void): () => void {
+    this.connectionListeners.add(listener)
+    return () => {
+      this.connectionListeners.delete(listener)
+    }
+  }
+
+  /** Record a request, announcing an agent that has just become connected. */
+  private noteSeen(name: string): void {
+    this.lastSeen.set(name, Date.now())
+    if (!this.connectedNames.has(name)) {
+      this.connectedNames.add(name)
+      this.emitConnectionsChanged()
+    }
+  }
+
+  /** Drop agents whose last request has fallen outside the window. */
+  private sweepIdle(): void {
+    const now = Date.now()
+    let changed = false
+    for (const name of [...this.connectedNames]) {
+      const seen = this.lastSeen.get(name)
+      if (seen === undefined || now - seen > CONNECTED_WINDOW_MS) {
+        this.connectedNames.delete(name)
+        changed = true
+      }
+    }
+    if (changed) this.emitConnectionsChanged()
+  }
+
+  private emitConnectionsChanged(): void {
+    for (const listener of [...this.connectionListeners]) {
+      try {
+        listener()
+      } catch (err) {
+        console.error('[AgentSocketServer] onConnectionsChanged listener threw:', err)
+      }
     }
   }
 

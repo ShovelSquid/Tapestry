@@ -51,8 +51,14 @@ function sha256Hex(value: string): string {
   return createHash('sha256').update(value, 'utf-8').digest('hex')
 }
 
+/** At most one `lastConnectedAt` write per agent per minute. */
+const MARK_CONNECTED_THROTTLE_MS = 60_000
+
 export class AgentRegistry {
   private readonly filePath: string
+
+  /** When `lastConnectedAt` was last written, per agent. */
+  private readonly lastWriteAt = new Map<string, number>()
 
   constructor(filePath: string) {
     this.filePath = filePath
@@ -137,12 +143,27 @@ export class AgentRegistry {
     return match
   }
 
+  /**
+   * Record that this agent was heard from.
+   *
+   * Throttled to one write per minute per agent: every tool call would
+   * otherwise rewrite `agents.json`, which is the file deciding who may write
+   * to the world. A connection time is worth knowing to the minute, not worth
+   * rewriting that file for on every request.
+   */
   markConnected(name: string, at: Date): void {
+    const at_ms = at.getTime()
+    const previous = this.lastWriteAt.get(name)
+    if (previous !== undefined && at_ms - previous < MARK_CONNECTED_THROTTLE_MS) {
+      return
+    }
+
     const agents = this.list()
     const agent = agents.find((a) => a.name === name)
     if (!agent) return
     agent.lastConnectedAt = at.toISOString()
     this.write(agents)
+    this.lastWriteAt.set(name, at_ms)
   }
 
   /**

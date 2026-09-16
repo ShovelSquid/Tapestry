@@ -93,6 +93,37 @@ const tapestryAPI = {
   },
 
   /**
+   * Connecting, listing and removing agents (D-03, D-06).
+   *
+   * `create` returns the whole `claude mcp add` command with the token in it,
+   * once. Only the token's digest is stored, so the renderer showing it is the
+   * only chance anyone has to copy it.
+   */
+  agents: {
+    list: (): Promise<
+      Array<{
+        name: string
+        createdAt: string
+        connected: boolean
+        lastConnectedAt: string | null
+      }>
+    > => ipcRenderer.invoke('agents:list'),
+
+    create: (
+      name: string,
+    ): Promise<{ ok: true; name: string; command: string } | { ok: false; error: string }> =>
+      ipcRenderer.invoke('agents:create', name),
+
+    remove: (name: string): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke('agents:remove', name),
+
+    getEnabled: (): Promise<boolean> => ipcRenderer.invoke('agents:getEnabled'),
+
+    setEnabled: (enabled: boolean): Promise<{ ok: boolean; error?: string }> =>
+      ipcRenderer.invoke('agents:setEnabled', enabled),
+  },
+
+  /**
    * Listen for file-opened events from the main process
    * (e.g. when reopening the last file on launch).
    */
@@ -115,6 +146,35 @@ const tapestryAPI = {
     }
     ipcRenderer.on('tree-changed', handler)
     return () => ipcRenderer.removeListener('tree-changed', handler)
+  },
+
+  /**
+   * Listen for changes to the agent list or their connection status, so the
+   * Agents panel updates live without polling.
+   */
+  onAgentsChanged: (callback: () => void): (() => void) => {
+    const handler = (): void => {
+      callback()
+    }
+    ipcRenderer.on('agents-changed', handler)
+    return () => ipcRenderer.removeListener('agents-changed', handler)
+  },
+
+  /**
+   * An agent's write returned a rewound tree to its latest state, so the redo
+   * Kaelen could have used is gone (UA-14).
+   */
+  onRedoDiscarded: (
+    callback: (event: { treeId: string; treeName: string; actorId: string }) => void,
+  ): (() => void) => {
+    const handler = (
+      _event: IpcRendererEvent,
+      payload: { treeId: string; treeName: string; actorId: string },
+    ) => {
+      callback(payload)
+    }
+    ipcRenderer.on('redo-discarded', handler)
+    return () => ipcRenderer.removeListener('redo-discarded', handler)
   },
 
   /**

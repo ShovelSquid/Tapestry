@@ -113,14 +113,47 @@ interface TapestrySettingsAPI {
   setUserName(name: string): Promise<{ ok: boolean; error?: string }>
 }
 
+/** One row in the Agents panel. */
+interface TapestryAgentSummary {
+  name: string
+  createdAt: string
+  /** A request carrying this agent's token arrived in the last 2 minutes. */
+  connected: boolean
+  /** ISO timestamp, or null when it has never connected. */
+  lastConnectedAt: string | null
+}
+
+interface TapestryAgentsAPI {
+  list(): Promise<TapestryAgentSummary[]>
+  /** The command carries the token, and is the only time it is shown. */
+  create(
+    name: string,
+  ): Promise<{ ok: true; name: string; command: string } | { ok: false; error: string }>
+  remove(name: string): Promise<{ ok: boolean }>
+  getEnabled(): Promise<boolean>
+  setEnabled(enabled: boolean): Promise<{ ok: boolean; error?: string }>
+}
+
+/** What an agent write into a rewound tree reports (UA-14). */
+interface TapestryRedoDiscarded {
+  treeId: string
+  treeName: string
+  actorId: string
+}
+
 interface TapestryAPI {
   kernel: TapestryKernelAPI
   plugins: TapestryPluginsAPI
   dialog: TapestryDialogAPI
   settings: TapestrySettingsAPI
+  agents: TapestryAgentsAPI
   onFileOpened(callback: (filePath: string) => void): () => void
   /** A commit landed in a tree from outside the renderer (an agent, a plugin). */
   onTreeChanged(callback: (treeId: string) => void): () => void
+  /** The agent list or a connection status changed. */
+  onAgentsChanged(callback: () => void): () => void
+  /** An agent write ended a rewound state, discarding redo (UA-14). */
+  onRedoDiscarded(callback: (event: TapestryRedoDiscarded) => void): () => void
   onPluginError(
     callback: (pluginName: string, displayName: string, message: string, canRestart: boolean) => void,
   ): () => void
