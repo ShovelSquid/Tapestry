@@ -4,7 +4,7 @@
  * The rule is **allow by default, deny if locked** (02.4 D-01). Authorship is
  * no longer the gate; it supplies only the *default* lock owner. An agent may
  * write an aspect when the aspect resolves open, when the agent is the lock's
- * owner, or when the agent is on the lock's allow list (D-10). Only agent
+ * owner, or when the agent is on the lock's allow list (D-09). Only agent
  * actors are checked. People and non-agent plugins pass.
  *
  * Two aspects exist in this slice:
@@ -16,7 +16,7 @@
  *   owner's actor id, or the literal `open`. It always overrides the default.
  *   A malformed value fails closed: any type other than `text` is locked, and
  *   only the exact, case-sensitive `open` unlocks.
- * - **Default** (D-04, D-05, D-06): derived at check time from the actor on
+ * - **Default** (D-04, 02.4 D-05, D-06): derived at check time from the actor on
  *   the commit that created the note, and **never written to the file**. A
  *   note not created by an agent starts locked to its creator. A note created
  *   by an agent starts open to agents, per AGENT_NOTES_OPEN_TO_AGENTS.
@@ -133,10 +133,14 @@ export function isAgentActor(actor: ActorLike): boolean {
  * type other than `text` is locked with its raw value as owner, only the
  * exact text `open` unlocks, and any other text, including an empty one, is
  * the owner. Without one, the default is derived from the note's creator
- * (D-04, D-05, D-06); it is never written back.
+ * (D-04, 02.4 D-05, D-06); it is never written back.
  *
- * `allow` is always empty in this slice: the allow list is not read yet. An
- * empty list can only refuse more, never less.
+ * A locked aspect also carries its allow list (D-09), read from
+ * `lock.<aspect>.allow` whether the lock is explicit or a default: the
+ * agents named there may write despite the lock. The list is whitespace-
+ * separated actor ids. Only a `text` value is read; any other type fails
+ * closed to an empty list, which can only refuse more, never less. An open
+ * aspect ignores the list.
  */
 export function resolveLock(
   props: LockProps,
@@ -146,14 +150,15 @@ export function resolveLock(
 ): LockState {
   const explicit = props[lockKey(aspect)]
   if (explicit) {
-    if (explicit.type !== 'text') {
-      return { locked: true, owner: String(explicit.value), allow: [] }
-    }
-    if (explicit.value === LOCK_OPEN) return { locked: false }
-    return { locked: true, owner: String(explicit.value), allow: [] }
+    if (explicit.type === 'text' && explicit.value === LOCK_OPEN) return { locked: false }
+    return { locked: true, owner: String(explicit.value), allow: readAllow(props, aspect) }
   }
 
-  const lockedToCreator: LockState = { locked: true, owner: createdBy.id, allow: [] }
+  const lockedToCreator: LockState = {
+    locked: true,
+    owner: createdBy.id,
+    allow: readAllow(props, aspect),
+  }
 
   if (isAgentActor(createdBy)) {
     return policy.agentNotesOpenToAgents ? { locked: false } : lockedToCreator
@@ -161,6 +166,19 @@ export function resolveLock(
 
   if (aspect === 'delete' && !policy.nonAgentNotesDeleteLocked) return { locked: false }
   return lockedToCreator
+}
+
+/**
+ * The agents an aspect's allow list names (D-09). Only a `text` value is
+ * read; anything else admits nobody.
+ */
+function readAllow(props: LockProps, aspect: LockAspect): string[] {
+  const prop = props[allowKey(aspect)]
+  if (!prop || prop.type !== 'text') return []
+  return String(prop.value)
+    .trim()
+    .split(/\s+/)
+    .filter((id) => id !== '')
 }
 
 /**

@@ -17,7 +17,14 @@ import { join } from 'node:path'
 import { readFileSync, rmSync, statSync } from 'node:fs'
 import { makeTempDir } from '../../../test/helpers/temp-tree'
 import { TreeRegistry, type OpenTree } from '../trees/registry'
-import { agentActor, humanActor, type Actor } from './actor'
+import {
+  OBSIDIAN_BRIDGE_ACTOR,
+  agentActor,
+  humanActor,
+  pluginActor,
+  type Actor,
+} from './actor'
+import { ConnectionCommands } from './connections'
 import {
   AGENT_NOTES_OPEN_TO_AGENTS,
   DEFAULT_LOCK_POLICY,
@@ -589,5 +596,155 @@ describe('locks through NoteCommands', () => {
     expect(refused.ok === false && refused.error).toBe('n1 text is locked by user.kaelen')
     expect(worldFingerprint()).toEqual(before)
     expect(bodyTextOf('n1')).toBe('Allowed in')
+  })
+  // -------------------------------------------------------------------------
+  // Characterization: behaviour Plan 01 already implements
+  // -------------------------------------------------------------------------
+
+  /** Create a note with a raw submit signed by `by`, and return its id. */
+  function createNoteAs(by: Actor, title: string, text: string, message: string): string {
+    const result = tree.bridge.submitAs(by, message, [
+      {
+        op: 'createNode',
+        type: 'tapestry.notes/note@1',
+        props: {
+          'position.x': { type: 'real', value: 0 },
+          'position.y': { type: 'real', value: 0 },
+          title: { type: 'text', value: title },
+          body: { type: 'text', value: plainTextToDocJson(text) },
+        },
+      },
+    ])
+    return result.nodeIds[0]
+  }
+
+  it('locks a note the Obsidian bridge created against agents (D-04)', () => {
+    const rody = createNoteAs(
+      OBSIDIAN_BRIDGE_ACTOR,
+      'Rody',
+      'From the vault',
+      'observed change to Rody.md',
+    )
+    const before = worldFingerprint()
+
+    const updated = notes.updateNote(CLAUDE, { tree: 'locks', note: rody, text: 'Claude edit' })
+    expect(updated.ok).toBe(false)
+    expect(updated.ok === false && updated.error).toBe(`${rody} text is locked by obsidian.bridge`)
+    expect(worldFingerprint()).toEqual(before)
+    expect(bodyTextOf(rody)).toBe('From the vault')
+
+    const deleted = notes.deleteNote(CLAUDE, { tree: 'locks', note: rody })
+    if (NON_AGENT_NOTES_DELETE_LOCKED) {
+      expect(deleted.ok).toBe(false)
+      expect(deleted.ok === false && deleted.error).toBe(
+        `${rody} delete is locked by obsidian.bridge`,
+      )
+      expect(worldFingerprint()).toEqual(before)
+      expect(tree.bridge.getNode(rody)).not.toBeNull()
+    } else {
+      expect(deleted.ok).toBe(true)
+      expect(tree.bridge.getNode(rody)).toBeNull()
+    }
+  })
+
+  it('locks a note a plain plugin created against an agent rename (D-04)', () => {
+    const pluginNote = createNoteAs(
+      pluginActor('tapestry-notes'),
+      'Plugin note',
+      'Made by a plugin',
+      'Create note',
+    )
+    const before = worldFingerprint()
+
+    const renamed = notes.renameNote(CLAUDE, { tree: 'locks', note: pluginNote, title: 'Taken' })
+    expect(renamed.ok).toBe(false)
+    expect(renamed.ok === false && renamed.error).toBe(
+      `${pluginNote} text is locked by tapestry-notes`,
+    )
+    expect(titleOf(pluginNote)).toBe('Plugin note')
+    expect(worldFingerprint()).toEqual(before)
+  })
+
+  it('does not check people or non-agent plugins against an agent lock (D-10)', () => {
+    setLockProp(claudeNote, 'lock.text', 'agent.claude')
+
+    const byKaelen = notes.updateNote(humanActor('kaelen'), {
+      tree: 'locks',
+      note: claudeNote,
+      text: 'Kaelen edit',
+    })
+    expect(byKaelen.ok).toBe(true)
+    expect(bodyTextOf(claudeNote)).toBe('Kaelen edit')
+
+    const byPlugin = notes.updateNote(pluginActor('tapestry-notes'), {
+      tree: 'locks',
+      note: claudeNote,
+      text: 'Plugin edit',
+    })
+    expect(byPlugin.ok).toBe(true)
+    expect(bodyTextOf(claudeNote)).toBe('Plugin edit')
+    expect(lastCommitBlock()).toContain('actor plugin tapestry-notes')
+
+    const byBridge = notes.updateNote(OBSIDIAN_BRIDGE_ACTOR, {
+      tree: 'locks',
+      note: 'n1',
+      text: 'Bridge edit',
+    })
+    expect(byBridge.ok).toBe(true)
+    expect(bodyTextOf('n1')).toBe('Bridge edit')
+  })
+
+  it('refuses a write to a deleted note as not live, not as locked (D-13)', () => {
+    const deleted = notes.deleteNote(CLAUDE, { tree: 'locks', note: claudeNote })
+    expect(deleted.ok).toBe(true)
+    const before = worldFingerprint()
+
+    const updated = notes.updateNote(CLAUDE, {
+      tree: 'locks',
+      note: claudeNote,
+      text: 'Back from the dead',
+    })
+    expect(updated.ok).toBe(false)
+    expect(updated.ok === false && updated.error).toBe(`${claudeNote} is not a live note in locks`)
+    expect(worldFingerprint()).toEqual(before)
+  })
+
+  it('still lets an agent grow from and connect a locked note (D-01)', () => {
+    setLockProp('n1', 'lock.text', 'user.kaelen')
+    setLockProp('n1', 'lock.delete', 'user.kaelen')
+
+    const grown = notes.createFrom(agentActor('chatgpt'), {
+      tree: 'locks',
+      grewFrom: 'n1',
+      title: 'Offshoot',
+      text: 'grown from a locked note',
+    })
+    expect(grown.ok).toBe(true)
+
+    const connected = new ConnectionCommands(registry).connect(agentActor('chatgpt'), {
+      from: { tree: 'locks', note: 'n1' },
+      to: { tree: 'locks', note: claudeNote },
+    })
+    expect(connected.ok).toBe(true)
+  })
+
+  it('refuses under a lock hidden by undo, after returning to the head, and writes nothing (D-11)', () => {
+    setLockProp(claudeNote, 'lock.text', 'agent.claude')
+    expect(tree.bridge.undo()).toBe(true)
+    expect(tree.bridge.isRewound).toBe(true)
+    const before = worldFingerprint()
+
+    const refused = notes.updateNote(CHATGPT, {
+      tree: 'locks',
+      note: claudeNote,
+      text: 'Slipped past the undo',
+    })
+    expect(refused.ok).toBe(false)
+    expect(refused.ok === false && refused.error).toBe(
+      `${claudeNote} text is locked by agent.claude`,
+    )
+    expect(tree.bridge.isRewound).toBe(false)
+    expect(worldFingerprint()).toEqual(before)
+    expect(bodyTextOf(claudeNote)).toBe('Grown by Claude')
   })
 })
