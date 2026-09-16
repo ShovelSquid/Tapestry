@@ -18,6 +18,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [ ] **Phase 2.1: Passage Anchors, Threads & Complete Rich Editing** - Passage-level linking, thread center nodes, gradient-of-focus hover hierarchy, and complete formatting toolbar with universal editing (INSERTED)
 - [ ] **Phase 2.2: Obsidian Bridge** - Agent MCP bridge, then a two-way Obsidian vault tree, on one shared command set with honest provenance for agent and observed edits (INSERTED)
 - [ ] **Phase 2.3: Time Threads** - Live z-axis writing threads: one note and its history, per-letter timing, side-view read-back (INSERTED)
+- [ ] **Phase 2.5: Agent Spatial Verbs** - Task-space `look` and `place` for agents: relations in, relations out, refused by `lock.layout` (INSERTED; depends on 2.4)
 - [ ] **Phase 3: Branching History & Deterministic Replay** - History navigation, fork-preserving branches, snapshots, and replay from recorded inputs
 - [ ] **Phase 4: Spatial Notebook** - Bundled note, drawing, property, and provenance-display plugins delivering the usable spatial workspace
 - [ ] **Phase 5: Deterministic Rule Engine** - Typed rule inputs/outputs, fixed-step simulation, forces, and explicit failure semantics
@@ -257,6 +258,30 @@ Plans:
 - [ ] 02.3-09-PLAN.md — Vault threads: `.md` keeps only current text, timings live in the vault tree, Obsidian edits arrive as observed clusters (D-25)
 
 **UI hint**: yes
+
+### Phase 2.5: Agent Spatial Verbs (INSERTED)
+
+**Goal**: Agents can perceive where notes are and say where notes go, in task space: `look` returns relations rather than coordinates, `place` takes a relation rather than a position, and the host resolves one into the other — so an agent can move its own body through a tree, and a lock on layout finally has a verb to refuse
+**Mode:** mvp
+**Depends on**: Phase 2.4 (lock model — `lock.layout`, built on `ws/notifications-rank`)
+**Requirements**: none owned — exercises PROV-01/03, TREE-01/02 and PLUG-03 through integration
+**Design source**: `~/Tapestry Tales/Connections/Spec - Agent Spatial Verbs.md` (Decision Register #8, #10, #11, #12)
+**Success Criteria** (what must be TRUE):
+
+  1. An agent calling `look(tree, from, [toward], [limit])` receives its neighbours nearest-first — each with `note`, `space`, `relation` (`near`, `beyond`, `overlapping`, `contains`, `contained-by`), `order` and `guess` — and receives coordinates **only** for placements it may write; there is no hard ceiling on `limit` (spec §2.1, §3; #10, #11)
+  2. An agent calling `place(tree, note, where)` with `{ near }`, `{ on }` or `{ beyond, from }` — ids only, `.strict()` — moves the note; `create_note` accepts the same optional `where`, and without it behaves exactly as today (`{ near: grewFrom }`) (spec §4)
+  3. An agent's placement records the relation it stated and derives the coordinates, so the note keeps following its anchor until a person drags it, after which it is a fixed position; closing, reopening and replaying reproduce the same positions without consulting any model (spec §4.1, §4.2)
+  4. Every refusal returns `{ ok: false, error }` naming what was wrong, and commits nothing: an unknown or unplaced anchor, a note placed relative to itself, and a placement held by `lock.layout` — whose message names the lock's owner. An agent cannot move a user-made note by default, because its layout starts locked (spec §5; #8)
+  5. No new kernel verb or value type is added; placements remain node properties (`position.x/y`), and nothing starts the frozen migration onto placement edges (spec §6, §7)
+  6. `facing` is **not** in this phase; D-27's `direction` stays unwritten by agents until the anchor-cursor phase (#12)
+
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 2.5 to break down)
+
+**UI hint**: no
 
 ### Phase 3: Branching History & Deterministic Replay
 
