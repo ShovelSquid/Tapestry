@@ -17,6 +17,7 @@
 import type { Actor } from './actor'
 import type { CommitResult, NodeData, OpObject } from '../kernel-bridge'
 import type { OpenTree, TreeKind, TreeRegistry } from '../trees/registry'
+import { CHILD_GAP, DEFAULT_NOTE_WIDTH, GREW_FROM_LABEL } from '../../renderer/layout/placement'
 
 // ---------------------------------------------------------------------------
 // Result convention (plugin-host.ts lines 736-800)
@@ -42,7 +43,7 @@ export const NATIVE_NOTE_TYPE = 'tapestry.notes/note@1'
  * The direction is chosen so the line reads naturally in the file:
  * `create-edge e5 n13 n12 grew-from` means "n13 grew from n12".
  */
-export const GREW_FROM_LABEL = 'grew-from'
+export { GREW_FROM_LABEL }
 
 /** Node ids the kernel issues: `n1`, `n2`, ... (never `n0`). */
 const NODE_ID_RE = /^n[1-9][0-9]*$/
@@ -59,12 +60,6 @@ function snippetAround(text: string, query: string): string {
   const start = Math.max(0, index - SNIPPET_LEAD)
   return text.slice(start, start + SNIPPET_LENGTH)
 }
-
-/** Fallback card width when a note has never been resized. */
-const DEFAULT_NOTE_WIDTH = 280
-
-/** Horizontal gap between a parent note and the note grown from it. */
-const CHILD_GAP = 80
 
 const MAX_TITLE_LENGTH = 200
 const MAX_TEXT_BYTES = 1000000
