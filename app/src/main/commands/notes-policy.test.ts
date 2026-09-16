@@ -21,7 +21,7 @@ import { makeTempDir } from '../../../test/helpers/temp-tree'
 import { TreeRegistry, type OpenTree } from '../trees/registry'
 import { agentActor, humanActor, type Actor } from './actor'
 import { ConnectionCommands } from './connections'
-import { AGENT_NOTES_OPEN_TO_AGENTS } from './locks'
+import { AGENT_NOTES_OPEN_TO_AGENTS, NON_AGENT_NOTES_DELETE_LOCKED } from './locks'
 import { NoteCommands, docJsonToPlainText, plainTextToDocJson } from './notes'
 
 const CLAUDE = agentActor('claude')
@@ -176,24 +176,25 @@ describe("an agent changing a note it did not create", () => {
     const result = notes.renameNote(CLAUDE, { tree: 'policy', note: 'n1', title: 'Claimed' })
 
     expect(result.ok).toBe(false)
-    expect(result.ok === false && result.error).toBe(
-      'agent.claude may only change notes it created; n1 was created by user.kaelen',
-    )
+    expect(result.ok === false && result.error).toBe('n1 text is locked by user.kaelen')
     expect(worldFingerprint()).toEqual(before)
     expect(titleOf('n1')).toBe('Seed')
   })
 
-  it('refuses to delete a note created by user.kaelen, and writes nothing', () => {
+  it('deletes a note created by user.kaelen only if its delete is open (NON_AGENT_NOTES_DELETE_LOCKED)', () => {
     const before = worldFingerprint()
 
     const result = notes.deleteNote(CLAUDE, { tree: 'policy', note: 'n1' })
 
-    expect(result.ok).toBe(false)
-    expect(result.ok === false && result.error).toBe(
-      'agent.claude may only change notes it created; n1 was created by user.kaelen',
-    )
-    expect(worldFingerprint()).toEqual(before)
-    expect(tree.bridge.getNode('n1')).not.toBeNull()
+    if (NON_AGENT_NOTES_DELETE_LOCKED) {
+      expect(result.ok).toBe(false)
+      expect(result.ok === false && result.error).toBe('n1 delete is locked by user.kaelen')
+      expect(worldFingerprint()).toEqual(before)
+      expect(tree.bridge.getNode('n1')).not.toBeNull()
+    } else {
+      expect(result.ok).toBe(true)
+      expect(tree.bridge.getNode('n1')).toBeNull()
+    }
   })
 
   /**

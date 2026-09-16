@@ -289,6 +289,10 @@ function bodyTextOf(noteId: string): string {
   return docJsonToPlainText(String(tree.bridge.getNode(noteId)!.props['body']?.value ?? ''))
 }
 
+function titleOf(noteId: string): string {
+  return String(tree.bridge.getNode(noteId)!.props['title']?.value ?? '')
+}
+
 describe('locks through NoteCommands', () => {
   beforeEach(() => {
     dir = makeTempDir('locks')
@@ -378,5 +382,76 @@ describe('locks through NoteCommands', () => {
     expect(result.ok === false && result.error).toBe(`${claudeNote} text is locked by 7`)
     expect(worldFingerprint()).toEqual(before)
     expect(bodyTextOf(claudeNote)).toBe('Grown by Claude')
+  })
+  /** Aspects are independent (D-02, D-03): opening text leaves delete locked. */
+  it('lets an agent update and rename under an open text lock, but refuses its delete', () => {
+    setLockProp('n1', 'lock.text', 'open')
+    setLockProp('n1', 'lock.delete', 'user.kaelen')
+
+    const updated = notes.updateNote(CLAUDE, { tree: 'locks', note: 'n1', text: 'Opened up' })
+    expect(updated.ok).toBe(true)
+
+    const renamed = notes.renameNote(CLAUDE, { tree: 'locks', note: 'n1', title: 'Opened' })
+    expect(renamed.ok).toBe(true)
+    expect(titleOf('n1')).toBe('Opened')
+
+    const before = worldFingerprint()
+    const deleted = notes.deleteNote(CLAUDE, { tree: 'locks', note: 'n1' })
+    expect(deleted.ok).toBe(false)
+    expect(deleted.ok === false && deleted.error).toBe('n1 delete is locked by user.kaelen')
+    expect(worldFingerprint()).toEqual(before)
+    expect(tree.bridge.getNode('n1')).not.toBeNull()
+  })
+
+  /**
+   * A delete lock alone leaves text writable. Claude's note is open under the
+   * default, or agent.claude owns it, so update and rename pass for either
+   * value of AGENT_NOTES_OPEN_TO_AGENTS.
+   */
+  it('lets an agent update and rename a note whose only lock is on delete, but refuses its delete', () => {
+    setLockProp(claudeNote, 'lock.delete', 'user.kaelen')
+
+    const updated = notes.updateNote(CLAUDE, {
+      tree: 'locks',
+      note: claudeNote,
+      text: 'Still mine to edit',
+    })
+    expect(updated.ok).toBe(true)
+
+    const renamed = notes.renameNote(CLAUDE, { tree: 'locks', note: claudeNote, title: 'Lunara' })
+    expect(renamed.ok).toBe(true)
+    expect(titleOf(claudeNote)).toBe('Lunara')
+
+    const before = worldFingerprint()
+    const deleted = notes.deleteNote(CLAUDE, { tree: 'locks', note: claudeNote })
+    expect(deleted.ok).toBe(false)
+    expect(deleted.ok === false && deleted.error).toBe(
+      `${claudeNote} delete is locked by user.kaelen`,
+    )
+    expect(worldFingerprint()).toEqual(before)
+    expect(tree.bridge.getNode(claudeNote)).not.toBeNull()
+  })
+
+  it('refuses a rename when the text lock belongs to someone else (D-03)', () => {
+    setLockProp(claudeNote, 'lock.text', 'user.kaelen')
+    const before = worldFingerprint()
+
+    const result = notes.renameNote(CLAUDE, { tree: 'locks', note: claudeNote, title: 'Taken' })
+
+    expect(result.ok).toBe(false)
+    expect(result.ok === false && result.error).toBe(
+      `${claudeNote} text is locked by user.kaelen`,
+    )
+    expect(titleOf(claudeNote)).toBe('Luna')
+    expect(worldFingerprint()).toEqual(before)
+  })
+
+  it('lets an agent delete a person\'s note whose delete lock is `open`', () => {
+    setLockProp('n1', 'lock.delete', 'open')
+
+    const result = notes.deleteNote(CLAUDE, { tree: 'locks', note: 'n1' })
+
+    expect(result.ok).toBe(true)
+    expect(tree.bridge.getNode('n1')).toBeNull()
   })
 })
