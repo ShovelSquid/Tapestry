@@ -21,8 +21,20 @@ interface FrameHeaderProps {
   name: string
   kind: 'native' | 'vault'
   saveState: TreeSaveState
+  /** The canvas zoom, which decides whether the name has to counter-scale. */
+  zoom: number
   onPointerDown: (e: React.PointerEvent<HTMLDivElement>) => void
 }
+
+/**
+ * Below this zoom the frame name counter-scales (DRAW-03, UA-11).
+ *
+ * The name is 18px, and 18 * 0.72 is just under 13px — the Label size, which
+ * this contract treats as the floor for readable text. Zoomed out further, the
+ * name would keep shrinking with the canvas until a space full of frames was
+ * a space full of unreadable labels, so below 0.72 it stops shrinking.
+ */
+const NAME_MIN_LEGIBLE_ZOOM = 0.72
 
 /** What kind of tree this is, in the person's words rather than the code's. */
 const kindLabels: Record<'native' | 'vault', string> = {
@@ -53,6 +65,7 @@ export default function FrameHeader({
   name,
   kind,
   saveState,
+  zoom,
   onPointerDown,
 }: FrameHeaderProps): React.ReactElement {
   const [isMenuOpen, setIsMenuOpen] = useState(false)
@@ -140,7 +153,21 @@ export default function FrameHeader({
   return (
     <div className="tapestry-frame-header" onPointerDown={handlePointerDown}>
       <div className="tapestry-frame-header-row">
-        <span className="tapestry-frame-name" title={name}>
+        <span
+          className="tapestry-frame-name"
+          title={name}
+          style={
+            zoom < NAME_MIN_LEGIBLE_ZOOM
+              ? {
+                  // Undo exactly as much of the canvas scale as it takes to
+                  // hold 13px on screen, from the left so the name still
+                  // starts where the frame does.
+                  transform: `scale(${NAME_MIN_LEGIBLE_ZOOM / zoom})`,
+                  transformOrigin: 'left center',
+                }
+              : undefined
+          }
+        >
           {name}
         </span>
 

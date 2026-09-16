@@ -54,6 +54,10 @@ export interface ForestTree {
   edges: EdgeInfo[]
   history: TapestryHistoryIndex | null
   saveState: TreeSaveState
+  /** 'ok', or why this tree could not be opened (D-15). */
+  status: TapestryTreeStatus
+  /** The kernel's words, shown on an unavailable frame. */
+  reason?: string
 }
 
 /** How long to wait after a graph change before rescanning the journal. */
@@ -95,6 +99,16 @@ export function useForest() {
 
   /** The tree the last change landed in — the undo/redo target with no selection. */
   const [lastChangedTreeId, setLastChangedTreeId] = useState<string | null>(null)
+
+  /**
+   * The frame Kaelen has selected, if any (UI-SPEC focal points).
+   *
+   * It lives here rather than inside the canvas because it answers a question
+   * the canvas does not own: which tree undo acts on. Selecting a frame is
+   * deliberately not the same as making it the plugin host's primary tree —
+   * that would move where plugins write by clicking on something.
+   */
+  const [selectedTreeId, setSelectedTreeId] = useState<string | null>(null)
 
   const setSaveState = useCallback(
     (treeId: string, saveState: TreeSaveState) => {
@@ -183,6 +197,8 @@ export function useForest() {
             path: summary.path,
             vaultRoot: summary.vaultRoot,
             frame: summary.frame,
+            status: summary.status ?? 'ok',
+            reason: summary.reason,
           }
         }
         return {
@@ -196,6 +212,8 @@ export function useForest() {
           edges: [],
           history: null,
           saveState: 'saved' as TreeSaveState,
+          status: summary.status ?? 'ok',
+          reason: summary.reason,
         }
       })
     })
@@ -223,7 +241,13 @@ export function useForest() {
   /** Re-read the list and every tree's graph. */
   const refreshAll = useCallback(async () => {
     const list = await refreshTreeList()
-    await Promise.all(list.map((summary) => refreshTree(summary.id)))
+    // A tree that would not open has no graph to read, and asking for one
+    // would only produce a refusal per tree per refresh.
+    await Promise.all(
+      list
+        .filter((summary) => (summary.status ?? 'ok') === 'ok')
+        .map((summary) => refreshTree(summary.id)),
+    )
   }, [refreshTreeList, refreshTree])
 
   // -------------------------------------------------------------------------
@@ -336,6 +360,8 @@ export function useForest() {
   return {
     trees,
     lastChangedTreeId,
+    selectedTreeId,
+    setSelectedTreeId,
     patchNodeProps,
     refreshTreeList,
     refreshTree,

@@ -21,6 +21,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import Canvas, { type CanvasHandle, type DoubleClickTarget } from './components/Canvas'
 import ForestBar from './components/ForestBar'
+import { LiveAnnouncer } from './components/LiveAnnouncer'
 import TransientNotice from './components/TransientNotice'
 import PluginErrorNotification from './components/PluginErrorNotification'
 import NamePromptDialog from './components/NamePromptDialog'
@@ -69,6 +70,8 @@ export default function App(): React.ReactElement {
   const {
     trees,
     lastChangedTreeId,
+    selectedTreeId,
+    setSelectedTreeId,
     patchNodeProps,
     refreshTree,
     refreshAll,
@@ -607,8 +610,16 @@ export default function App(): React.ReactElement {
    * on; with nothing selected, the tree they last changed is the next best
    * answer, and the only open tree is the answer when there is just one.
    */
+  // A selected frame is a statement about which tree is being worked on, so it
+  // outranks "the tree I last changed" — but not the note actually being
+  // edited or selected, which is more specific still.
   const undoTargetTreeId =
-    editingRef?.treeId ?? selectedRef?.treeId ?? lastChangedTreeId ?? trees[0]?.id ?? null
+    editingRef?.treeId ??
+    selectedRef?.treeId ??
+    selectedTreeId ??
+    lastChangedTreeId ??
+    trees[0]?.id ??
+    null
 
   const handleUndo = useCallback(async () => {
     if (!undoTargetTreeId) return
@@ -679,88 +690,94 @@ export default function App(): React.ReactElement {
   const isEditingThread = editingRef !== null && editingNode?.type === THREAD_TYPE
 
   return (
-    <div className="tapestry-app">
-      {/* Top-left chrome: agents, and the name changes are signed with. Save
-          state lives in each frame's header now, one per tree. */}
-      <ForestBar
-        agents={agents}
-        agentsEnabled={agentsEnabled}
-        userName={userName}
-        onSaveUserName={handleSaveUserName}
-        onAgentsRefresh={refreshAgents}
-        onOpenWorld={handleOpenWorld}
-        onNewWorld={handleNewWorld}
-      />
-
-      {/* "Start a thread" (UI-SPEC canvas-menu copy; a full context menu is a
-          later plan's UI work, this is the minimal functional trigger). */}
-      <button
-        type="button"
-        onClick={handleNewThread}
-        style={{ position: 'fixed', top: 12, right: 12, zIndex: 500 }}
-      >
-        Start a thread
-      </button>
-
-      {/* An agent write ended a rewound state (UA-14) */}
-      {notice && <TransientNotice message={notice} onHide={() => setNotice(null)} />}
-
-      {/* Plugin error notification (D-34) */}
-      {pluginError && (
-        <PluginErrorNotification
-          pluginName={pluginError.pluginName}
-          displayName={pluginError.displayName}
-          message={pluginError.message}
-          canRestart={pluginError.canRestart}
-          onRestart={handlePluginRestart}
-          onDismiss={handlePluginErrorDismiss}
+    // One pair of live regions for the whole space, mounted above everything
+    // that announces into them (UI-SPEC screen-reader announcements).
+    <LiveAnnouncer>
+      <div className="tapestry-app">
+        {/* Top-left chrome: add a tree, agents, and the name changes are
+            signed with. Save state lives in each frame's header now. */}
+        <ForestBar
+          agents={agents}
+          agentsEnabled={agentsEnabled}
+          userName={userName}
+          onSaveUserName={handleSaveUserName}
+          onAgentsRefresh={refreshAgents}
+          onOpenWorld={handleOpenWorld}
+          onNewWorld={handleNewWorld}
         />
-      )}
 
-      {/* First-run name prompt (D-07). Its overlay covers the canvas, so no
-          change can be made before a name exists to sign it with. */}
-      {nameLoaded && userName === null && (
-        <NamePromptDialog
-          mode="first-run"
-          initialName={suggestedName}
-          onSave={handleSaveUserName}
+        {/* "Start a thread" (UI-SPEC canvas-menu copy; a full context menu is a
+            later plan's UI work, this is the minimal functional trigger). */}
+        <button
+          type="button"
+          onClick={handleNewThread}
+          style={{ position: 'fixed', top: 12, right: 12, zIndex: 500 }}
+        >
+          Start a thread
+        </button>
+
+        {/* An agent write ended a rewound state (UA-14) */}
+        {notice && <TransientNotice message={notice} onHide={() => setNotice(null)} />}
+
+        {/* Plugin error notification (D-34) */}
+        {pluginError && (
+          <PluginErrorNotification
+            pluginName={pluginError.pluginName}
+            displayName={pluginError.displayName}
+            message={pluginError.message}
+            canRestart={pluginError.canRestart}
+            onRestart={handlePluginRestart}
+            onDismiss={handlePluginErrorDismiss}
+          />
+        )}
+
+        {/* First-run name prompt (D-07). Its overlay covers the canvas, so no
+            change can be made before a name exists to sign it with. */}
+        {nameLoaded && userName === null && (
+          <NamePromptDialog
+            mode="first-run"
+            initialName={suggestedName}
+            onSave={handleSaveUserName}
+          />
+        )}
+
+        {/* The space: one frame per open tree, with pan/zoom and connections */}
+        <Canvas
+          ref={canvasRef}
+          trees={trees}
+          editingRef={editingRef}
+          pluginNodeViews={pluginNodeViews}
+          currentUserActorId={currentUserActorId}
+          selectedTreeId={selectedTreeId}
+          onSelectTree={setSelectedTreeId}
+          onStartEditing={(ref) => setEditingRef(ref)}
+          onStopEditing={() => setEditingRef(null)}
+          onCanvasDoubleClick={handleCanvasDoubleClick}
+          onSelectedNoteChange={setSelectedRef}
+          onSave={handleNoteSave}
+          onMarkDirty={markDirty}
+          onMarkClean={markClean}
+          onPositionChange={handlePositionChange}
+          onWidthChange={handleWidthChange}
+          onHeightChange={handleHeightChange}
+          onPinnedPositionChange={handlePinnedPositionChange}
+          onEdgeCreate={handleEdgeCreate}
+          onDeleteNote={handleDeleteNote}
+          onPropertyEdit={handlePropertyEdit}
+          onFrameMove={setFrameLocal}
         />
-      )}
 
-      {/* The space: one frame per open tree, with pan/zoom and connections */}
-      <Canvas
-        ref={canvasRef}
-        trees={trees}
-        editingRef={editingRef}
-        pluginNodeViews={pluginNodeViews}
-        currentUserActorId={currentUserActorId}
-        onStartEditing={(ref) => setEditingRef(ref)}
-        onStopEditing={() => setEditingRef(null)}
-        onCanvasDoubleClick={handleCanvasDoubleClick}
-        onSelectedNoteChange={setSelectedRef}
-        onSave={handleNoteSave}
-        onMarkDirty={markDirty}
-        onMarkClean={markClean}
-        onPositionChange={handlePositionChange}
-        onWidthChange={handleWidthChange}
-        onHeightChange={handleHeightChange}
-        onPinnedPositionChange={handlePinnedPositionChange}
-        onEdgeCreate={handleEdgeCreate}
-        onDeleteNote={handleDeleteNote}
-        onPropertyEdit={handlePropertyEdit}
-        onFrameMove={setFrameLocal}
-      />
-
-      {/* D-09 live writing view: the typer on top, the canvas dimmed behind. */}
-      {isEditingThread && editingRef && (
-        <ThreadOverlay
-          treeId={editingRef.treeId}
-          nodeId={editingRef.nodeId}
-          title={stringProp(editingNode, 'title')}
-          checkpointBody={stringProp(editingNode, 'body')}
-          onClose={() => setEditingRef(null)}
-        />
-      )}
-    </div>
+        {/* D-09 live writing view: the typer on top, the canvas dimmed behind. */}
+        {isEditingThread && editingRef && (
+          <ThreadOverlay
+            treeId={editingRef.treeId}
+            nodeId={editingRef.nodeId}
+            title={stringProp(editingNode, 'title')}
+            checkpointBody={stringProp(editingNode, 'body')}
+            onClose={() => setEditingRef(null)}
+          />
+        )}
+      </div>
+    </LiveAnnouncer>
   )
 }
