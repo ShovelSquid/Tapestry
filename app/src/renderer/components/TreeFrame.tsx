@@ -16,19 +16,19 @@ import React from 'react'
 import NoteCard from './NoteCard'
 import FallbackNodeView from './FallbackNodeView'
 import ConnectionLine from './ConnectionLine'
-import KnotNode from './KnotNode'
+import KnotNode, { KNOT_TYPE, KNOT_TIE_LABEL } from './KnotNode'
 import FrameHeader from './FrameHeader'
 import type { ForestTree, NodeRef } from '../state/use-forest'
 import { nodeKey } from '../state/use-forest'
 import type { FrameRect } from '../layout/frames'
 import type { NodeInfo } from './Canvas'
 
-/** Fallback thread-center size until the node registers its real dims. */
-const THREAD_CENTER_FALLBACK_WIDTH = 200
-const THREAD_CENTER_FALLBACK_HEIGHT = 44
+/** Fallback knot size until the node registers its real dims. */
+const KNOT_FALLBACK_WIDTH = 200
+const KNOT_FALLBACK_HEIGHT = 44
 
-function isThreadCenter(node: NodeInfo): boolean {
-  return node.type.includes('thread-center')
+function isKnot(n: NodeInfo): boolean {
+  return n.type === KNOT_TYPE
 }
 
 /** Everything a note inside a frame can ask the space to do. */
@@ -119,22 +119,22 @@ export default function TreeFrame({
   }
 
   // ---------------------------------------------------------------------
-  // Thread-center auto positions (D-17), computed ONCE for this tree and
-  // shared by its edge layer and its node layer. An unpinned center is
-  // RENDERED at the midpoint of its endpoints rather than at its stored
-  // position, so edges must resolve it from here or the thread arms end at a
-  // phantom point that drifts whenever an endpoint note moves.
+  // Knot auto positions (D-17), computed ONCE for this tree and shared by its
+  // edge layer and its node layer. An unpinned knot is RENDERED at the
+  // midpoint of its endpoints rather than at its stored position, so edges
+  // must resolve it from here or the knot-ties end at a phantom point that
+  // drifts whenever an endpoint note moves.
   // ---------------------------------------------------------------------
 
-  const threadCenterAuto = new Map<
+  const knotAuto = new Map<
     string,
     { left: number; top: number; width: number; height: number }
   >()
   for (const node of tree.nodes) {
-    if (!isThreadCenter(node)) continue
+    if (!isKnot(node)) continue
     const dims = getDims(keyFor(node.id))
-    const width = dims?.width ?? THREAD_CENTER_FALLBACK_WIDTH
-    const height = dims?.height ?? THREAD_CENTER_FALLBACK_HEIGHT
+    const width = dims?.width ?? KNOT_FALLBACK_WIDTH
+    const height = dims?.height ?? KNOT_FALLBACK_HEIGHT
     const px = Number(node.props['position.x']?.value ?? 0)
     const py = Number(node.props['position.y']?.value ?? 0)
     const isPinned =
@@ -143,8 +143,8 @@ export default function TreeFrame({
     let left = px
     let top = py
     if (!isPinned) {
-      const sourceEdge = tree.edges.find((e) => e.label === 'thread-arm' && e.to === node.id)
-      const destEdge = tree.edges.find((e) => e.label === 'thread-arm' && e.from === node.id)
+      const sourceEdge = tree.edges.find((e) => e.label === KNOT_TIE_LABEL && e.to === node.id)
+      const destEdge = tree.edges.find((e) => e.label === KNOT_TIE_LABEL && e.from === node.id)
       const sourceCenter = sourceEdge ? getNodeCenter(sourceEdge.from) : null
       const destCenter = destEdge ? getNodeCenter(destEdge.to) : null
       if (sourceCenter && destCenter) {
@@ -152,12 +152,12 @@ export default function TreeFrame({
         top = (sourceCenter.y + destCenter.y) / 2 - height / 2
       }
     }
-    threadCenterAuto.set(node.id, { left, top, width, height })
+    knotAuto.set(node.id, { left, top, width, height })
   }
 
-  /** Node center honoring the displayed (auto) position of thread centers. */
+  /** Node center honoring the displayed (auto) position of knots. */
   const resolveNodeCenter = (nodeId: string): { x: number; y: number } | null => {
-    const auto = threadCenterAuto.get(nodeId)
+    const auto = knotAuto.get(nodeId)
     if (auto) return { x: auto.left + auto.width / 2, y: auto.top + auto.height / 2 }
     return getNodeCenter(nodeId)
   }
@@ -232,8 +232,8 @@ export default function TreeFrame({
           })}
         </svg>
 
-        {/* Thread center nodes (D-16/D-17/D-18) */}
-        {tree.nodes.filter(isThreadCenter).map((node) => {
+        {/* Knot nodes (D-16/D-17/D-18) */}
+        {tree.nodes.filter(isKnot).map((node) => {
           const px = Number(node.props['position.x']?.value ?? 0)
           const py = Number(node.props['position.y']?.value ?? 0)
           const isPinned =
@@ -241,17 +241,17 @@ export default function TreeFrame({
           const bodyVal = node.props['body']?.value
           const body = typeof bodyVal === 'string' ? bodyVal : ''
 
-          const sourceEdge = tree.edges.find((e) => e.label === 'thread-arm' && e.to === node.id)
-          const destEdge = tree.edges.find((e) => e.label === 'thread-arm' && e.from === node.id)
+          const sourceEdge = tree.edges.find((e) => e.label === KNOT_TIE_LABEL && e.to === node.id)
+          const destEdge = tree.edges.find((e) => e.label === KNOT_TIE_LABEL && e.from === node.id)
 
-          const auto = threadCenterAuto.get(node.id)
+          const auto = knotAuto.get(node.id)
 
-          // D-18: an empty (ghost) center has pointer-events: none, so it can
+          // D-18: an empty (ghost) knot has pointer-events: none, so it can
           // never hover itself. Reveal it when either endpoint is hovered.
           const endpointKeys = [sourceEdge?.from, destEdge?.to]
             .filter((id): id is string => typeof id === 'string')
             .map(keyFor)
-          const isCenterHovered =
+          const isKnotHovered =
             hoveredKey === keyFor(node.id) ||
             (hoveredKey !== null && endpointKeys.includes(hoveredKey))
 
@@ -266,7 +266,7 @@ export default function TreeFrame({
               autoX={auto ? auto.left : px}
               autoY={auto ? auto.top : py}
               isEditing={editingKey === keyFor(node.id)}
-              isHovered={isCenterHovered}
+              isHovered={isKnotHovered}
               zoom={zoom}
               onStartEditing={() => handlers.onStartEditing(refFor(node.id))}
               onSave={(nodeId, body2, title) => handlers.onSave(refFor(nodeId), body2, title)}
@@ -282,7 +282,7 @@ export default function TreeFrame({
         })}
 
         {/* Note cards — NoteCard for known types, FallbackNodeView otherwise */}
-        {tree.nodes.filter((n) => !isThreadCenter(n)).map((node) => {
+        {tree.nodes.filter((n) => !isKnot(n)).map((node) => {
           const key = keyFor(node.id)
 
           if (pluginNodeViews[node.type]) {
