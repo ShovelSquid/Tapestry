@@ -15,12 +15,31 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { createHash } from 'crypto'
 import { existsSync, readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
-import { KernelBridge, type NodeData } from '../kernel-bridge'
+import { KernelBridge, type EdgeData, type NodeData } from '../kernel-bridge'
 import { TreeRegistry } from '../trees/registry'
 import { VaultService } from './vault-service'
 import { decodeMarkdown, isIgnoredVaultPath, vaultTreeFiles } from './vault-fs'
-import { MD_PATH, MD_SHA256, MD_TEXT, VAULT_FOLDER_TYPE, VAULT_NOTE_TYPE } from './shapes'
+import {
+  EMBED_LABEL,
+  MD_AMBIGUOUS,
+  MD_BYTES,
+  MD_EXT,
+  MD_FRONTMATTER,
+  MD_LINE,
+  MD_LINK,
+  MD_PATH,
+  MD_SHA256,
+  MD_TAGS,
+  MD_TEXT,
+  MD_UNREADABLE,
+  VAULT_FILE_TYPE,
+  VAULT_FOLDER_TYPE,
+  VAULT_NOTE_TYPE,
+  VAULT_PLACEHOLDER_TYPE,
+  WIKILINK_LABEL,
+} from './shapes'
 import { makeTempVault, type TempVault } from '../../../test/helpers/temp-vault'
+import { EDGE_VAULT_TEXT, makeEdgeVault, type EdgeVault } from '../../../test/helpers/edge-vault'
 
 /** Every `.md` file the fixture holds, by vault-relative path. */
 const FIXTURE_NOTES = [
@@ -213,5 +232,243 @@ describe('vault mirror', () => {
       ok: false,
       reason: 'has a line longer than 1 MiB',
     })
+  })
+})
+
+// ---------------------------------------------------------------------------
+// What the files say about each other (D-29, D-31, D-33, D-34)
+// ---------------------------------------------------------------------------
+
+/** The node an edge points at, by id. */
+function nodeById(nodes: NodeData[], id: string): NodeData | undefined {
+  return nodes.find((node) => node.id === id)
+}
+
+/** Every wikilink or embed edge leaving the note at `rel`. */
+function edgesFrom(nodes: NodeData[], edges: EdgeData[], rel: string): EdgeData[] {
+  const from = nodeForPath(nodes, rel)
+  if (!from) return []
+  return edges.filter(
+    (edge) =>
+      edge.from === from.id && (edge.label === WIKILINK_LABEL || edge.label === EMBED_LABEL),
+  )
+}
+
+function placeholderFor(nodes: NodeData[], link: string): NodeData | undefined {
+  return nodes.find(
+    (node) =>
+      node.type === VAULT_PLACEHOLDER_TYPE &&
+      (propString(node, MD_LINK) ?? '').toLowerCase() === link.toLowerCase(),
+  )
+}
+
+describe('vault derivation', () => {
+  let vault: TempVault | null = null
+  let edge: EdgeVault | null = null
+  let registry: TreeRegistry | null = null
+
+  afterEach(() => {
+    registry?.closeAll()
+    registry = null
+    vault?.cleanup()
+    vault = null
+    edge?.cleanup()
+    edge = null
+  })
+
+  it('records links as their literal lines, with embeds, tags and frontmatter', async () => {
+    vault = makeTempVault()
+    registry = new TreeRegistry()
+    const service = new VaultService(registry)
+
+    const tree = await service.addVault(vault.root)
+    const bridge = registry.get(tree.id)!.bridge
+    const nodes = bridge.getNodes()
+    const edges = bridge.getEdges()
+
+    // --- D-31: the label is the line, not a paraphrase ---------------------
+    const fromWelcome = edgesFrom(nodes, edges, 'Welcome.md')
+    const runeEdge = fromWelcome.find(
+      (e) => propString(nodeById(nodes, e.to)!, MD_PATH) === 'Characters/Rune.md',
+    )
+    expect(runeEdge).toBeDefined()
+    expect(runeEdge!.props[MD_LINE]?.value).toBe('Best friends with [[Rune]]')
+
+    // Every literal line recorded on an edge really is a line of its file.
+    for (const e of edges) {
+      if (e.label !== WIKILINK_LABEL && e.label !== EMBED_LABEL) continue
+      const source = nodeById(nodes, e.from)!
+      const rel = propString(source, MD_PATH)!
+      const fileLines = readFileSync(absOf(vault!.root, rel), 'utf-8')
+        .split('\n')
+        .map((line) => (line.endsWith('\r') ? line.slice(0, -1) : line))
+      const recorded = String(e.props[MD_LINE]?.value ?? '')
+      expect(fileLines, `${rel} contains the line recorded on its edge`).toContain(recorded)
+    }
+
+    // --- D-34: a link to a note that does not exist ------------------------
+    const missing = placeholderFor(nodes, 'create a link')
+    expect(missing, 'placeholder for [[create a link]]').toBeDefined()
+    expect(missing!.props[MD_AMBIGUOUS]).toBeUndefined()
+    expect(
+      fromWelcome.some((e) => e.to === missing!.id),
+      'Welcome.md is connected to the placeholder',
+    ).toBe(true)
+
+    // --- D-34: a link matching several notes is never guessed at -----------
+    const ambiguous = placeholderFor(nodes, 'dup')
+    expect(ambiguous, 'placeholder for the ambiguous [[dup]]').toBeDefined()
+    expect(ambiguous!.props[MD_AMBIGUOUS]?.value).toBe(true)
+
+    const dupTargets = ['Characters/dup.md', 'Concepts/dup.md']
+    for (const candidate of dupTargets) {
+      const target = nodeForPath(nodes, candidate)!
+      expect(
+        edges.some((e) => e.to === target.id),
+        `nothing is connected to ${candidate}`,
+      ).toBe(false)
+    }
+    // The UI-SPEC is explicit: never connected to either candidate. It is not
+    // connected to its own placeholder either — only the placeholder shows.
+    expect(fromWelcome.some((e) => e.to === ambiguous!.id)).toBe(false)
+
+    // --- D-29: an embed points at the file note ----------------------------
+    const png = nodeForPath(nodes, 'map.png')
+    expect(png, 'map.png is a file note').toBeDefined()
+    expect(png!.type).toBe(VAULT_FILE_TYPE)
+    expect(png!.props[MD_EXT]?.value).toBe('png')
+    expect(png!.props[MD_BYTES]?.value).toBe(readFileSync(absOf(vault.root, 'map.png')).length)
+    expect(propString(png!, MD_SHA256)).toBe(sha256File(absOf(vault.root, 'map.png')))
+    // The bytes themselves are described, never copied into the tree (D-29).
+    expect(png!.props[MD_TEXT]).toBeUndefined()
+
+    const embed = fromWelcome.find((e) => e.label === EMBED_LABEL)
+    expect(embed, 'the embed edge').toBeDefined()
+    expect(embed!.to).toBe(png!.id)
+
+    // --- D-33: tags and frontmatter, without changing the file -------------
+    const rune = nodeForPath(nodes, 'Characters/Rune.md')!
+    expect(propString(rune, MD_TAGS)?.split(' ')).toContain('#character')
+
+    const welcome = nodeForPath(nodes, 'Welcome.md')!
+    const welcomeTags = propString(welcome, MD_TAGS)?.split(' ') ?? []
+    expect(welcomeTags).toContain('#sample')
+    // The tag inside the fenced block is not a tag.
+    expect(welcomeTags).not.toContain('#notatag')
+
+    expect(propString(welcome, MD_FRONTMATTER)).toBe(
+      'title: Welcome\nwritten by: the sample\ntags: [sample, intro]',
+    )
+    expect(propString(welcome, 'md.fm.title')).toBe('Welcome')
+    expect(propString(welcome, 'md.fm.tags')).toBe('sample, intro')
+    // `written by` holds a space, so it is not a legal property key. It stays
+    // in md.frontmatter rather than being renamed into something the file
+    // never said.
+    expect(welcome.props['md.fm.written by']).toBeUndefined()
+    expect(welcome.props['md.fm.written_by']).toBeUndefined()
+  })
+
+  it('describes what it cannot read, and still mirrors the awkward bytes', async () => {
+    edge = makeEdgeVault()
+    registry = new TreeRegistry()
+    const service = new VaultService(registry)
+
+    const tree = await service.addVault(edge.root)
+    const bridge = registry.get(tree.id)!.bridge
+    const nodes = bridge.getNodes()
+    const edges = bridge.getEdges()
+
+    // --- An undecodable .md is described, never transcoded -----------------
+    const bad = nodeForPath(nodes, 'bad.md')!
+    expect(bad.type).toBe(VAULT_FILE_TYPE)
+    expect(propString(bad, MD_UNREADABLE)).toBe('is not valid UTF-8')
+    expect(bad.props[MD_TEXT]).toBeUndefined()
+
+    // --- Byte shapes survive the round trip --------------------------------
+    for (const rel of ['crlf.md', 'no-lf.md', 'text-line.md']) {
+      const stored = Buffer.from(propString(nodeForPath(nodes, rel)!, MD_TEXT) ?? '', 'utf-8')
+      expect(stored.equals(readFileSync(absOf(edge!.root, rel))), `${rel} byte-equal`).toBe(true)
+      expect(stored.toString('utf-8')).toBe(EDGE_VAULT_TEXT[rel])
+    }
+
+    // The CR is a byte of the file, so md.text keeps it; md.line is what the
+    // line says, so the edge does not.
+    const crlfEdge = edgesFrom(nodes, edges, 'crlf.md')[0]
+    expect(crlfEdge.props[MD_LINE]?.value).toBe('[[b]]')
+
+    // --- An embed of a real attachment -------------------------------------
+    const png = nodeForPath(nodes, 'map.png')!
+    expect(png.props[MD_EXT]?.value).toBe('png')
+    expect(png.props[MD_BYTES]?.value).toBe(8)
+    expect(propString(png, MD_SHA256)).toBe(sha256File(absOf(edge.root, 'map.png')))
+    expect(edgesFrom(nodes, edges, 'embeds.md')[0]?.to).toBe(png.id)
+
+    // --- A duplicated basename is refused, not guessed ---------------------
+    const ambiguous = placeholderFor(nodes, 'dup')!
+    expect(ambiguous.props[MD_AMBIGUOUS]?.value).toBe(true)
+    for (const candidate of ['A/dup.md', 'B/dup.md']) {
+      const target = nodeForPath(nodes, candidate)!
+      expect(edges.some((e) => e.to === target.id), `nothing connects to ${candidate}`).toBe(false)
+    }
+    expect(edgesFrom(nodes, edges, 'uses-dup.md')).toHaveLength(0)
+
+    // --- A fenced link is not a link ---------------------------------------
+    expect(placeholderFor(nodes, 'ghost')).toBeUndefined()
+    const fence = nodeForPath(nodes, 'fence.md')!
+    expect(propString(fence, MD_TAGS)).toBe('#real')
+
+    // --- Frontmatter with a space in a key ---------------------------------
+    const front = nodeForPath(nodes, 'front.md')!
+    expect(propString(front, 'md.fm.title')).toBe('Front')
+    expect(propString(front, 'md.fm.tags')).toBe('x, y')
+    expect(propString(front, MD_FRONTMATTER)).toContain('written by: me')
+  })
+
+  it('replaces a placeholder in place once its note exists, and writes nothing twice', async () => {
+    edge = makeEdgeVault()
+    registry = new TreeRegistry()
+    const service = new VaultService(registry)
+
+    const tree = await service.addVault(edge.root)
+    const treePath = join(edge.root, 'Edge Vault.tree')
+    const afterImport = commitCount(readFileSync(treePath, 'utf-8'))
+
+    // A catch-up over an unchanged vault still writes nothing, now that edges,
+    // tags and frontmatter are in play: every desired edge must match the one
+    // already recorded, or the journal would grow on every launch.
+    await service.catchUp(tree.id)
+    expect(commitCount(readFileSync(treePath, 'utf-8'))).toBe(afterImport)
+
+    const bridge = registry.get(tree.id)!.bridge
+    const ghost = placeholderFor(bridge.getNodes(), 'newcomer')
+    expect(ghost).toBeUndefined()
+
+    // Link to a note that does not exist, then create it.
+    writeFileSync(absOf(edge.root, 'b.md'), 'I am b, and I know [[newcomer]].\n')
+    await service.catchUp(tree.id)
+
+    const placeholder = placeholderFor(bridge.getNodes(), 'newcomer')
+    expect(placeholder, 'a placeholder appeared for the new link').toBeDefined()
+    const where = {
+      x: placeholder!.props['position.x']?.value,
+      y: placeholder!.props['position.y']?.value,
+    }
+
+    writeFileSync(absOf(edge.root, 'newcomer.md'), 'I exist now.\n')
+    await service.catchUp(tree.id)
+
+    const after = bridge.getNodes()
+    expect(placeholderFor(after, 'newcomer'), 'the placeholder is gone').toBeUndefined()
+
+    const note = nodeForPath(after, 'newcomer.md')
+    expect(note, 'the real note took its place').toBeDefined()
+    // In place: typing into a placeholder must not make the card jump.
+    expect(note!.props['position.x']?.value).toBe(where.x)
+    expect(note!.props['position.y']?.value).toBe(where.y)
+
+    // And the link now points at the note itself.
+    const link = edgesFrom(after, bridge.getEdges(), 'b.md').find((e) => e.to === note!.id)
+    expect(link).toBeDefined()
+    expect(link!.props[MD_LINE]?.value).toBe('I am b, and I know [[newcomer]].')
   })
 })
