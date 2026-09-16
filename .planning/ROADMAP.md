@@ -18,6 +18,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [ ] **Phase 2.1: Passage Anchors, Threads & Complete Rich Editing** - Passage-level linking, thread center nodes, gradient-of-focus hover hierarchy, and complete formatting toolbar with universal editing (INSERTED)
 - [ ] **Phase 2.2: Obsidian Bridge** - Agent MCP bridge, then a two-way Obsidian vault tree, on one shared command set with honest provenance for agent and observed edits (INSERTED)
 - [ ] **Phase 2.3: Time Threads** - Live z-axis writing threads: one note and its history, per-letter timing, side-view read-back (INSERTED)
+- [ ] **Phase 2.6: Placement Edges & Forest Tree** - An always-open Tapestry tree, the arrangement of trees as a forest tree with placement edges, and trees named by header digest (INSERTED; depends on 2.2)
 - [ ] **Phase 3: Branching History & Deterministic Replay** - History navigation, fork-preserving branches, snapshots, and replay from recorded inputs
 - [ ] **Phase 4: Spatial Notebook** - Bundled note, drawing, property, and provenance-display plugins delivering the usable spatial workspace
 - [ ] **Phase 5: Deterministic Rule Engine** - Typed rule inputs/outputs, fixed-step simulation, forces, and explicit failure semantics
@@ -255,6 +256,31 @@ Plans:
 **Wave 8** *(blocked on Wave 7)*
 
 - [ ] 02.3-09-PLAN.md — Vault threads: `.md` keeps only current text, timings live in the vault tree, Obsidian edits arrive as observed clusters (D-25)
+
+**UI hint**: yes
+
+### Phase 2.6: Placement Edges & Forest Tree (INSERTED)
+
+**Goal**: The arrangement of your trees stops being an unrecorded preference: it lives in a forest tree, referenced from one always-open Tapestry tree, where every frame is a placement edge and every member is named by its header digest — so arranging trees gets an actor, undo, history and branches like any other edit
+**Mode:** mvp
+**Depends on**: Phase 2.2 (tree registry, `settings.json` trees, D-15 frames, T-02.2-32 unavailable members)
+**Requirements**: none owned — exercises TREE and PROV requirements through integration
+**Design source**: `~/Tapestry Tales/Connections/Spec - Placement Edges.md` §1–§5 and `Decision Packet - Tree Identity and the Forest.md` (Decision Register #2 shape C, #4, #5 A, #6, #7, #13 B; one-way doors #17, #18)
+**Success Criteria** (what must be TRUE):
+
+  1. Launching Tapestry opens one always-open Tapestry tree, and `settings.json` holds a pointer to it; the migration is non-destructive — the old `trees` entries stay readable and the settings `version` is bumped — so the previous app state can be recovered (#2 C, #18)
+  2. The arrangement of open trees lives in a forest tree the Tapestry tree references; moving a frame writes a commit with an actor, and undo, close-and-reopen and replay reproduce the arrangement without reading frame positions from `settings.json` (#5 A)
+  3. Each frame is a `placement` edge in the forest tree carrying `origin.*` and, where set, `size.*`; no kernel verb or value type is added, and nothing in the space model refuses a kind of thing from being placed (#6, #7)
+  4. Members are named by header digest with a `path.hint`: a moved or renamed `.tree` that is found again keeps its frame; two paths with one digest are one member; a tree unreadable since it was added keeps an in-memory `path:` id until its first successful open, and a `path:` id is never written to disk as an identity (#13 B)
+  5. A member that will not open still renders as its frame with its status and the kernel's reason, as 2.2 ships it (T-02.2-32)
+  6. Note positions are untouched: `position.x/y` stay node properties and D-27's thread frame is not moved — that migration is a later phase after 2.3 (#4)
+  7. No code writes the Tapestry-tree or forest-tree record shape, or migrates `settings.json`, until Kaelen has approved the exact type strings, keys and labels and the migration at a blocking checkpoint (#17, #18)
+
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 2.6 to break down)
 
 **UI hint**: yes
 

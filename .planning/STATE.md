@@ -1,16 +1,16 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0
-current_phase: "02.2"
-current_phase_name: Obsidian Bridge
-status: executing
+current_phase: "2.6"
+current_phase_name: Placement Edges & Forest Tree
+status: Not planned — discuss next
 stopped_at: Completed 02.2-04-PLAN.md
-last_updated: "2026-09-16T05:28:19.662Z"
-last_activity: 2026-09-15
-last_activity_desc: Phase 02.2 execution started
-state_head: 52adac8d8a69eff0aaec8727e0e32f4aebf1df9c
+last_updated: "2026-09-16T18:14:08.894Z"
+last_activity: 2026-09-16
+last_activity_desc: Phase 2.6 inserted
+state_head: fe33d69fb3da525cebbe6001d9824889d4371bfd
 progress:
-  total_phases: 10
+  total_phases: 11
   completed_phases: 0
   total_plans: 38
   completed_plans: 17
@@ -27,10 +27,10 @@ See: .planning/PROJECT.md (updated 2026-09-08)
 
 ## Current Position
 
-Phase: 02.2 (Obsidian Bridge) — EXECUTING
-Plan: 2 of 16
-Status: Ready to execute
-Last activity: 2026-09-15 — Phase 02.2 execution started
+Phase: 2.6 (Placement Edges & Forest Tree)
+Plan: 0 of TBD
+Status: Not planned — discuss next
+Last activity: 2026-09-16 — Phase 2.6 inserted
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -136,6 +136,7 @@ None yet.
 - Phase 02.2 inserted after Phase 2: Obsidian Bridge: two-way connection between an Obsidian Markdown vault and a Tapestry world (Kaelen, 2026-09-15; discuss with Kaelen, not skipped) (URGENT)
 - Phase 2.3 inserted after Phase 2.2: Time Threads: live z-axis writing threads split out of the 2.2 discussion (Kaelen, 2026-09-15); discuss with Kaelen before planning
 - Phase 2.2 edited: goal reworded to cover the agent MCP bridge plus the Obsidian bridge (02.2-CONTEXT D-01)
+- Phase 2.6 inserted after Phase 2.3: Placement Edges & Forest Tree — Tapestry tree, forest tree with placement edges, digest identity (Decision Register #2 C, #4, #5 A, #6, #7, #13 B; one-way doors #17/#18 gated at a blocking checkpoint). Numbered 2.6 by the orchestrator; note-position migration excluded (later phase after 2.3).
 
 ## Deferred Items
 
