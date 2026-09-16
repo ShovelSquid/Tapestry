@@ -354,63 +354,61 @@ export class KernelBridge {
 
   /**
    * Register IPC handlers on the given ipcMain instance. The main process
-   * entry point calls this to wire the bridge into Electron's IPC.
+   * entry point calls this to wire the open tree into Electron's IPC.
+   *
+   * resolveBridge returns the bridge the renderer currently acts on. Several
+   * trees can be open (D-15), so the bridge is looked up per call rather than
+   * captured once; it throws when no tree is open.
    *
    * getHumanActor supplies the actor for every renderer-originated commit.
    * The renderer never sends one (D-06/D-07): a sandboxed window that could
    * name its own actor could sign changes as anyone.
+   *
+   * `kernel:create` and `kernel:open` are deliberately NOT registered here.
+   * index.ts owns them, because opening a world also validates the path,
+   * updates the tree registry and loads plugins.
    */
-  static registerHandlers(ipcMain: any, getHumanActor: () => Actor): KernelBridge {
-    const bridge = new KernelBridge()
-
-    ipcMain.handle('kernel:create', (_event: any, path: string, worldName: string) => {
-      bridge.create(path, worldName)
-      return { ok: true }
-    })
-
-    ipcMain.handle('kernel:open', (_event: any, path: string) => {
-      bridge.open(path)
-      return { ok: true }
-    })
-
+  static registerHandlers(
+    ipcMain: any,
+    resolveBridge: () => KernelBridge,
+    getHumanActor: () => Actor,
+  ): void {
     // (message, ops) only. A call in the old four-argument shape fails here,
     // before the kernel sees it, rather than being reinterpreted.
     ipcMain.handle('kernel:submit', (_event: any, message: unknown, ops: unknown) => {
       if (typeof message !== 'string' || !Array.isArray(ops)) {
         throw new Error('kernel:submit expects (message: string, ops: Op[])')
       }
-      return bridge.submitAs(getHumanActor(), message, ops as OpObject[])
+      return resolveBridge().submitAs(getHumanActor(), message, ops as OpObject[])
     })
 
     ipcMain.handle('kernel:getNodes', () => {
-      return bridge.getNodes()
+      return resolveBridge().getNodes()
     })
 
     ipcMain.handle('kernel:getNode', (_event: any, id: string) => {
-      return bridge.getNode(id)
+      return resolveBridge().getNode(id)
     })
 
     ipcMain.handle('kernel:getEdges', () => {
-      return bridge.getEdges()
+      return resolveBridge().getEdges()
     })
 
     ipcMain.handle('kernel:status', () => {
-      return bridge.status()
+      return resolveBridge().status()
     })
 
     ipcMain.handle('kernel:getHistoryIndex', () => {
-      return bridge.getHistoryIndex()
+      return resolveBridge().getHistoryIndex()
     })
 
     ipcMain.handle('kernel:undo', () => {
-      return { ok: bridge.undo() }
+      return { ok: resolveBridge().undo() }
     })
 
     ipcMain.handle('kernel:redo', () => {
-      return { ok: bridge.redo() }
+      return { ok: resolveBridge().redo() }
     })
-
-    return bridge
   }
 
   private ensureLoaded(): void {

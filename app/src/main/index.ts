@@ -7,6 +7,10 @@
  *
  * Security: T-02-03 mitigated — renderer has no direct Node.js access.
  * All kernel access goes through the contextBridge preload.
+ *
+ * Open worlds live in a TreeRegistry (D-15). Until Plan 05 opens the frame
+ * view the app still shows one tree at a time, but agents already address
+ * trees by name through the shared command layer (D-01).
  */
 
 import { app, BrowserWindow, ipcMain, dialog } from 'electron'
@@ -17,7 +21,12 @@ import { userInfo } from 'os'
 import { KernelBridge } from './kernel-bridge'
 import { PluginHost } from './plugin-host'
 import { SettingsStore, suggestUserName } from './settings'
-import { humanActor, type Actor } from './commands/actor'
+import { agentActor, humanActor, type Actor } from './commands/actor'
+import { TreeRegistry, type OpenTree } from './trees/registry'
+import { NoteCommands } from './commands/notes'
+import { runAgentTool } from './commands/agent-tools'
+import { AgentRegistry, agentSocketPath } from './agents/registry'
+import { AgentSocketServer } from './agents/socket-server'
 
 // ---------------------------------------------------------------------------
 // Window management
@@ -120,9 +129,34 @@ function validateTreePath(filePath: string): boolean {
 // App lifecycle
 // ---------------------------------------------------------------------------
 
-let bridge: KernelBridge
+/** Every open tree, keyed by the identity in its file (D-15). */
+const registry = new TreeRegistry()
+
 let pluginHost: PluginHost
+let agentServer: AgentSocketServer | null = null
 let currentFilePath: string | null = null
+
+/** The tree the renderer acts on, or an error naming what to do about it. */
+function requirePrimary(): OpenTree {
+  const tree = registry.primary()
+  if (!tree) {
+    throw new Error('No kernel loaded — call create() or open() first')
+  }
+  return tree
+}
+
+/**
+ * Keep exactly one tree open until Plan 05 introduces the frame view.
+ *
+ * The newly opened tree is adopted first and the previous one released after,
+ * so a failed open leaves the current world untouched.
+ */
+function adoptAsOnlyTree(tree: OpenTree): void {
+  for (const other of registry.list()) {
+    if (other.id !== tree.id) registry.close(other.id)
+  }
+  registry.setPrimary(tree.id)
+}
 
 /**
  * Discover and load plugins for the currently open world without letting a
@@ -131,7 +165,9 @@ let currentFilePath: string | null = null
  */
 async function loadPluginsSafely(): Promise<void> {
   try {
-    await pluginHost.discoverAndLoadAll(bridge)
+    const tree = registry.primary()
+    if (!tree) return
+    await pluginHost.discoverAndLoadAll(tree.bridge)
   } catch (err) {
     console.error('[Main] Plugin discovery failed:', err)
   }
@@ -173,8 +209,8 @@ app.whenReady().then(async () => {
     return humanActor(name)
   }
 
-  // Register kernel IPC handlers
-  bridge = KernelBridge.registerHandlers(ipcMain, getHumanActor)
+  // Register kernel IPC handlers against whichever tree is primary.
+  KernelBridge.registerHandlers(ipcMain, () => requirePrimary().bridge, getHumanActor)
 
   // Discover and load plugins
   const pluginsDir = join(app.getAppPath(), '..', 'plugins')
@@ -197,6 +233,34 @@ app.whenReady().then(async () => {
       mainWindow.webContents.send('plugin-error', pluginName, displayName, message, canRestart)
     }
   }
+
+  // -------------------------------------------------------------------------
+  // Agent bridge (D-03/D-06): MCP shim -> Unix socket -> shared commands
+  // -------------------------------------------------------------------------
+
+  const agents = new AgentRegistry(join(app.getPath('userData'), 'agents.json'))
+  const noteCommands = new NoteCommands(registry)
+
+  agentServer = new AgentSocketServer({
+    socketPath: agentSocketPath(app.getPath('userData')),
+    agents,
+    // The agent name comes from the verified token, never from the request.
+    dispatch: (name, tool, args) => runAgentTool(noteCommands, agentActor(name), tool, args),
+  })
+
+  /**
+   * Start the agent bridge without letting it block the app (Phase 2 D-33).
+   * A socket that cannot bind must never stop a world from opening.
+   */
+  async function startAgentBridgeSafely(): Promise<void> {
+    try {
+      await agentServer?.listen()
+    } catch (err) {
+      console.error('[AgentBridge] socket failed:', err)
+    }
+  }
+
+  await startAgentBridgeSafely()
 
   // Name settings (D-07). The renderer reads and sets the name, but never
   // uses it to build an actor: getHumanActor above is the only place that
@@ -222,26 +286,26 @@ app.whenReady().then(async () => {
     return currentFilePath
   })
 
-  // Override kernel:create to track file path and discover plugins
-  ipcMain.removeHandler('kernel:create')
+  // kernel:create — validates the path, then opens through the registry.
   ipcMain.handle('kernel:create', async (_event, path: string, worldName: string) => {
     if (!validateTreePath(path)) {
       throw new Error('Invalid .tree file path')
     }
-    bridge.create(path, worldName)
+    const tree = registry.create(path, worldName)
+    adoptAsOnlyTree(tree)
     currentFilePath = path
     writeLastOpened(path)
     await loadPluginsSafely()
     return { ok: true }
   })
 
-  // Override kernel:open to track file path and discover plugins
-  ipcMain.removeHandler('kernel:open')
+  // kernel:open — same, for an existing world.
   ipcMain.handle('kernel:open', async (_event, path: string) => {
     if (!validateTreePath(path)) {
       throw new Error('Invalid .tree file path')
     }
-    bridge.open(path)
+    const tree = registry.open(path)
+    adoptAsOnlyTree(tree)
     currentFilePath = path
     writeLastOpened(path)
     await loadPluginsSafely()
@@ -279,7 +343,8 @@ app.whenReady().then(async () => {
     // Open the kernel first; only a kernel failure means "no file loaded".
     let opened = false
     try {
-      bridge.open(lastFile)
+      const tree = registry.open(lastFile)
+      adoptAsOnlyTree(tree)
       currentFilePath = lastFile
       opened = true
     } catch {
@@ -316,10 +381,13 @@ app.on('window-all-closed', () => {
   }
 })
 
-// Release the kernel (and its journal lock) deterministically at exit so a
-// relaunched instance can reopen the same world immediately.
+// Release every kernel (and its journal lock) deterministically at exit so a
+// relaunched instance can reopen the same world immediately, and remove the
+// agent socket so a stale file does not outlive the app.
 app.on('will-quit', () => {
-  if (bridge) {
-    bridge.close()
+  if (agentServer) {
+    void agentServer.close()
+    agentServer = null
   }
+  registry.closeAll()
 })

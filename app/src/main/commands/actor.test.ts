@@ -143,10 +143,14 @@ describe('kernel:submit handler', () => {
     const dir = makeTempDir('actor')
     const treePath = join(dir, 'actor.tree')
     const ipc = makeFakeIpcMain()
-    const bridge = KernelBridge.registerHandlers(ipc as any, () => humanActor('kaelen'))
+    // index.ts owns kernel:create/kernel:open now (it validates the path and
+    // updates the tree registry), so the test opens the world itself and hands
+    // registerHandlers the bridge the renderer acts on.
+    const bridge = new KernelBridge()
+    bridge.create(treePath, 'actor')
+    KernelBridge.registerHandlers(ipc as any, () => bridge, () => humanActor('kaelen'))
 
     try {
-      ipc.invoke('kernel:create', treePath, 'actor')
       ipc.invoke('kernel:submit', 'Create note', createNoteOps())
 
       const lines = readFileSync(treePath, 'utf-8').split('\n')
@@ -161,10 +165,11 @@ describe('kernel:submit handler', () => {
     const dir = makeTempDir('actor-legacy')
     const treePath = join(dir, 'legacy.tree')
     const ipc = makeFakeIpcMain()
-    const bridge = KernelBridge.registerHandlers(ipc as any, () => humanActor('kaelen'))
+    const bridge = new KernelBridge()
+    bridge.create(treePath, 'legacy')
+    KernelBridge.registerHandlers(ipc as any, () => bridge, () => humanActor('kaelen'))
 
     try {
-      ipc.invoke('kernel:create', treePath, 'legacy')
       expect(() =>
         ipc.invoke('kernel:submit', 'human', 'local', 'Create note', createNoteOps()),
       ).toThrow('kernel:submit expects')

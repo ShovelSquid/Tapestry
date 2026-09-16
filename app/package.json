@@ -16,6 +16,7 @@
     "postinstall": "npm run build:native"
   },
   "dependencies": {
+    "@modelcontextprotocol/server": "2.0.0",
     "prosemirror-commands": "^1.6.0",
     "prosemirror-history": "^1.4.0",
     "prosemirror-keymap": "^1.2.0",
@@ -23,7 +24,8 @@
     "prosemirror-schema-basic": "^1.2.0",
     "prosemirror-schema-list": "^1.5.1",
     "prosemirror-state": "^1.4.0",
-    "prosemirror-view": "^1.38.0"
+    "prosemirror-view": "^1.38.0",
+    "zod": "4.4.3"
   },
   "devDependencies": {
     "@electron-forge/cli": "^7.4.0",
