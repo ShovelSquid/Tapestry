@@ -4,16 +4,16 @@ milestone: v1.0
 current_phase: "02.2"
 current_phase_name: Obsidian Bridge
 status: executing
-stopped_at: Completed 02.2-05-PLAN.md
-last_updated: "2026-09-16T05:57:16.040Z"
+stopped_at: Completed 02.2-06-PLAN.md
+last_updated: "2026-09-16T06:37:59.575Z"
 last_activity: 2026-09-15
 last_activity_desc: Phase 02.2 execution started
-state_head: fe33d69fb3da525cebbe6001d9824889d4371bfd
+state_head: 679827b905071242a8fa694a6f9b9f80c832ece1
 progress:
   total_phases: 10
   completed_phases: 0
   total_plans: 38
-  completed_plans: 18
+  completed_plans: 19
 ---
 
 # Project State
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-09-08)
 ## Current Position
 
 Phase: 02.2 (Obsidian Bridge) — EXECUTING
-Plan: 3 of 16
+Plan: 4 of 16
 Status: Ready to execute
 Last activity: 2026-09-15 — Phase 02.2 execution started
 
@@ -68,6 +68,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 02.2 P03 | 19 min | 3 tasks | 18 files |
 | Phase 02.2 P04 | 25 min | 3 tasks | 21 files |
 | Phase 02.2 P05 | 25 min | 2 tasks | 19 files |
+| Phase 02.2 P06 | 40 min | 3 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -115,6 +116,9 @@ Recent decisions affecting current work:
 - [Phase 02.2]: Every kernel IPC channel names its tree first; an unknown or malformed treeId is refused rather than falling back to the primary tree
 - [Phase 02.2]: The open trees and their frame positions live in settings.json, not a forest file (D-18); last-opened.json migrates once at frame (0,0)
 - [Phase 02.2]: pushApart never moves the dropped frame, re-queues displaced frames so chains settle, and is capped at 200 steps in deterministic id order
+- [Phase 02.2]: A tree that will not open stays in the space as an unavailable entry with the kernel's reason (damaged/locked/missing); a non-Ok journal is closed again immediately so nothing can append to it, and nothing is ever repaired automatically
+- [Phase 02.2]: TreeRegistry.list() stays bridge-bearing and unavailable trees surface through summary(), because the agent command layer iterates list() and reads .bridge
+- [Phase 02.2]: Locked trees are detected by the kernel's real phrase 'another process holds the journal lock' — the word 'locked' never appears in that message, so the plan's stated heuristic would have mislabelled every locked tree as damaged
 
 ### Pending Todos
 
@@ -160,6 +164,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-16T05:57:15.962Z
-Stopped at: Completed 02.2-05-PLAN.md
+Last session: 2026-09-16T06:37:59.496Z
+Stopped at: Completed 02.2-06-PLAN.md
 Resume file: None
