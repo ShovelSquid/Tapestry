@@ -136,7 +136,7 @@ Plans:
   4. Edits, retitles, moves, new notes, connections and placeholder typing made in Tapestry reach the vault's files after a short pause; when a file changed first, the file wins and the Tapestry edit stays in history; undo writes files back
   5. Several trees share one space in non-overlapping frames that reopen where they were; connections between trees are recorded in both trees and cut in both when a note is deleted; dragging a note into another frame copies it, asking before any formatting would be lost
 
-**Plans**: 2/16 plans executed
+**Plans**: 3/16 plans executed
 
 Plans:
 **Wave 1**
@@ -149,7 +149,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 02.2-03-PLAN.md — Tracer: MCP stdio shim -> Unix socket -> shared note commands; create_note grown from a note as `agent.<name>`
+- [x] 02.2-03-PLAN.md — Tracer: MCP stdio shim -> Unix socket -> shared note commands; create_note grown from a note as `agent.<name>`
 
 **Wave 4** *(blocked on Wave 3 completion)*
 

@@ -4,15 +4,15 @@ milestone: v1.0
 current_phase: "02.2"
 current_phase_name: Obsidian Bridge
 status: discussing
-stopped_at: Completed 02.2-02-PLAN.md
-last_updated: "2026-09-16T04:36:23.147Z"
+stopped_at: Completed 02.2-03-PLAN.md
+last_updated: "2026-09-16T04:59:02.755Z"
 last_activity: 2026-09-15
 last_activity_desc: Phase 02.2 Obsidian Bridge inserted
-state_head: 4b8c3b82e31f735003123304559c7f75dcb622bc
+state_head: 1aa22aedef3aab8ecb73abf4378a5d1984d4169d
 progress:
   total_phases: 10
   completed_phases: 0
-  total_plans: 35
+  total_plans: 38
   completed_plans: 15
 ---
 
@@ -65,6 +65,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 01 P05 | 9 min | 3 tasks | 4 files |
 | Phase 02.2 P01 | 13 min | 3 tasks | 22 files |
 | Phase 02.2 P02 | 9 min | 2 tasks | 14 files |
+| Phase 02.2 P03 | 19 min | 3 tasks | 18 files |
 
 ## Accumulated Context
 
@@ -100,6 +101,10 @@ Recent decisions affecting current work:
 - [Phase 02.2]: Authorship is derived from the actor line on the creating commit via buildHistoryIndex over Journal::commits(); no created-by property exists, so the D-05 check rests on facts on disk (HIST-08)
 - [Phase 02.2]: Every history read takes the displayed replay seq rather than the journal head, so a rewound view never attributes a commit the reader cannot see; getNextIds is refused while rewound
 - [Phase 02.2]: Provenance is a glyph plus the literal actor id and never a color (DRAW-04); only obsidian.bridge is annotated 'author unknown' because that id names the watcher, not the author (D-21)
+- [Phase 02.2]: Agent identity is derived from a per-agent token in main (sha256 + timingSafeEqual), never from a tool argument: no MCP schema has an actor field and all are .strict()
+- [Phase 02.2]: The agent bridge transport is a stdio shim plus a 0600 Unix socket, so no TCP port is opened; a browser page cannot address it
+- [Phase 02.2]: The grew-from edge runs new note -> parent, so the file line reads 'create-edge e5 n13 n12 grew-from' as 'n13 grew from n12'
+- [Phase 02.2]: A tree's identity is its header digest, derived from world name + creation second, so two worlds created with the same name in the same second collide
 
 ### Pending Todos
 
@@ -143,6 +148,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-16T04:36:23.080Z
-Stopped at: Completed 02.2-02-PLAN.md
+Last session: 2026-09-16T04:59:02.049Z
+Stopped at: Completed 02.2-03-PLAN.md
 Resume file: None
