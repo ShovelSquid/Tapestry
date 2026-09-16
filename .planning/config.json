@@ -47,7 +47,9 @@
     "security_enforcement": true,
     "security_asvs_level": 1,
     "security_block_on": "high",
-    "_auto_chain_active": true
+    "_auto_chain_active": true,
+    "test_command": "cmake -S tapestry -B tapestry/build-kernel -DTAPESTRY_BUILD_APP=OFF -DTAPESTRY_BUILD_RENDER=OFF && cmake --build tapestry/build-kernel && ctest --test-dir tapestry/build-kernel --output-on-failure && npm --prefix app run typecheck",
+    "test_gate_timeout": 1800
   },
   "ship": {
     "pr_body_sections": []
