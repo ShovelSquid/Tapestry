@@ -46,6 +46,12 @@ export interface CommandContext {
   /** The kernel API for reading and mutating the world. */
   kernel: import('./index').KernelAPI
 
+  /**
+   * Who invoked this command, stamped by the host. Commits the command makes
+   * are recorded as `plugin <pluginId>`.
+   */
+  readonly actor: { readonly kind: 'human' | 'plugin' | 'system'; readonly id: string }
+
   /** IDs of currently selected nodes (may be empty). */
   selectedNodes: string[]
 

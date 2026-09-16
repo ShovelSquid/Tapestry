@@ -161,6 +161,9 @@ app.whenReady().then(async () => {
   // Discover and load plugins
   const pluginsDir = join(app.getAppPath(), '..', 'plugins')
   pluginHost = new PluginHost(pluginsDir)
+  // Commands know who asked for them; their commits are still signed by the
+  // plugin (D-06).
+  pluginHost.invokerActor = getHumanActor
 
   // Register plugin IPC handlers
   PluginHost.registerHandlers(ipcMain, pluginHost)

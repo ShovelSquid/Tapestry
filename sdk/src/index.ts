@@ -142,7 +142,16 @@ export type Op =
  * the change atomically or rejects it without side effects.
  */
 export interface KernelAPI {
-  /** Submit a batch of operations as a single atomic commit. */
+  /**
+   * Submit a batch of operations as a single atomic commit.
+   *
+   * The host records the commit as `plugin <pluginId>` — your plugin's
+   * directory name under plugins/. `actorKind` and `actorId` are **ignored**;
+   * they remain in the signature so API version "1" is unchanged. An
+   * `actorKind` of `human` or `system` is refused with an error rather than
+   * silently re-stamped, so a plugin that believes it can sign changes as a
+   * person finds out immediately.
+   */
   submit(
     actorKind: string,
     actorId: string,

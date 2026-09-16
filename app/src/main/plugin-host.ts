@@ -18,10 +18,13 @@ import { isAbsolute, join, relative, resolve, sep } from 'path'
 import type { IpcMain } from 'electron'
 import type {
   NodeViewContribution,
+  CommandContext,
   CommandContribution,
   PropertyPanelContribution,
   InspectorContribution,
 } from '../../../sdk/src/contributions'
+import type { KernelBridge } from './kernel-bridge'
+import { assertPluginSubmitKind, pluginActor, SYSTEM_ACTOR, type Actor } from './commands/actor'
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -40,6 +43,41 @@ const PLUGIN_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/
 /** Whether a plugin name is safe to use as a directory name under plugins/. */
 export function isValidPluginName(name: unknown): name is string {
   return typeof name === 'string' && PLUGIN_NAME_RE.test(name) && !name.includes('..')
+}
+
+// ---------------------------------------------------------------------------
+// Plugin kernel facade (D-06)
+// ---------------------------------------------------------------------------
+
+/**
+ * Build the kernel surface a plugin is handed, bound to that plugin's id.
+ *
+ * SDK API version "1" is unchanged: submit still takes (actorKind, actorId,
+ * message, ops), so existing plugins compile and run untouched. What changes
+ * is that **the supplied actor pair is ignored** — the host records the
+ * commit as `plugin <pluginId>` (D-06). A plugin cannot choose how its
+ * changes are attributed, which is what makes the `actor` line worth reading.
+ *
+ * An actorKind of `human` or `system` throws rather than being re-stamped.
+ * Silently correcting it would hide a plugin that believes it can write as
+ * you; throwing surfaces it the first time it tries.
+ *
+ * This is policy, not a sandbox. Plugins are require()d into the main process
+ * with full Node access and could load the addon directly (RESEARCH Pitfall
+ * 9). Real isolation is a later phase; until then this closes the accidental
+ * and the casual case, not a determined one.
+ */
+export function makePluginKernelFacade(pluginId: string, getBridge: () => KernelBridge) {
+  return {
+    submit(actorKind: string, _actorId: string, message: string, ops: any[]) {
+      assertPluginSubmitKind(actorKind)
+      return getBridge().submitAs(pluginActor(pluginId), message, ops)
+    },
+    getNodes: () => getBridge().getNodes(),
+    getNode: (id: string) => getBridge().getNode(id),
+    getEdges: () => getBridge().getEdges(),
+    status: () => getBridge().status(),
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -155,6 +193,16 @@ export class PluginHost {
   onPluginError:
     | ((pluginName: string, displayName: string, error: string, canRestart: boolean) => void)
     | null = null
+
+  /**
+   * Who is invoking plugin commands right now. The main process sets this to
+   * its human-actor resolver so a command can tell who asked for it; commits
+   * the command makes are still recorded as the plugin (D-06).
+   *
+   * Defaults to the system actor: a command triggered by the host itself,
+   * before any window exists, has no person behind it.
+   */
+  invokerActor: () => Actor = () => SYSTEM_ACTOR
 
   constructor(pluginsDir: string) {
     this.pluginsDir = pluginsDir
@@ -327,14 +375,9 @@ export class PluginHost {
       // Build the PluginContext per the SDK contract
       // D-31: KernelAPI has NO journal-level methods (no raw read/write/truncate/repair/saveAs)
       const context = {
-        kernel: {
-          submit: (actorKind: string, actorId: string, message: string, ops: any[]) =>
-            this.kernelBridge.submit(actorKind, actorId, message, ops),
-          getNodes: () => this.kernelBridge.getNodes(),
-          getNode: (id: string) => this.kernelBridge.getNode(id),
-          getEdges: () => this.kernelBridge.getEdges(),
-          status: () => this.kernelBridge.status(),
-        },
+        // Bound to this plugin's directory id: whatever actor it passes, the
+        // commit is recorded as `plugin <name>` (D-06).
+        kernel: makePluginKernelFacade(name, () => this.kernelBridge),
         registerNodeView: (contribution: NodeViewContribution) => {
           const owner = findOwner('nodeViews', contribution.nodeType)
           if (owner) {
@@ -780,18 +823,21 @@ export class PluginHost {
       const cmd = loaded.contributions.commands.get(commandId)!
 
       try {
+        // The facade is synchronous while the SDK types KernelAPI as
+        // promise-returning. That is the shape this context has always had
+        // (the previous literal was untyped, so the mismatch was invisible)
+        // and it is correct at runtime: awaiting a plain value resolves it,
+        // so plugins written against the async contract work unchanged.
+        // Keeping the facade synchronous is what lets a refused submit throw
+        // before anything is written rather than rejecting later.
         const context = {
-          kernel: {
-            submit: (actorKind: string, actorId: string, message: string, ops: any[]) =>
-              host.kernelBridge.submit(actorKind, actorId, message, ops),
-            getNodes: () => host.kernelBridge.getNodes(),
-            getNode: (id: string) => host.kernelBridge.getNode(id),
-            getEdges: () => host.kernelBridge.getEdges(),
-            status: () => host.kernelBridge.status(),
-          },
+          kernel: makePluginKernelFacade(pluginId, () => host.kernelBridge),
+          // Computed inside the try: with no user name stored yet this throws,
+          // and the command reports { ok: false, error } instead of crashing.
+          actor: host.invokerActor(),
           selectedNodes: Array.isArray(selectedNodes) ? selectedNodes : [],
           arguments: args || {},
-        }
+        } as unknown as CommandContext
         await cmd.handler(context)
         return { ok: true }
       } catch (err) {
