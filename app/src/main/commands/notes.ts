@@ -17,6 +17,10 @@
 import type { Actor } from './actor'
 import type { CommitResult, NodeData, OpObject } from '../kernel-bridge'
 import type { OpenTree, TreeKind, TreeRegistry } from '../trees/registry'
+import { checkLock, isAgentActor, type LockAspect } from './locks'
+
+/** Moved to locks.ts; re-exported so existing importers keep working. */
+export { isAgentActor } from './locks'
 
 // ---------------------------------------------------------------------------
 // Result convention (plugin-host.ts lines 736-800)
@@ -167,17 +171,6 @@ export function prepareWriteFor(tree: OpenTree, actor: Actor, hooks: CommandHook
   if (tree.bridge.discardRedo()) {
     hooks.onRedoDiscarded?.(tree.id, actor)
   }
-}
-
-/**
- * Whether this actor is bound by D-05's "only notes it created".
- *
- * The rule names agents specifically. A person editing their world is not
- * restricted, and a bridge plugin recording what a file already says is not
- * claiming authorship of it.
- */
-export function isAgentActor(actor: Actor): boolean {
-  return actor.kind === 'plugin' && actor.id.startsWith('agent.')
 }
 
 // ---------------------------------------------------------------------------
@@ -491,7 +484,11 @@ export class NoteCommands {
   }
 
   /**
-   * Replace a note's text (D-05: only a note this actor created).
+   * Replace a note's text.
+   *
+   * An agent is refused when the note's `text` aspect is locked against it
+   * (02.4 D-01, D-08); people and non-agent plugins are not checked (D-10).
+   * The lock rule lives in locks.ts.
    */
   updateNote(
     actor: Actor,
@@ -500,7 +497,7 @@ export class NoteCommands {
     const textResult = validateText(args.text)
     if (!textResult.ok) return textResult
 
-    return this.writeToOwnNote(actor, args.tree, args.note, (tree) => ({
+    return this.writeToNote(actor, args.tree, args.note, 'text', (tree) => ({
       message: `update note ${args.note}`,
       ops: [
         {
@@ -594,6 +591,77 @@ export class NoteCommands {
     } catch (err) {
       return { ok: false, error: errorText(err) }
     }
+  }
+
+  /**
+   * The shared shape of an agent-reachable note change: resolve, reconcile a
+   * rewound tree, check the lock on `aspect`, then commit.
+   *
+   * The lock is checked **after** the tree is returned to its latest state,
+   * so the answer comes from the world the commit will actually be appended
+   * to rather than from a rewound view of it (02.4 D-11). A refusal returns
+   * before anything is built or submitted, so it writes nothing.
+   */
+  private writeToNote(
+    actor: Actor,
+    treeRef: string,
+    noteId: string,
+    aspect: LockAspect,
+    build: (tree: OpenTree) => { message: string; ops: OpObject[]; tree: OpenTree },
+  ): CommandResult<{ tree: string; note: string; seq: number }> {
+    let tree: OpenTree
+    try {
+      tree = this.registry.resolveRef(treeRef)
+    } catch (err) {
+      return { ok: false, error: errorText(err) }
+    }
+
+    try {
+      this.prepareWrite(tree, actor)
+
+      const refusal = this.assertMayWrite(tree, noteId, actor, aspect)
+      if (refusal) return { ok: false, error: refusal }
+
+      const { message, ops } = build(tree)
+      const result = tree.bridge.submitAs(actor, message, ops)
+      this.hooks.onCommitted?.(tree.id, actor, result)
+
+      return { ok: true, value: { tree: tree.id, note: noteId, seq: result.seq } }
+    } catch (err) {
+      return { ok: false, error: errorText(err) }
+    }
+  }
+
+  /**
+   * Whether `actor` may change `aspect` of `noteId` (02.4 D-01, D-10).
+   *
+   * A note that is not live is refused as such (D-13). People and non-agent
+   * plugins are not checked. For an agent, the lock is resolved from the
+   * note's properties and from its creator, which is the `actor` line of the
+   * commit that created it, read through the history index. There is no
+   * created-by property, so the default lock owner is a fact recorded on disk
+   * rather than a claim a writer could make about itself (HIST-08, D-04).
+   *
+   * Returns the refusal message, or null when the write may proceed.
+   */
+  private assertMayWrite(
+    tree: OpenTree,
+    noteId: string,
+    actor: Actor,
+    aspect: LockAspect,
+  ): string | null {
+    const notLive = `${String(noteId)} is not a live note in ${tree.name}`
+
+    if (typeof noteId !== 'string' || !NODE_ID_RE.test(noteId)) return notLive
+    const node = tree.bridge.getNode(noteId)
+    if (!node) return notLive
+
+    if (!isAgentActor(actor)) return null
+
+    const entry = tree.bridge.getHistoryIndex().nodes[noteId]
+    if (!entry) return notLive
+
+    return checkLock(noteId, node.props, entry.createdBy, actor, aspect)
   }
 
   /** See prepareWriteFor: this is the same rule, bound to these hooks. */

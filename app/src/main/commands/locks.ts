@@ -128,6 +128,15 @@ export function isAgentActor(actor: ActorLike): boolean {
 
 /**
  * Resolve one aspect of a note to open or locked-with-owner.
+ *
+ * An explicit `lock.<aspect>` wins (D-08) and fails closed: a value of any
+ * type other than `text` is locked with its raw value as owner, only the
+ * exact text `open` unlocks, and any other text, including an empty one, is
+ * the owner. Without one, the default is derived from the note's creator
+ * (D-04, D-05, D-06); it is never written back.
+ *
+ * `allow` is always empty in this slice: the allow list is not read yet. An
+ * empty list can only refuse more, never less.
  */
 export function resolveLock(
   props: LockProps,
@@ -135,16 +144,34 @@ export function resolveLock(
   aspect: LockAspect,
   policy: LockPolicy = DEFAULT_LOCK_POLICY,
 ): LockState {
-  void props
-  void createdBy
-  void aspect
-  void policy
-  return { locked: false }
+  const explicit = props[lockKey(aspect)]
+  if (explicit) {
+    if (explicit.type !== 'text') {
+      return { locked: true, owner: String(explicit.value), allow: [] }
+    }
+    if (explicit.value === LOCK_OPEN) return { locked: false }
+    return { locked: true, owner: String(explicit.value), allow: [] }
+  }
+
+  const lockedToCreator: LockState = { locked: true, owner: createdBy.id, allow: [] }
+
+  if (isAgentActor(createdBy)) {
+    return policy.agentNotesOpenToAgents ? { locked: false } : lockedToCreator
+  }
+
+  if (aspect === 'delete' && !policy.nonAgentNotesDeleteLocked) return { locked: false }
+  return lockedToCreator
 }
 
 /**
  * The refusal text for `actor` writing `aspect` of `noteId`, or null when the
  * write may proceed.
+ *
+ * Only agents are checked (D-10). An agent may write when the aspect is open,
+ * when it is the lock's owner, or when it is on the allow list. Owner and
+ * allow entries are compared with the actor id exactly. The refusal reads
+ * `<note> <aspect> is locked by <owner>` (D-12), with a blank owner shown as
+ * UNKNOWN_LOCK_OWNER so the message stays readable.
  */
 export function checkLock(
   noteId: string,
@@ -154,11 +181,12 @@ export function checkLock(
   aspect: LockAspect,
   policy: LockPolicy = DEFAULT_LOCK_POLICY,
 ): string | null {
-  void noteId
-  void props
-  void createdBy
-  void actor
-  void aspect
-  void policy
-  return null
+  if (!isAgentActor(actor)) return null
+
+  const state = resolveLock(props, createdBy, aspect, policy)
+  if (!state.locked) return null
+  if (state.owner === actor.id || state.allow.includes(actor.id)) return null
+
+  const display = state.owner.trim() === '' ? UNKNOWN_LOCK_OWNER : state.owner
+  return `${noteId} ${aspect} is locked by ${display}`
 }
