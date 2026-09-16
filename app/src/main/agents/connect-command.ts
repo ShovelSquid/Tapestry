@@ -7,6 +7,16 @@
  * argument and nothing inside a value can end the quoting and start a command
  * of its own (T-02.2-23).
  *
+ * The server name leads, directly after `add`. The CLI's usage is
+ * `claude mcp add [options] <name> <commandOrUrl> [args...]`, and its env
+ * option is variadic (`-e, --env <env...>`), so it keeps eating following
+ * non-option tokens until an option or `--` stops it. A name placed after the
+ * env flags is therefore read as one more environment variable and rejected
+ * outright: `Invalid environment variable format: tapestry`. The `--` sits
+ * directly before the runtime command for the same reason — it terminates that
+ * variadic list, so no env value can run on into the command the agent client
+ * executes. The order is load-bearing, not cosmetic.
+ *
  * Two runtimes, because the shim needs Node 20+ and the same N-API ABI:
  *  - **development:** system `node` runs `app/out/main/mcp.js` directly.
  *  - **packaged:** the Tapestry binary runs it with `ELECTRON_RUN_AS_NODE`
@@ -61,6 +71,7 @@ export function buildConnectCommand(options: ConnectCommandOptions): string {
     'claude',
     'mcp',
     'add',
+    SERVER_NAME,
     '--scope',
     'user',
     '--transport',
@@ -75,7 +86,7 @@ export function buildConnectCommand(options: ConnectCommandOptions): string {
     parts.push('--env', shellQuote('ELECTRON_RUN_AS_NODE=1'))
   }
 
-  parts.push(SERVER_NAME, '--')
+  parts.push('--')
 
   if (options.isPackaged) {
     parts.push(

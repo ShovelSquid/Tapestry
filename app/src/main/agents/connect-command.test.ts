@@ -88,10 +88,10 @@ describe('buildConnectCommand', () => {
     const command = buildConnectCommand({ ...BASE, isPackaged: false })
 
     expect(command).toBe(
-      "claude mcp add --scope user --transport stdio " +
+      "claude mcp add tapestry --scope user --transport stdio " +
         "--env 'TAPESTRY_AGENT_TOKEN=tok-abc' " +
         "--env 'TAPESTRY_USER_DATA=/Users/kaelen/Library/Application Support/Tapestry' " +
-        "tapestry -- node '/Users/kaelen/Tapestry/app/out/main/mcp.js'",
+        "-- node '/Users/kaelen/Tapestry/app/out/main/mcp.js'",
     )
   })
 
@@ -99,13 +99,51 @@ describe('buildConnectCommand', () => {
     const command = buildConnectCommand({ ...BASE, isPackaged: true })
 
     expect(command).toBe(
-      "claude mcp add --scope user --transport stdio " +
+      "claude mcp add tapestry --scope user --transport stdio " +
         "--env 'TAPESTRY_AGENT_TOKEN=tok-abc' " +
         "--env 'TAPESTRY_USER_DATA=/Users/kaelen/Library/Application Support/Tapestry' " +
         "--env 'ELECTRON_RUN_AS_NODE=1' " +
-        "tapestry -- '/Applications/Tapestry.app/Contents/MacOS/Tapestry' " +
+        "-- '/Applications/Tapestry.app/Contents/MacOS/Tapestry' " +
         "'/Applications/Tapestry.app/Contents/Resources/app.asar/out/main/mcp.js'",
     )
+  })
+
+  // The old order named the server after the env flags, and that command
+  // reached a real terminal as:
+  //   Invalid environment variable format: tapestry, environment variables
+  //   should be added as: -e KEY1=value1 -e KEY2=value2
+  // The CLI's usage is `claude mcp add [options] <name> <commandOrUrl>
+  // [args...]`, and its `-e, --env <env...>` option is variadic, so it keeps
+  // consuming following non-option tokens until an option or `--`. This test
+  // states that rule instead of a string someone could simply update to match
+  // whatever the builder happens to emit.
+  it('puts the server name before --env, which is variadic and would swallow it', () => {
+    for (const isPackaged of [false, true]) {
+      // Splitting on spaces is safe here: the only value containing a space is
+      // the quoted userData path, whose fragments are neither `--`, `-e` nor
+      // `--env`.
+      const tokens = buildConnectCommand({ ...BASE, isPackaged }).split(' ')
+      const nameIndex = tokens.indexOf('tapestry')
+      const envIndexes = tokens.flatMap((t, i) => (t === '--env' || t === '-e' ? [i] : []))
+      const separatorIndexes = tokens.flatMap((t, i) => (t === '--' ? [i] : []))
+
+      // The name is present, and it leads the env flags rather than becoming
+      // one of their values.
+      expect(nameIndex).toBeGreaterThan(-1)
+      expect(envIndexes.length).toBeGreaterThan(0)
+      expect(nameIndex).toBeLessThan(envIndexes[0])
+
+      // Exactly one separator, and it closes the variadic env list, so no env
+      // value can run into the runtime command.
+      expect(separatorIndexes).toHaveLength(1)
+      const separatorIndex = separatorIndexes[0]
+      for (const envIndex of envIndexes) {
+        expect(envIndex).toBeLessThan(separatorIndex)
+      }
+
+      // The runtime command starts on the token right after the separator.
+      expect(tokens[separatorIndex + 1]).toBe(isPackaged ? shellQuote(BASE.execPath) : 'node')
+    }
   })
 
   it('names the token exactly once, because it is shown exactly once', () => {
