@@ -1,19 +1,19 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0
-current_phase: "02.2"
-current_phase_name: Obsidian Bridge
+current_phase: "02.3"
+current_phase_name: Time Threads (INSERTED)
 status: executing
-stopped_at: Completed 02.2-04-PLAN.md
-last_updated: "2026-09-16T05:28:19.662Z"
-last_activity: 2026-09-15
-last_activity_desc: Phase 02.2 execution started
-state_head: 52adac8d8a69eff0aaec8727e0e32f4aebf1df9c
+stopped_at: Completed 02.3-01-PLAN.md
+last_updated: "2026-09-16T07:27:20.300Z"
+last_activity: 2026-09-16
+last_activity_desc: Phase 02.3 execution started
+state_head: edbf0b925548fe427ca5e66d969948138fae40cd
 progress:
   total_phases: 10
   completed_phases: 0
   total_plans: 38
-  completed_plans: 17
+  completed_plans: 18
 ---
 
 # Project State
@@ -23,14 +23,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-09-08)
 
 **Core value:** Your world of thoughts must remain readable and under your control — in its spatial interface, its editable relationships and behavior, and its files and branching history.
-**Current focus:** Phase 02.2 — Obsidian Bridge
+**Current focus:** Phase 02.3 — Time Threads (INSERTED)
 
 ## Current Position
 
-Phase: 02.2 (Obsidian Bridge) — EXECUTING
-Plan: 2 of 16
+Phase: 02.3 (Time Threads (INSERTED)) — EXECUTING
+Plan: 2 of 9
 Status: Ready to execute
-Last activity: 2026-09-15 — Phase 02.2 execution started
+Last activity: 2026-09-16 — Phase 02.3 execution started
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -67,6 +67,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 02.2 P02 | 9 min | 2 tasks | 14 files |
 | Phase 02.2 P03 | 19 min | 3 tasks | 18 files |
 | Phase 02.2 P04 | 25 min | 3 tasks | 21 files |
+| Phase 02.3 P01 | 8 min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -111,6 +112,8 @@ Recent decisions affecting current work:
 - [Phase 02.2]: [Phase 02.2]: An agent write into a rewound tree reconciles (discardRedo) and announces the lost redo rather than being refused (UA-14), replacing Plan 03's rewound refusal
 - [Phase 02.2]: [Phase 02.2]: connect_notes refuses cross-tree endpoints rather than writing one end, because D-16 requires both trees to record a cross-tree link (Plan 15)
 - [Phase 02.2]: [Phase 02.2]: Every value interpolated into the claude mcp add command is single-quoted by shellQuote, and markConnected is throttled to one agents.json write per agent per minute
+- [Phase 02.3]: D-26 rename applied to TreeFrame.tsx, not Canvas.tsx: 02.2's frame work moved every knot call site there
+- [Phase 02.3]: KNOT_TYPE ('tapestry.notes/knot@1') and KNOT_TIE_LABEL ('knot-tie') are exported from KnotNode.tsx and matched with ===, never by substring
 
 ### Pending Todos
 
@@ -155,6 +158,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-16T05:28:19.593Z
-Stopped at: Completed 02.2-04-PLAN.md
+Last session: 2026-09-16T07:27:20.229Z
+Stopped at: Completed 02.3-01-PLAN.md
 Resume file: None

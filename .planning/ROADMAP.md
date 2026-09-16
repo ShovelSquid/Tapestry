@@ -220,12 +220,12 @@ Plans:
   5. No `thread-center` / `thread-arm` occurrences remain in tracked source under `app/`, `plugins/` or `sdk/`; 2.1's feature works as `knot` / `knot-tie` (D-26)
   6. Each thread stores its own readable frame — `origin.x/y/z`, `direction.x/y/z` and `roll` — and both the live and side views derive their camera from it rather than a hardcoded axis (D-27)
 
-**Plans**: 9 plans in 8 waves
+**Plans**: 1/9 plans executed in 8 waves
 
 Plans:
 **Wave 1**
 
-- [ ] 02.3-01-PLAN.md — Rename 2.1's centre note and its edges to knot / knot-tie, with exact type matching (D-26)
+- [x] 02.3-01-PLAN.md — Rename 2.1's centre note and its edges to knot / knot-tie, with exact type matching (D-26)
 
 **Wave 2** *(blocked on Wave 1)*
 
