@@ -93,6 +93,10 @@ const tapestryAPI = {
     reveal: (treeId: string): Promise<{ ok: boolean; error?: string }> =>
       ipcRenderer.invoke('trees:reveal', treeId),
 
+    /** Try a damaged, locked or missing tree again, once its cause is gone. */
+    reopen: (treeId: string): Promise<{ ok: boolean; treeId?: string; error?: string }> =>
+      ipcRenderer.invoke('trees:reopen', treeId),
+
     setFrame: (
       treeId: string,
       x: number,

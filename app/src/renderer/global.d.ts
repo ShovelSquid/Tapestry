@@ -91,6 +91,9 @@ interface TapestryKernelAPI {
   redo(treeId: string): Promise<{ ok: boolean }>
 }
 
+/** Whether a tree can be read and written, or why it cannot. */
+type TapestryTreeStatus = 'ok' | 'damaged' | 'locked' | 'missing'
+
 /** One tree in the space, as `trees:list` reports it. */
 interface TapestryTreeSummary {
   id: string
@@ -100,6 +103,9 @@ interface TapestryTreeSummary {
   vaultRoot?: string
   /** Where the tree's frame origin sits in world space (D-18). */
   frame: { x: number; y: number }
+  /** A tree that would not open stays in the space with its reason. */
+  status: TapestryTreeStatus
+  reason?: string
 }
 
 interface TapestryTreesAPI {
@@ -112,6 +118,8 @@ interface TapestryTreesAPI {
   close(treeId: string): Promise<{ ok: boolean; error?: string }>
   /** Show the tree's file in Finder. The renderer names an id, never a path. */
   reveal(treeId: string): Promise<{ ok: boolean; error?: string }>
+  /** Try a damaged, locked or missing tree again (UI-SPEC "Reopen tree"). */
+  reopen(treeId: string): Promise<{ ok: boolean; treeId?: string; error?: string }>
   setFrame(treeId: string, x: number, y: number): Promise<{ ok: boolean; error?: string }>
 }
 
