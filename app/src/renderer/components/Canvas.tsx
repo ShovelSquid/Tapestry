@@ -55,6 +55,10 @@ interface CanvasProps {
   isFileLoaded: boolean
   /** Map of node types to component names from loaded plugins. */
   pluginNodeViews: Record<string, string>
+  /** Who made and last changed each node, keyed by node id. Null until read. */
+  historyIndex: TapestryHistoryIndex | null
+  /** The actor id this person's own changes are signed with (D-07). */
+  currentUserActorId: string | null
   onStartEditing: (nodeId: string) => void
   onStopEditing: () => void
   onCanvasDoubleClick: (worldX: number, worldY: number) => void
@@ -138,6 +142,8 @@ export default function Canvas({
   editingNodeId,
   isFileLoaded,
   pluginNodeViews,
+  historyIndex,
+  currentUserActorId,
   onStartEditing,
   onStopEditing,
   onCanvasDoubleClick,
@@ -654,6 +660,8 @@ export default function Canvas({
                 isConnectTarget={connectingHover === node.id}
                 isConnecting={connectingFrom !== null}
                 zoom={view.zoom}
+                provenance={historyIndex?.nodes[node.id]}
+                currentUserActorId={currentUserActorId}
                 onStartEditing={() => {
                   setSelectedNoteId(null)
                   onStartEditing(node.id)

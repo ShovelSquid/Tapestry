@@ -79,6 +79,10 @@ public:
         std::unique_ptr<Sink> sink);
 
     const HeaderRecord& header() const { return m_header; }
+    // The digest of the @tree header record — the parent of commit 1, and so
+    // the one value that identifies this world from its first byte onward. It
+    // is stable for the life of the file: the header is never rewritten.
+    const Digest& headerDigest() const { return m_headerDigest; }
     const std::vector<CommitRecord>& commits() const { return m_commits; }
     std::size_t commitCount() const { return m_commits.size(); }
     const JournalStatus& status() const { return m_status; }

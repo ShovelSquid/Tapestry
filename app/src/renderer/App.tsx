@@ -60,6 +60,10 @@ export default function App(): React.ReactElement {
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null)
   const [isFileLoaded, setIsFileLoaded] = useState(false)
 
+  // Who made each note and who changed it last (D-05/D-06/D-07), derived by
+  // the kernel from the commits in the journal. Null until the first read.
+  const [historyIndex, setHistoryIndex] = useState<TapestryHistoryIndex | null>(null)
+
   // The name every change is signed with (D-07). Null means "not chosen yet",
   // which is what makes the first-run prompt appear; nameLoaded keeps the
   // prompt from flashing before settings have been read.
@@ -140,6 +144,16 @@ export default function App(): React.ReactElement {
     }
   }, [])
 
+  const refreshHistory = useCallback(async () => {
+    try {
+      setHistoryIndex(await window.tapestry.kernel.getHistoryIndex())
+    } catch {
+      // No world open yet, or the read failed: show no provenance rather than
+      // stale provenance.
+      setHistoryIndex(null)
+    }
+  }, [])
+
   const refreshFilePath = useCallback(async () => {
     try {
       const path = await window.tapestry.kernel.getFilePath()
@@ -190,6 +204,16 @@ export default function App(): React.ReactElement {
       removePluginError()
     }
   }, [refreshAll, refreshFilePath])
+
+  // Re-read provenance whenever the graph changes, debounced so a drag or a
+  // burst of typing does not rescan the journal on every commit. The scan is
+  // linear in the number of commits, so the delay matters on a long history.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      refreshHistory()
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [nodes, edges, refreshHistory])
 
   // -----------------------------------------------------------------------
   // User name (D-07)
@@ -767,6 +791,10 @@ export default function App(): React.ReactElement {
   // Render
   // -----------------------------------------------------------------------
 
+  // The actor id this person's own changes are signed with (D-07). Null until
+  // a name exists, which is exactly while the first-run prompt is up.
+  const currentUserActorId = userName !== null ? `user.${userName}` : null
+
   return (
     <div className="tapestry-app">
       {/* Top-left: file name + save indicator (D-02, D-05) */}
@@ -801,6 +829,8 @@ export default function App(): React.ReactElement {
         editingNodeId={editingNodeId}
         isFileLoaded={isFileLoaded}
         pluginNodeViews={pluginNodeViews}
+        historyIndex={historyIndex}
+        currentUserActorId={currentUserActorId}
         onStartEditing={(nodeId) => setEditingNodeId(nodeId)}
         onStopEditing={() => setEditingNodeId(null)}
         onCanvasDoubleClick={handleCanvasDoubleClick}

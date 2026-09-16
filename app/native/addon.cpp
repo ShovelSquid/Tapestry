@@ -13,6 +13,7 @@
 #include <napi.h>
 
 #include "kernel/Kernel.hpp"
+#include "kernel/History.hpp"
 #include "kernel/Ids.hpp"
 #include "kernel/Ops.hpp"
 #include "kernel/Value.hpp"
@@ -65,6 +66,14 @@ Napi::Object propsToJS(Napi::Env env, const std::map<std::string, Value>& props)
     for (const auto& [key, val] : props) {
         obj.Set(key, valueToJS(env, val));
     }
+    return obj;
+}
+
+/** Convert a commit's actor to a JS object { kind, id }. */
+Napi::Object actorToJS(Napi::Env env, const Actor& actor) {
+    auto obj = Napi::Object::New(env);
+    obj.Set("kind", Napi::String::New(env, actor.kind));
+    obj.Set("id", Napi::String::New(env, actor.id));
     return obj;
 }
 
@@ -342,6 +351,9 @@ public:
             InstanceMethod<&TapestryAddon::Status>("status"),
             InstanceMethod<&TapestryAddon::ReplayUpTo>("replayUpTo"),
             InstanceMethod<&TapestryAddon::GetLastSeq>("getLastSeq"),
+            InstanceMethod<&TapestryAddon::GetHistoryIndex>("getHistoryIndex"),
+            InstanceMethod<&TapestryAddon::GetHeaderDigest>("getHeaderDigest"),
+            InstanceMethod<&TapestryAddon::GetNextIds>("getNextIds"),
             InstanceMethod<&TapestryAddon::Close>("close"),
         });
 
@@ -631,6 +643,109 @@ public:
             return env.Null();
         }
         return Napi::Number::New(env, static_cast<double>(m_kernel->lastSeq()));
+    }
+
+    /**
+     * getHistoryIndex(maxSeq?) -> { nodes: { n1: {...} }, edges: { e1: {...} } }
+     *
+     * Who made and last changed every node, derived from the actor lines of
+     * the commits up to maxSeq (default: the journal head). The caller passes
+     * its replay position so a rewound view never attributes a change from a
+     * commit the reader cannot see.
+     */
+    Napi::Value GetHistoryIndex(const Napi::CallbackInfo& info) {
+        Napi::Env env = info.Env();
+        if (!m_kernel) {
+            Napi::Error::New(env, "No kernel loaded").ThrowAsJavaScriptException();
+            return env.Null();
+        }
+
+        int64_t maxSeq = static_cast<int64_t>(m_kernel->lastSeq());
+        if (info.Length() >= 1 && !info[0].IsUndefined() && !info[0].IsNull()) {
+            if (!requireSafeInteger(env, info[0], "getHistoryIndex maxSeq", maxSeq)) return env.Null();
+            if (maxSeq < 0) {
+                throwRangeError(env, "getHistoryIndex maxSeq must be a non-negative integer");
+                return env.Null();
+            }
+        }
+
+        const HistoryIndex index =
+            buildHistoryIndex(m_kernel->journal().commits(), static_cast<CommitSeq>(maxSeq));
+
+        auto nodes = Napi::Object::New(env);
+        for (const auto& node : index.nodes) {
+            auto obj = Napi::Object::New(env);
+            obj.Set("createdSeq", Napi::Number::New(env, static_cast<double>(node.createdSeq)));
+            obj.Set("createdBy", actorToJS(env, node.createdBy));
+            obj.Set("changedSeq", Napi::Number::New(env, static_cast<double>(node.changedSeq)));
+            obj.Set("changedBy", actorToJS(env, node.changedBy));
+            if (node.deletedSeq.has_value()) {
+                obj.Set("deletedSeq", Napi::Number::New(env, static_cast<double>(*node.deletedSeq)));
+                obj.Set("deletedBy", actorToJS(env, *node.deletedBy));
+            } else {
+                obj.Set("deletedSeq", env.Null());
+                obj.Set("deletedBy", env.Null());
+            }
+            nodes.Set(format(node.id), obj);
+        }
+
+        auto edges = Napi::Object::New(env);
+        for (const auto& edge : index.edges) {
+            auto obj = Napi::Object::New(env);
+            obj.Set("from", Napi::String::New(env, format(edge.from)));
+            obj.Set("to", Napi::String::New(env, format(edge.to)));
+            obj.Set("createdSeq", Napi::Number::New(env, static_cast<double>(edge.createdSeq)));
+            obj.Set("createdBy", actorToJS(env, edge.createdBy));
+            if (edge.deletedSeq.has_value()) {
+                obj.Set("deletedSeq", Napi::Number::New(env, static_cast<double>(*edge.deletedSeq)));
+                obj.Set("deletedBy", actorToJS(env, *edge.deletedBy));
+            } else {
+                obj.Set("deletedSeq", env.Null());
+                obj.Set("deletedBy", env.Null());
+            }
+            edges.Set(format(edge.id), obj);
+        }
+
+        auto result = Napi::Object::New(env);
+        result.Set("nodes", nodes);
+        result.Set("edges", edges);
+        return result;
+    }
+
+    /**
+     * getHeaderDigest() -> "sha256:<64 hex>"
+     *
+     * This world's identity: the digest of its @tree header, which is also the
+     * parent of commit 1. Stable for the life of the file, so the tree registry
+     * and cross-tree links (D-16) can name a tree without naming its path.
+     */
+    Napi::Value GetHeaderDigest(const Napi::CallbackInfo& info) {
+        Napi::Env env = info.Env();
+        if (!m_kernel) {
+            Napi::Error::New(env, "No kernel loaded").ThrowAsJavaScriptException();
+            return env.Null();
+        }
+        return Napi::String::New(env, "sha256:" + m_kernel->journal().headerDigest().hex);
+    }
+
+    /**
+     * getNextIds() -> { node: "n2", edge: "e1" }
+     *
+     * The ids the next createNode and createEdge will receive. Knowing them in
+     * advance is what lets a note and the connection pointing at it be created
+     * in one commit (D-04).
+     */
+    Napi::Value GetNextIds(const Napi::CallbackInfo& info) {
+        Napi::Env env = info.Env();
+        if (!m_kernel) {
+            Napi::Error::New(env, "No kernel loaded").ThrowAsJavaScriptException();
+            return env.Null();
+        }
+        const auto& world = m_kernel->world();
+        auto obj = Napi::Object::New(env);
+        obj.Set("node", Napi::String::New(env, format(world.nextNodeId())));
+        obj.Set("edge", Napi::String::New(env, format(world.nextEdgeId())));
+        return obj;
     }
 
 private:

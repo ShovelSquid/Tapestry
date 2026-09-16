@@ -48,6 +48,17 @@ interface NoteCardProps {
   isConnectTarget: boolean
   isConnecting: boolean
   zoom: number
+  /**
+   * Who made this note and who changed it last, derived by the kernel from
+   * the commits in the journal (D-05). Undefined until history is read.
+   */
+  provenance?: TapestryNodeHistory
+  /**
+   * The actor id this person's own changes are signed with (D-07). Carried
+   * for the D-05 authorship checks Plan 04 adds; the footer below shows the
+   * literal actor id either way, so it is not read here yet.
+   */
+  currentUserActorId?: string | null
   onStartEditing: () => void
   onBorderSelect: () => void
   onSave: (nodeId: string, body: string, title: string) => Promise<void>
@@ -98,6 +109,7 @@ export default function NoteCard({
   isConnectTarget,
   isConnecting,
   zoom,
+  provenance,
   onStartEditing,
   onBorderSelect,
   onSave,
@@ -566,6 +578,14 @@ export default function NoteCard({
         ref={editorRef}
         onClick={handleEditorClick}
       />
+
+      {/* Provenance footer (D-06, D-07): who made this note, read from the
+          journal rather than from anything stored on the note itself. */}
+      {provenance && (
+        <div className="tapestry-provenance-footer">
+          Created by {provenance.createdBy.id}
+        </div>
+      )}
 
       {/* Floating formatting toolbar near the text selection (D-24) */}
       {isEditing && <FloatingToolbar view={editorView} containerRef={cardRef} zoom={zoom} />}

@@ -40,6 +40,10 @@ const tapestryAPI = {
     status: (): Promise<any> =>
       ipcRenderer.invoke('kernel:status'),
 
+    /** Who created and last changed each node, derived from the journal. */
+    getHistoryIndex: (): Promise<any> =>
+      ipcRenderer.invoke('kernel:getHistoryIndex'),
+
     getFilePath: (): Promise<string | null> =>
       ipcRenderer.invoke('kernel:getFilePath'),
 

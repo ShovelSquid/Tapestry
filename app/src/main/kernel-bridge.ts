@@ -84,6 +84,46 @@ export interface JournalStatus {
 }
 
 // ---------------------------------------------------------------------------
+// History: who made what, derived from the journal (D-05, HIST-08)
+// ---------------------------------------------------------------------------
+
+/** The pair written on a commit's `actor` line. */
+export interface ActorRef {
+  kind: string
+  id: string
+}
+
+/**
+ * A node's authorship as the commits describe it. There is no created-by
+ * property anywhere in the file, so this is the only answer to "who made
+ * this" — and one a writer cannot set for itself.
+ */
+export interface NodeHistoryEntry {
+  createdSeq: number
+  createdBy: ActorRef
+  changedSeq: number
+  changedBy: ActorRef
+  /** null while the node is live. */
+  deletedSeq: number | null
+  deletedBy: ActorRef | null
+}
+
+export interface EdgeHistoryEntry {
+  from: string
+  to: string
+  createdSeq: number
+  createdBy: ActorRef
+  deletedSeq: number | null
+  deletedBy: ActorRef | null
+}
+
+/** Keyed by the same id strings the world uses: `n1`, `e3`. */
+export interface HistoryIndex {
+  nodes: Record<string, NodeHistoryEntry>
+  edges: Record<string, EdgeHistoryEntry>
+}
+
+// ---------------------------------------------------------------------------
 // KernelBridge
 // ---------------------------------------------------------------------------
 
@@ -210,6 +250,47 @@ export class KernelBridge {
   }
 
   /**
+   * Who created and last changed every node and edge.
+   *
+   * currentSeq, not the journal head, is what is scanned: while history is
+   * rewound the display shows the world as of an earlier commit, and naming a
+   * changer from a commit the reader cannot see would be a claim the visible
+   * history does not support.
+   */
+  getHistoryIndex(): HistoryIndex {
+    this.ensureLoaded()
+    return this.instance.getHistoryIndex(this.currentSeq)
+  }
+
+  /**
+   * This world's stable identity, `sha256:<header digest>`.
+   */
+  getHeaderDigest(): string {
+    this.ensureLoaded()
+    return this.instance.getHeaderDigest()
+  }
+
+  /**
+   * The ids the next createNode and createEdge will receive, so a note and the
+   * connection to it can go into one commit (D-04).
+   *
+   * Refused while rewound: the ids are read from the rewound world, but the
+   * commit would be appended at the journal head, where they are already taken.
+   */
+  getNextIds(): { node: string; edge: string } {
+    this.ensureLoaded()
+    if (this.isRewound) {
+      throw new Error('Cannot predict ids while history is rewound')
+    }
+    return this.instance.getNextIds()
+  }
+
+  /** Whether the displayed world sits behind the journal head (undo). */
+  get isRewound(): boolean {
+    return this.instance !== null && this.currentSeq !== (this.instance.getLastSeq() as number)
+  }
+
+  /**
    * Whether a kernel instance is currently loaded.
    */
   get isLoaded(): boolean {
@@ -315,6 +396,10 @@ export class KernelBridge {
 
     ipcMain.handle('kernel:status', () => {
       return bridge.status()
+    })
+
+    ipcMain.handle('kernel:getHistoryIndex', () => {
+      return bridge.getHistoryIndex()
     })
 
     ipcMain.handle('kernel:undo', () => {

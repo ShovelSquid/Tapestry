@@ -3,6 +3,40 @@
  * The tapestry API is exposed via contextBridge in the preload script.
  */
 
+/** The pair written on a commit's `actor` line (D-06, D-07). */
+interface TapestryActorRef {
+  kind: string
+  id: string
+}
+
+/**
+ * A node's authorship, derived from the commits in the journal rather than
+ * stored on the node. `changedBy` equals `createdBy` until somebody edits it.
+ */
+interface TapestryNodeHistory {
+  createdSeq: number
+  createdBy: TapestryActorRef
+  changedSeq: number
+  changedBy: TapestryActorRef
+  deletedSeq: number | null
+  deletedBy: TapestryActorRef | null
+}
+
+interface TapestryEdgeHistory {
+  from: string
+  to: string
+  createdSeq: number
+  createdBy: TapestryActorRef
+  deletedSeq: number | null
+  deletedBy: TapestryActorRef | null
+}
+
+/** Keyed by node/edge id: `n1`, `e3`. */
+interface TapestryHistoryIndex {
+  nodes: Record<string, TapestryNodeHistory>
+  edges: Record<string, TapestryEdgeHistory>
+}
+
 interface TapestryKernelAPI {
   create(path: string, worldName: string): Promise<{ ok: boolean }>
   open(path: string): Promise<{ ok: boolean }>
@@ -32,6 +66,7 @@ interface TapestryKernelAPI {
   } | null>
   getEdges(): Promise<any[]>
   status(): Promise<any>
+  getHistoryIndex(): Promise<TapestryHistoryIndex>
   getFilePath(): Promise<string | null>
   undo(): Promise<{ ok: boolean }>
   redo(): Promise<{ ok: boolean }>
