@@ -1,0 +1,102 @@
+{
+  "results": [
+    {
+      "phase": "canvas-only-idle",
+      "frames": 240,
+      "fps": 59.88023952095874,
+      "frameP95": 17.40000000000009,
+      "frameMax": 17.700000000000728,
+      "dropRate": 0,
+      "privateMB": 102.6416015625,
+      "memDeltaMB": 1.625,
+      "glCreated": 0,
+      "glDisposed": 0,
+      "glLost": 0
+    },
+    {
+      "phase": "canvas-only-pan",
+      "frames": 241,
+      "fps": 59.88023952095874,
+      "frameP95": 17.199999999999818,
+      "frameMax": 17.699999999999818,
+      "dropRate": 0,
+      "privateMB": 102.4541015625,
+      "memDeltaMB": -0.125,
+      "glCreated": 0,
+      "glDisposed": 0,
+      "glLost": 0
+    },
+    {
+      "phase": "thread-open-idle",
+      "frames": 240,
+      "fps": 59.880239520962,
+      "frameP95": 17.299999999999272,
+      "frameMax": 17.69999999999891,
+      "dropRate": 0,
+      "privateMB": 102.6728515625,
+      "memDeltaMB": 0.03125,
+      "glCreated": 2,
+      "glDisposed": 1,
+      "glLost": 0
+    },
+    {
+      "phase": "thread-open-pan",
+      "frames": 241,
+      "fps": 59.88023952095548,
+      "frameP95": 17.299999999999272,
+      "frameMax": 17.700000000000728,
+      "dropRate": 0,
+      "privateMB": 102.6728515625,
+      "memDeltaMB": 0.015625,
+      "glCreated": 2,
+      "glDisposed": 1,
+      "glLost": 0
+    },
+    {
+      "phase": "thread-open-zoom",
+      "frames": 228,
+      "fps": 59.88023952095548,
+      "frameP95": 17.200000000000728,
+      "frameMax": 116.59999999999854,
+      "dropRate": 0.013157894736842105,
+      "privateMB": 102.6416015625,
+      "memDeltaMB": -0.03125,
+      "glCreated": 2,
+      "glDisposed": 1,
+      "glLost": 0
+    },
+    {
+      "phase": "thread-open-typing-20cps",
+      "frames": 301,
+      "fps": 59.880239520968516,
+      "frameP95": 17.19999999999709,
+      "frameMax": 17.700000000000728,
+      "dropRate": 0,
+      "privateMB": 102.0947265625,
+      "memDeltaMB": -0.546875,
+      "glCreated": 2,
+      "glDisposed": 1,
+      "glLost": 0
+    },
+    {
+      "phase": "after-20-open-close",
+      "frames": 180,
+      "fps": 59.880239520968516,
+      "frameP95": 17.099999999998545,
+      "frameMax": 17.599999999998545,
+      "dropRate": 0,
+      "privateMB": 87.9853515625,
+      "memDeltaMB": 0.0625,
+      "glCreated": 44,
+      "glDisposed": 43,
+      "glLost": 0
+    }
+  ],
+  "cycles": {
+    "created": 42,
+    "disposed": 41,
+    "lost": 0,
+    "stillDrawing": true,
+    "glyphsAfter": 62431
+  }
+}
