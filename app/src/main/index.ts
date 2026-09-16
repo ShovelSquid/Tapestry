@@ -23,6 +23,7 @@ import { SettingsStore, suggestUserName, type TreeFrameSetting } from './setting
 import { agentActor, humanActor, isValidActorName, type Actor } from './commands/actor'
 import { buildConnectCommand } from './agents/connect-command'
 import { TreeRegistry } from './trees/registry'
+import { VaultService } from './obsidian/vault-service'
 import { NoteCommands, type CommandHooks } from './commands/notes'
 import { ConnectionCommands } from './commands/connections'
 import { runAgentTool, type AgentCommands } from './commands/agent-tools'
@@ -108,6 +109,22 @@ function validateTreePath(filePath: string): boolean {
     !relativeToHome.startsWith(`..${sep}`) &&
     !isAbsolute(relativeToHome)
   )
+}
+
+/**
+ * Vault folders the user chose through the native folder dialog this session.
+ *
+ * A vault root is a door into a whole directory tree, so unlike a `.tree` path
+ * there is no "anywhere under home" fallback: the only roots `vault:add` will
+ * accept are the ones a person picked in a dialog (T-02.2-37).
+ */
+const approvedVaultRoots = new Set<string>()
+
+/** Absolute, non-empty, no `..` segment. The shape check before the dialog check. */
+function isWellFormedVaultRoot(folderPath: unknown): folderPath is string {
+  if (!folderPath || typeof folderPath !== 'string') return false
+  if (!isAbsolute(folderPath)) return false
+  return !folderPath.split(/[\\/]/).includes('..')
 }
 
 // ---------------------------------------------------------------------------
@@ -573,6 +590,67 @@ app.whenReady().then(async () => {
 
     settings.setTreeFrame(tree.path, { x: x as number, y: y as number })
     return { ok: true }
+  })
+
+  // -------------------------------------------------------------------------
+  // Obsidian vault IPC (D-10, D-13): a vault folder becomes its own tree
+  // -------------------------------------------------------------------------
+
+  /**
+   * The bridge runs here, in main, rather than as a plugin: it needs the
+   * filesystem and the reserved `obsidian.bridge` actor a plugin may not claim.
+   */
+  const vaultService = new VaultService(registry, {
+    onStatus: (treeId, status) => {
+      mainWindow?.webContents.send('vault-status', { treeId, ...status })
+    },
+    // Its commits did not come from the renderer, so the canvas is told the
+    // same way an agent's commits tell it.
+    onCommitted: (treeId) => {
+      mainWindow?.webContents.send('tree-changed', treeId)
+    },
+  })
+
+  ipcMain.handle('dialog:showOpenVaultFolder', async () => {
+    if (!mainWindow) return { canceled: true, folderPath: undefined }
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Choose an Obsidian vault folder',
+      properties: ['openDirectory'],
+    })
+    if (result.canceled || result.filePaths.length === 0) {
+      return { canceled: true, folderPath: undefined }
+    }
+    const folderPath = resolve(result.filePaths[0])
+    approvedVaultRoots.add(folderPath)
+    return { canceled: false, folderPath }
+  })
+
+  /**
+   * Mirror a vault as a tree (D-10). The confirmation dialog the UI-SPEC
+   * describes, and restoring vault trees at launch, are Plan 08.
+   */
+  ipcMain.handle('vault:add', async (_event, root: unknown) => {
+    if (!isWellFormedVaultRoot(root)) {
+      return { ok: false, error: 'Invalid vault folder path' }
+    }
+    const target = resolve(root)
+    if (!approvedVaultRoots.has(target)) {
+      return { ok: false, error: 'Choose the vault folder with Add Obsidian Vault... first.' }
+    }
+
+    try {
+      const tree = await vaultService.addVault(target)
+      settings.addTree({
+        path: tree.path,
+        kind: 'vault',
+        vaultRoot: target,
+        frame: placeNewFrameFromSettings(),
+      })
+      notifyTreesChanged()
+      return { ok: true, treeId: tree.id }
+    } catch (err) {
+      return { ok: false, error: errorMessage(err) }
+    }
   })
 
   // Save dialog for creating new .tree files

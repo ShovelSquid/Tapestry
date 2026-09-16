@@ -15,6 +15,7 @@
 import React, { useState, useEffect } from 'react'
 import { useAnnounce } from './LiveAnnouncer'
 import NoteCard from './NoteCard'
+import VaultNoteCard from './VaultNoteCard'
 import FallbackNodeView from './FallbackNodeView'
 import ConnectionLine from './ConnectionLine'
 import KnotNode, { KNOT_TYPE, KNOT_TIE_LABEL } from './KnotNode'
@@ -37,6 +38,32 @@ function isKnot(n: NodeInfo): boolean {
 
 function isThread(n: NodeInfo): boolean {
   return n.type === THREAD_TYPE
+}
+
+/**
+ * The component names this build can draw, by the name a plugin registers.
+ *
+ * A plugin contributes a node view as a *string*, so the host is never handed
+ * code to execute. Until this plan that string was only ever checked for
+ * existence and every registered type rendered as a NoteCard — which would have
+ * drawn a vault note through a ProseMirror editor and let a keystroke commit
+ * editor JSON into `md.text`.
+ *
+ * A name with no component here is not an error: it falls through to
+ * FallbackNodeView, which is how `FolderGroup`, `FileNote` and
+ * `PlaceholderNote` stay readable until Plan 09 draws them (D-33/D-35).
+ */
+const NODE_VIEW_COMPONENTS = {
+  NoteCard,
+  VaultNoteCard,
+} as const
+
+type NodeViewComponentName = keyof typeof NODE_VIEW_COMPONENTS
+
+function mappedNodeView(name: string | undefined): NodeViewComponentName | null {
+  return name !== undefined && name in NODE_VIEW_COMPONENTS
+    ? (name as NodeViewComponentName)
+    : null
 }
 
 /** The tree file's own name, which is what the error copy names. */
@@ -418,10 +445,11 @@ export default function TreeFrame({
           )
         })}
 
-        {/* Note cards — ThreadCard for threads, NoteCard for other known
-            types, FallbackNodeView otherwise */}
+        {/* Note cards — ThreadCard for threads, VaultNoteCard/NoteCard for
+            other known types, FallbackNodeView otherwise */}
         {tree.nodes.filter((n) => !isKnot(n)).map((node) => {
           const key = keyFor(node.id)
+          const view = mappedNodeView(pluginNodeViews[node.type])
 
           if (isThread(node) && pluginNodeViews[node.type]) {
             const px = Number(node.props['position.x']?.value ?? 0)
@@ -566,7 +594,27 @@ export default function TreeFrame({
             )
           }
 
-          if (pluginNodeViews[node.type]) {
+          if (view === 'VaultNoteCard') {
+            return (
+              <VaultNoteCard
+                key={node.id}
+                node={node}
+                isSelected={selectedKey === key}
+                zoom={zoom}
+                provenance={tree.history?.nodes[node.id]}
+                onBorderSelect={() => handlers.onBorderSelect(refFor(node.id))}
+                onHover={(hovered) => handlers.onHover(refFor(node.id), hovered)}
+                onPositionChange={(nodeId, x, y) =>
+                  handlers.onPositionChange(refFor(nodeId), x, y)
+                }
+                onRegisterDims={(nodeId, w, h) => handlers.onRegisterDims(refFor(nodeId), w, h)}
+                onDragMove={(nodeId, x, y) => handlers.onDragMove(refFor(nodeId), x, y)}
+                onDragEnd={(nodeId) => handlers.onDragEnd(refFor(nodeId))}
+              />
+            )
+          }
+
+          if (view === 'NoteCard') {
             return (
               <NoteCard
                 key={node.id}

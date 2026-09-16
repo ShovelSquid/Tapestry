@@ -158,6 +158,21 @@ interface TapestryDialogAPI {
   showSave(): Promise<{ canceled: boolean; filePath?: string }>
   /** Pick an existing world to add to the space. */
   showOpenTree(): Promise<{ canceled: boolean; filePath?: string }>
+  /** Pick an Obsidian vault folder to mirror as a tree (D-10, D-13). */
+  showOpenVaultFolder(): Promise<{ canceled: boolean; folderPath?: string }>
+}
+
+/** Where a vault import has got to (D-20). */
+interface TapestryVaultStatus {
+  treeId: string
+  kind: 'reading' | 'catching-up' | 'up-to-date'
+  done: number
+  total: number
+}
+
+interface TapestryVaultAPI {
+  /** Mirror the vault folder as its own tree. Main refuses an unpicked root. */
+  add(root: string): Promise<{ ok: boolean; treeId?: string; error?: string }>
 }
 
 interface TapestrySettingsAPI {
@@ -237,6 +252,7 @@ interface TapestryRedoDiscarded {
 interface TapestryAPI {
   kernel: TapestryKernelAPI
   trees: TapestryTreesAPI
+  vault: TapestryVaultAPI
   plugins: TapestryPluginsAPI
   dialog: TapestryDialogAPI
   settings: TapestrySettingsAPI
@@ -246,6 +262,8 @@ interface TapestryAPI {
   onTreesChanged(callback: () => void): () => void
   /** A commit landed in a tree from outside the renderer (an agent, a plugin). */
   onTreeChanged(callback: (treeId: string) => void): () => void
+  /** A vault is being read, is catching up, or is up to date (D-20). */
+  onVaultStatus(callback: (status: TapestryVaultStatus) => void): () => void
   /** The agent list or a connection status changed. */
   onAgentsChanged(callback: () => void): () => void
   /** An agent write ended a rewound state, discarding redo (UA-14). */

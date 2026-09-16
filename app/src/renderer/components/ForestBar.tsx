@@ -26,6 +26,8 @@ interface ForestBarProps {
   /** Resolves to an error message to display, or null on success. */
   onSaveUserName: (name: string) => Promise<string | null>
   onAgentsRefresh: () => void
+  /** Add tree menu: mirror an Obsidian vault as its own tree (D-10, D-13). */
+  onAddVault: () => void
   /** Add tree menu: put an existing world into the space. */
   onOpenWorld: () => void
   /** Add tree menu: create a world and put it into the space. */
@@ -53,6 +55,7 @@ export default function ForestBar({
   userName,
   onSaveUserName,
   onAgentsRefresh,
+  onAddVault,
   onOpenWorld,
   onNewWorld,
 }: ForestBarProps): React.ReactElement {
@@ -68,11 +71,12 @@ export default function ForestBar({
   /**
    * The ways a tree can enter the space, in the order the UI-SPEC lists them.
    *
-   * A list rather than two hand-placed buttons because Plan 07 inserts
-   * "Add Obsidian Vault..." at the head of it: adding a way in should be one
-   * entry here and nothing else.
+   * A list rather than hand-placed buttons: the vault entry went in at the head
+   * of it without moving anything else, which is what adding a way in should
+   * cost.
    */
   const addTreeItems: Array<{ label: string; run: () => void }> = [
+    { label: 'Add Obsidian Vault...', run: onAddVault },
     { label: 'Open Tapestry World...', run: onOpenWorld },
     { label: 'New Tapestry World...', run: onNewWorld },
   ]
