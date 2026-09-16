@@ -50,6 +50,17 @@ export const CreateNoteArgs = z
   })
   .strict()
 
+/** list_trees takes no arguments — and `.strict()` means it accepts none. */
+export const ListTreesArgs = z.object({}).strict()
+
+/** read_note (D-05): agents may read any note. */
+export const ReadNoteArgs = z
+  .object({
+    tree: z.string().min(1).max(200),
+    note: z.string().min(1).max(1024),
+  })
+  .strict()
+
 // ---------------------------------------------------------------------------
 // Tool table
 // ---------------------------------------------------------------------------
@@ -66,5 +77,20 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = Object.freeze([
       'Creates a note connected to grewFrom. Every new note must grow from an existing note; loose notes are refused.',
     schema: CreateNoteArgs,
     annotations: {},
+  },
+  {
+    name: 'list_trees',
+    title: 'List the trees open in Tapestry',
+    description: 'Lists the trees currently open in Tapestry, with the name to pass as `tree`.',
+    schema: ListTreesArgs,
+    annotations: { readOnlyHint: true },
+  },
+  {
+    name: 'read_note',
+    title: 'Read a note with its author and connections',
+    description:
+      'Reads a note: its title, text, the actor that created it, and the notes it connects to.',
+    schema: ReadNoteArgs,
+    annotations: { readOnlyHint: true },
   },
 ])

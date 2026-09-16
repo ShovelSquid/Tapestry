@@ -53,6 +53,10 @@ export function runAgentTool(
         actor,
         parsed.data as { tree: string; grewFrom: string; title: string; text: string },
       )
+    case 'list_trees':
+      return commands.listTrees()
+    case 'read_note':
+      return commands.readNote(parsed.data as { tree: string; note: string })
     default:
       return { ok: false, error: `Unknown tool: ${tool}` }
   }

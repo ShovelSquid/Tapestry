@@ -174,7 +174,10 @@ describe('MCP shim over stdio', () => {
 
     const tools: Array<{ name: string; inputSchema?: { properties?: Record<string, unknown> } }> =
       listed.result.tools
-    expect(tools.map((t) => t.name)).toContain('create_note')
+    const names = tools.map((t) => t.name)
+    expect(names).toContain('create_note')
+    expect(names).toContain('list_trees')
+    expect(names).toContain('read_note')
 
     // D-06: an agent must not be able to name who it is.
     for (const tool of tools) {
@@ -202,6 +205,25 @@ describe('MCP shim over stdio', () => {
     expect(treeText).toContain('actor plugin agent.claude')
     // Node and edge in the same commit: n2 grew from n1.
     expect(treeText).toMatch(/^create-edge e\d+ n2 n1 grew-from$/m)
+  }, 30000)
+
+  it('reads the note back, reporting the agent as its author', async () => {
+    const called = await request(5, 'tools/call', {
+      name: 'read_note',
+      arguments: { tree: 'agents', note: 'n2' },
+    })
+
+    expect(called.error).toBeUndefined()
+    expect(called.result?.isError).not.toBe(true)
+
+    const payload = JSON.parse(called.result.content[0].text)
+    expect(payload.title).toBe('Luna')
+    expect(payload.text).toBe('Grown by Claude')
+    // Derived from the commit's actor line, not from anything the agent sent.
+    expect(payload.author).toBe('agent.claude')
+    expect(payload.connections).toEqual([
+      { edge: 'e1', label: 'grew-from', direction: 'out', other: 'n1' },
+    ])
   }, 30000)
 
   it('refuses an extra actor key and writes nothing', async () => {
