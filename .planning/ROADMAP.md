@@ -273,7 +273,7 @@ Plans:
   4. Whether non-agent notes start delete-locked is one named constant, and every refusal names the aspect and the lock's owner
 
 **Follow-ups** (later slices, not this phase): rank auto-lock when a person sets rank (needs a per-property last writer in the history index); a `setLock` command so only an owner can remove a lock (needs Decision Register #19, the `lock.*` naming, a one-way door); thread and tree scopes, and the Tapestry scope once Phase 2.6 creates the Tapestry tree
-**Plans**: 1/2 plans executed
+**Plans**: 2/2 plans executed
 
 Plans:
 **Wave 1**
@@ -282,7 +282,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 02.4-02-PLAN.md — `lock.<aspect>.allow` test-first; bridge/plugin-creator, non-agent, deleted-note, ungated-path and undone-lock coverage; lock rule stated in MCP tool text; phase gate
+- [x] 02.4-02-PLAN.md — `lock.<aspect>.allow` test-first; bridge/plugin-creator, non-agent, deleted-note, ungated-path and undone-lock coverage; lock rule stated in MCP tool text; phase gate
 
 ### Phase 3: Branching History & Deterministic Replay
 
