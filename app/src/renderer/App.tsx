@@ -18,7 +18,8 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import Canvas, { type NodeInfo, type EdgeInfo } from './components/Canvas'
-import SaveIndicator from './components/SaveIndicator'
+import ForestBar from './components/ForestBar'
+import TransientNotice from './components/TransientNotice'
 import PluginErrorNotification from './components/PluginErrorNotification'
 import NamePromptDialog from './components/NamePromptDialog'
 
@@ -70,6 +71,14 @@ export default function App(): React.ReactElement {
   const [userName, setUserName] = useState<string | null>(null)
   const [suggestedName, setSuggestedName] = useState('')
   const [nameLoaded, setNameLoaded] = useState(false)
+
+  // Agents (D-03/D-06). One copy of the list and the switch lives here, so
+  // the forest bar's label and the panel's rows can never disagree.
+  const [agents, setAgents] = useState<TapestryAgentSummary[]>([])
+  const [agentsEnabled, setAgentsEnabled] = useState(true)
+
+  // A passing message about something that already happened (UA-14).
+  const [notice, setNotice] = useState<string | null>(null)
 
   // Plugin contributions: maps node types to component names from loaded plugins
   const [pluginNodeViews, setPluginNodeViews] = useState<Record<string, string>>({})
@@ -177,6 +186,21 @@ export default function App(): React.ReactElement {
     }
   }, [])
 
+  /** Re-read who may connect and who is connected right now. */
+  const refreshAgents = useCallback(async () => {
+    try {
+      const [list, enabled] = await Promise.all([
+        window.tapestry.agents.list(),
+        window.tapestry.agents.getEnabled(),
+      ])
+      setAgents(list)
+      setAgentsEnabled(enabled)
+    } catch {
+      // The bridge is unavailable: show no agents rather than stale ones.
+      setAgents([])
+    }
+  }, [])
+
   const refreshAll = useCallback(async () => {
     await Promise.all([refreshNodes(), refreshEdges(), refreshPluginContributions()])
   }, [refreshNodes, refreshEdges, refreshPluginContributions])
@@ -212,6 +236,33 @@ export default function App(): React.ReactElement {
       removePluginError()
     }
   }, [refreshAll, refreshFilePath])
+
+  // -----------------------------------------------------------------------
+  // Agents: the list, and what an agent write can interrupt (D-03, UA-14)
+  // -----------------------------------------------------------------------
+
+  useEffect(() => {
+    refreshAgents()
+
+    const removeAgentsChanged = window.tapestry.onAgentsChanged(() => {
+      refreshAgents()
+    })
+
+    // An agent wrote into a tree Kaelen had rewound. The write has already
+    // landed and the redo is already gone, so this is a notice about
+    // something that happened, not a question — losing redo silently is the
+    // failure this exists to prevent.
+    const removeRedoDiscarded = window.tapestry.onRedoDiscarded(({ treeName, actorId }) => {
+      refreshAll()
+      const name = actorId.replace(/^agent\./, '')
+      setNotice(`agent.${name} added a change to ${treeName}, so redo is no longer available.`)
+    })
+
+    return () => {
+      removeAgentsChanged()
+      removeRedoDiscarded()
+    }
+  }, [refreshAgents, refreshAll])
 
   // Re-read provenance whenever the graph changes, debounced so a drag or a
   // burst of typing does not rescan the journal on every commit. The scan is
@@ -805,8 +856,21 @@ export default function App(): React.ReactElement {
 
   return (
     <div className="tapestry-app">
-      {/* Top-left: file name + save indicator (D-02, D-05) */}
-      <SaveIndicator filePath={filePath} saveState={saveState} />
+      {/* Top-left chrome: save state, agents, and the name changes are signed
+          with. The forest bar contains the save indicator (Plan 05 moves save
+          states into per-frame headers). */}
+      <ForestBar
+        filePath={filePath}
+        saveState={saveState}
+        agents={agents}
+        agentsEnabled={agentsEnabled}
+        userName={userName}
+        onSaveUserName={handleSaveUserName}
+        onAgentsRefresh={refreshAgents}
+      />
+
+      {/* An agent write ended a rewound state (UA-14) */}
+      {notice && <TransientNotice message={notice} onHide={() => setNotice(null)} />}
 
       {/* Plugin error notification (D-34) */}
       {pluginError && (

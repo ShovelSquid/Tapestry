@@ -873,3 +873,324 @@ html, body, #root {
   outline: 2px solid #4A7CFF;
   outline-offset: 2px;
 }
+
+/* ------------------------------------------------------------------------ */
+/* Forest bar -- top-left chrome (UI-SPEC "Forest bar")                      */
+/*                                                                           */
+/* It takes over the corner the SaveIndicator used to hold alone, and now    */
+/* contains it, so the indicator's own absolute placement is neutralised      */
+/* here rather than by changing that component.                              */
+/* ------------------------------------------------------------------------ */
+
+.tapestry-forest-bar {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  /* sm token */
+  gap: 8px;
+}
+
+.tapestry-forest-bar .tapestry-save-indicator {
+  position: static;
+}
+
+.tapestry-forest-popover-anchor {
+  position: relative;
+  display: inline-flex;
+}
+
+/* 32px height / 0 12px padding: the declared forest-bar button exception. */
+.tapestry-forest-button {
+  height: 32px;
+  padding: 0 12px;
+  background: #FFFFFF;
+  border: 1px solid #E0DDD7;
+  border-radius: 8px;
+  font-family: inherit;
+  /* Label role: 13/400/1.4 */
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: #2C2C2C;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.tapestry-forest-button:hover {
+  border-color: #B0ADA6;
+}
+
+/* ------------------------------------------------------------------------ */
+/* Agents panel -- popover on the PassageChooser surface                     */
+/* ------------------------------------------------------------------------ */
+
+.tapestry-agents-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  min-width: 320px;
+  background: #FFFFFF;
+  border: 1px solid #E0DDD7;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  /* md token */
+  padding: 16px;
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  text-align: left;
+}
+
+/* Note Title role: 18/600/1.25 */
+.tapestry-agents-heading {
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.25;
+  color: #2C2C2C;
+}
+
+/* Label role, Muted: the panel's explanatory copy. */
+.tapestry-agents-body {
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: #6B6B6B;
+}
+
+.tapestry-agents-note {
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: #6B6B6B;
+}
+
+.tapestry-agents-switch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  background: transparent;
+  border: none;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: #2C2C2C;
+  cursor: pointer;
+}
+
+/*
+ * The switch is Ink rather than accent when on: the accent budget is reserved
+ * for the elements the UI-SPEC lists, and a settings toggle is not one.
+ */
+.tapestry-agents-switch-track {
+  flex: none;
+  width: 32px;
+  height: 18px;
+  border-radius: 9px;
+  background: #E0DDD7;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px;
+  transition: background-color 120ms ease;
+}
+
+.tapestry-agents-switch[aria-checked='true'] .tapestry-agents-switch-track {
+  background: #2C2C2C;
+}
+
+.tapestry-agents-switch-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #FFFFFF;
+  transition: transform 120ms ease;
+}
+
+.tapestry-agents-switch[aria-checked='true'] .tapestry-agents-switch-thumb {
+  transform: translateX(14px);
+}
+
+.tapestry-agents-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tapestry-agents-connect {
+  align-self: flex-start;
+  margin-top: 8px;
+}
+
+/* ------------------------------------------------------------------------ */
+/* One agent row                                                             */
+/* ------------------------------------------------------------------------ */
+
+.tapestry-agent-row {
+  display: flex;
+  align-items: center;
+  /* sm token */
+  gap: 8px;
+  padding: 4px 0;
+  min-width: 0;
+}
+
+.tapestry-agent-glyph {
+  flex: none;
+  color: #6B6B6B;
+}
+
+.tapestry-agent-text {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  /* Lets the id below shrink far enough to ellipsize. */
+  min-width: 0;
+}
+
+/*
+ * A long agent name truncates rather than widening the popover. The full
+ * actor id stays in the title tooltip, so it is never the only copy on screen.
+ */
+.tapestry-agent-id {
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: #2C2C2C;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tapestry-agent-status {
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: #6B6B6B;
+}
+
+.tapestry-agent-menu-wrap {
+  position: relative;
+  flex: none;
+}
+
+/* 32px hit target, carried from the 02.1 toolbar. */
+.tapestry-agent-menu-button {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: #6B6B6B;
+  cursor: pointer;
+}
+
+.tapestry-agent-menu-button:hover {
+  background: #F0EDE8;
+}
+
+.tapestry-agent-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 160px;
+  background: #FFFFFF;
+  border: 1px solid #E0DDD7;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  padding: 4px;
+  z-index: 210;
+}
+
+.tapestry-agent-menu-item {
+  display: block;
+  width: 100%;
+  padding: 6px 8px;
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: #2C2C2C;
+  cursor: pointer;
+}
+
+.tapestry-agent-menu-item:hover {
+  background: #F0EDE8;
+}
+
+/* ------------------------------------------------------------------------ */
+/* Connect-agent dialog: helper copy and the command block                   */
+/* ------------------------------------------------------------------------ */
+
+.tapestry-dialog-helper {
+  margin-top: 4px;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: #6B6B6B;
+}
+
+/*
+ * The command is long, has no spaces to wrap at in its quoted paths, and must
+ * be copyable in full: it carries a token shown exactly once. So it breaks
+ * anywhere and scrolls past 120px rather than stretching the dialog.
+ */
+.tapestry-command-block {
+  margin-top: 8px;
+  padding: 8px;
+  max-height: 120px;
+  overflow: auto;
+  background: #F7F5F0;
+  border: 1px solid #E0DDD7;
+  border-radius: 8px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: #2C2C2C;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* ------------------------------------------------------------------------ */
+/* Transient notice -- top center, auto-hiding (UA-14)                       */
+/* ------------------------------------------------------------------------ */
+
+.tapestry-transient-notice {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10000;
+  max-width: 440px;
+  background: #FFFFFF;
+  border: 1px solid #E0DDD7;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  padding: 12px 20px;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: #2C2C2C;
+}
+
+/* Keyboard focus rings for the forest bar and agents panel controls. */
+.tapestry-forest-button:focus-visible,
+.tapestry-agents-switch:focus-visible,
+.tapestry-agent-menu-button:focus-visible,
+.tapestry-agent-menu-item:focus-visible {
+  outline: 2px solid #4A7CFF;
+  outline-offset: 2px;
+}
