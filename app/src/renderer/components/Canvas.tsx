@@ -118,6 +118,9 @@ interface CanvasProps {
   ) => void
   /** Move a frame in renderer state only; the canvas persists the final spot. */
   onFrameMove: (treeId: string, x: number, y: number) => void
+  /** The selected frame, which is the space's focal point and undo target. */
+  selectedTreeId: string | null
+  onSelectTree: (treeId: string | null) => void
 }
 
 // ---------------------------------------------------------------------------
@@ -163,6 +166,17 @@ const ZOOM_SPEED = 0.001
 const DEFAULT_NODE_WIDTH = 240
 const DEFAULT_NODE_HEIGHT = 80
 
+/**
+ * The empty space (UI-SPEC "Empty state body").
+ *
+ * One string rather than wrapped JSX text, so the approved copy stays one
+ * greppable line: it names the way in to a vault, which is the whole point of
+ * saying anything here at all.
+ */
+const EMPTY_BODY =
+  'Create notes, connect ideas, and build your world of thought. ' +
+  'To bring in an Obsidian vault, choose Add tree, then Add Obsidian Vault.'
+
 /** Backgrounds a pan, a deselect or a create may start from. */
 const BACKGROUND_CLASSES = [
   'tapestry-canvas-container',
@@ -203,6 +217,8 @@ function Canvas({
   onDeleteNote,
   onPropertyEdit,
   onFrameMove,
+  selectedTreeId,
+  onSelectTree,
 }: CanvasProps, ref: React.ForwardedRef<CanvasHandle>): React.ReactElement {
   const viewportRef = useRef<HTMLDivElement>(null)
   const [view, setView] = useState<ViewTransform>({ panX: 0, panY: 0, zoom: 1 })
@@ -229,7 +245,6 @@ function Canvas({
   // Frame-level state (D-15). A frame is dragged by its header, selected by a
   // click on it, and never deleted by the Delete key.
   const [draggingTreeId, setDraggingTreeId] = useState<string | null>(null)
-  const [selectedTreeId, setSelectedTreeId] = useState<string | null>(null)
   const [hoveredTreeId, setHoveredTreeId] = useState<string | null>(null)
   const frameDragRef = useRef({ startX: 0, startY: 0, originX: 0, originY: 0, moved: false })
 
@@ -511,7 +526,7 @@ function Canvas({
             settleFrames(draggingTreeId)
           } else {
             // Pressing the header without moving it selects the frame.
-            setSelectedTreeId(draggingTreeId)
+            onSelectTree(draggingTreeId)
           }
         }
         setDraggingTreeId(null)
@@ -581,9 +596,9 @@ function Canvas({
       if (!isBackground(e.target as HTMLElement, viewportRef.current)) return
       onStopEditing()
       selectNote(null)
-      setSelectedTreeId(null)
+      onSelectTree(null)
     },
-    [onStopEditing, selectNote],
+    [onStopEditing, selectNote, onSelectTree],
   )
 
   const handleDoubleClick = useCallback(
@@ -751,9 +766,7 @@ function Canvas({
       {trees.length === 0 && (
         <div className="tapestry-empty-state">
           <h2 className="tapestry-empty-heading">Double-click anywhere to start</h2>
-          <p className="tapestry-empty-body">
-            Create notes, connect ideas, and build your world of thought.
-          </p>
+          <p className="tapestry-empty-body">{EMPTY_BODY}</p>
         </div>
       )}
 
