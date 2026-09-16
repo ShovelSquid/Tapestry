@@ -186,7 +186,7 @@ describe('resolveLock and checkLock (pure)', () => {
     }
   })
 
-  it('returns an empty allow list even when an allow property is present (Plan 02 reads it)', () => {
+  it('reads the allow list of an explicit lock', () => {
     const props: LockProps = {
       'lock.text': textProp('user.kaelen'),
       'lock.text.allow': textProp('agent.claude'),
@@ -194,7 +194,7 @@ describe('resolveLock and checkLock (pure)', () => {
     expect(resolveLock(props, HUMAN_KAELEN, 'text')).toEqual({
       locked: true,
       owner: 'user.kaelen',
-      allow: [],
+      allow: ['agent.claude'],
     })
   })
 
@@ -241,6 +241,100 @@ describe('resolveLock and checkLock (pure)', () => {
     expect(isAgentActor({ kind: 'plugin', id: 'agent.x' })).toBe(true)
     expect(isAgentActor({ kind: 'human', id: 'agent.x' })).toBe(false)
     expect(isAgentActor({ kind: 'plugin', id: 'agentx' })).toBe(false)
+  })
+})
+
+describe('allow lists (D-09, pure)', () => {
+  const AGENT_GEMINI: ActorLike = { kind: 'plugin', id: 'agent.gemini' }
+
+  it('admits an agent on the allow list of an explicit lock and refuses one that is not', () => {
+    const props: LockProps = {
+      'lock.text': textProp('agent.claude'),
+      'lock.text.allow': textProp('agent.chatgpt'),
+    }
+    expect(checkLock('n1', props, HUMAN_KAELEN, AGENT_CHATGPT, 'text')).toBeNull()
+    expect(checkLock('n1', props, HUMAN_KAELEN, AGENT_GEMINI, 'text')).toBe(
+      'n1 text is locked by agent.claude',
+    )
+  })
+
+  it('splits an allow list on any whitespace and ignores padding', () => {
+    const props: LockProps = {
+      'lock.text': textProp('agent.claude'),
+      'lock.text.allow': textProp('  agent.gemini\tagent.chatgpt \n'),
+    }
+    const state = resolveLock(props, HUMAN_KAELEN, 'text')
+    expect(state.locked).toBe(true)
+    expect(state.locked && state.allow).toEqual(['agent.gemini', 'agent.chatgpt'])
+    expect(checkLock('n1', props, HUMAN_KAELEN, AGENT_GEMINI, 'text')).toBeNull()
+    expect(checkLock('n1', props, HUMAN_KAELEN, AGENT_CHATGPT, 'text')).toBeNull()
+  })
+
+  it('matches allow entries exactly, never by prefix', () => {
+    const props: LockProps = {
+      'lock.text': textProp('agent.claude'),
+      'lock.text.allow': textProp('agent.chatgpt'),
+    }
+    expect(
+      checkLock('n1', props, HUMAN_KAELEN, { kind: 'plugin', id: 'agent.chat' }, 'text'),
+    ).toBe('n1 text is locked by agent.claude')
+  })
+
+  it('admits nobody through an allow value that is not text', () => {
+    const nonText: LockProps[string][] = [
+      { type: 'ref', value: 'agent.chatgpt' },
+      { type: 'int', value: 1 },
+    ]
+    for (const allow of nonText) {
+      const props: LockProps = {
+        'lock.text': textProp('agent.claude'),
+        'lock.text.allow': allow,
+      }
+      expect(resolveLock(props, HUMAN_KAELEN, 'text')).toEqual({
+        locked: true,
+        owner: 'agent.claude',
+        allow: [],
+      })
+      expect(checkLock('n1', props, HUMAN_KAELEN, AGENT_CHATGPT, 'text')).toBe(
+        'n1 text is locked by agent.claude',
+      )
+    }
+  })
+
+  it('reads the allow list of a default lock too', () => {
+    const props: LockProps = { 'lock.text.allow': textProp('agent.claude') }
+    expect(checkLock('n1', props, HUMAN_KAELEN, AGENT_CLAUDE, 'text')).toBeNull()
+    expect(checkLock('n1', props, HUMAN_KAELEN, AGENT_CHATGPT, 'text')).toBe(
+      'n1 text is locked by user.kaelen',
+    )
+  })
+
+  it('applies lock.delete.allow to the delete aspect only', () => {
+    const props: LockProps = { 'lock.delete.allow': textProp('agent.claude') }
+    const policy: LockPolicy = { agentNotesOpenToAgents: true, nonAgentNotesDeleteLocked: true }
+    expect(checkLock('n1', props, HUMAN_KAELEN, AGENT_CLAUDE, 'text', policy)).toBe(
+      'n1 text is locked by user.kaelen',
+    )
+    expect(checkLock('n1', props, HUMAN_KAELEN, AGENT_CLAUDE, 'delete', policy)).toBeNull()
+    expect(checkLock('n1', props, HUMAN_KAELEN, AGENT_CHATGPT, 'delete', policy)).toBe(
+      'n1 delete is locked by user.kaelen',
+    )
+  })
+
+  it('ignores the allow list when the aspect resolves open', () => {
+    expect(
+      resolveLock(
+        { 'lock.text': textProp('open'), 'lock.text.allow': textProp('agent.claude') },
+        HUMAN_KAELEN,
+        'text',
+      ),
+    ).toEqual({ locked: false })
+    expect(
+      resolveLock({ 'lock.text.allow': textProp('agent.chatgpt') }, AGENT_CLAUDE, 'text', {
+        agentNotesOpenToAgents: true,
+        nonAgentNotesDeleteLocked: true,
+      }),
+    ).toEqual({ locked: false })
   })
 })
 
@@ -453,5 +547,47 @@ describe('locks through NoteCommands', () => {
 
     expect(result.ok).toBe(true)
     expect(tree.bridge.getNode('n1')).toBeNull()
+  })
+
+  it('admits an agent on the allow list of an explicit lock and refuses another (D-09)', () => {
+    setLockProp(claudeNote, 'lock.text', 'agent.claude')
+    setLockProp(claudeNote, 'lock.text.allow', 'agent.chatgpt')
+
+    const admitted = notes.updateNote(CHATGPT, {
+      tree: 'locks',
+      note: claudeNote,
+      text: 'ChatGPT is on the list',
+    })
+    expect(admitted.ok).toBe(true)
+    expect(bodyTextOf(claudeNote)).toBe('ChatGPT is on the list')
+    expect(lastCommitBlock()).toContain('actor plugin agent.chatgpt')
+
+    const before = worldFingerprint()
+    const refused = notes.updateNote(agentActor('gemini'), {
+      tree: 'locks',
+      note: claudeNote,
+      text: 'Gemini is not',
+    })
+    expect(refused.ok).toBe(false)
+    expect(refused.ok === false && refused.error).toBe(
+      `${claudeNote} text is locked by agent.claude`,
+    )
+    expect(worldFingerprint()).toEqual(before)
+    expect(bodyTextOf(claudeNote)).toBe('ChatGPT is on the list')
+  })
+
+  it('admits an agent on the allow list of a default lock and refuses another (D-09)', () => {
+    setLockProp('n1', 'lock.text.allow', 'agent.claude')
+
+    const admitted = notes.updateNote(CLAUDE, { tree: 'locks', note: 'n1', text: 'Allowed in' })
+    expect(admitted.ok).toBe(true)
+    expect(bodyTextOf('n1')).toBe('Allowed in')
+
+    const before = worldFingerprint()
+    const refused = notes.updateNote(CHATGPT, { tree: 'locks', note: 'n1', text: 'Not listed' })
+    expect(refused.ok).toBe(false)
+    expect(refused.ok === false && refused.error).toBe('n1 text is locked by user.kaelen')
+    expect(worldFingerprint()).toEqual(before)
+    expect(bodyTextOf('n1')).toBe('Allowed in')
   })
 })
