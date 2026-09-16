@@ -1,0 +1,25 @@
+{
+  "results": [
+    {
+      "hours": 8,
+      "keystrokes": 64552,
+      "sessions": 27,
+      "batches": 2428,
+      "commits": 2430,
+      "properties": 2456,
+      "bytes": 1282811,
+      "bytesPerKeystroke": 19.87252137811377,
+      "writeMs": 9330.923459,
+      "openMs": 237.27349999999933,
+      "readMs": 2.310250000000451,
+      "redrawMs": 9.597667000000001,
+      "commitsPerSecond": 260.210043589856,
+      "status": "Ok",
+      "redrawn": 64552,
+      "identical": true,
+      "mismatch": null,
+      "excerpt": "set n1 keys.000001 text <<TEXT\n@ 0.000\n+0.000 o\n+0.127 k\n+0.254  \n+0.380 i\n+0.507  \n+0.634 n\n+0.761 e\n+0.888 e\n+1.015 d\n+1.141  \n+1.268 t\n+1.395 o\n+1.522  \n+1.649 s\n+1.776 t\n+1.902 a\n+2.029 r\n+2.156 t\n+2.283  \n+2.410 w\n+2.537 r\n+2.663 i\n+2.790 t\n+2.917 i\n+3.044 n\n+3.171 g\n+3.298  \n+3.424 m\n+3.551 y\n+3.678  \n+3.805 n\n+3.932 o\n+4.059 t\n+4.185 e\n+4.312 s\n+4.439  \n+4.566 h\n+4.693 e\n+4.820 r\n+4.946 e\nTEXT\n@end sha",
+      "file": null
+    }
+  ]
+}
