@@ -136,7 +136,7 @@ Plans:
   4. Edits, retitles, moves, new notes, connections and placeholder typing made in Tapestry reach the vault's files after a short pause; when a file changed first, the file wins and the Tapestry edit stays in history; undo writes files back
   5. Several trees share one space in non-overlapping frames that reopen where they were; connections between trees are recorded in both trees and cut in both when a note is deleted; dragging a note into another frame copies it, asking before any formatting would be lost
 
-**Plans**: 6/16 plans executed
+**Plans**: 7/16 plans executed
 
 Plans:
 **Wave 1**
@@ -165,7 +165,7 @@ Plans:
 
 **Wave 7** *(blocked on Wave 6 completion)*
 
-- [ ] 02.2-07-PLAN.md — Tracer: Obsidian vault mirror tree (House Party) with byte-exact note text, folders and catch-up
+- [x] 02.2-07-PLAN.md — Tracer: Obsidian vault mirror tree (House Party) with byte-exact note text, folders and catch-up
 
 **Wave 8** *(blocked on Wave 7 completion)*
 
