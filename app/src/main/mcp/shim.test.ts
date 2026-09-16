@@ -12,6 +12,7 @@
  *    supplied and could not have chosen (D-06)
  *  - the node and its `grew-from` edge land in ONE commit
  *  - no tool advertises an actor argument, and an extra `actor` key is refused
+ *  - `look` reports the notes around a note as relations, never coordinates (D-14)
  *  - stdout carries protocol frames only
  */
 
@@ -23,6 +24,7 @@ import { makeTempDir } from '../../../test/helpers/temp-tree'
 import { TreeRegistry } from '../trees/registry'
 import { NoteCommands } from '../commands/notes'
 import { ConnectionCommands } from '../commands/connections'
+import { SpatialCommands } from '../commands/spatial'
 import { runAgentTool } from '../commands/agent-tools'
 import { AgentRegistry, agentSocketPath } from '../agents/registry'
 import { AgentSocketServer } from '../agents/socket-server'
@@ -97,6 +99,7 @@ describe('MCP shim over stdio', () => {
     const commands = {
       notes: new NoteCommands(registry),
       connections: new ConnectionCommands(registry),
+      spatial: new SpatialCommands(registry),
     }
     server = new AgentSocketServer({
       socketPath: agentSocketPath(dir),
@@ -172,7 +175,7 @@ describe('MCP shim over stdio', () => {
     }
   })
 
-  it('advertises exactly the eight tools, with no actor argument anywhere', async () => {
+  it('advertises exactly the nine tools, with no actor argument anywhere', async () => {
     const listed = await request(2, 'tools/list', {})
     expect(listed.error).toBeUndefined()
 
@@ -189,6 +192,7 @@ describe('MCP shim over stdio', () => {
       'create_note',
       'delete_note',
       'list_trees',
+      'look',
       'read_note',
       'rename_note',
       'search_notes',
@@ -196,7 +200,7 @@ describe('MCP shim over stdio', () => {
     ])
 
     const byName = new Map(tools.map((t) => [t.name, t]))
-    for (const readOnly of ['list_trees', 'search_notes', 'read_note']) {
+    for (const readOnly of ['list_trees', 'search_notes', 'read_note', 'look']) {
       expect(byName.get(readOnly)?.annotations?.readOnlyHint).toBe(true)
     }
     expect(byName.get('delete_note')?.annotations?.destructiveHint).toBe(true)
@@ -247,6 +251,25 @@ describe('MCP shim over stdio', () => {
     expect(payload.connections).toEqual([
       { edge: 'e1', label: 'grew-from', direction: 'out', other: 'n1' },
     ])
+  }, 30000)
+
+  it('looks around the grown note and sees relations, never coordinates', async () => {
+    const called = await request(6, 'tools/call', {
+      name: 'look',
+      arguments: { tree: 'agents', from: 'n2' },
+    })
+
+    expect(called.error).toBeUndefined()
+    expect(called.result?.isError).not.toBe(true)
+
+    const text: string = called.result.content[0].text
+    const payload = JSON.parse(text)
+    const [only] = registry.list()
+    // n1 sits at 0,0 with the default size; n2 was grown to 360,0, so the gap is 80.
+    expect(payload.neighbours).toEqual([
+      { note: 'n1', space: only.id, relation: 'near', order: 1, guess: false },
+    ])
+    expect(text).not.toContain('position')
   }, 30000)
 
   it('refuses an extra actor key and writes nothing', async () => {

@@ -25,6 +25,7 @@ import { buildConnectCommand } from './agents/connect-command'
 import { TreeRegistry } from './trees/registry'
 import { NoteCommands, type CommandHooks } from './commands/notes'
 import { ConnectionCommands } from './commands/connections'
+import { SpatialCommands } from './commands/spatial'
 import { runAgentTool, type AgentCommands } from './commands/agent-tools'
 import { AgentRegistry, agentSocketPath } from './agents/registry'
 import { AgentSocketServer } from './agents/socket-server'
@@ -253,6 +254,7 @@ app.whenReady().then(async () => {
   const agentCommands: AgentCommands = {
     notes: new NoteCommands(registry, commandHooks),
     connections: new ConnectionCommands(registry, commandHooks),
+    spatial: new SpatialCommands(registry, commandHooks),
   }
 
   agentServer = new AgentSocketServer({

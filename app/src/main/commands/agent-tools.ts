@@ -17,12 +17,17 @@
 import type { Actor } from './actor'
 import type { ConnectionCommands, ConnectionEndpoint } from './connections'
 import type { CommandResult, NoteCommands } from './notes'
+import type { SpatialCommands } from './spatial'
 import { TOOL_DEFINITIONS } from '../mcp/schemas'
 
-/** The command layer an agent reaches: notes and the connections between them. */
+/**
+ * The command layer an agent reaches: notes, the connections between them,
+ * and the spatial verbs that read (and later set) where notes sit.
+ */
 export interface AgentCommands {
   notes: NoteCommands
   connections: ConnectionCommands
+  spatial: SpatialCommands
 }
 
 /** Flatten a zod failure into one readable line. */
@@ -68,6 +73,11 @@ export function runAgentTool(
 
     case 'read_note':
       return commands.notes.readNote(parsed.data as { tree: string; note: string })
+
+    case 'look':
+      return commands.spatial.look(
+        parsed.data as { tree: string; from: string; toward?: string; limit?: number },
+      )
 
     case 'create_note':
       return commands.notes.createFrom(

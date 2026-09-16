@@ -61,6 +61,19 @@ export const ReadNoteArgs = z
   })
   .strict()
 
+/**
+ * look (SC1, D-14): the notes around a note, as relations only. `limit` has
+ * no upper bound; the work is one pass over the tree's own notes.
+ */
+export const LookArgs = z
+  .object({
+    tree: z.string().min(1).max(200),
+    from: z.string().min(1).max(1024),
+    toward: z.string().min(1).max(1024).optional(),
+    limit: z.number().int().min(1).optional(),
+  })
+  .strict()
+
 /** search_notes (D-05): reading is unrestricted, so this searches every tree. */
 export const SearchNotesArgs = z
   .object({
@@ -149,6 +162,14 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = Object.freeze([
     description:
       'Reads a note: its title, text, the actor that created it, and the notes it connects to. You may read any note, including notes you did not create.',
     schema: ReadNoteArgs,
+    annotations: { readOnlyHint: true },
+  },
+  {
+    name: 'look',
+    title: 'Look at the notes around a note',
+    description:
+      'Lists the notes around a note in the same tree, nearest first, as relations: near, beyond, overlapping, contains or contained-by. Pass toward to keep only the notes that lie toward another note. It never returns coordinates. Relations use each note\'s saved size, or a default size when none is saved, so a card whose text made it taller than that can overlap on screen while look reports it clear.',
+    schema: LookArgs,
     annotations: { readOnlyHint: true },
   },
   {
