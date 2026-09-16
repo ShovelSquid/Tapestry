@@ -3,17 +3,17 @@ gsd_state_version: "1.0"
 milestone: v1.0
 current_phase: "02.2"
 current_phase_name: Obsidian Bridge
-status: discussing
-stopped_at: Completed 02.2-03-PLAN.md
-last_updated: "2026-09-16T04:59:02.755Z"
+status: executing
+stopped_at: Completed 02.2-04-PLAN.md
+last_updated: "2026-09-16T05:28:19.662Z"
 last_activity: 2026-09-15
-last_activity_desc: Phase 02.2 Obsidian Bridge inserted
-state_head: 1aa22aedef3aab8ecb73abf4378a5d1984d4169d
+last_activity_desc: Phase 02.2 execution started
+state_head: 52adac8d8a69eff0aaec8727e0e32f4aebf1df9c
 progress:
   total_phases: 10
   completed_phases: 0
   total_plans: 38
-  completed_plans: 15
+  completed_plans: 17
 ---
 
 # Project State
@@ -27,10 +27,10 @@ See: .planning/PROJECT.md (updated 2026-09-08)
 
 ## Current Position
 
-Phase: 02.2 (Obsidian Bridge) — READY TO EXECUTE
-Plan: not planned yet (discuss first)
-Status: Discussing Phase 02.2 with Kaelen (02.1 code complete, awaiting human verification)
-Last activity: 2026-09-15 — Phase 02.2 Obsidian Bridge inserted
+Phase: 02.2 (Obsidian Bridge) — EXECUTING
+Plan: 2 of 16
+Status: Ready to execute
+Last activity: 2026-09-15 — Phase 02.2 execution started
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -66,6 +66,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 02.2 P01 | 13 min | 3 tasks | 22 files |
 | Phase 02.2 P02 | 9 min | 2 tasks | 14 files |
 | Phase 02.2 P03 | 19 min | 3 tasks | 18 files |
+| Phase 02.2 P04 | 25 min | 3 tasks | 21 files |
 
 ## Accumulated Context
 
@@ -105,6 +106,11 @@ Recent decisions affecting current work:
 - [Phase 02.2]: The agent bridge transport is a stdio shim plus a 0600 Unix socket, so no TCP port is opened; a browser page cannot address it
 - [Phase 02.2]: The grew-from edge runs new note -> parent, so the file line reads 'create-edge e5 n13 n12 grew-from' as 'n13 grew from n12'
 - [Phase 02.2]: A tree's identity is its header digest, derived from world name + creation second, so two worlds created with the same name in the same second collide
+- [Phase 02.2]: [Phase 02.2]: D-05 ownership is read from the journal — assertOwnNote compares the calling actor with createdBy on the creating commit, so an agent cannot claim ownership; the check runs after a rewound tree is returned to its head, so it reads the world the commit will land in
+- [Phase 02.2]: [Phase 02.2]: D-05 restricts agents only; a human may change any note in their own world
+- [Phase 02.2]: [Phase 02.2]: An agent write into a rewound tree reconciles (discardRedo) and announces the lost redo rather than being refused (UA-14), replacing Plan 03's rewound refusal
+- [Phase 02.2]: [Phase 02.2]: connect_notes refuses cross-tree endpoints rather than writing one end, because D-16 requires both trees to record a cross-tree link (Plan 15)
+- [Phase 02.2]: [Phase 02.2]: Every value interpolated into the claude mcp add command is single-quoted by shellQuote, and markConnected is throttled to one agents.json write per agent per minute
 
 ### Pending Todos
 
@@ -148,6 +154,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-16T04:59:02.049Z
-Stopped at: Completed 02.2-03-PLAN.md
+Last session: 2026-09-16T05:28:19.593Z
+Stopped at: Completed 02.2-04-PLAN.md
 Resume file: None
