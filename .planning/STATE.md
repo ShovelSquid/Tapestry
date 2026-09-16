@@ -23,7 +23,7 @@ progress:
 See: .planning/PROJECT.md (updated 2026-09-08)
 
 **Core value:** Your world of thoughts must remain readable and under your control — in its spatial interface, its editable relationships and behavior, and its files and branching history.
-**Current focus:** Phase 02.4 — Lock Model
+**Current focus:** Phase 02.4 — Lock Model: complete on ws/notifications-rank; holding for Kaelen (WR-02 redo decision, #19 lock naming, merge)
 
 ## Current Position
 
@@ -38,7 +38,7 @@ Progress: [░░░░░░░░░░] 0%
 
 **Velocity:**
 
-- Total plans completed: 5
+- Total plans completed: 7
 - Average duration: -
 - Total execution time: 0 hours
 
@@ -47,6 +47,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 1 | 5 | - | - |
+| 02.4 | 2 | - | - |
 
 **Recent Trend:**
 
