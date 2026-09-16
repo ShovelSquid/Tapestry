@@ -1,17 +1,21 @@
 /**
- * D-05: an agent may read anything and connect anything, but may change only
- * what it created.
+ * The lock rule (02.4): an agent may read, grow from and connect anything, and
+ * may change a note unless the note's aspect is locked against it. Update and
+ * rename check the `text` aspect; delete checks `delete`. This supersedes the
+ * authorship rule of 02.2 D-05, under which an agent could change only what it
+ * created (02.4 D-01). The rule itself lives in locks.ts.
  *
- * The rule rests on the journal, not on a field: authorship comes from the
- * `actor` line of the commit that created the node (Plan 02's history index).
- * There is no created-by property for a writer to set about itself, so a
- * refusal here cannot be talked around by a model that ignores instructions,
- * and an agent cannot grant itself ownership by claiming it.
+ * Authorship still rests on the journal, not on a field: it comes from the
+ * `actor` line of the commit that created the node (Plan 02's history index),
+ * and it is now the note's default lock owner (02.4 D-04). There is no
+ * created-by property for a writer to set about itself, so a refusal here
+ * cannot be talked around by a model that ignores instructions, and an agent
+ * cannot make itself a note's owner by claiming it.
  *
  * Every refusal is asserted twice: that it returns `{ ok: false }`, and that
  * **nothing was written** — the file's size and the note's stored text are
- * unchanged. A refusal that still appended a commit would be a change that
- * D-05 exists to prevent.
+ * unchanged. A refusal that still appended a commit would be exactly the change
+ * a lock exists to prevent (02.4 D-11).
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -109,7 +113,7 @@ function titleOf(noteId: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// An agent changing its own notes (D-05, allowed)
+// An agent changing its own notes (open or owned, allowed)
 // ---------------------------------------------------------------------------
 
 describe('an agent changing a note it created', () => {
@@ -150,7 +154,7 @@ describe('an agent changing a note it created', () => {
 })
 
 // ---------------------------------------------------------------------------
-// An agent changing somebody else's note (D-05, refused)
+// An agent changing somebody else's note (locked by default, refused; 02.4 D-04)
 // ---------------------------------------------------------------------------
 
 describe("an agent changing a note it did not create", () => {
@@ -236,7 +240,7 @@ describe("an agent changing a note it did not create", () => {
     expect(worldFingerprint()).toEqual(before)
   })
 
-  /** A person is not restricted: D-05 limits agents, not the human. */
+  /** A person is not restricted: locks check agents, not the human (02.4 D-10). */
   it('lets user.kaelen change a note an agent created', () => {
     const result = notes.updateNote(KAELEN, {
       tree: 'policy',
@@ -250,7 +254,7 @@ describe("an agent changing a note it did not create", () => {
 })
 
 // ---------------------------------------------------------------------------
-// Connections (D-05: any agent may connect any notes)
+// Connections (any agent may connect any notes; 02.4 D-01)
 // ---------------------------------------------------------------------------
 
 describe('connect_notes', () => {
@@ -340,7 +344,7 @@ describe('connect_notes', () => {
 })
 
 // ---------------------------------------------------------------------------
-// search_notes (read-only: D-05 lets an agent read anything)
+// search_notes (read-only: locks never gate reading; 02.4 D-01)
 // ---------------------------------------------------------------------------
 
 describe('search_notes', () => {

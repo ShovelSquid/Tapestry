@@ -333,7 +333,8 @@ export class NoteCommands {
    *
    * `author` is the actor on the commit that created the node, read from the
    * history index (Plan 02). It is not a property on the node, so it is not
-   * something a writer could have set about itself (D-05, HIST-08).
+   * something a writer could have set about itself (HIST-08). It is also the
+   * note's default lock owner (02.4 D-04).
    */
   readNote(args: { tree: string; note: string }): CommandResult<{
     tree: string
@@ -418,8 +419,8 @@ export class NoteCommands {
   /**
    * Search titles and text across the open trees, or one named tree.
    *
-   * Read-only, and deliberately unrestricted: D-05 lets an agent read any
-   * note. Nothing is committed, so no actor is needed.
+   * Read-only, and deliberately unrestricted: locks gate changes, never
+   * reading, so an agent may read any note (02.4 D-01). Nothing is committed, so no actor is needed.
    */
   searchNotes(args: { tree?: string; query: string; limit?: number }): CommandResult<
     Array<{ tree: string; treeName: string; note: string; title: string; snippet: string }>
@@ -512,7 +513,12 @@ export class NoteCommands {
     }))
   }
 
-  /** Retitle a note (D-05: only a note this actor created). */
+  /**
+   * Retitle a note.
+   *
+   * A title is part of what the note says, so rename checks the note's `text`
+   * aspect, the same lock as updateNote (02.4 D-03). See locks.ts.
+   */
   renameNote(
     actor: Actor,
     args: { tree: string; note: string; title: string },
@@ -520,7 +526,7 @@ export class NoteCommands {
     const titleResult = validateTitle(args.title)
     if (!titleResult.ok) return titleResult
 
-    return this.writeToOwnNote(actor, args.tree, args.note, (tree) => ({
+    return this.writeToNote(actor, args.tree, args.note, 'text', (tree) => ({
       message: `rename note ${args.note} to "${titleResult.value}"`,
       ops: [
         {
@@ -536,7 +542,11 @@ export class NoteCommands {
   }
 
   /**
-   * Delete a note (D-05: only a note this actor created).
+   * Delete a note.
+   *
+   * An agent is refused when the note's `delete` aspect is locked against it
+   * (02.4 D-02). For a note no agent created, whether that aspect starts locked
+   * follows NON_AGENT_NOTES_DELETE_LOCKED in locks.ts (02.4 D-05).
    *
    * The note leaves the world but not the history: the journal is append-only,
    * so the commits that created and changed it remain readable.
@@ -545,7 +555,7 @@ export class NoteCommands {
     actor: Actor,
     args: { tree: string; note: string },
   ): CommandResult<{ tree: string; note: string; seq: number }> {
-    return this.writeToOwnNote(actor, args.tree, args.note, (tree) => ({
+    return this.writeToNote(actor, args.tree, args.note, 'delete', (tree) => ({
       message: `delete note ${args.note}`,
       ops: [{ op: 'deleteNode', id: args.note }],
       tree,
@@ -555,43 +565,6 @@ export class NoteCommands {
   // -------------------------------------------------------------------------
   // Internals
   // -------------------------------------------------------------------------
-
-  /**
-   * The shared shape of update, rename and delete: resolve, reconcile a
-   * rewound tree, check ownership, then commit.
-   *
-   * Ownership is checked **after** the tree is returned to its latest state,
-   * so the answer comes from the world the commit will actually be appended
-   * to rather than from a rewound view of it.
-   */
-  private writeToOwnNote(
-    actor: Actor,
-    treeRef: string,
-    noteId: string,
-    build: (tree: OpenTree) => { message: string; ops: OpObject[]; tree: OpenTree },
-  ): CommandResult<{ tree: string; note: string; seq: number }> {
-    let tree: OpenTree
-    try {
-      tree = this.registry.resolveRef(treeRef)
-    } catch (err) {
-      return { ok: false, error: errorText(err) }
-    }
-
-    try {
-      this.prepareWrite(tree, actor)
-
-      const refusal = this.assertOwnNote(tree, noteId, actor)
-      if (refusal) return { ok: false, error: refusal }
-
-      const { message, ops } = build(tree)
-      const result = tree.bridge.submitAs(actor, message, ops)
-      this.hooks.onCommitted?.(tree.id, actor, result)
-
-      return { ok: true, value: { tree: tree.id, note: noteId, seq: result.seq } }
-    } catch (err) {
-      return { ok: false, error: errorText(err) }
-    }
-  }
 
   /**
    * The shared shape of an agent-reachable note change: resolve, reconcile a
@@ -667,34 +640,5 @@ export class NoteCommands {
   /** See prepareWriteFor: this is the same rule, bound to these hooks. */
   private prepareWrite(tree: OpenTree, actor: Actor): void {
     prepareWriteFor(tree, actor, this.hooks)
-  }
-
-  /**
-   * D-05: an agent may change only notes it created.
-   *
-   * The answer comes from the `actor` line of the commit that created the
-   * node, read through the history index. There is no created-by property, so
-   * ownership is a fact recorded on disk rather than a claim the caller could
-   * have written about itself (HIST-08).
-   *
-   * Returns the refusal message, or null when the write may proceed.
-   */
-  private assertOwnNote(tree: OpenTree, noteId: string, actor: Actor): string | null {
-    const notLive = `${String(noteId)} is not a live note in ${tree.name}`
-
-    if (typeof noteId !== 'string' || !NODE_ID_RE.test(noteId)) return notLive
-    if (!tree.bridge.getNode(noteId)) return notLive
-
-    // Only agents are restricted; a person may change their own world freely.
-    if (!isAgentActor(actor)) return null
-
-    const entry = tree.bridge.getHistoryIndex().nodes[noteId]
-    if (!entry) return notLive
-
-    const createdBy = entry.createdBy
-    if (createdBy.kind !== actor.kind || createdBy.id !== actor.id) {
-      return `${actor.id} may only change notes it created; ${noteId} was created by ${createdBy.id}`
-    }
-    return null
   }
 }
