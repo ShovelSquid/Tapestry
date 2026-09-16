@@ -4,16 +4,16 @@ milestone: v1.0
 current_phase: "02.2"
 current_phase_name: Obsidian Bridge
 status: discussing
-stopped_at: Phase 2.2 UI-SPEC approved
-last_updated: "2026-09-16T04:03:02.365Z"
+stopped_at: Completed 02.2-01-PLAN.md
+last_updated: "2026-09-16T04:18:14.195Z"
 last_activity: 2026-09-15
 last_activity_desc: Phase 02.2 Obsidian Bridge inserted
-state_head: 2993b1b9008de6272ff7ac2d40b323275c0715d5
+state_head: bf9a450c023f61ad34cedcf8712c031410ae24ed
 progress:
   total_phases: 10
   completed_phases: 0
   total_plans: 29
-  completed_plans: 13
+  completed_plans: 14
 ---
 
 # Project State
@@ -63,6 +63,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 01 P03 | 17 min | 2 tasks | 11 files |
 | Phase 01 P04 | 16 min | 2 tasks | 10 files |
 | Phase 01 P05 | 9 min | 3 tasks | 4 files |
+| Phase 02.2 P01 | 13 min | 3 tasks | 22 files |
 
 ## Accumulated Context
 
@@ -93,6 +94,8 @@ Recent decisions affecting current work:
 - [Phase 01]: Golden fixture pattern: the readability suite regenerates docs/tree/example.tree with the production kernel under a FixedClock and compares byte for byte; TAPESTRY_REGEN_FIXTURE is the only regeneration path so drift is always a git diff
 - [Phase 01]: FORMAT.md is the reader's spec for .tree v1 and quotes example.tree verbatim; the acceptance check diffs the fenced block against the file, so the fixture and the guide must change in the same commit
 - [Phase 01]: TREE-04 proven by name and place: recorded and tick are line-initial header keys, event is a set-line value; corrections keep the earlier value in the earlier record and a backwards wall clock never reorders seq/parent
+- [Phase 02.2]: [Phase 02.2]: Host-stamped actors — the Electron main process names the actor for every commit; kernel:submit takes (message, ops) and plugins are bound to plugin <pluginId>, throwing if they claim human or system (D-06/D-07)
+- [Phase 02.2]: [Phase 02.2]: ACTOR_NAME_RE (^[a-z0-9][a-z0-9_-]{0,31}$) is stricter than the kernel token rule so actor ids stay readable; agent./user./obsidian. and bare tapestry are reserved against plugin impersonation
 
 ### Pending Todos
 
@@ -136,6 +139,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-15T18:56:35.332Z
-Stopped at: Phase 2.2 UI-SPEC approved
-Resume file: .planning/phases/02.2-obsidian-bridge/02.2-UI-SPEC.md
+Last session: 2026-09-16T04:18:14.126Z
+Stopped at: Completed 02.2-01-PLAN.md
+Resume file: None
