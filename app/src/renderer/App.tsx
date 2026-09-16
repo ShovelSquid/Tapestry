@@ -18,8 +18,8 @@
  * - "Not saved" after a failed call
  */
 
-import React, { useCallback, useEffect, useState } from 'react'
-import Canvas, { type DoubleClickTarget } from './components/Canvas'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
+import Canvas, { type CanvasHandle, type DoubleClickTarget } from './components/Canvas'
 import ForestBar from './components/ForestBar'
 import TransientNotice from './components/TransientNotice'
 import PluginErrorNotification from './components/PluginErrorNotification'
@@ -38,6 +38,11 @@ function errorMessage(err: unknown): string {
 function worldNameFromPath(filePath: string): string {
   const fileName = filePath.split('/').pop()?.replace(/\.tree$/, '') ?? 'untitled'
   return fileName.replace(/[^A-Za-z0-9_-]/g, '_')
+}
+
+/** The file's own name, for copy that names the file rather than its path. */
+function fileNameOf(filePath: string): string {
+  return filePath.split('/').pop() ?? filePath
 }
 
 // ---------------------------------------------------------------------------
@@ -59,6 +64,12 @@ export default function App(): React.ReactElement {
 
   const [editingRef, setEditingRef] = useState<NodeRef | null>(null)
   const [selectedRef, setSelectedRef] = useState<NodeRef | null>(null)
+
+  // The space, for the one thing App asks of it: pan to a frame it just added.
+  const canvasRef = useRef<CanvasHandle>(null)
+
+  /** A tree that has just been added and is waiting to be panned to. */
+  const [pendingPanTreeId, setPendingPanTreeId] = useState<string | null>(null)
 
   // The name every change is signed with (D-07). Null means "not chosen yet",
   // which is what makes the first-run prompt appear; nameLoaded keeps the
@@ -211,6 +222,72 @@ export default function App(): React.ReactElement {
     }
     return result.error ?? 'Could not save your name.'
   }, [])
+
+  // -----------------------------------------------------------------------
+  // Add tree (D-18): a world joins the space and the canvas moves to it
+  // -----------------------------------------------------------------------
+
+  /**
+   * Put a world that main has just opened or created into the space.
+   *
+   * Every failure reads as the UI-SPEC's file-open error rather than as the
+   * raw reason: a damaged header, an unreadable file and a copy of a world
+   * that is already open all arrive here as text, and what Kaelen can do next
+   * is the same in each case.
+   */
+  const addTreeToSpace = useCallback(
+    async (filePath: string, result: { ok: boolean; treeId?: string; error?: string }) => {
+      if (!result.ok || !result.treeId) {
+        setNotice(
+          `Could not open ${fileNameOf(filePath)} -- The file may be damaged or in an ` +
+            'unrecognized format. Create a new world or choose another file.',
+        )
+        return
+      }
+
+      // The tree has to be in local state before its frame can be panned to.
+      await refreshAll()
+      setPendingPanTreeId(result.treeId)
+    },
+    [refreshAll],
+  )
+
+  const handleOpenWorld = useCallback(async () => {
+    const picked = await window.tapestry.dialog.showOpenTree()
+    if (picked.canceled || !picked.filePath) return
+    const opened = await window.tapestry.trees.open(picked.filePath)
+    await addTreeToSpace(picked.filePath, opened)
+  }, [addTreeToSpace])
+
+  const handleNewWorld = useCallback(async () => {
+    const picked = await window.tapestry.dialog.showSave()
+    if (picked.canceled || !picked.filePath) return
+    const created = await window.tapestry.trees.create(
+      picked.filePath,
+      worldNameFromPath(picked.filePath),
+    )
+    await addTreeToSpace(picked.filePath, created)
+  }, [addTreeToSpace])
+
+  /**
+   * Pan to a newly added frame once the space knows about it.
+   *
+   * Deferred by one animation frame on purpose: main places a new frame from
+   * stored positions alone, and the canvas corrects that placement after it
+   * has measured the existing frames. Centering before the correction would
+   * center where the frame briefly was.
+   */
+  useEffect(() => {
+    if (!pendingPanTreeId) return undefined
+    if (!trees.some((tree) => tree.id === pendingPanTreeId)) return undefined
+
+    const treeId = pendingPanTreeId
+    const handle = requestAnimationFrame(() => {
+      canvasRef.current?.panToFrame(treeId)
+      setPendingPanTreeId(null)
+    })
+    return () => cancelAnimationFrame(handle)
+  }, [pendingPanTreeId, trees])
 
   // -----------------------------------------------------------------------
   // Create note on double-click (D-04)
@@ -546,6 +623,8 @@ export default function App(): React.ReactElement {
         userName={userName}
         onSaveUserName={handleSaveUserName}
         onAgentsRefresh={refreshAgents}
+        onOpenWorld={handleOpenWorld}
+        onNewWorld={handleNewWorld}
       />
 
       {/* An agent write ended a rewound state (UA-14) */}
@@ -575,6 +654,7 @@ export default function App(): React.ReactElement {
 
       {/* The space: one frame per open tree, with pan/zoom and connections */}
       <Canvas
+        ref={canvasRef}
         trees={trees}
         editingRef={editingRef}
         pluginNodeViews={pluginNodeViews}

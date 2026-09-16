@@ -17,7 +17,14 @@
  * Frame-local coordinates are world coordinates minus the frame's origin.
  */
 
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import React, {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from 'react'
 import ConnectionLine from './ConnectionLine'
 import TreeFrame, { type TreeFrameHandlers } from './TreeFrame'
 import type { ForestTree, NodeRef } from '../state/use-forest'
@@ -54,6 +61,17 @@ interface ViewTransform {
   panX: number
   panY: number
   zoom: number
+}
+
+/**
+ * What the space can be asked to do from outside it.
+ *
+ * Canvas owns the view transform, so panning is its to perform: App knows
+ * which tree it just added, not where that tree's frame ended up.
+ */
+export interface CanvasHandle {
+  /** Center a tree's frame in the viewport at the current zoom. */
+  panToFrame(treeId: string): void
 }
 
 /** Where a double-click landed: inside a frame, or nowhere in particular. */
@@ -165,7 +183,7 @@ function containsPoint(rect: FrameRect, x: number, y: number): boolean {
 // Canvas
 // ---------------------------------------------------------------------------
 
-export default function Canvas({
+function Canvas({
   trees,
   editingRef,
   pluginNodeViews,
@@ -185,7 +203,7 @@ export default function Canvas({
   onDeleteNote,
   onPropertyEdit,
   onFrameMove,
-}: CanvasProps): React.ReactElement {
+}: CanvasProps, ref: React.ForwardedRef<CanvasHandle>): React.ReactElement {
   const viewportRef = useRef<HTMLDivElement>(null)
   const [view, setView] = useState<ViewTransform>({ panX: 0, panY: 0, zoom: 1 })
 
@@ -270,6 +288,37 @@ export default function Canvas({
     })
     frameRects.set(tree.id, computeFrameBounds(tree.frame, boxes))
   }
+
+  /**
+   * The rects this render computed, readable by an imperative caller later.
+   *
+   * panToFrame is called after a frame has been added and possibly nudged
+   * clear of its neighbours, so it must read the rects as they are at that
+   * moment rather than the ones its own closure was created with.
+   */
+  const frameRectsRef = useRef(frameRects)
+  frameRectsRef.current = frameRects
+
+  /**
+   * Center a frame in the viewport, keeping the current zoom.
+   *
+   * worldToScreen is `world * zoom + pan`, so centering the frame's midpoint
+   * means solving `mid * zoom + pan = viewport / 2` for pan.
+   */
+  const panToFrame = useCallback((treeId: string) => {
+    const viewport = viewportRef.current
+    const rect = frameRectsRef.current.get(treeId)
+    if (!viewport || !rect) return
+
+    const { clientWidth, clientHeight } = viewport
+    setView((prev) => ({
+      ...prev,
+      panX: clientWidth / 2 - (rect.x + rect.width / 2) * prev.zoom,
+      panY: clientHeight / 2 - (rect.y + rect.height / 2) * prev.zoom,
+    }))
+  }, [])
+
+  useImperativeHandle(ref, () => ({ panToFrame }), [panToFrame])
 
   /** The tree whose frame contains a world point, if any. */
   const treeAt = useCallback(
@@ -765,3 +814,5 @@ export default function Canvas({
     </div>
   )
 }
+
+export default forwardRef(Canvas)

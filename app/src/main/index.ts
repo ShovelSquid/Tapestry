@@ -13,7 +13,7 @@
  * trees by name through the shared command layer (D-01).
  */
 
-import { app, BrowserWindow, ipcMain, dialog } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron'
 import { isAbsolute, join, relative, resolve, sep } from 'path'
 import { execFileSync } from 'child_process'
 import { userInfo } from 'os'
@@ -476,6 +476,22 @@ app.whenReady().then(async () => {
     registry.close(treeId)
     settings.removeTree(treePath)
     notifyTreesChanged()
+    return { ok: true }
+  })
+
+  /**
+   * Show a tree's file in Finder (UI-SPEC "Tree options > Show in Finder").
+   *
+   * The renderer names a tree by id and never by path: the path is read from
+   * the registry, so this cannot be aimed at an arbitrary file on disk
+   * (T-02.2-30). An id that names nothing in the space is refused.
+   */
+  ipcMain.handle('trees:reveal', (_event, treeId: unknown) => {
+    if (typeof treeId !== 'string') return { ok: false, error: 'Unknown tree' }
+    const tree = registry.get(treeId)
+    if (!tree) return { ok: false, error: `Unknown tree ${treeId}` }
+
+    shell.showItemInFolder(tree.path)
     return { ok: true }
   })
 
