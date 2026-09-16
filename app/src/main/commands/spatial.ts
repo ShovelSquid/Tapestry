@@ -7,7 +7,10 @@
  * (D-12); an id that is live in some other open tree is simply not live here.
  *
  * The geometry lives in the pure module `renderer/layout/placement.ts` (D-18),
- * so the canvas and this layer measure notes the same way.
+ * so the canvas and this layer measure notes the same way. `look` measures
+ * every note where it is drawn (`displayPositions`): a note that follows its
+ * parent is reported beside that parent, with `guess: true`, not at its
+ * stored spot (D-05).
  *
  * `place` joins this class after Phase 2.4 (Plan 04).
  */
@@ -16,12 +19,12 @@ import type { OpenTree, TreeRegistry } from '../trees/registry'
 import type { CommandHooks, CommandResult } from './notes'
 import type { NodeData } from '../kernel-bridge'
 import {
-  isFollowing,
+  displayPositions,
   isKnot,
-  isPlaced,
   liesToward,
+  noteSize,
   orderNeighbours,
-  storedRect,
+  rectAt,
   type PlacementRect,
   type Relation,
 } from '../../renderer/layout/placement'
@@ -111,9 +114,19 @@ export class SpatialCommands {
       const byId = new Map<string, NodeData>()
       for (const node of nodes) byId.set(node.id, node)
 
+      // Where each note is drawn, followers included. No overrides: main
+      // sees no drag in progress.
+      const drawn = displayPositions(nodes, edges, new Map())
+      /** A note's drawn rectangle; null for a knot or a note with no drawn spot. */
+      const drawnRect = (node: NodeData): PlacementRect | null => {
+        if (isKnot(node)) return null
+        const spot = drawn.get(node.id)
+        return spot === undefined ? null : rectAt(spot, noteSize(node))
+      }
+
       const origin = byId.get(from)
       if (!origin) return { ok: false, error: notLive }
-      const fromRect = isKnot(origin) ? null : storedRect(origin)
+      const fromRect = drawnRect(origin)
       if (!fromRect) return { ok: false, error: `${from} is not placed in ${tree.name}` }
 
       let towardRect: PlacementRect | null = null
@@ -125,7 +138,7 @@ export class SpatialCommands {
         if (isKnot(target)) {
           return { ok: false, error: `toward ${toward} is not a live note in ${tree.name}` }
         }
-        towardRect = storedRect(target)
+        towardRect = drawnRect(target)
         if (!towardRect) {
           return { ok: false, error: `toward ${toward} is not placed in ${tree.name}` }
         }
@@ -142,8 +155,8 @@ export class SpatialCommands {
 
       const candidates: Array<{ id: string; rect: PlacementRect }> = []
       for (const node of nodes) {
-        if (node.id === from || isKnot(node) || !isPlaced(node)) continue
-        const rect = storedRect(node)
+        if (node.id === from) continue
+        const rect = drawnRect(node)
         if (!rect) continue
         if (towardRect && !liesToward(fromRect, rect, towardRect)) continue
         candidates.push({ id: node.id, rect })
@@ -156,7 +169,7 @@ export class SpatialCommands {
           space: tree.id,
           relation: entry.relation,
           order: index + 1,
-          guess: isFollowing(byId.get(entry.id)!, nodes, edges),
+          guess: drawn.get(entry.id)?.following === true,
         }))
 
       return { ok: true, value: { tree: tree.id, from, neighbours } }

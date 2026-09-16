@@ -12,7 +12,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { join } from 'node:path'
-import { rmSync, statSync } from 'node:fs'
+import { readFileSync, rmSync, statSync } from 'node:fs'
 import { makeTempDir } from '../../../test/helpers/temp-tree'
 import { TreeRegistry, type OpenTree } from '../trees/registry'
 import type { OpObject } from '../kernel-bridge'
@@ -208,6 +208,110 @@ describe('look replies', () => {
 
     const value = lookOk({ tree: 'spatial', from: 'n1', toward: 'n2' })
     expect(value.neighbours.map((n) => n.note)).toEqual(['n3', 'n2'])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Following notes: look sees them where they are drawn (D-02, D-05)
+// ---------------------------------------------------------------------------
+
+/** How many commits the file holds: each one writes exactly one `recorded` line. */
+function commitCount(): number {
+  return (readFileSync(treePath, 'utf8').match(/^recorded /gm) ?? []).length
+}
+
+function neighbourOf(value: LookResult, note: string) {
+  return value.neighbours.find((n) => n.note === note)
+}
+
+describe('look and following notes', () => {
+  it('reports a following note where it is drawn, beside its parent, as a guess', () => {
+    seed([{ x: 0, y: 0 }, { x: 2000, y: 2000, pinned: false }])
+    grow('n2', 'n1')
+
+    const value = lookOk({ tree: 'spatial', from: 'n1' })
+    expect(neighbourOf(value, 'n2')).toEqual({
+      note: 'n2',
+      space: tree.id,
+      relation: 'near',
+      order: 1,
+      guess: true,
+    })
+  })
+
+  it('keeps a grown note with no pinned, or pinned true, at its stored spot (D-02)', () => {
+    seed([{ x: 0, y: 0 }, { x: 2000, y: 2000 }, { x: 2000, y: 2400, pinned: true }])
+    grow('n2', 'n1')
+    grow('n3', 'n1')
+
+    const value = lookOk({ tree: 'spatial', from: 'n1' })
+    expect(neighbourOf(value, 'n2')).toMatchObject({ relation: 'beyond', guess: false })
+    expect(neighbourOf(value, 'n3')).toMatchObject({ relation: 'beyond', guess: false })
+  })
+
+  it("moves a follower with its parent without touching the follower's stored props (D-05)", () => {
+    seed([{ x: 0, y: 0 }, { x: 2000, y: 2000, pinned: false }])
+    grow('n2', 'n1')
+    const followerBefore = tree.bridge.getNode('n2')
+    const commitsBefore = commitCount()
+
+    tree.bridge.submitAs(KAELEN, 'Move note', [
+      { op: 'setProperty', target: 'n1', key: 'position.x', type: 'real', value: 5000 },
+      { op: 'setProperty', target: 'n1', key: 'position.y', type: 'real', value: -3000 },
+    ])
+
+    expect(commitCount()).toBe(commitsBefore + 1)
+    expect(tree.bridge.getNode('n1')?.props['position.x']?.value).toBe(5000)
+    const followerAfter = tree.bridge.getNode('n2')
+    for (const key of ['position.x', 'position.y', 'pinned']) {
+      expect(followerAfter?.props[key]).toEqual(followerBefore?.props[key])
+    }
+
+    const size = fileSize()
+    const value = lookOk({ tree: 'spatial', from: 'n1' })
+    expect(neighbourOf(value, 'n2')).toMatchObject({ relation: 'near', guess: true })
+    expect(fileSize()).toBe(size)
+    expect(commitCount()).toBe(commitsBefore + 1)
+  })
+
+  it('measures from where a follower is drawn when looking from it', () => {
+    seed([
+      { x: 0, y: 0 }, // n1: parent
+      { x: 2000, y: 2000, pinned: false }, // n2: follower, drawn at 360, 0
+      { x: 700, y: 0 }, // n3: 60 right of n2's drawn spot
+    ])
+    grow('n2', 'n1')
+
+    const value = lookOk({ tree: 'spatial', from: 'n2' })
+    expect(neighbourOf(value, 'n3')).toMatchObject({ relation: 'near', order: 1, guess: false })
+    expect(neighbourOf(value, 'n1')).toMatchObject({ relation: 'near', order: 2, guess: false })
+  })
+
+  it('still lists a follower that has no stored position, and looks from it', () => {
+    seed([{ x: 0, y: 0 }, { pinned: false }])
+    grow('n2', 'n1')
+
+    expect(neighbourOf(lookOk({ tree: 'spatial', from: 'n1' }), 'n2')).toMatchObject({
+      relation: 'near',
+      guess: true,
+    })
+    expect(neighbourOf(lookOk({ tree: 'spatial', from: 'n2' }), 'n1')).toMatchObject({
+      relation: 'near',
+      guess: false,
+    })
+  })
+
+  it('uses the drawn spot of a follower named as toward', () => {
+    seed([
+      { x: 0, y: 0 }, // n1: parent, drawn at 0, 0
+      { x: 0, y: 5000, pinned: false }, // n2: follower drawn at 360, 0, stored far below
+      { x: 1200, y: 0 }, // n3: straight toward n2's drawn spot
+      { x: 0, y: 1500 }, // n4: toward n2's stored spot only
+    ])
+    grow('n2', 'n1')
+
+    const value = lookOk({ tree: 'spatial', from: 'n1', toward: 'n2' })
+    expect(value.neighbours.map((n) => n.note)).toEqual(['n2', 'n3'])
   })
 })
 
