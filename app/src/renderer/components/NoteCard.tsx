@@ -29,6 +29,7 @@ import type { EditorView } from 'prosemirror-view'
 import { useProseMirror } from '../editor/use-prosemirror'
 import NoteControls from './NoteControls'
 import FloatingToolbar from './FloatingToolbar'
+import ProvenanceBadge, { actorSpokenText } from './ProvenanceBadge'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -511,6 +512,54 @@ export default function NoteCard({
   const showControlsBool = showControls || isSelected
   const isHighlighted = isEditing || isSelected || isConnectTarget
 
+  // ----- Provenance footer (D-06, D-07, DRAW-04) -----
+  //
+  // Visibility follows the UI-SPEC: a note something other than a person
+  // touched says so permanently, because that is the fact a reader would
+  // otherwise have to go looking for. A note you wrote and last changed
+  // yourself keeps the card quiet and shows its footer on hover, selection,
+  // editing or keyboard focus.
+  let provenanceFooter: React.ReactElement | null = null
+  if (provenance) {
+    const { createdBy, changedBy } = provenance
+    const wasChangedByOther = changedBy.kind !== createdBy.kind || changedBy.id !== createdBy.id
+    const machineAttributed =
+      createdBy.id.startsWith('agent.') ||
+      changedBy.id.startsWith('agent.') ||
+      changedBy.id === 'obsidian.bridge'
+
+    // The full ids, never truncated, for the tooltip and the screen reader.
+    const tooltip =
+      `Created by ${createdBy.id} in change ${provenance.createdSeq}. ` +
+      `Last changed by ${changedBy.id} in change ${provenance.changedSeq}.`
+    const spoken = wasChangedByOther
+      ? `Created by ${actorSpokenText(createdBy)}, changed by ${actorSpokenText(changedBy)}`
+      : `Created by ${actorSpokenText(createdBy)}`
+
+    provenanceFooter = (
+      <div
+        className={
+          'tapestry-provenance-footer' +
+          (machineAttributed ? '' : ' tapestry-provenance-footer--hidden')
+        }
+        title={tooltip}
+        role="group"
+        aria-label={spoken}
+      >
+        {/* The visible row is hidden from screen readers: the footer's own
+            accessible name above is the single, complete reading. */}
+        <span aria-hidden="true">Created by</span>
+        <ProvenanceBadge actor={createdBy} />
+        {wasChangedByOther && (
+          <>
+            <span aria-hidden="true">· changed by</span>
+            <ProvenanceBadge actor={changedBy} />
+          </>
+        )}
+      </div>
+    )
+  }
+
   let borderClass = 'tapestry-note-card'
   if (isHighlighted) borderClass += ' tapestry-note-card--selected'
   if (isEditing) borderClass += ' tapestry-note-card--editing'
@@ -581,11 +630,7 @@ export default function NoteCard({
 
       {/* Provenance footer (D-06, D-07): who made this note, read from the
           journal rather than from anything stored on the note itself. */}
-      {provenance && (
-        <div className="tapestry-provenance-footer">
-          Created by {provenance.createdBy.id}
-        </div>
-      )}
+      {provenanceFooter}
 
       {/* Floating formatting toolbar near the text selection (D-24) */}
       {isEditing && <FloatingToolbar view={editorView} containerRef={cardRef} zoom={zoom} />}

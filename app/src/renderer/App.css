@@ -799,6 +799,72 @@ html, body, #root {
   border: none;
 }
 
+/* ------------------------------------------------------------------------ */
+/* Provenance footer and badges (DRAW-04, D-06, D-07, D-21)                  */
+/*                                                                           */
+/* Neutral by contract: Muted text and glyphs, Border rule, no accent. The   */
+/* actor id is the meaning, so it is never replaced by a color or a shape.   */
+/* ------------------------------------------------------------------------ */
+
+.tapestry-provenance-footer {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #E0DDD7;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  /* Label role: 13/400/1.4 */
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: #6B6B6B;
+  /* Lets the badge text below shrink far enough to ellipsize. */
+  min-width: 0;
+}
+
+/*
+ * A note you wrote and last changed yourself reveals its footer on hover,
+ * selection, editing or keyboard focus. Fading rather than unmounting keeps
+ * the card's height fixed, so notes do not jump as the pointer crosses them.
+ */
+.tapestry-provenance-footer--hidden {
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.tapestry-note-card:hover .tapestry-provenance-footer--hidden,
+.tapestry-note-card:focus-within .tapestry-provenance-footer--hidden,
+.tapestry-note-card--selected .tapestry-provenance-footer--hidden,
+.tapestry-note-card--editing .tapestry-provenance-footer--hidden {
+  opacity: 1;
+}
+
+.tapestry-provenance-badge {
+  display: inline-flex;
+  align-items: center;
+  /* xs token: the glyph-to-text gap. */
+  gap: 4px;
+  min-width: 0;
+  color: #6B6B6B;
+}
+
+/* The glyph keeps its 16px however narrow the card gets. */
+.tapestry-provenance-badge > svg {
+  flex: none;
+}
+
+/*
+ * A long agent id truncates here rather than widening the card. The full id
+ * stays in the footer's title tooltip and its accessible name.
+ */
+.tapestry-provenance-badge-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Keyboard focus ring for the controls this phase adds. */
 .tapestry-button--primary:focus-visible,
 .tapestry-button--secondary:focus-visible,
