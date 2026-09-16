@@ -92,10 +92,16 @@ export const DEFAULT_LOCK_POLICY: LockPolicy = Object.freeze({
 /** A note's property map, exactly as the bridge returns it. */
 export type LockProps = NodeData['props']
 
-/** How one aspect of one note resolves. */
+/**
+ * How one aspect of one note resolves.
+ *
+ * `ownerKind` is set only on a default lock, which belongs to the creator's
+ * kind and id together, as the retired 02.2 D-05 gate compared them. An
+ * explicit `lock.<aspect>` owner is id-only text (D-08) and has no kind.
+ */
 export type LockState =
   | { locked: false }
-  | { locked: true; owner: string; allow: readonly string[] }
+  | { locked: true; owner: string; ownerKind?: string; allow: readonly string[] }
 
 // ---------------------------------------------------------------------------
 // Keys and actors
@@ -157,6 +163,7 @@ export function resolveLock(
   const lockedToCreator: LockState = {
     locked: true,
     owner: createdBy.id,
+    ownerKind: createdBy.kind,
     allow: readAllow(props, aspect),
   }
 
@@ -187,7 +194,9 @@ function readAllow(props: LockProps, aspect: LockAspect): string[] {
  *
  * Only agents are checked (D-10). An agent may write when the aspect is open,
  * when it is the lock's owner, or when it is on the allow list. Owner and
- * allow entries are compared with the actor id exactly. The refusal reads
+ * allow entries are compared with the actor id exactly; a default lock's
+ * owner must also match on kind, so a non-agent creator whose id reads like
+ * an agent's never hands its lock to that agent (WR-01). The refusal reads
  * `<note> <aspect> is locked by <owner>` (D-12), with a blank owner shown as
  * UNKNOWN_LOCK_OWNER so the message stays readable.
  */
@@ -203,7 +212,9 @@ export function checkLock(
 
   const state = resolveLock(props, createdBy, aspect, policy)
   if (!state.locked) return null
-  if (state.owner === actor.id || state.allow.includes(actor.id)) return null
+  const ownerMatches =
+    state.owner === actor.id && (state.ownerKind === undefined || state.ownerKind === actor.kind)
+  if (ownerMatches || state.allow.includes(actor.id)) return null
 
   const display = state.owner.trim() === '' ? UNKNOWN_LOCK_OWNER : state.owner
   return `${noteId} ${aspect} is locked by ${display}`

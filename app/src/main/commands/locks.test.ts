@@ -79,6 +79,7 @@ describe('resolveLock and checkLock (pure)', () => {
       expect(resolveLock({}, HUMAN_KAELEN, 'text', policy)).toEqual({
         locked: true,
         owner: 'user.kaelen',
+        ownerKind: 'human',
         allow: [],
       })
     }
@@ -90,7 +91,7 @@ describe('resolveLock and checkLock (pure)', () => {
         agentNotesOpenToAgents: true,
         nonAgentNotesDeleteLocked: true,
       }),
-    ).toEqual({ locked: true, owner: 'user.kaelen', allow: [] })
+    ).toEqual({ locked: true, owner: 'user.kaelen', ownerKind: 'human', allow: [] })
 
     expect(
       resolveLock({}, HUMAN_KAELEN, 'delete', {
@@ -111,11 +112,13 @@ describe('resolveLock and checkLock (pure)', () => {
     expect(resolveLock({}, AGENT_CLAUDE, 'text', policy)).toEqual({
       locked: true,
       owner: 'agent.claude',
+      ownerKind: 'plugin',
       allow: [],
     })
     expect(resolveLock({}, AGENT_CLAUDE, 'delete', policy)).toEqual({
       locked: true,
       owner: 'agent.claude',
+      ownerKind: 'plugin',
       allow: [],
     })
   })
@@ -131,6 +134,7 @@ describe('resolveLock and checkLock (pure)', () => {
       expect(resolveLock({}, creator, 'text')).toEqual({
         locked: true,
         owner: creator.id,
+        ownerKind: creator.kind,
         allow: [],
       })
     }
@@ -218,6 +222,35 @@ describe('resolveLock and checkLock (pure)', () => {
     expect(
       checkLock('n1', props, HUMAN_KAELEN, { kind: 'plugin', id: 'agent.claud' }, 'text'),
     ).toBe('n1 text is locked by agent.claude')
+  })
+
+  /**
+   * WR-01: a default lock belongs to the creator's kind and id together, as
+   * the retired D-05 gate compared them. A non-agent creator whose id happens
+   * to read `agent.claude` (a hand-edited or foreign `.tree` can say so) must
+   * not hand its lock to `plugin agent.claude`.
+   */
+  it('matches a default lock owner on kind and id, not id alone', () => {
+    const lookalikes: ActorLike[] = [
+      { kind: 'human', id: 'agent.claude' },
+      { kind: 'system', id: 'agent.claude' },
+    ]
+    for (const creator of lookalikes) {
+      for (const aspect of ['text', 'delete'] as const) {
+        expect(checkLock('n1', {}, creator, AGENT_CLAUDE, aspect, {
+          agentNotesOpenToAgents: true,
+          nonAgentNotesDeleteLocked: true,
+        })).toBe(`n1 ${aspect} is locked by agent.claude`)
+      }
+    }
+  })
+
+  it('still lets the creating agent through its own default lock', () => {
+    const policy: LockPolicy = { agentNotesOpenToAgents: false, nonAgentNotesDeleteLocked: true }
+    expect(checkLock('n1', {}, AGENT_CLAUDE, AGENT_CLAUDE, 'text', policy)).toBeNull()
+    expect(checkLock('n1', {}, AGENT_CLAUDE, AGENT_CHATGPT, 'text', policy)).toBe(
+      'n1 text is locked by agent.claude',
+    )
   })
 
   it('names the delete aspect in a delete refusal', () => {
@@ -663,6 +696,34 @@ describe('locks through NoteCommands', () => {
     )
     expect(titleOf(pluginNote)).toBe('Plugin note')
     expect(worldFingerprint()).toEqual(before)
+  })
+
+  /** WR-01: kind is part of a default owner, through the real kernel. */
+  it('refuses plugin agent.claude on a note created by human or system agent.claude', () => {
+    const lookalikes: Actor[] = [
+      { kind: 'human', id: 'agent.claude' },
+      { kind: 'system', id: 'agent.claude' },
+    ]
+    for (const creator of lookalikes) {
+      const noteId = createNoteAs(creator, 'Lookalike', 'Not an agent note', 'Create note')
+      const before = worldFingerprint()
+
+      const updated = notes.updateNote(CLAUDE, { tree: 'locks', note: noteId, text: 'Hijack' })
+      expect(updated.ok).toBe(false)
+      expect(updated.ok === false && updated.error).toBe(`${noteId} text is locked by agent.claude`)
+      expect(worldFingerprint()).toEqual(before)
+      expect(bodyTextOf(noteId)).toBe('Not an agent note')
+
+      const deleted = notes.deleteNote(CLAUDE, { tree: 'locks', note: noteId })
+      if (NON_AGENT_NOTES_DELETE_LOCKED) {
+        expect(deleted.ok).toBe(false)
+        expect(deleted.ok === false && deleted.error).toBe(
+          `${noteId} delete is locked by agent.claude`,
+        )
+        expect(worldFingerprint()).toEqual(before)
+        expect(tree.bridge.getNode(noteId)).not.toBeNull()
+      }
+    }
   })
 
   it('does not check people or non-agent plugins against an agent lock (D-10)', () => {
