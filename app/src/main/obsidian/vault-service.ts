@@ -153,9 +153,21 @@ export class VaultService {
       this.report(treeId, { kind: phase, done, total })
     })
 
+    // Predicted ids let a note and the connections to it go into one commit
+    // (D-31). They are read from the journal head, so a rewound world has none
+    // to offer; the reconciler then creates the nodes and leaves their edges
+    // for the next catch-up rather than writing them against a guess.
+    let nextIds
+    try {
+      nextIds = tree.bridge.getNextIds()
+    } catch {
+      nextIds = undefined
+    }
+
     const { ops, summary } = planReconcile(
       { nodes: before, edges: tree.bridge.getEdges() },
       model,
+      nextIds,
     )
 
     if (ops.length > 0) {
