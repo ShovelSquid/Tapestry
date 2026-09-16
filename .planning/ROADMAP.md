@@ -210,14 +210,51 @@ Plans:
 **Goal**: A thread is a single note with its full history, optionally shared by a user and an agent. It is written live along the z-axis in the note typer (a dot every 1/60 s, each letter placed at the moment it was typed) and read back in a left-to-right side view, where dashes mark where writing timed out and timed back in
 **Mode:** mvp
 **Depends on**: Phase 2.2
-**Requirements**: TBD
+**Requirements**: none owned — exercises TREE-01/02/04, HIST-01/08, PROV-01/03, NOTE-02, DRAW-03/04 and PLUG-03/04/06 through integration (all already owned by Phases 1-4)
 **Success Criteria** (what must be TRUE):
 
-  TBD in /gsd-discuss-phase 2.3 with Kaelen (not skipped). Includes renaming Phase 2.1's thread-center/thread-arm (time threads keep the name "thread"). Description: `~/Tapestry Tales/Connections/Concept - Thread Type.md`; rendering spikes in `.planning/spikes/`.
+  1. User can create a thread, write in the note typer, and watch the live z-axis line gain dots and letters at display rate, with the pause slowdown and a time-out dash — holding 60 fps at the 8 h / 78k-letter reference load, with IME composition and paste landing correctly (D-09..D-14)
+  2. Closing and reopening the world redraws the same line from saved keystrokes and sessions alone, with no stored dots, and a person can read the typed text, deletions and timings in the `.tree` file without Tapestry; with the threads plugin disabled the thread still opens and shows its latest document text (D-01..D-06)
+  3. In the side view, user can zoom from the whole thread down to single dots, fly to session notes, scrub by date, and click any point to see the document as it was then — every navigation path reachable by keyboard, with gravity an aid and never the only route (D-07, D-08, D-15..D-19)
+  4. An agent writing into a shared thread appears as its own coloured strand, cannot delete or rewrite a single letter the user wrote (the refusal committing nothing), and its text can be pulled apart for display (D-20..D-25)
+  5. No `thread-center` / `thread-arm` occurrences remain in tracked source under `app/`, `plugins/` or `sdk/`; 2.1's feature works as `knot` / `knot-tie` (D-26)
+  6. Each thread stores its own readable frame — `origin.x/y/z`, `direction.x/y/z` and `roll` — and both the live and side views derive their camera from it rather than a hardcoded axis (D-27)
 
-**Plans**: TBD
+**Plans**: 9 plans in 8 waves
 
-- [ ] TBD (run $gsd-plan-phase 2.3 to break down)
+Plans:
+**Wave 1**
+
+- [ ] 02.3-01-PLAN.md — Rename 2.1's centre note and its edges to knot / knot-tie, with exact type matching (D-26)
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [ ] 02.3-02-PLAN.md — Tracer: type into a thread, commit readable `thread.log` records, reopen and redraw from them alone (D-01, D-02, D-06 one-way, D-27)
+
+**Wave 3** *(blocked on Wave 2)*
+
+- [ ] 02.3-03-PLAN.md — Publish the grammar in FORMAT.md, threads.md and the golden fixture; replay to any moment; no-plugin fallback (D-06, D-08, PLUG-04)
+- [ ] 02.3-04-PLAN.md — Live z-axis view: stage, procedural ribbon, MSDF glyphs, pause slowdown, distance fade, camera from the stored frame (D-09..D-14, D-19, D-27)
+
+**Wave 4** *(blocked on Wave 3)*
+
+- [ ] 02.3-05-PLAN.md — Nothing erased: LetterIndex, the full cause vocabulary, ghosts and markers on the line (D-02..D-05)
+
+**Wave 5** *(blocked on Wave 4)*
+
+- [ ] 02.3-06-PLAN.md — Sessions, time-outs, per-thread settings, the canvas bridge and the session list (D-07, D-10, D-13)
+
+**Wave 6** *(blocked on Wave 5)*
+
+- [ ] 02.3-07-PLAN.md — Side view read-back: zoom, pan, fly-to, gravity, date scrubber, document at any moment (D-08, D-15..D-19)
+
+**Wave 7** *(blocked on Wave 6)*
+
+- [ ] 02.3-08-PLAN.md — Agents in threads: MCP thread tools, the per-letter D-22 rule, strands, underlays, drag-apart (D-20..D-24)
+
+**Wave 8** *(blocked on Wave 7)*
+
+- [ ] 02.3-09-PLAN.md — Vault threads: `.md` keeps only current text, timings live in the vault tree, Obsidian edits arrive as observed clusters (D-25)
 
 **UI hint**: yes
 
