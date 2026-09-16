@@ -1,0 +1,53 @@
+{
+  "hours": 8,
+  "edits": 58304,
+  "finalLength": 46229,
+  "snapshotEvery": 1000,
+  "snapshots": 59,
+  "snapshotMB": 2.5949249267578125,
+  "snapshotBuildMs": 108.30000001192093,
+  "results": [
+    {
+      "phase": "random-seeks-snapshot",
+      "seeks": 200,
+      "totalMs": 47.599999994039536,
+      "n": 200,
+      "median": 0.20000000298023224,
+      "p95": 0.7000000029802322,
+      "max": 1.2000000029802322
+    },
+    {
+      "phase": "random-seeks-naive",
+      "seeks": 20,
+      "totalMs": 86.09999999403954,
+      "n": 20,
+      "median": 3.6000000089406967,
+      "p95": 14.900000005960464,
+      "max": 14.900000005960464
+    },
+    {
+      "phase": "drag-across-snapshot",
+      "steps": 300,
+      "frameMedian": 16.700000002980232,
+      "frameP95": 17.200000002980232,
+      "frameMax": 17.700000002980232,
+      "droppedPct": 0,
+      "n": 301,
+      "median": 0.4000000059604645,
+      "p95": 1.7000000029802322,
+      "max": 3.7999999970197678
+    },
+    {
+      "phase": "drag-across-naive",
+      "steps": 30,
+      "frameMedian": 16.600000008940697,
+      "frameP95": 19.299999997019768,
+      "frameMax": 20.599999994039536,
+      "droppedPct": 0,
+      "n": 31,
+      "median": 4.800000011920929,
+      "p95": 18.799999997019768,
+      "max": 20.200000002980232
+    }
+  ]
+}
