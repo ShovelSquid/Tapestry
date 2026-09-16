@@ -4,16 +4,16 @@ milestone: v1.0
 current_phase: "02.2"
 current_phase_name: Obsidian Bridge
 status: executing
-stopped_at: Completed 02.2-04-PLAN.md
-last_updated: "2026-09-16T05:28:19.662Z"
+stopped_at: Completed 02.2-05-PLAN.md
+last_updated: "2026-09-16T05:57:16.040Z"
 last_activity: 2026-09-15
 last_activity_desc: Phase 02.2 execution started
-state_head: 52adac8d8a69eff0aaec8727e0e32f4aebf1df9c
+state_head: fe33d69fb3da525cebbe6001d9824889d4371bfd
 progress:
   total_phases: 10
   completed_phases: 0
   total_plans: 38
-  completed_plans: 17
+  completed_plans: 18
 ---
 
 # Project State
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-09-08)
 ## Current Position
 
 Phase: 02.2 (Obsidian Bridge) — EXECUTING
-Plan: 2 of 16
+Plan: 3 of 16
 Status: Ready to execute
 Last activity: 2026-09-15 — Phase 02.2 execution started
 
@@ -67,6 +67,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 02.2 P02 | 9 min | 2 tasks | 14 files |
 | Phase 02.2 P03 | 19 min | 3 tasks | 18 files |
 | Phase 02.2 P04 | 25 min | 3 tasks | 21 files |
+| Phase 02.2 P05 | 25 min | 2 tasks | 19 files |
 
 ## Accumulated Context
 
@@ -111,6 +112,9 @@ Recent decisions affecting current work:
 - [Phase 02.2]: [Phase 02.2]: An agent write into a rewound tree reconciles (discardRedo) and announces the lost redo rather than being refused (UA-14), replacing Plan 03's rewound refusal
 - [Phase 02.2]: [Phase 02.2]: connect_notes refuses cross-tree endpoints rather than writing one end, because D-16 requires both trees to record a cross-tree link (Plan 15)
 - [Phase 02.2]: [Phase 02.2]: Every value interpolated into the claude mcp add command is single-quoted by shellQuote, and markConnected is throttled to one agents.json write per agent per minute
+- [Phase 02.2]: Every kernel IPC channel names its tree first; an unknown or malformed treeId is refused rather than falling back to the primary tree
+- [Phase 02.2]: The open trees and their frame positions live in settings.json, not a forest file (D-18); last-opened.json migrates once at frame (0,0)
+- [Phase 02.2]: pushApart never moves the dropped frame, re-queues displaced frames so chains settle, and is capped at 200 steps in deterministic id order
 
 ### Pending Todos
 
@@ -155,6 +159,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-16T05:28:19.593Z
-Stopped at: Completed 02.2-04-PLAN.md
+Last session: 2026-09-16T05:57:15.962Z
+Stopped at: Completed 02.2-05-PLAN.md
 Resume file: None
