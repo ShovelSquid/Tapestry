@@ -226,7 +226,7 @@ describe('resolveLock and checkLock (pure)', () => {
 
   /**
    * WR-01: a default lock belongs to the creator's kind and id together, as
-   * the retired D-05 gate compared them. A non-agent creator whose id happens
+   * the retired 02.2 D-05 gate compared them. A non-agent creator whose id happens
    * to read `agent.claude` (a hand-edited or foreign `.tree` can say so) must
    * not hand its lock to `plugin agent.claude`.
    */
