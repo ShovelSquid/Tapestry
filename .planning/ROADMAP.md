@@ -275,11 +275,29 @@ Plans:
   5. No new kernel verb or value type is added; placements remain node properties (`position.x/y`), and nothing starts the frozen migration onto placement edges (spec §6, §7)
   6. `facing` is **not** in this phase; D-27's `direction` stays unwritten by agents until the anchor-cursor phase (#12)
 
-**Plans:** 0 plans
+**Plans:** 5 plans
 
 Plans:
 
-- [ ] TBD (run /gsd-plan-phase 2.5 to break down)
+**Wave 1**
+
+- [ ] 02.5-01-PLAN.md — Build addon and bundle, baseline; tracer: `look` end to end over MCP with the pure placement module (D-12, D-14, D-18)
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [ ] 02.5-02-PLAN.md — Placement resolver: `near` with collision steps, `beyond`, follower display positions; `look` reads drawn positions (D-05..D-10)
+
+**Wave 3** *(blocked on Wave 2)*
+
+- [ ] 02.5-03-PLAN.md — Renderer: followers drawn beside their `grew-from` parent; a person's drag or left/top resize pins them (D-01..D-03, D-05, D-16)
+
+**Wave 4** *(blocked on Wave 3 and on Phase 2.4 being merged — starts with a blocking checkpoint)*
+
+- [ ] 02.5-04-PLAN.md — `place` tool under `lock.layout`; refusals commit nothing; a person's `pinned true` is never touched (D-04, D-11..D-13, D-15, D-17, D-19)
+
+**Wave 5** *(blocked on Wave 4)*
+
+- [ ] 02.5-05-PLAN.md — `create_note` optional `where` beside the unchanged default path; phase gate (SC2, SC5, SC6)
 
 **UI hint**: no
 
