@@ -1,28 +1,28 @@
 /**
- * Canvas -- infinite 2D canvas with CSS-transform pan/zoom (D-05).
+ * Canvas -- the space the trees live in: one infinite 2D plane with
+ * CSS-transform pan/zoom (D-05), holding one frame per open tree (D-15).
  *
- * Pan: drag empty canvas space.
+ * Pan: drag empty space, or a frame's background.
  * Zoom: scroll wheel, scaling around the pointer position.
  *
- * Notes are positioned at world-space coordinates inside the transformed
- * container. Connection lines pan/zoom with the canvas because the SVG
- * overlay lives inside the same transformed container.
+ * Canvas owns what is global to the space -- the view transform, which note is
+ * hovered, selected or being connected -- and TreeFrame owns what belongs to
+ * one tree. Every piece of per-note state is keyed by `nodeKey` rather than by
+ * node id, because ids are only unique inside a tree: two worlds both have an
+ * `n1`, and a bare id would make one note's hover highlight another's.
  *
  * Coordinate helpers:
  *   screenToWorld(sx, sy) -- convert screen px to world-space
  *   worldToScreen(wx, wy) -- convert world-space to screen px
+ * Frame-local coordinates are world coordinates minus the frame's origin.
  */
 
-import React, {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-} from 'react'
-import NoteCard from './NoteCard'
-import FallbackNodeView from './FallbackNodeView'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import ConnectionLine from './ConnectionLine'
-import ThreadCenterNode from './ThreadCenterNode'
+import TreeFrame, { type TreeFrameHandlers } from './TreeFrame'
+import type { ForestTree, NodeRef } from '../state/use-forest'
+import { nodeKey } from '../state/use-forest'
+import { computeFrameBounds, type ContentBox, type FrameRect } from '../layout/frames'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -48,40 +48,48 @@ interface ViewTransform {
   zoom: number
 }
 
+/** Where a double-click landed: inside a frame, or nowhere in particular. */
+export interface DoubleClickTarget {
+  /** Null when no tree is open at all. */
+  treeId: string | null
+  /** Frame-local coordinates when treeId is set. */
+  x: number
+  y: number
+}
+
 interface CanvasProps {
-  nodes: NodeInfo[]
-  edges: EdgeInfo[]
-  editingNodeId: string | null
-  isFileLoaded: boolean
+  trees: ForestTree[]
+  editingRef: NodeRef | null
   /** Map of node types to component names from loaded plugins. */
   pluginNodeViews: Record<string, string>
-  /** Who made and last changed each node, keyed by node id. Null until read. */
-  historyIndex: TapestryHistoryIndex | null
   /** The actor id this person's own changes are signed with (D-07). */
   currentUserActorId: string | null
-  onStartEditing: (nodeId: string) => void
+  onStartEditing: (ref: NodeRef) => void
   onStopEditing: () => void
-  onCanvasDoubleClick: (worldX: number, worldY: number) => void
-  onSave: (nodeId: string, body: string, title: string) => Promise<void>
-  onMarkDirty: (nodeId: string) => void
-  onMarkClean: (nodeId: string) => void
-  onPositionChange: (
-    nodeId: string,
-    x: number,
-    y: number,
-  ) => void
-  onWidthChange: (nodeId: string, width: number) => void
-  onHeightChange?: (nodeId: string, height: number) => void
+  onCanvasDoubleClick: (target: DoubleClickTarget) => void
+  /** The selected note changed, so undo/redo knows which tree to act on. */
+  onSelectedNoteChange: (ref: NodeRef | null) => void
+  onSave: (ref: NodeRef, body: string, title: string) => Promise<void>
+  onMarkDirty: (ref: NodeRef) => void
+  onMarkClean: (ref: NodeRef) => void
+  onPositionChange: (ref: NodeRef, x: number, y: number) => void
+  onWidthChange: (ref: NodeRef, width: number) => void
+  onHeightChange: (ref: NodeRef, height: number) => void
   /**
    * Called once when a thread center drag ends (D-17). Must persist
    * position.x, position.y AND pinned=true in a single commit.
    */
-  onPinnedPositionChange: (nodeId: string, x: number, y: number) => void
-  onEdgeCreate: (fromId: string, toId: string) => void
-  /** Called when a note is deleted via the delete bubble or keyboard (D-20/D-21). */
-  onDeleteNote: (nodeId: string) => void
+  onPinnedPositionChange: (ref: NodeRef, x: number, y: number) => void
+  onEdgeCreate: (from: NodeRef, to: NodeRef) => void
+  /** Called when a note is deleted via the delete bubble or keyboard. */
+  onDeleteNote: (ref: NodeRef) => void
   /** Called when a fallback node property is edited inline (D-35). */
-  onPropertyEdit?: (nodeId: string, key: string, type: string, value: string | number | boolean) => void
+  onPropertyEdit: (
+    ref: NodeRef,
+    key: string,
+    type: string,
+    value: string | number | boolean,
+  ) => void
 }
 
 // ---------------------------------------------------------------------------
@@ -124,12 +132,23 @@ const MIN_ZOOM = 0.1
 const MAX_ZOOM = 5
 const ZOOM_SPEED = 0.001
 
-/** Fallback thread-center size until the node registers its real dims. */
-const THREAD_CENTER_FALLBACK_WIDTH = 200
-const THREAD_CENTER_FALLBACK_HEIGHT = 44
+const DEFAULT_NODE_WIDTH = 240
+const DEFAULT_NODE_HEIGHT = 80
 
-function isThreadCenter(n: NodeInfo): boolean {
-  return n.type.includes('thread-center')
+/** Backgrounds a pan, a deselect or a create may start from. */
+const BACKGROUND_CLASSES = [
+  'tapestry-canvas-container',
+  'tapestry-tree-frame',
+  'tapestry-tree-frame-content',
+]
+
+function isBackground(target: HTMLElement, viewport: HTMLElement | null): boolean {
+  if (target === viewport) return true
+  return BACKGROUND_CLASSES.some((cls) => target.classList.contains(cls))
+}
+
+function containsPoint(rect: FrameRect, x: number, y: number): boolean {
+  return x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height
 }
 
 // ---------------------------------------------------------------------------
@@ -137,16 +156,14 @@ function isThreadCenter(n: NodeInfo): boolean {
 // ---------------------------------------------------------------------------
 
 export default function Canvas({
-  nodes,
-  edges,
-  editingNodeId,
-  isFileLoaded,
+  trees,
+  editingRef,
   pluginNodeViews,
-  historyIndex,
   currentUserActorId,
   onStartEditing,
   onStopEditing,
   onCanvasDoubleClick,
+  onSelectedNoteChange,
   onSave,
   onMarkDirty,
   onMarkClean,
@@ -159,77 +176,100 @@ export default function Canvas({
   onPropertyEdit,
 }: CanvasProps): React.ReactElement {
   const viewportRef = useRef<HTMLDivElement>(null)
-  const [view, setView] = useState<ViewTransform>({
-    panX: 0,
-    panY: 0,
-    zoom: 1,
-  })
+  const [view, setView] = useState<ViewTransform>({ panX: 0, panY: 0, zoom: 1 })
 
   // Panning state
   const isPanningRef = useRef(false)
   const panStartRef = useRef({ x: 0, y: 0, panX: 0, panY: 0 })
 
-  // Connection-creation state
-  const [connectingFrom, setConnectingFrom] = useState<string | null>(null)
-  const [connectingLine, setConnectingLine] = useState<{
-    x: number
-    y: number
-  } | null>(null)
-  const [connectingHover, setConnectingHover] = useState<string | null>(null)
+  // Connection-creation state. Refs, not ids: a connection names two notes,
+  // and the tree is half of each name.
+  const [connectingFrom, setConnectingFrom] = useState<NodeRef | null>(null)
+  const [connectingLine, setConnectingLine] = useState<{ x: number; y: number } | null>(null)
+  const [connectingHover, setConnectingHover] = useState<NodeRef | null>(null)
 
-  // Hovered / selected note (hover vs focus distinction, D-07)
-  const [hoveredNoteId, setHoveredNoteId] = useState<string | null>(null)
-  const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null)
+  // Hovered / selected note, keyed across every tree in the space.
+  const [hoveredRef, setHoveredRef] = useState<NodeRef | null>(null)
+  const [selectedRef, setSelectedRef] = useState<NodeRef | null>(null)
 
-  // Live drag positions for connection line tracking during drag
+  // Live drag positions (frame-local), keyed by nodeKey.
   const [dragPositions, setDragPositions] = useState<
     Record<string, { x: number; y: number }>
   >({})
 
-  // Node dimensions cache for connection line center computation
-  const nodeDimsRef = useRef<
-    Map<string, { width: number; height: number }>
-  >(new Map())
+  // Node dimensions cache for connection-line centers, keyed by nodeKey.
+  const nodeDimsRef = useRef<Map<string, { width: number; height: number }>>(new Map())
 
-  const registerNodeDims = useCallback(
-    (id: string, width: number, height: number) => {
-      nodeDimsRef.current.set(id, { width, height })
-    },
+  const getDims = useCallback(
+    (key: string) => nodeDimsRef.current.get(key),
     [],
   )
 
-  const handleDragMove = useCallback(
-    (nodeId: string, x: number, y: number) => {
-      setDragPositions((prev) => ({ ...prev, [nodeId]: { x, y } }))
-    },
-    [],
-  )
+  const registerNodeDims = useCallback((ref: NodeRef, width: number, height: number) => {
+    nodeDimsRef.current.set(nodeKey(ref), { width, height })
+  }, [])
 
-  const handleDragEnd = useCallback((nodeId: string) => {
+  const handleDragMove = useCallback((ref: NodeRef, x: number, y: number) => {
+    setDragPositions((prev) => ({ ...prev, [nodeKey(ref)]: { x, y } }))
+  }, [])
+
+  const handleDragEnd = useCallback((ref: NodeRef) => {
     setDragPositions((prev) => {
       const next = { ...prev }
-      delete next[nodeId]
+      delete next[nodeKey(ref)]
       return next
     })
   }, [])
 
+  const selectNote = useCallback(
+    (ref: NodeRef | null) => {
+      setSelectedRef(ref)
+      onSelectedNoteChange(ref)
+    },
+    [onSelectedNoteChange],
+  )
+
   // -----------------------------------------------------------------------
-  // Helper: get node center in world space
+  // Frame rects, recomputed from live content bounds every render
   // -----------------------------------------------------------------------
 
-  const getNodeCenter = useCallback(
-    (nodeId: string): { x: number; y: number } | null => {
-      const node = nodes.find((n) => n.id === nodeId)
-      if (!node) return null
-      const dragPos = dragPositions[nodeId]
-      const px = dragPos ? dragPos.x : Number(node.props['position.x']?.value ?? 0)
-      const py = dragPos ? dragPos.y : Number(node.props['position.y']?.value ?? 0)
-      const dims = nodeDimsRef.current.get(nodeId)
-      const w = dims?.width ?? 240
-      const h = dims?.height ?? 80
-      return { x: px + w / 2, y: py + h / 2 }
+  const frameRects = new Map<string, FrameRect>()
+  for (const tree of trees) {
+    const boxes: ContentBox[] = tree.nodes.map((node) => {
+      const key = nodeKey({ treeId: tree.id, nodeId: node.id })
+      const drag = dragPositions[key]
+      const dims = nodeDimsRef.current.get(key)
+      return {
+        x: drag ? drag.x : Number(node.props['position.x']?.value ?? 0),
+        y: drag ? drag.y : Number(node.props['position.y']?.value ?? 0),
+        width: dims?.width ?? DEFAULT_NODE_WIDTH,
+        height: dims?.height ?? DEFAULT_NODE_HEIGHT,
+      }
+    })
+    frameRects.set(tree.id, computeFrameBounds(tree.frame, boxes))
+  }
+
+  /** The tree whose frame contains a world point, if any. */
+  const treeAt = useCallback(
+    (worldX: number, worldY: number): ForestTree | null => {
+      // Reverse order: the most recently opened frame is on top.
+      for (let i = trees.length - 1; i >= 0; i -= 1) {
+        const rect = frameRects.get(trees[i].id)
+        if (rect && containsPoint(rect, worldX, worldY)) return trees[i]
+      }
+      return null
     },
-    [nodes, dragPositions],
+    // frameRects is rebuilt each render alongside trees/dragPositions.
+    [trees, dragPositions],
+  )
+
+  const pointerWorld = useCallback(
+    (clientX: number, clientY: number): { x: number; y: number } | null => {
+      if (!viewportRef.current) return null
+      const rect = viewportRef.current.getBoundingClientRect()
+      return screenToWorld(clientX, clientY, view.panX, view.panY, view.zoom, rect)
+    },
+    [view.panX, view.panY, view.zoom],
   )
 
   // -----------------------------------------------------------------------
@@ -238,16 +278,8 @@ export default function Canvas({
 
   const handlePointerDown = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
-      // Only pan on primary button and when clicking on the viewport/container
-      // background, not on a note card.
       if (e.button !== 0) return
-      const target = e.target as HTMLElement
-      if (
-        target !== viewportRef.current &&
-        !target.classList.contains('tapestry-canvas-container')
-      ) {
-        return
-      }
+      if (!isBackground(e.target as HTMLElement, viewportRef.current)) return
 
       isPanningRef.current = true
       panStartRef.current = {
@@ -264,18 +296,9 @@ export default function Canvas({
 
   const handlePointerMove = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
-      // Handle connection-creation line following cursor
-      if (connectingFrom && viewportRef.current) {
-        const rect = viewportRef.current.getBoundingClientRect()
-        const world = screenToWorld(
-          e.clientX,
-          e.clientY,
-          view.panX,
-          view.panY,
-          view.zoom,
-          rect,
-        )
-        setConnectingLine(world)
+      if (connectingFrom) {
+        const world = pointerWorld(e.clientX, e.clientY)
+        if (world) setConnectingLine(world)
       }
 
       if (!isPanningRef.current) return
@@ -287,7 +310,7 @@ export default function Canvas({
         panY: panStartRef.current.panY + dy,
       }))
     },
-    [connectingFrom, view.panX, view.panY, view.zoom],
+    [connectingFrom, pointerWorld],
   )
 
   const handlePointerUp = useCallback(
@@ -297,10 +320,11 @@ export default function Canvas({
         ;(e.target as HTMLElement).releasePointerCapture(e.pointerId)
       }
 
-      // End connecting mode if pointer released on empty space
       if (connectingFrom) {
-        if (connectingHover) {
-          // Create edge from connectingFrom to connectingHover
+        // A connection joins two notes in one tree. Ending on another tree's
+        // note does nothing here; cross-tree links are D-16 (Plan 15), and
+        // writing one end of them now would record half a relationship.
+        if (connectingHover && connectingHover.treeId === connectingFrom.treeId) {
           onEdgeCreate(connectingFrom, connectingHover)
         }
         setConnectingFrom(null)
@@ -330,17 +354,15 @@ export default function Canvas({
 
         setView((prev) => {
           const delta = -e.deltaY * ZOOM_SPEED
-          const newZoom = Math.min(
-            MAX_ZOOM,
-            Math.max(MIN_ZOOM, prev.zoom * (1 + delta)),
-          )
+          const newZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, prev.zoom * (1 + delta)))
           const ratio = newZoom / prev.zoom
-          const newPanX = pointerX - ratio * (pointerX - prev.panX)
-          const newPanY = pointerY - ratio * (pointerY - prev.panY)
-          return { panX: newPanX, panY: newPanY, zoom: newZoom }
+          return {
+            panX: pointerX - ratio * (pointerX - prev.panX),
+            panY: pointerY - ratio * (pointerY - prev.panY),
+            zoom: newZoom,
+          }
         })
       } else {
-        // Two-finger scroll on trackpad: pan the canvas
         setView((prev) => ({
           ...prev,
           panX: prev.panX - e.deltaX,
@@ -359,58 +381,54 @@ export default function Canvas({
 
   const handleClick = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
-      const target = e.target as HTMLElement
-      if (
-        target === viewportRef.current ||
-        target.classList.contains('tapestry-canvas-container')
-      ) {
-        onStopEditing()
-        setSelectedNoteId(null)
-      }
+      if (!isBackground(e.target as HTMLElement, viewportRef.current)) return
+      onStopEditing()
+      selectNote(null)
     },
-    [onStopEditing],
+    [onStopEditing, selectNote],
   )
 
   const handleDoubleClick = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
-      const target = e.target as HTMLElement
-      if (
-        target !== viewportRef.current &&
-        !target.classList.contains('tapestry-canvas-container')
-      ) {
+      if (!isBackground(e.target as HTMLElement, viewportRef.current)) return
+
+      const world = pointerWorld(e.clientX, e.clientY)
+      if (!world) return
+
+      // With no tree open, the carried flow still applies: the app asks where
+      // to save, creates a world, and puts the first note at its origin.
+      if (trees.length === 0) {
+        onCanvasDoubleClick({ treeId: null, x: 0, y: 0 })
         return
       }
 
-      if (!viewportRef.current) return
-      const rect = viewportRef.current.getBoundingClientRect()
-      const world = screenToWorld(
-        e.clientX,
-        e.clientY,
-        view.panX,
-        view.panY,
-        view.zoom,
-        rect,
-      )
-      onCanvasDoubleClick(world.x, world.y)
+      // A note must belong to a tree, so a double-click outside every frame
+      // creates nothing (UA-06) rather than making an orphan.
+      const tree = treeAt(world.x, world.y)
+      if (!tree) return
+
+      onCanvasDoubleClick({
+        treeId: tree.id,
+        x: world.x - tree.frame.x,
+        y: world.y - tree.frame.y,
+      })
     },
-    [view.panX, view.panY, view.zoom, onCanvasDoubleClick],
+    [trees, treeAt, pointerWorld, onCanvasDoubleClick],
   )
 
   // -----------------------------------------------------------------------
-  // Connection creation: start from a note's connection handle
+  // Connection creation
   // -----------------------------------------------------------------------
 
-  const handleStartConnection = useCallback((nodeId: string) => {
-    setConnectingFrom(nodeId)
+  const handleStartConnection = useCallback((ref: NodeRef) => {
+    setConnectingFrom(ref)
   }, [])
 
   const handleNoteHoverDuringConnection = useCallback(
-    (nodeId: string | null) => {
-      if (connectingFrom) {
-        setConnectingHover(
-          nodeId && nodeId !== connectingFrom ? nodeId : null,
-        )
-      }
+    (ref: NodeRef | null) => {
+      if (!connectingFrom) return
+      const same = ref && nodeKey(ref) === nodeKey(connectingFrom)
+      setConnectingHover(ref && !same ? ref : null)
     },
     [connectingFrom],
   )
@@ -420,34 +438,40 @@ export default function Canvas({
   // -----------------------------------------------------------------------
 
   const handleBorderSelect = useCallback(
-    (nodeId: string) => {
-      setSelectedNoteId((prev) => (prev === nodeId ? null : nodeId))
+    (ref: NodeRef) => {
+      const same = selectedRef && nodeKey(selectedRef) === nodeKey(ref)
+      selectNote(same ? null : ref)
       onStopEditing()
     },
-    [onStopEditing],
+    [selectedRef, selectNote, onStopEditing],
   )
 
+  const handleHover = useCallback((ref: NodeRef, hovered: boolean) => {
+    setHoveredRef((prev) => {
+      if (hovered) return ref
+      return prev && nodeKey(prev) === nodeKey(ref) ? null : prev
+    })
+  }, [])
+
   // -----------------------------------------------------------------------
-  // Keyboard Delete/Backspace: delete selected note structure (D-21)
-  // Only when a note is selected (border-clicked) and ProseMirror is NOT
-  // focused. When the editor has focus, these keys edit text only.
+  // Keyboard Delete/Backspace: delete the selected note (D-21).
+  // The Delete key does nothing to frames (UI-SPEC).
   // -----------------------------------------------------------------------
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (!selectedNoteId) return
-      // If ProseMirror (or any input/textarea) has focus, let it handle the key
-      if (editingNodeId) return
+      if (!selectedRef) return
+      if (editingRef) return
       if (e.key === 'Delete' || e.key === 'Backspace') {
         e.preventDefault()
         e.stopPropagation()
-        onDeleteNote(selectedNoteId)
-        setSelectedNoteId(null)
+        onDeleteNote(selectedRef)
+        selectNote(null)
       }
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [selectedNoteId, editingNodeId, onDeleteNote])
+  }, [selectedRef, editingRef, onDeleteNote, selectNote])
 
   // -----------------------------------------------------------------------
   // Render
@@ -463,63 +487,41 @@ export default function Canvas({
     height: '100%',
   }
 
-  // -----------------------------------------------------------------------
-  // Thread-center auto positions (D-17), computed ONCE per render and shared
-  // by the edge layer and the node layer. An unpinned center is RENDERED at
-  // the midpoint of its endpoints, not at its stored position.x/y, so edges
-  // must resolve its center from here or the thread-arm lines terminate at a
-  // phantom point that drifts whenever an endpoint note moves.
-  // -----------------------------------------------------------------------
-
-  const threadCenterAuto = new Map<
-    string,
-    { left: number; top: number; width: number; height: number }
-  >()
-  for (const node of nodes) {
-    if (!isThreadCenter(node)) continue
-    const dims = nodeDimsRef.current.get(node.id)
-    const width = dims?.width ?? THREAD_CENTER_FALLBACK_WIDTH
-    const height = dims?.height ?? THREAD_CENTER_FALLBACK_HEIGHT
-    const px = Number(node.props['position.x']?.value ?? 0)
-    const py = Number(node.props['position.y']?.value ?? 0)
-    const isPinned =
-      node.props['pinned']?.value === true || node.props['pinned']?.value === 'true'
-
-    let left = px
-    let top = py
-    if (!isPinned) {
-      const sourceEdge = edges.find((e) => e.label === 'thread-arm' && e.to === node.id)
-      const destEdge = edges.find((e) => e.label === 'thread-arm' && e.from === node.id)
-      const sourceCenter = sourceEdge ? getNodeCenter(sourceEdge.from) : null
-      const destCenter = destEdge ? getNodeCenter(destEdge.to) : null
-      if (sourceCenter && destCenter) {
-        left = (sourceCenter.x + destCenter.x) / 2 - width / 2
-        top = (sourceCenter.y + destCenter.y) / 2 - height / 2
-      }
-    }
-    threadCenterAuto.set(node.id, { left, top, width, height })
+  const handlers: TreeFrameHandlers = {
+    onStartEditing,
+    onSave,
+    onMarkDirty,
+    onMarkClean,
+    onPositionChange,
+    onWidthChange,
+    onHeightChange,
+    onPinnedPositionChange,
+    onDeleteNote,
+    onPropertyEdit,
+    onBorderSelect: handleBorderSelect,
+    onHover: handleHover,
+    onHoverDuringConnection: handleNoteHoverDuringConnection,
+    onStartConnection: handleStartConnection,
+    onRegisterDims: registerNodeDims,
+    onDragMove: handleDragMove,
+    onDragEnd: handleDragEnd,
   }
 
-  /** Node center that honors the displayed (auto) position of thread centers. */
-  const resolveNodeCenter = (nodeId: string): { x: number; y: number } | null => {
-    const auto = threadCenterAuto.get(nodeId)
-    if (auto) return { x: auto.left + auto.width / 2, y: auto.top + auto.height / 2 }
-    return getNodeCenter(nodeId)
-  }
-
-  // Build connecting-mode temporary line data
-  let tempConnectionLine: {
-    x1: number
-    y1: number
-    x2: number
-    y2: number
-  } | null = null
+  // The in-progress connection line is drawn in world space, above the frames,
+  // so it stays visible while the pointer is between two of them.
+  let tempConnectionLine: { x1: number; y1: number; x2: number; y2: number } | null = null
   if (connectingFrom && connectingLine) {
-    const fromCenter = getNodeCenter(connectingFrom)
-    if (fromCenter) {
+    const tree = trees.find((t) => t.id === connectingFrom.treeId)
+    const node = tree?.nodes.find((n) => n.id === connectingFrom.nodeId)
+    if (tree && node) {
+      const key = nodeKey(connectingFrom)
+      const drag = dragPositions[key]
+      const dims = nodeDimsRef.current.get(key)
+      const localX = drag ? drag.x : Number(node.props['position.x']?.value ?? 0)
+      const localY = drag ? drag.y : Number(node.props['position.y']?.value ?? 0)
       tempConnectionLine = {
-        x1: fromCenter.x,
-        y1: fromCenter.y,
+        x1: tree.frame.x + localX + (dims?.width ?? DEFAULT_NODE_WIDTH) / 2,
+        y1: tree.frame.y + localY + (dims?.height ?? DEFAULT_NODE_HEIGHT) / 2,
         x2: connectingLine.x,
         y2: connectingLine.y,
       }
@@ -537,48 +539,54 @@ export default function Canvas({
       onDoubleClick={handleDoubleClick}
     >
       {/* Empty state (UI-SPEC copywriting) */}
-      {!isFileLoaded && nodes.length === 0 && (
+      {trees.length === 0 && (
         <div className="tapestry-empty-state">
-          <h2 className="tapestry-empty-heading">
-            Double-click anywhere to start
-          </h2>
+          <h2 className="tapestry-empty-heading">Double-click anywhere to start</h2>
           <p className="tapestry-empty-body">
             Create notes, connect ideas, and build your world of thought.
           </p>
         </div>
       )}
 
-      {/* Transformed container: notes and connections pan/zoom together */}
+      {/* Transformed container: every frame pans and zooms together */}
       <div className="tapestry-canvas-container" style={containerStyle}>
-        {/* SVG overlay for connection lines */}
-        <svg
-          className="tapestry-connections-svg"
-          style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            width: '100%',
-            height: '100%',
-            overflow: 'visible',
-            pointerEvents: 'none',
-          }}
-        >
-          {edges.map((edge) => {
-            const from = resolveNodeCenter(edge.from)
-            const to = resolveNodeCenter(edge.to)
-            if (!from || !to) return null
-            return (
-              <ConnectionLine
-                key={edge.id}
-                x1={from.x}
-                y1={from.y}
-                x2={to.x}
-                y2={to.y}
-              />
-            )
-          })}
-          {/* Temporary connection line during drag-connect */}
-          {tempConnectionLine && (
+        {trees.map((tree) => {
+          const rect = frameRects.get(tree.id)
+          if (!rect) return null
+          return (
+            <TreeFrame
+              key={tree.id}
+              tree={tree}
+              rect={rect}
+              zoom={view.zoom}
+              editingKey={editingRef ? nodeKey(editingRef) : null}
+              hoveredKey={hoveredRef ? nodeKey(hoveredRef) : null}
+              selectedKey={selectedRef ? nodeKey(selectedRef) : null}
+              connectingHoverKey={connectingHover ? nodeKey(connectingHover) : null}
+              isConnecting={connectingFrom !== null}
+              pluginNodeViews={pluginNodeViews}
+              currentUserActorId={currentUserActorId}
+              dragPositions={dragPositions}
+              getDims={getDims}
+              handlers={handlers}
+            />
+          )
+        })}
+
+        {/* Temporary connection line during drag-connect */}
+        {tempConnectionLine && (
+          <svg
+            className="tapestry-connections-svg"
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: '100%',
+              height: '100%',
+              overflow: 'visible',
+              pointerEvents: 'none',
+            }}
+          >
             <ConnectionLine
               x1={tempConnectionLine.x1}
               y1={tempConnectionLine.y1}
@@ -586,129 +594,8 @@ export default function Canvas({
               y2={tempConnectionLine.y2}
               isTemporary
             />
-          )}
-        </svg>
-
-        {/* Thread center nodes (D-16/D-17/D-18) */}
-        {nodes
-          .filter(isThreadCenter)
-          .map((node) => {
-            const px = Number(node.props['position.x']?.value ?? 0)
-            const py = Number(node.props['position.y']?.value ?? 0)
-            const isPinned = node.props['pinned']?.value === true || node.props['pinned']?.value === 'true'
-            const bodyVal = node.props['body']?.value
-            const body = typeof bodyVal === 'string' ? bodyVal : ''
-
-            const sourceEdge = edges.find(
-              (e) => e.label === 'thread-arm' && e.to === node.id,
-            )
-            const destEdge = edges.find(
-              (e) => e.label === 'thread-arm' && e.from === node.id,
-            )
-
-            // Same auto position the edge layer used (see threadCenterAuto).
-            const auto = threadCenterAuto.get(node.id)
-            const autoX = auto ? auto.left : px
-            const autoY = auto ? auto.top : py
-
-            // D-18: an empty (ghost) center has pointer-events: none, so it can
-            // never hover itself. Reveal it when either endpoint note is
-            // hovered, in addition to direct hover once it is visible.
-            const endpointIds = [sourceEdge?.from, destEdge?.to].filter(
-              (id): id is string => typeof id === 'string',
-            )
-            const isCenterHovered =
-              hoveredNoteId === node.id ||
-              (hoveredNoteId !== null && endpointIds.includes(hoveredNoteId))
-
-            return (
-              <ThreadCenterNode
-                key={node.id}
-                nodeId={node.id}
-                body={body}
-                x={px}
-                y={py}
-                isPinned={isPinned}
-                autoX={autoX}
-                autoY={autoY}
-                isEditing={editingNodeId === node.id}
-                isHovered={isCenterHovered}
-                zoom={view.zoom}
-                onStartEditing={() => onStartEditing(node.id)}
-                onSave={onSave}
-                onMarkDirty={onMarkDirty}
-                onMarkClean={onMarkClean}
-                onPinnedPositionChange={onPinnedPositionChange}
-                onHover={(h) => setHoveredNoteId(h ? node.id : null)}
-                onRegisterDims={registerNodeDims}
-              />
-            )
-          })}
-
-        {/* Node cards -- render NoteCard for known types, FallbackNodeView otherwise (D-33) */}
-        {nodes.filter((n) => !isThreadCenter(n)).map((node) => {
-          const hasPlugin = !!pluginNodeViews[node.type]
-
-          if (hasPlugin) {
-            return (
-              <NoteCard
-                key={node.id}
-                node={node}
-                isEditing={editingNodeId === node.id}
-                isHovered={hoveredNoteId === node.id}
-                isSelected={selectedNoteId === node.id}
-                isConnectTarget={connectingHover === node.id}
-                isConnecting={connectingFrom !== null}
-                zoom={view.zoom}
-                provenance={historyIndex?.nodes[node.id]}
-                currentUserActorId={currentUserActorId}
-                onStartEditing={() => {
-                  setSelectedNoteId(null)
-                  onStartEditing(node.id)
-                }}
-                onBorderSelect={() => handleBorderSelect(node.id)}
-                onSave={onSave}
-                onMarkDirty={onMarkDirty}
-                onMarkClean={onMarkClean}
-                onPositionChange={onPositionChange}
-                onWidthChange={onWidthChange}
-                onHeightChange={onHeightChange}
-                onDeleteNote={() => onDeleteNote(node.id)}
-                onHover={(hovered) =>
-                  setHoveredNoteId(hovered ? node.id : null)
-                }
-                onHoverDuringConnection={() =>
-                  handleNoteHoverDuringConnection(node.id)
-                }
-                onLeaveDuringConnection={() =>
-                  handleNoteHoverDuringConnection(null)
-                }
-                onStartConnection={() => handleStartConnection(node.id)}
-                onRegisterDims={registerNodeDims}
-                onDragMove={handleDragMove}
-                onDragEnd={handleDragEnd}
-              />
-            )
-          }
-
-          // D-33/D-35: FallbackNodeView for missing/disabled plugin nodes
-          return (
-            <FallbackNodeView
-              key={node.id}
-              node={node}
-              isSelected={selectedNoteId === node.id}
-              isHovered={hoveredNoteId === node.id}
-              zoom={view.zoom}
-              onBorderSelect={() => handleBorderSelect(node.id)}
-              onHover={(hovered) =>
-                setHoveredNoteId(hovered ? node.id : null)
-              }
-              onPositionChange={onPositionChange}
-              onRegisterDims={registerNodeDims}
-              onPropertyEdit={onPropertyEdit}
-            />
-          )
-        })}
+          </svg>
+        )}
       </div>
     </div>
   )

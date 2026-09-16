@@ -14,44 +14,80 @@ import type { IpcRendererEvent } from 'electron'
 // ---------------------------------------------------------------------------
 
 const tapestryAPI = {
+  /**
+   * Kernel operations, each naming its tree first (D-15).
+   *
+   * Several trees are open at once, so there is no "current world" for the
+   * main process to infer — the caller says which tree it means, and an id
+   * that is not open is refused.
+   */
   kernel: {
-    create: (path: string, worldName: string): Promise<{ ok: boolean }> =>
-      ipcRenderer.invoke('kernel:create', path, worldName),
-
-    open: (path: string): Promise<{ ok: boolean }> =>
-      ipcRenderer.invoke('kernel:open', path),
-
     /**
-     * Submit a commit. No actor is sent: the main process stamps
+     * Submit a commit to one tree. No actor is sent: the main process stamps
      * `human user.<name>` from the stored settings (D-06/D-07).
      */
-    submit: (message: string, ops: any[]): Promise<any> =>
-      ipcRenderer.invoke('kernel:submit', message, ops),
+    submit: (treeId: string, message: string, ops: any[]): Promise<any> =>
+      ipcRenderer.invoke('kernel:submit', treeId, message, ops),
 
-    getNodes: (): Promise<any[]> =>
-      ipcRenderer.invoke('kernel:getNodes'),
+    getNodes: (treeId: string): Promise<any[]> =>
+      ipcRenderer.invoke('kernel:getNodes', treeId),
 
-    getNode: (id: string): Promise<any> =>
-      ipcRenderer.invoke('kernel:getNode', id),
+    getNode: (treeId: string, id: string): Promise<any> =>
+      ipcRenderer.invoke('kernel:getNode', treeId, id),
 
-    getEdges: (): Promise<any[]> =>
-      ipcRenderer.invoke('kernel:getEdges'),
+    getEdges: (treeId: string): Promise<any[]> =>
+      ipcRenderer.invoke('kernel:getEdges', treeId),
 
-    status: (): Promise<any> =>
-      ipcRenderer.invoke('kernel:status'),
+    status: (treeId: string): Promise<any> =>
+      ipcRenderer.invoke('kernel:status', treeId),
 
     /** Who created and last changed each node, derived from the journal. */
-    getHistoryIndex: (): Promise<any> =>
-      ipcRenderer.invoke('kernel:getHistoryIndex'),
+    getHistoryIndex: (treeId: string): Promise<any> =>
+      ipcRenderer.invoke('kernel:getHistoryIndex', treeId),
 
-    getFilePath: (): Promise<string | null> =>
-      ipcRenderer.invoke('kernel:getFilePath'),
+    undo: (treeId: string): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke('kernel:undo', treeId),
 
-    undo: (): Promise<{ ok: boolean }> =>
-      ipcRenderer.invoke('kernel:undo'),
+    redo: (treeId: string): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke('kernel:redo', treeId),
+  },
 
-    redo: (): Promise<{ ok: boolean }> =>
-      ipcRenderer.invoke('kernel:redo'),
+  /**
+   * The trees in the space and where their frames sit (D-15, D-18).
+   *
+   * There is no forest file: `open`, `create` and `close` change both the open
+   * set and what the next launch restores.
+   */
+  trees: {
+    list: (): Promise<
+      Array<{
+        id: string
+        name: string
+        kind: 'native' | 'vault'
+        path: string
+        vaultRoot?: string
+        frame: { x: number; y: number }
+      }>
+    > => ipcRenderer.invoke('trees:list'),
+
+    open: (path: string): Promise<{ ok: boolean; treeId?: string; error?: string }> =>
+      ipcRenderer.invoke('trees:open', path),
+
+    create: (
+      path: string,
+      worldName: string,
+    ): Promise<{ ok: boolean; treeId?: string; error?: string }> =>
+      ipcRenderer.invoke('trees:create', path, worldName),
+
+    close: (treeId: string): Promise<{ ok: boolean; error?: string }> =>
+      ipcRenderer.invoke('trees:close', treeId),
+
+    setFrame: (
+      treeId: string,
+      x: number,
+      y: number,
+    ): Promise<{ ok: boolean; error?: string }> =>
+      ipcRenderer.invoke('trees:setFrame', treeId, x, y),
   },
 
   plugins: {
@@ -81,6 +117,10 @@ const tapestryAPI = {
   dialog: {
     showSave: (): Promise<{ canceled: boolean; filePath?: string }> =>
       ipcRenderer.invoke('dialog:showSave'),
+
+    /** Pick an existing world to add to the space. */
+    showOpenTree: (): Promise<{ canceled: boolean; filePath?: string }> =>
+      ipcRenderer.invoke('dialog:showOpenTree'),
   },
 
   settings: {
@@ -124,15 +164,16 @@ const tapestryAPI = {
   },
 
   /**
-   * Listen for file-opened events from the main process
-   * (e.g. when reopening the last file on launch).
+   * Listen for changes to the set of open trees — one opened, one closed, or
+   * the space restored at launch. Carries no payload: the renderer re-reads
+   * the list, so it can never hold half an update.
    */
-  onFileOpened: (callback: (filePath: string) => void): (() => void) => {
-    const handler = (_event: IpcRendererEvent, filePath: string) => {
-      callback(filePath)
+  onTreesChanged: (callback: () => void): (() => void) => {
+    const handler = (): void => {
+      callback()
     }
-    ipcRenderer.on('file-opened', handler)
-    return () => ipcRenderer.removeListener('file-opened', handler)
+    ipcRenderer.on('trees-changed', handler)
+    return () => ipcRenderer.removeListener('trees-changed', handler)
   },
 
   /**

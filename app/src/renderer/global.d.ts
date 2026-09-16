@@ -37,11 +37,14 @@ interface TapestryHistoryIndex {
   edges: Record<string, TapestryEdgeHistory>
 }
 
+/**
+ * Kernel operations, each naming its tree first (D-15). A tree id is the
+ * `sha256:<hex>` header digest the main process minted when it opened the file.
+ */
 interface TapestryKernelAPI {
-  create(path: string, worldName: string): Promise<{ ok: boolean }>
-  open(path: string): Promise<{ ok: boolean }>
   /** No actor argument: the main process stamps it (D-06/D-07). */
   submit(
+    treeId: string,
     message: string,
     ops: any[],
   ): Promise<{
@@ -50,7 +53,7 @@ interface TapestryKernelAPI {
     nodeIds: string[]
     edgeIds: string[]
   }>
-  getNodes(): Promise<
+  getNodes(treeId: string): Promise<
     Array<{
       id: string
       type: string
@@ -58,18 +61,40 @@ interface TapestryKernelAPI {
     }>
   >
   getNode(
+    treeId: string,
     id: string,
   ): Promise<{
     id: string
     type: string
     props: Record<string, { type: string; value: string | number | boolean }>
   } | null>
-  getEdges(): Promise<any[]>
-  status(): Promise<any>
-  getHistoryIndex(): Promise<TapestryHistoryIndex>
-  getFilePath(): Promise<string | null>
-  undo(): Promise<{ ok: boolean }>
-  redo(): Promise<{ ok: boolean }>
+  getEdges(treeId: string): Promise<any[]>
+  status(treeId: string): Promise<any>
+  getHistoryIndex(treeId: string): Promise<TapestryHistoryIndex>
+  undo(treeId: string): Promise<{ ok: boolean }>
+  redo(treeId: string): Promise<{ ok: boolean }>
+}
+
+/** One tree in the space, as `trees:list` reports it. */
+interface TapestryTreeSummary {
+  id: string
+  name: string
+  kind: 'native' | 'vault'
+  path: string
+  vaultRoot?: string
+  /** Where the tree's frame origin sits in world space (D-18). */
+  frame: { x: number; y: number }
+}
+
+interface TapestryTreesAPI {
+  list(): Promise<TapestryTreeSummary[]>
+  open(path: string): Promise<{ ok: boolean; treeId?: string; error?: string }>
+  create(
+    path: string,
+    worldName: string,
+  ): Promise<{ ok: boolean; treeId?: string; error?: string }>
+  close(treeId: string): Promise<{ ok: boolean; error?: string }>
+  setFrame(treeId: string, x: number, y: number): Promise<{ ok: boolean; error?: string }>
 }
 
 interface TapestryPluginsAPI {
@@ -105,6 +130,8 @@ interface TapestryPluginsAPI {
 
 interface TapestryDialogAPI {
   showSave(): Promise<{ canceled: boolean; filePath?: string }>
+  /** Pick an existing world to add to the space. */
+  showOpenTree(): Promise<{ canceled: boolean; filePath?: string }>
 }
 
 interface TapestrySettingsAPI {
@@ -143,11 +170,13 @@ interface TapestryRedoDiscarded {
 
 interface TapestryAPI {
   kernel: TapestryKernelAPI
+  trees: TapestryTreesAPI
   plugins: TapestryPluginsAPI
   dialog: TapestryDialogAPI
   settings: TapestrySettingsAPI
   agents: TapestryAgentsAPI
-  onFileOpened(callback: (filePath: string) => void): () => void
+  /** The set of open trees changed: one opened, one closed, or the space restored. */
+  onTreesChanged(callback: () => void): () => void
   /** A commit landed in a tree from outside the renderer (an agent, a plugin). */
   onTreeChanged(callback: (treeId: string) => void): () => void
   /** The agent list or a connection status changed. */

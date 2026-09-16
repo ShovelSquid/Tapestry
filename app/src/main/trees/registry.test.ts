@@ -14,9 +14,10 @@
 
 import { afterEach, describe, expect, it } from 'vitest'
 import { join } from 'node:path'
-import { rmSync, writeFileSync } from 'node:fs'
+import { readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { makeTempDir } from '../../../test/helpers/temp-tree'
 import { KernelBridge } from '../kernel-bridge'
+import { humanActor, pluginActor } from '../commands/actor'
 import { TreeRegistry } from './registry'
 
 const dirs: string[] = []
@@ -154,6 +155,88 @@ describe('TreeRegistry', () => {
     // Closing the primary falls back rather than leaving a dangling id.
     registry.close(alpha.id)
     expect(registry.primary()).toBe(beta)
+  })
+
+  it('keeps each tree to its own journal, and its own lock', () => {
+    const dir = tempDir('reg-journals')
+    const registry = newRegistry()
+
+    // Distinct world names: the id is the header digest, and the header is the
+    // world name plus its creation time rounded to the second, so two worlds
+    // named alike in the same second would collide (see the note above).
+    const alphaPath = join(dir, 'alpha.tree')
+    const betaPath = join(dir, 'beta.tree')
+    const alpha = registry.create(alphaPath, 'alpha')
+    const beta = registry.create(betaPath, 'beta')
+
+    alpha.bridge.submitAs(humanActor('kaelen'), 'note in alpha', [
+      { op: 'createNode', type: 'tapestry.notes/note@1', props: {} },
+    ])
+    beta.bridge.submitAs(humanActor('kaelen'), 'note in beta', [
+      { op: 'createNode', type: 'tapestry.notes/note@1', props: {} },
+    ])
+
+    // The real proof is on disk: each commit message appears in exactly one
+    // file. A shared bridge would put both in whichever tree was primary.
+    const alphaText = readFileSync(alphaPath, 'utf-8')
+    const betaText = readFileSync(betaPath, 'utf-8')
+
+    expect(alphaText).toContain('note in alpha')
+    expect(alphaText).not.toContain('note in beta')
+    expect(betaText).toContain('note in beta')
+    expect(betaText).not.toContain('note in alpha')
+
+    // Each open tree holds its own exclusive journal lock, so neither file can
+    // be opened a second time while the space has it.
+    for (const path of [alphaPath, betaPath]) {
+      const intruder = new KernelBridge()
+      expect(() => intruder.open(path)).toThrow()
+      intruder.close()
+    }
+
+    // closeAll releases both, so a later launch can reopen the whole space.
+    registry.closeAll()
+    for (const path of [alphaPath, betaPath]) {
+      const reopened = new KernelBridge()
+      expect(() => reopened.open(path)).not.toThrow()
+      reopened.close()
+    }
+  })
+
+  it('summarises open trees without their bridges', () => {
+    const dir = tempDir('reg-summary')
+    const registry = newRegistry()
+
+    const alpha = registry.create(join(dir, 'alpha.tree'), 'alpha')
+
+    expect(registry.summary()).toEqual([
+      { id: alpha.id, name: 'alpha', kind: 'native', path: alpha.path },
+    ])
+  })
+
+  it('forwards the plugin facade to whichever tree is primary', () => {
+    const dir = tempDir('reg-proxy')
+    const registry = newRegistry()
+    const proxy = registry.primaryBridgeProxy()
+
+    // With nothing open there is no world to write into, and the facade says
+    // so rather than quietly doing nothing.
+    expect(proxy.isLoaded).toBe(false)
+    expect(() => proxy.getNodes()).toThrow('No kernel loaded')
+
+    const alpha = registry.create(join(dir, 'alpha.tree'), 'alpha')
+    expect(proxy.isLoaded).toBe(true)
+    proxy.submitAs(pluginActor('example'), 'from a plugin', [
+      { op: 'createNode', type: 'tapestry.notes/note@1', props: {} },
+    ])
+    expect(proxy.getNodes()).toHaveLength(1)
+
+    // Opening a second world moves the facade with the primary, so a plugin
+    // loaded before it existed does not keep writing into the old tree.
+    const beta = registry.create(join(dir, 'beta.tree'), 'beta')
+    expect(registry.primary()).toBe(beta)
+    expect(proxy.getNodes()).toEqual([])
+    expect(alpha.bridge.getNodes()).toHaveLength(1)
   })
 
   it('notifies subscribers when trees open and close', () => {

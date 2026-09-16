@@ -1,33 +1,30 @@
 /**
- * Main Tapestry application -- renders a full-window 2D canvas (D-05)
- * with notes positioned at their world-space coordinates.
+ * Main Tapestry application -- the space, holding one frame per open tree
+ * (D-15) on a full-window 2D canvas.
  *
- * The Canvas component (Plan 03) handles pan/zoom, drag-to-reposition,
- * connection display, and hover controls. This App component owns the
- * data layer: nodes, edges, save state, file lifecycle.
+ * App owns the data layer through useForest: which trees are open, each one's
+ * nodes, edges, provenance and save state. Canvas owns the view. Every handler
+ * here names a note by NodeRef (tree + node), because a node id alone is only
+ * unique inside one tree.
  *
- * Double-clicking empty canvas space creates a new note (D-04).
- * Notes are rendered as NoteCard components with ProseMirror editing.
+ * Double-clicking empty space inside a frame creates a note in that tree
+ * (D-04). Double-clicking outside every frame creates nothing (UA-06): a note
+ * has to belong to a tree.
  *
- * Save state tracking (D-02):
- * - "Saving..." when any note has a debounce timer active OR an IPC call in-flight
- * - "Saved" only when ALL debounce timers have fired AND all IPC calls have completed
- * - "Not saved" when the last IPC call failed
- * The indicator never shows "Saved" while a debounce timer is still active.
+ * Save state tracking (D-02) is per tree, in useForest:
+ * - "Saving..." while any of that tree's notes has a debounce timer active OR
+ *   an IPC call in flight
+ * - "Saved" only when both are empty
+ * - "Not saved" after a failed call
  */
 
-import React, { useCallback, useEffect, useRef, useState } from 'react'
-import Canvas, { type NodeInfo, type EdgeInfo } from './components/Canvas'
+import React, { useCallback, useEffect, useState } from 'react'
+import Canvas, { type DoubleClickTarget } from './components/Canvas'
 import ForestBar from './components/ForestBar'
 import TransientNotice from './components/TransientNotice'
 import PluginErrorNotification from './components/PluginErrorNotification'
 import NamePromptDialog from './components/NamePromptDialog'
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
-type SaveState = 'saved' | 'saving' | 'error'
+import { useForest, type NodeRef } from './state/use-forest'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -37,16 +34,10 @@ function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
 }
 
-/**
- * Submit a change to the open world.
- *
- * The renderer names the change and the operations; it never names who made
- * it. The Electron main process stamps `human user.<name>` from the stored
- * settings (D-06/D-07), so a compromised or buggy renderer cannot sign a
- * change as another person, as an agent, or as Tapestry itself.
- */
-function submitChange(message: string, ops: any[]) {
-  return window.tapestry.kernel.submit(message, ops)
+/** A note's title, derived from its file name, for a newly created world. */
+function worldNameFromPath(filePath: string): string {
+  const fileName = filePath.split('/').pop()?.replace(/\.tree$/, '') ?? 'untitled'
+  return fileName.replace(/[^A-Za-z0-9_-]/g, '_')
 }
 
 // ---------------------------------------------------------------------------
@@ -54,16 +45,19 @@ function submitChange(message: string, ops: any[]) {
 // ---------------------------------------------------------------------------
 
 export default function App(): React.ReactElement {
-  const [nodes, setNodes] = useState<NodeInfo[]>([])
-  const [edges, setEdges] = useState<EdgeInfo[]>([])
-  const [filePath, setFilePath] = useState<string | null>(null)
-  const [saveState, setSaveState] = useState<SaveState>('saved')
-  const [editingNodeId, setEditingNodeId] = useState<string | null>(null)
-  const [isFileLoaded, setIsFileLoaded] = useState(false)
+  const {
+    trees,
+    lastChangedTreeId,
+    patchNodeProps,
+    refreshTree,
+    refreshAll,
+    submitChange,
+    markDirty,
+    markClean,
+  } = useForest()
 
-  // Who made each note and who changed it last (D-05/D-06/D-07), derived by
-  // the kernel from the commits in the journal. Null until the first read.
-  const [historyIndex, setHistoryIndex] = useState<TapestryHistoryIndex | null>(null)
+  const [editingRef, setEditingRef] = useState<NodeRef | null>(null)
+  const [selectedRef, setSelectedRef] = useState<NodeRef | null>(null)
 
   // The name every change is signed with (D-07). Null means "not chosen yet",
   // which is what makes the first-run prompt appear; nameLoaded keeps the
@@ -80,7 +74,7 @@ export default function App(): React.ReactElement {
   // A passing message about something that already happened (UA-14).
   const [notice, setNotice] = useState<string | null>(null)
 
-  // Plugin contributions: maps node types to component names from loaded plugins
+  // Plugin contributions: maps node types to component names from plugins
   const [pluginNodeViews, setPluginNodeViews] = useState<Record<string, string>>({})
 
   // Plugin error notification state (D-34)
@@ -92,86 +86,28 @@ export default function App(): React.ReactElement {
     canRestart: boolean
   } | null>(null)
 
-  // Track pending debounced saves (IPC calls in-flight)
-  const pendingSavesRef = useRef(0)
-  // Track notes with active debounce timers (text changed but not yet submitted)
-  const dirtyNotesRef = useRef(new Set<string>())
-
   /**
-   * Recompute save state from the two sources of truth:
-   * - dirtyNotesRef: notes with active debounce timers
-   * - pendingSavesRef: IPC calls currently in-flight
-   * Only shows "Saved" when BOTH are empty.
-   */
-  const recomputeSaveState = useCallback(() => {
-    if (dirtyNotesRef.current.size > 0 || pendingSavesRef.current > 0) {
-      setSaveState('saving')
-    } else {
-      setSaveState('saved')
-    }
-  }, [])
-
-  /**
-   * Surface an application-level error to the user through the notification
-   * banner (reused from the plugin crash UI). Kernel rejections — e.g. a
-   * commit refused while history is rewound — must not disappear into the
-   * console.
+   * Surface an application-level error through the notification banner
+   * (reused from the plugin crash UI). Kernel rejections — a commit refused
+   * while history is rewound, a world that will not open — must not disappear
+   * into the console.
    */
   const showAppError = useCallback((message: string) => {
     setPluginError({ pluginName: 'tapestry', displayName: 'Tapestry', message, canRestart: false })
   }, [])
 
-  /** Log a failed save, flip the indicator to "Not saved", and tell the user why. */
+  /** Log a failed save and tell the user why. The indicator is already set. */
   const reportSaveError = useCallback(
     (action: string, err: unknown) => {
       console.error(`${action}:`, err)
-      setSaveState('error')
       showAppError(`${action}: ${errorMessage(err)}`)
     },
     [showAppError],
   )
 
   // -----------------------------------------------------------------------
-  // Load state on mount
+  // Plugins and agents
   // -----------------------------------------------------------------------
-
-  const refreshNodes = useCallback(async () => {
-    try {
-      const nodeList = await window.tapestry.kernel.getNodes()
-      setNodes(nodeList || [])
-    } catch {
-      setNodes([])
-    }
-  }, [])
-
-  const refreshEdges = useCallback(async () => {
-    try {
-      const edgeList = await window.tapestry.kernel.getEdges()
-      setEdges(edgeList || [])
-    } catch {
-      setEdges([])
-    }
-  }, [])
-
-  const refreshHistory = useCallback(async () => {
-    try {
-      setHistoryIndex(await window.tapestry.kernel.getHistoryIndex())
-    } catch {
-      // No world open yet, or the read failed: show no provenance rather than
-      // stale provenance.
-      setHistoryIndex(null)
-    }
-  }, [])
-
-  const refreshFilePath = useCallback(async () => {
-    try {
-      const path = await window.tapestry.kernel.getFilePath()
-      setFilePath(path)
-      if (path) setIsFileLoaded(true)
-    } catch {
-      setFilePath(null)
-    }
-  }, [])
 
   const refreshPluginContributions = useCallback(async () => {
     try {
@@ -201,25 +137,8 @@ export default function App(): React.ReactElement {
     }
   }, [])
 
-  const refreshAll = useCallback(async () => {
-    await Promise.all([refreshNodes(), refreshEdges(), refreshPluginContributions()])
-  }, [refreshNodes, refreshEdges, refreshPluginContributions])
-
   useEffect(() => {
-    refreshFilePath().then(() => refreshAll())
-
-    const removeFileOpened = window.tapestry.onFileOpened((path: string) => {
-      setFilePath(path)
-      setIsFileLoaded(true)
-      refreshAll()
-    })
-
-    // A commit from outside this window — an agent writing through the MCP
-    // bridge — refreshes the canvas in place. The history effect below follows
-    // the nodes change, so provenance updates with it.
-    const removeTreeChanged = window.tapestry.onTreeChanged(() => {
-      refreshAll()
-    })
+    refreshPluginContributions()
 
     // Listen for plugin error notifications (D-34)
     const removePluginError = window.tapestry.onPluginError(
@@ -230,16 +149,8 @@ export default function App(): React.ReactElement {
       },
     )
 
-    return () => {
-      removeFileOpened()
-      removeTreeChanged()
-      removePluginError()
-    }
-  }, [refreshAll, refreshFilePath])
-
-  // -----------------------------------------------------------------------
-  // Agents: the list, and what an agent write can interrupt (D-03, UA-14)
-  // -----------------------------------------------------------------------
+    return () => removePluginError()
+  }, [refreshPluginContributions])
 
   useEffect(() => {
     refreshAgents()
@@ -249,11 +160,11 @@ export default function App(): React.ReactElement {
     })
 
     // An agent wrote into a tree Kaelen had rewound. The write has already
-    // landed and the redo is already gone, so this is a notice about
-    // something that happened, not a question — losing redo silently is the
-    // failure this exists to prevent.
-    const removeRedoDiscarded = window.tapestry.onRedoDiscarded(({ treeName, actorId }) => {
-      refreshAll()
+    // landed and the redo is already gone, so this is a notice about something
+    // that happened, not a question — losing redo silently is the failure this
+    // exists to prevent.
+    const removeRedoDiscarded = window.tapestry.onRedoDiscarded(({ treeId, treeName, actorId }) => {
+      refreshTree(treeId)
       const name = actorId.replace(/^agent\./, '')
       setNotice(`agent.${name} added a change to ${treeName}, so redo is no longer available.`)
     })
@@ -262,17 +173,7 @@ export default function App(): React.ReactElement {
       removeAgentsChanged()
       removeRedoDiscarded()
     }
-  }, [refreshAgents, refreshAll])
-
-  // Re-read provenance whenever the graph changes, debounced so a drag or a
-  // burst of typing does not rescan the journal on every commit. The scan is
-  // linear in the number of commits, so the delay matters on a long history.
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      refreshHistory()
-    }, 300)
-    return () => clearTimeout(timer)
-  }, [nodes, edges, refreshHistory])
+  }, [refreshAgents, refreshTree])
 
   // -----------------------------------------------------------------------
   // User name (D-07)
@@ -288,8 +189,8 @@ export default function App(): React.ReactElement {
         setSuggestedName(suggested)
       })
       .catch(() => {
-        // Settings unreadable: fall through to the prompt rather than
-        // letting changes be made under an unknown name.
+        // Settings unreadable: fall through to the prompt rather than letting
+        // changes be made under an unknown name.
         if (!cancelled) setSuggestedName('')
       })
       .finally(() => {
@@ -314,390 +215,204 @@ export default function App(): React.ReactElement {
   // Create note on double-click (D-04)
   // -----------------------------------------------------------------------
 
-  const handleCanvasDoubleClick = useCallback(
-    async (worldX: number, worldY: number) => {
-      // If no file is loaded, prompt for a save location first
-      if (!isFileLoaded) {
-        const result = await window.tapestry.dialog.showSave()
-        if (result.canceled || !result.filePath) return
-
-        try {
-          const fileName = result.filePath.split('/').pop()?.replace(/\.tree$/, '') ?? 'untitled'
-          const worldName = fileName.replace(/[^A-Za-z0-9_-]/g, '_')
-          await window.tapestry.kernel.create(result.filePath, worldName)
-          setFilePath(result.filePath)
-          setIsFileLoaded(true)
-        } catch (err) {
-          // Show the reason (invalid location, file already exists, ...)
-          // instead of silently doing nothing on double-click.
-          reportSaveError('Could not create world', err)
-          return
-        }
-      }
-
-      // Create a new note node at the world-space click position
+  const createNote = useCallback(
+    async (treeId: string, x: number, y: number) => {
       try {
-        setSaveState('saving')
-        const commitResult = await submitChange(
-          'Create note',
-          [
-            {
-              op: 'createNode',
-              type: 'tapestry.notes/note@1',
-              props: {
-                'position.x': { type: 'real', value: worldX },
-                'position.y': { type: 'real', value: worldY },
-                body: { type: 'text', value: '' },
-                title: { type: 'text', value: '' },
-              },
+        const commitResult = await submitChange(treeId, 'Create note', [
+          {
+            op: 'createNode',
+            type: 'tapestry.notes/note@1',
+            props: {
+              'position.x': { type: 'real', value: x },
+              'position.y': { type: 'real', value: y },
+              body: { type: 'text', value: '' },
+              title: { type: 'text', value: '' },
             },
-          ],
-        )
+          },
+        ])
 
-        recomputeSaveState()
-
-        // Refresh nodes and start editing the new one
-        await refreshAll()
+        await refreshTree(treeId)
 
         if (commitResult.nodeIds && commitResult.nodeIds.length > 0) {
-          setEditingNodeId(commitResult.nodeIds[0])
+          setEditingRef({ treeId, nodeId: commitResult.nodeIds[0] })
         }
       } catch (err) {
         reportSaveError('Failed to create note', err)
       }
     },
-    [isFileLoaded, recomputeSaveState, refreshAll, reportSaveError],
+    [submitChange, refreshTree, reportSaveError],
+  )
+
+  const handleCanvasDoubleClick = useCallback(
+    async (target: DoubleClickTarget) => {
+      // Inside a frame: the note belongs to that tree, at frame-local coords.
+      if (target.treeId) {
+        await createNote(target.treeId, target.x, target.y)
+        return
+      }
+
+      // No tree open at all: ask where to save, create the world, then put the
+      // first note at its origin.
+      const result = await window.tapestry.dialog.showSave()
+      if (result.canceled || !result.filePath) return
+
+      const created = await window.tapestry.trees.create(
+        result.filePath,
+        worldNameFromPath(result.filePath),
+      )
+      if (!created.ok || !created.treeId) {
+        // Show the reason (invalid location, file already exists, ...) instead
+        // of silently doing nothing on double-click.
+        showAppError(`Could not create world: ${created.error ?? 'unknown error'}`)
+        return
+      }
+
+      // The new tree has to be in local state before a note can go into it.
+      await refreshAll()
+      await createNote(created.treeId, 0, 0)
+    },
+    [createNote, refreshAll, showAppError],
   )
 
   // -----------------------------------------------------------------------
-  // Position change handler (D-01 persistence)
+  // Note edits. Each names its tree, so a commit lands in one journal.
   // -----------------------------------------------------------------------
 
   const handlePositionChange = useCallback(
-    async (nodeId: string, newX: number, newY: number) => {
-      pendingSavesRef.current += 1
-      setSaveState('saving')
-
+    async (ref: NodeRef, newX: number, newY: number) => {
       try {
-        await submitChange(
-          'Move note',
-          [
-            {
-              op: 'setProperty',
-              target: nodeId,
-              key: 'position.x',
-              type: 'real',
-              value: newX,
-            },
-            {
-              op: 'setProperty',
-              target: nodeId,
-              key: 'position.y',
-              type: 'real',
-              value: newY,
-            },
-          ],
-        )
-
-        pendingSavesRef.current -= 1
-        if (pendingSavesRef.current < 0) pendingSavesRef.current = 0
-        recomputeSaveState()
-
-        // Refresh to get confirmed positions
-        await refreshNodes()
+        await submitChange(ref.treeId, 'Move note', [
+          { op: 'setProperty', target: ref.nodeId, key: 'position.x', type: 'real', value: newX },
+          { op: 'setProperty', target: ref.nodeId, key: 'position.y', type: 'real', value: newY },
+        ])
+        await refreshTree(ref.treeId)
       } catch (err) {
-        pendingSavesRef.current -= 1
-        if (pendingSavesRef.current < 0) pendingSavesRef.current = 0
         reportSaveError('Failed to update position', err)
       }
     },
-    [recomputeSaveState, refreshNodes, reportSaveError],
+    [submitChange, refreshTree, reportSaveError],
   )
 
-  // -----------------------------------------------------------------------
-  // Thread center pin handler (D-17): one commit with position + pinned=true
-  // -----------------------------------------------------------------------
-
+  /** Thread center pin (D-17): position + pinned=true in one commit. */
   const handlePinnedPositionChange = useCallback(
-    async (nodeId: string, newX: number, newY: number) => {
-      pendingSavesRef.current += 1
-      setSaveState('saving')
-
+    async (ref: NodeRef, newX: number, newY: number) => {
       try {
-        await submitChange(
-          'Pin thread center',
-          [
-            {
-              op: 'setProperty',
-              target: nodeId,
-              key: 'position.x',
-              type: 'real',
-              value: newX,
-            },
-            {
-              op: 'setProperty',
-              target: nodeId,
-              key: 'position.y',
-              type: 'real',
-              value: newY,
-            },
-            {
-              op: 'setProperty',
-              target: nodeId,
-              key: 'pinned',
-              type: 'bool',
-              value: true,
-            },
-          ],
-        )
-
-        pendingSavesRef.current -= 1
-        if (pendingSavesRef.current < 0) pendingSavesRef.current = 0
-        recomputeSaveState()
-
-        await refreshNodes()
+        await submitChange(ref.treeId, 'Pin thread center', [
+          { op: 'setProperty', target: ref.nodeId, key: 'position.x', type: 'real', value: newX },
+          { op: 'setProperty', target: ref.nodeId, key: 'position.y', type: 'real', value: newY },
+          { op: 'setProperty', target: ref.nodeId, key: 'pinned', type: 'bool', value: true },
+        ])
+        await refreshTree(ref.treeId)
       } catch (err) {
-        pendingSavesRef.current -= 1
-        if (pendingSavesRef.current < 0) pendingSavesRef.current = 0
         reportSaveError('Failed to pin thread center', err)
       }
     },
-    [recomputeSaveState, refreshNodes, reportSaveError],
+    [submitChange, refreshTree, reportSaveError],
   )
 
-  // -----------------------------------------------------------------------
-  // Width change handler (D-08 resize persistence)
-  // -----------------------------------------------------------------------
-
   const handleWidthChange = useCallback(
-    async (nodeId: string, newWidth: number) => {
-      pendingSavesRef.current += 1
-      setSaveState('saving')
-
+    async (ref: NodeRef, newWidth: number) => {
       try {
-        await submitChange(
-          'Resize note',
-          [
-            {
-              op: 'setProperty',
-              target: nodeId,
-              key: 'width',
-              type: 'real',
-              value: newWidth,
-            },
-          ],
-        )
-
-        pendingSavesRef.current -= 1
-        if (pendingSavesRef.current < 0) pendingSavesRef.current = 0
-        recomputeSaveState()
-
-        await refreshNodes()
+        await submitChange(ref.treeId, 'Resize note', [
+          { op: 'setProperty', target: ref.nodeId, key: 'width', type: 'real', value: newWidth },
+        ])
+        await refreshTree(ref.treeId)
       } catch (err) {
-        pendingSavesRef.current -= 1
-        if (pendingSavesRef.current < 0) pendingSavesRef.current = 0
         reportSaveError('Failed to update width', err)
       }
     },
-    [recomputeSaveState, refreshNodes, reportSaveError],
+    [submitChange, refreshTree, reportSaveError],
   )
 
-  // -----------------------------------------------------------------------
-  // Height change handler (D-08 resize persistence)
-  // -----------------------------------------------------------------------
-
   const handleHeightChange = useCallback(
-    async (nodeId: string, newHeight: number) => {
-      pendingSavesRef.current += 1
-      setSaveState('saving')
-
+    async (ref: NodeRef, newHeight: number) => {
       try {
-        await submitChange(
-          'Resize note height',
-          [
-            {
-              op: 'setProperty',
-              target: nodeId,
-              key: 'height',
-              type: 'real',
-              value: newHeight,
-            },
-          ],
-        )
-
-        pendingSavesRef.current -= 1
-        if (pendingSavesRef.current < 0) pendingSavesRef.current = 0
-        recomputeSaveState()
-
-        await refreshNodes()
+        await submitChange(ref.treeId, 'Resize note height', [
+          { op: 'setProperty', target: ref.nodeId, key: 'height', type: 'real', value: newHeight },
+        ])
+        await refreshTree(ref.treeId)
       } catch (err) {
-        pendingSavesRef.current -= 1
-        if (pendingSavesRef.current < 0) pendingSavesRef.current = 0
         reportSaveError('Failed to update height', err)
       }
     },
-    [recomputeSaveState, refreshNodes, reportSaveError],
+    [submitChange, refreshTree, reportSaveError],
   )
 
-  // -----------------------------------------------------------------------
-  // Edge creation handler
-  // -----------------------------------------------------------------------
-
   const handleEdgeCreate = useCallback(
-    async (fromId: string, toId: string) => {
-      pendingSavesRef.current += 1
-      setSaveState('saving')
-
+    async (from: NodeRef, to: NodeRef) => {
+      // Canvas only offers same-tree connections; this is the second guard.
+      if (from.treeId !== to.treeId) return
       try {
-        await submitChange(
-          'Connect notes',
-          [
-            {
-              op: 'createEdge',
-              from: fromId,
-              to: toId,
-              label: 'link',
-            },
-          ],
-        )
-
-        pendingSavesRef.current -= 1
-        if (pendingSavesRef.current < 0) pendingSavesRef.current = 0
-        recomputeSaveState()
-
-        await refreshEdges()
+        await submitChange(from.treeId, 'Connect notes', [
+          { op: 'createEdge', from: from.nodeId, to: to.nodeId, label: 'link' },
+        ])
+        await refreshTree(from.treeId)
       } catch (err) {
-        pendingSavesRef.current -= 1
-        if (pendingSavesRef.current < 0) pendingSavesRef.current = 0
         reportSaveError('Failed to create edge', err)
       }
     },
-    [recomputeSaveState, refreshEdges, reportSaveError],
+    [submitChange, refreshTree, reportSaveError],
   )
-
-  // -----------------------------------------------------------------------
-  // Debounce tracking: mark/unmark notes as dirty
-  // -----------------------------------------------------------------------
-
-  const handleMarkDirty = useCallback(
-    (nodeId: string) => {
-      dirtyNotesRef.current.add(nodeId)
-      recomputeSaveState()
-    },
-    [recomputeSaveState],
-  )
-
-  const handleMarkClean = useCallback(
-    (nodeId: string) => {
-      dirtyNotesRef.current.delete(nodeId)
-    },
-    [],
-  )
-
-  // -----------------------------------------------------------------------
-  // Save callback for NoteCard debounced updates
-  // -----------------------------------------------------------------------
 
   const handleNoteSave = useCallback(
-    async (
-      nodeId: string,
-      body: string,
-      title: string,
-    ): Promise<void> => {
-      pendingSavesRef.current += 1
-      setSaveState('saving')
-
+    async (ref: NodeRef, body: string, title: string): Promise<void> => {
       try {
-        await submitChange(
-          'Update note text',
-          [
-            {
-              op: 'setProperty',
-              target: nodeId,
-              key: 'body',
-              type: 'text',
-              value: body,
-            },
-            {
-              op: 'setProperty',
-              target: nodeId,
-              key: 'title',
-              type: 'text',
-              value: title,
-            },
-          ],
-        )
+        await submitChange(ref.treeId, 'Update note text', [
+          { op: 'setProperty', target: ref.nodeId, key: 'body', type: 'text', value: body },
+          { op: 'setProperty', target: ref.nodeId, key: 'title', type: 'text', value: title },
+        ])
 
-        pendingSavesRef.current -= 1
-        if (pendingSavesRef.current < 0) pendingSavesRef.current = 0
-        recomputeSaveState()
-
-        // Mirror the saved values into local state so the NoteCard `body`
-        // prop does not lag the kernel until the next full refresh. A stale
-        // prop would later be mistaken for an external change and reset the
-        // editor mid-typing.
-        setNodes((prev) =>
-          prev.map((n) =>
-            n.id === nodeId
-              ? {
-                  ...n,
-                  props: {
-                    ...n.props,
-                    body: { type: 'text', value: body },
-                    title: { type: 'text', value: title },
-                  },
-                }
-              : n,
-          ),
-        )
+        // Mirror the saved values locally so the NoteCard `body` prop does not
+        // lag the kernel. A stale prop would later look like an external
+        // change and reset the editor mid-typing.
+        patchNodeProps(ref, {
+          body: { type: 'text', value: body },
+          title: { type: 'text', value: title },
+        })
       } catch (err) {
-        pendingSavesRef.current -= 1
-        if (pendingSavesRef.current < 0) pendingSavesRef.current = 0
         reportSaveError('Failed to save note', err)
       }
     },
-    [recomputeSaveState, reportSaveError],
+    [submitChange, patchNodeProps, reportSaveError],
   )
 
-  // -----------------------------------------------------------------------
-  // Fallback property edit handler (D-35: disabled plugin content editable)
-  // -----------------------------------------------------------------------
-
+  /** Fallback property edit (D-35: disabled plugin content stays editable). */
   const handlePropertyEdit = useCallback(
     async (
-      nodeId: string,
+      ref: NodeRef,
       key: string,
       type: string,
       value: string | number | boolean,
     ): Promise<void> => {
-      pendingSavesRef.current += 1
-      setSaveState('saving')
-
       try {
-        await submitChange(
-          `Edit property ${key}`,
-          [
-            {
-              op: 'setProperty',
-              target: nodeId,
-              key,
-              type,
-              value,
-            },
-          ],
-        )
-
-        pendingSavesRef.current -= 1
-        if (pendingSavesRef.current < 0) pendingSavesRef.current = 0
-        recomputeSaveState()
-        await refreshNodes()
+        await submitChange(ref.treeId, `Edit property ${key}`, [
+          { op: 'setProperty', target: ref.nodeId, key, type, value },
+        ])
+        await refreshTree(ref.treeId)
       } catch (err) {
-        pendingSavesRef.current -= 1
-        if (pendingSavesRef.current < 0) pendingSavesRef.current = 0
         reportSaveError('Failed to edit property', err)
       }
     },
-    [recomputeSaveState, refreshNodes, reportSaveError],
+    [submitChange, refreshTree, reportSaveError],
+  )
+
+  const handleDeleteNote = useCallback(
+    async (ref: NodeRef) => {
+      try {
+        await submitChange(ref.treeId, 'Delete note', [{ op: 'deleteNode', id: ref.nodeId }])
+
+        setEditingRef((prev) =>
+          prev && prev.treeId === ref.treeId && prev.nodeId === ref.nodeId ? null : prev,
+        )
+
+        // Edges touching the deleted node are cascaded, so the whole tree is
+        // re-read rather than just its nodes.
+        await refreshTree(ref.treeId)
+      } catch (err) {
+        reportSaveError('Failed to delete note', err)
+      }
+    },
+    [submitChange, refreshTree, reportSaveError],
   )
 
   // -----------------------------------------------------------------------
@@ -706,8 +421,8 @@ export default function App(): React.ReactElement {
 
   const handlePluginRestart = useCallback(
     async (pluginName: string) => {
-      // reload() resolves with a status rather than throwing on failure;
-      // only a 'loaded' result means the restart actually worked.
+      // reload() resolves with a status rather than throwing on failure; only
+      // a 'loaded' result means the restart actually worked.
       try {
         const result = await window.tapestry.plugins.reload(pluginName)
         if (result.status === 'loaded') {
@@ -743,94 +458,61 @@ export default function App(): React.ReactElement {
   }, [])
 
   // -----------------------------------------------------------------------
-  // Delete note handler (D-20, D-21): submit DeleteNode op
-  // -----------------------------------------------------------------------
-
-  const handleDeleteNote = useCallback(
-    async (nodeId: string) => {
-      pendingSavesRef.current += 1
-      setSaveState('saving')
-
-      try {
-        await submitChange(
-          'Delete note',
-          [
-            {
-              op: 'deleteNode',
-              id: nodeId,
-            },
-          ],
-        )
-
-        pendingSavesRef.current -= 1
-        if (pendingSavesRef.current < 0) pendingSavesRef.current = 0
-        recomputeSaveState()
-
-        // If we were editing this note, stop editing
-        setEditingNodeId((prev) => (prev === nodeId ? null : prev))
-
-        // Refresh nodes and edges (edges touching the deleted node are cascaded)
-        await refreshAll()
-      } catch (err) {
-        pendingSavesRef.current -= 1
-        if (pendingSavesRef.current < 0) pendingSavesRef.current = 0
-        reportSaveError('Failed to delete note', err)
-      }
-    },
-    [recomputeSaveState, refreshAll, reportSaveError],
-  )
-
-  // -----------------------------------------------------------------------
   // Undo/Redo (D-22): Cmd/Ctrl+Z and Cmd/Ctrl+Shift+Z at the window level
   // -----------------------------------------------------------------------
 
+  /**
+   * Which tree undo acts on.
+   *
+   * History is per journal, so "undo" has to mean one tree. The note being
+   * edited or selected is the clearest statement of what the person is working
+   * on; with nothing selected, the tree they last changed is the next best
+   * answer, and the only open tree is the answer when there is just one.
+   */
+  const undoTargetTreeId =
+    editingRef?.treeId ?? selectedRef?.treeId ?? lastChangedTreeId ?? trees[0]?.id ?? null
+
   const handleUndo = useCallback(async () => {
+    if (!undoTargetTreeId) return
     try {
-      const result = await window.tapestry.kernel.undo()
+      const result = await window.tapestry.kernel.undo(undoTargetTreeId)
       if (result.ok) {
-        setEditingNodeId(null)
-        await refreshAll()
+        setEditingRef(null)
+        await refreshTree(undoTargetTreeId)
       }
     } catch (err) {
       console.error('Undo failed:', err)
       showAppError(`Undo failed: ${errorMessage(err)}`)
     }
-  }, [refreshAll, showAppError])
+  }, [undoTargetTreeId, refreshTree, showAppError])
 
   const handleRedo = useCallback(async () => {
+    if (!undoTargetTreeId) return
     try {
-      const result = await window.tapestry.kernel.redo()
+      const result = await window.tapestry.kernel.redo(undoTargetTreeId)
       if (result.ok) {
-        setEditingNodeId(null)
-        await refreshAll()
+        setEditingRef(null)
+        await refreshTree(undoTargetTreeId)
       }
     } catch (err) {
       console.error('Redo failed:', err)
       showAppError(`Redo failed: ${errorMessage(err)}`)
     }
-  }, [refreshAll, showAppError])
-
-  // -----------------------------------------------------------------------
-  // Keyboard: Escape, Undo, Redo (D-04, D-22)
-  // -----------------------------------------------------------------------
+  }, [undoTargetTreeId, refreshTree, showAppError])
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        setEditingNodeId(null)
+        setEditingRef(null)
         return
       }
 
-      // Cmd/Ctrl+Z for undo, Cmd/Ctrl+Shift+Z for redo (D-22)
-      // When ProseMirror has focus (user is editing text), let ProseMirror
-      // handle undo/redo for uncommitted text changes. When no editor is
-      // focused, use world-level undo/redo for committed changes.
+      // Cmd/Ctrl+Z for undo, Cmd/Ctrl+Shift+Z for redo (D-22). When
+      // ProseMirror has focus, let it handle undo/redo for uncommitted text.
       const mod = e.metaKey || e.ctrlKey
       if (mod && e.key === 'z') {
-        // Check if a ProseMirror editor has focus — if so, let it handle the key
         const active = document.activeElement
-        const isEditorFocused = active && active.closest('.ProseMirror')
-        if (isEditorFocused) return
+        if (active && active.closest('.ProseMirror')) return
 
         e.preventDefault()
         e.stopPropagation()
@@ -839,7 +521,6 @@ export default function App(): React.ReactElement {
         } else {
           handleUndo()
         }
-        return
       }
     }
     window.addEventListener('keydown', handler)
@@ -854,14 +535,18 @@ export default function App(): React.ReactElement {
   // a name exists, which is exactly while the first-run prompt is up.
   const currentUserActorId = userName !== null ? `user.${userName}` : null
 
+  // Until Plan 06 moves save state into each frame header, the forest bar
+  // still shows one tree's: the most recently opened, which is the tree the
+  // single-world flow would have had open anyway.
+  const primaryTree = trees.length > 0 ? trees[trees.length - 1] : null
+
   return (
     <div className="tapestry-app">
       {/* Top-left chrome: save state, agents, and the name changes are signed
-          with. The forest bar contains the save indicator (Plan 05 moves save
-          states into per-frame headers). */}
+          with. Plan 06 moves save state into per-frame headers. */}
       <ForestBar
-        filePath={filePath}
-        saveState={saveState}
+        filePath={primaryTree?.path ?? null}
+        saveState={primaryTree?.saveState ?? 'saved'}
         agents={agents}
         agentsEnabled={agentsEnabled}
         userName={userName}
@@ -894,21 +579,19 @@ export default function App(): React.ReactElement {
         />
       )}
 
-      {/* Canvas with pan/zoom, notes, connections, and controls */}
+      {/* The space: one frame per open tree, with pan/zoom and connections */}
       <Canvas
-        nodes={nodes}
-        edges={edges}
-        editingNodeId={editingNodeId}
-        isFileLoaded={isFileLoaded}
+        trees={trees}
+        editingRef={editingRef}
         pluginNodeViews={pluginNodeViews}
-        historyIndex={historyIndex}
         currentUserActorId={currentUserActorId}
-        onStartEditing={(nodeId) => setEditingNodeId(nodeId)}
-        onStopEditing={() => setEditingNodeId(null)}
+        onStartEditing={(ref) => setEditingRef(ref)}
+        onStopEditing={() => setEditingRef(null)}
         onCanvasDoubleClick={handleCanvasDoubleClick}
+        onSelectedNoteChange={setSelectedRef}
         onSave={handleNoteSave}
-        onMarkDirty={handleMarkDirty}
-        onMarkClean={handleMarkClean}
+        onMarkDirty={markDirty}
+        onMarkClean={markClean}
         onPositionChange={handlePositionChange}
         onWidthChange={handleWidthChange}
         onHeightChange={handleHeightChange}

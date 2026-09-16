@@ -18,6 +18,26 @@
 
 import { basename, resolve } from 'path'
 import { KernelBridge } from '../kernel-bridge'
+import type { CommitResult, EdgeData, JournalStatus, NodeData, OpObject } from '../kernel-bridge'
+import type { Actor } from '../commands/actor'
+
+/**
+ * The subset of KernelBridge the plugin host reaches through.
+ *
+ * Only the methods plugins actually call are forwarded. Undo, redo and replay
+ * are deliberately absent: navigating history is the person's action, not a
+ * plugin's, and a plugin moving the visible world under them would be
+ * indistinguishable from a bug.
+ */
+export interface PrimaryBridgeProxy {
+  readonly isLoaded: boolean
+  submit(actorKind: string, actorId: string, message: string, ops: OpObject[]): CommitResult
+  submitAs(actor: Actor, message: string, ops: OpObject[]): CommitResult
+  getNodes(): NodeData[]
+  getNode(id: string): NodeData | null
+  getEdges(): EdgeData[]
+  status(): JournalStatus
+}
 
 /** Where a tree's content comes from: Tapestry itself, or a mirrored source. */
 export type TreeKind = 'native' | 'vault'
@@ -188,6 +208,57 @@ export class TreeRegistry {
     if (!this.trees.has(treeId)) throw new Error(`Unknown tree: ${treeId}`)
     this.primaryId = treeId
     this.emit()
+  }
+
+  /**
+   * The open trees without their bridges or their frames.
+   *
+   * Frames live in settings, not here: where a frame sits is a preference
+   * about the space, while this table is about which worlds are loaded. The
+   * caller joins the two (see `trees:list`).
+   */
+  summary(): Array<{ id: string; name: string; kind: TreeKind; path: string; vaultRoot?: string }> {
+    return this.list().map((tree) => ({
+      id: tree.id,
+      name: tree.name,
+      kind: tree.kind,
+      path: tree.path,
+      ...(tree.vaultRoot !== undefined ? { vaultRoot: tree.vaultRoot } : {}),
+    }))
+  }
+
+  /**
+   * A bridge-shaped facade that always forwards to the current primary tree.
+   *
+   * Plugins were written against a single kernel and their SDK is unchanged
+   * (D-15 is a host concern, not a plugin one), so they keep one facade. It is
+   * bound to whichever native tree is primary at call time rather than to a
+   * bridge captured at load, so a plugin loaded before a second world opened
+   * does not keep writing into a tree the user has since closed.
+   */
+  primaryBridgeProxy(): PrimaryBridgeProxy {
+    const requirePrimary = (): KernelBridge => {
+      const tree = this.primary()
+      if (!tree) {
+        throw new Error('No kernel loaded — open a tree first')
+      }
+      return tree.bridge
+    }
+
+    const registry = this
+    return {
+      get isLoaded(): boolean {
+        const tree = registry.primary()
+        return tree !== null && tree.bridge.isLoaded
+      },
+      submit: (actorKind, actorId, message, ops) =>
+        requirePrimary().submit(actorKind, actorId, message, ops),
+      submitAs: (actor, message, ops) => requirePrimary().submitAs(actor, message, ops),
+      getNodes: () => requirePrimary().getNodes(),
+      getNode: (id) => requirePrimary().getNode(id),
+      getEdges: () => requirePrimary().getEdges(),
+      status: () => requirePrimary().status(),
+    }
   }
 
   /**

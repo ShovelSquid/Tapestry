@@ -15,15 +15,14 @@
 
 import { app, BrowserWindow, ipcMain, dialog } from 'electron'
 import { isAbsolute, join, relative, resolve, sep } from 'path'
-import { readFileSync, writeFileSync, existsSync } from 'fs'
 import { execFileSync } from 'child_process'
 import { userInfo } from 'os'
 import { KernelBridge } from './kernel-bridge'
 import { PluginHost } from './plugin-host'
-import { SettingsStore, suggestUserName } from './settings'
+import { SettingsStore, suggestUserName, type TreeFrameSetting } from './settings'
 import { agentActor, humanActor, isValidActorName, type Actor } from './commands/actor'
 import { buildConnectCommand } from './agents/connect-command'
-import { TreeRegistry, type OpenTree } from './trees/registry'
+import { TreeRegistry } from './trees/registry'
 import { NoteCommands, type CommandHooks } from './commands/notes'
 import { ConnectionCommands } from './commands/connections'
 import { runAgentTool, type AgentCommands } from './commands/agent-tools'
@@ -63,36 +62,18 @@ function createWindow(): void {
 }
 
 // ---------------------------------------------------------------------------
-// Last-opened file persistence (D-03)
+// Phase 2's last-opened file (D-18)
 // ---------------------------------------------------------------------------
 
+/**
+ * There is no forest file: which trees are open lives in settings.json.
+ *
+ * This path is still read once, by SettingsStore.migrateLastOpened, so a
+ * world opened before the space existed survives the upgrade. Nothing writes
+ * it any more.
+ */
 function getLastOpenedPath(): string {
   return join(app.getPath('userData'), 'last-opened.json')
-}
-
-function readLastOpened(): string | null {
-  const filePath = getLastOpenedPath()
-  if (!existsSync(filePath)) return null
-  try {
-    const data = JSON.parse(readFileSync(filePath, 'utf-8'))
-    // Apply the same well-formedness rules as the IPC validator; the home
-    // restriction is not applied because the user may have chosen a location
-    // outside home through the native dialog in an earlier session.
-    if (isWellFormedTreePath(data.path) && existsSync(data.path)) {
-      return data.path
-    }
-  } catch {
-    // Corrupted or unreadable — treat as no last file
-  }
-  return null
-}
-
-function writeLastOpened(treePath: string): void {
-  try {
-    writeFileSync(getLastOpenedPath(), JSON.stringify({ path: treePath }), 'utf-8')
-  } catch {
-    // Non-critical — best effort
-  }
 }
 
 /**
@@ -136,40 +117,48 @@ const registry = new TreeRegistry()
 
 let pluginHost: PluginHost
 let agentServer: AgentSocketServer | null = null
-let currentFilePath: string | null = null
 
-/** The tree the renderer acts on, or an error naming what to do about it. */
-function requirePrimary(): OpenTree {
-  const tree = registry.primary()
-  if (!tree) {
-    throw new Error('No kernel loaded — call create() or open() first')
-  }
-  return tree
+/** A tree id is exactly what the registry mints: `sha256:` + 64 hex digits. */
+const TREE_ID_PATTERN = /^sha256:[0-9a-f]{64}$/
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
 }
 
 /**
- * Keep exactly one tree open until Plan 05 introduces the frame view.
+ * The bridge for a tree the renderer named, or an error (T-02.2-26).
  *
- * The newly opened tree is adopted first and the previous one released after,
- * so a failed open leaves the current world untouched.
+ * The shape is checked before the lookup so a malformed argument is refused
+ * as a malformed argument rather than as a missing tree. A renderer cannot
+ * address a tree that is not open: ids come from files main opened, so this
+ * is not a name the window can invent.
  */
-function adoptAsOnlyTree(tree: OpenTree): void {
-  for (const other of registry.list()) {
-    if (other.id !== tree.id) registry.close(other.id)
+function resolveTree(treeId: unknown): KernelBridge {
+  if (typeof treeId !== 'string' || !TREE_ID_PATTERN.test(treeId)) {
+    throw new Error(`Unknown tree ${String(treeId)}`)
   }
-  registry.setPrimary(tree.id)
+  const tree = registry.get(treeId)
+  if (!tree) {
+    throw new Error(`Unknown tree ${String(treeId)}`)
+  }
+  return tree.bridge
+}
+
+/** The space changed: a tree opened, closed, or was renamed. */
+function notifyTreesChanged(): void {
+  mainWindow?.webContents.send('trees-changed')
 }
 
 /**
- * Discover and load plugins for the currently open world without letting a
- * plugin failure surface as a world-open failure (D-33: a broken plugin never
- * prevents the world from opening).
+ * Discover and load plugins without letting a plugin failure surface as a
+ * world-open failure (D-33: a broken plugin never prevents a world opening).
+ *
+ * Plugins are loaded once, against a facade bound to whichever tree is
+ * primary, rather than reloaded per tree: their SDK is unchanged by D-15.
  */
 async function loadPluginsSafely(): Promise<void> {
   try {
-    const tree = registry.primary()
-    if (!tree) return
-    await pluginHost.discoverAndLoadAll(tree.bridge)
+    await pluginHost.discoverAndLoadAll(registry.primaryBridgeProxy())
   } catch (err) {
     console.error('[Main] Plugin discovery failed:', err)
   }
@@ -211,8 +200,8 @@ app.whenReady().then(async () => {
     return humanActor(name)
   }
 
-  // Register kernel IPC handlers against whichever tree is primary.
-  KernelBridge.registerHandlers(ipcMain, () => requirePrimary().bridge, getHumanActor)
+  // Register kernel IPC handlers. Every channel names its tree first (D-15).
+  KernelBridge.registerHandlers(ipcMain, resolveTree, getHumanActor)
 
   // Discover and load plugins
   const pluginsDir = join(app.getAppPath(), '..', 'plugins')
@@ -398,34 +387,114 @@ app.whenReady().then(async () => {
     }
   })
 
-  // Register file-management IPC handlers
-  ipcMain.handle('kernel:getFilePath', () => {
-    return currentFilePath
+  // -------------------------------------------------------------------------
+  // Trees IPC (D-15, D-18): which worlds are in the space, and where
+  // -------------------------------------------------------------------------
+
+  /**
+   * Where a newly opened tree's frame goes before the renderer measures it.
+   *
+   * The renderer corrects this with real content bounds through
+   * `trees:setFrame` as soon as it has laid the frame out; this only has to be
+   * somewhere sensible and never on top of an existing frame. 480 and 64 are
+   * FRAME_MIN_WIDTH and FRAME_GAP from renderer/layout/frames.ts, repeated
+   * rather than imported because main and renderer are separate bundles.
+   */
+  function placeNewFrameFromSettings(): TreeFrameSetting {
+    const trees = settings.read().trees
+    if (trees.length === 0) return { x: 0, y: 0 }
+
+    let rightmost = trees[0]
+    for (const tree of trees) {
+      if (tree.frame.x > rightmost.frame.x) rightmost = tree
+    }
+    return { x: rightmost.frame.x + 480 + 64, y: rightmost.frame.y }
+  }
+
+  /** Record a tree in the space, leaving an already-recorded frame alone. */
+  function rememberTree(treePath: string): void {
+    settings.addTree({ path: treePath, kind: 'native', frame: placeNewFrameFromSettings() })
+  }
+
+  ipcMain.handle('trees:list', () => {
+    const frames = new Map(settings.read().trees.map((tree) => [tree.path, tree.frame]))
+    return registry.summary().map((tree) => ({
+      ...tree,
+      frame: frames.get(tree.path) ?? { x: 0, y: 0 },
+    }))
   })
 
-  // kernel:create — validates the path, then opens through the registry.
-  ipcMain.handle('kernel:create', async (_event, path: string, worldName: string) => {
-    if (!validateTreePath(path)) {
-      throw new Error('Invalid .tree file path')
+  /**
+   * Open an existing world beside the ones already in the space.
+   *
+   * Nothing is closed: D-15 is precisely that several trees share one space.
+   * Failures are returned rather than thrown, because the common one is worth
+   * reading — opening a copy of a world that is already open is refused by
+   * identity (T-02.2-28), and "already open" is a sentence, not a stack trace.
+   */
+  ipcMain.handle('trees:open', async (_event, path: unknown) => {
+    if (typeof path !== 'string' || !validateTreePath(path)) {
+      return { ok: false, error: 'Invalid .tree file path' }
     }
-    const tree = registry.create(path, worldName)
-    adoptAsOnlyTree(tree)
-    currentFilePath = path
-    writeLastOpened(path)
-    await loadPluginsSafely()
+    try {
+      const tree = registry.open(path, { kind: 'native' })
+      rememberTree(tree.path)
+      notifyTreesChanged()
+      return { ok: true, treeId: tree.id }
+    } catch (err) {
+      return { ok: false, error: errorMessage(err) }
+    }
+  })
+
+  ipcMain.handle('trees:create', async (_event, path: unknown, worldName: unknown) => {
+    if (typeof path !== 'string' || !validateTreePath(path)) {
+      return { ok: false, error: 'Invalid .tree file path' }
+    }
+    if (typeof worldName !== 'string' || worldName.length === 0) {
+      return { ok: false, error: 'A world needs a name' }
+    }
+    try {
+      const tree = registry.create(path, worldName, { kind: 'native' })
+      rememberTree(tree.path)
+      notifyTreesChanged()
+      return { ok: true, treeId: tree.id }
+    } catch (err) {
+      return { ok: false, error: errorMessage(err) }
+    }
+  })
+
+  /**
+   * Take a tree out of the space. Its file and history stay on disk — this
+   * closes a window onto a world, it does not end the world.
+   */
+  ipcMain.handle('trees:close', (_event, treeId: unknown) => {
+    if (typeof treeId !== 'string') return { ok: false, error: 'Unknown tree' }
+    const tree = registry.get(treeId)
+    if (!tree) return { ok: false, error: `Unknown tree ${treeId}` }
+
+    const treePath = tree.path
+    registry.close(treeId)
+    settings.removeTree(treePath)
+    notifyTreesChanged()
     return { ok: true }
   })
 
-  // kernel:open — same, for an existing world.
-  ipcMain.handle('kernel:open', async (_event, path: string) => {
-    if (!validateTreePath(path)) {
-      throw new Error('Invalid .tree file path')
+  /**
+   * Persist a frame position (D-18).
+   *
+   * Deliberately does not emit 'trees-changed': the renderer already has the
+   * position it just sent, and echoing it back would refresh every tree on
+   * every drop.
+   */
+  ipcMain.handle('trees:setFrame', (_event, treeId: unknown, x: unknown, y: unknown) => {
+    if (typeof treeId !== 'string') return { ok: false, error: 'Unknown tree' }
+    if (!Number.isFinite(x) || !Number.isFinite(y)) {
+      return { ok: false, error: 'A frame position must be two finite numbers' }
     }
-    const tree = registry.open(path)
-    adoptAsOnlyTree(tree)
-    currentFilePath = path
-    writeLastOpened(path)
-    await loadPluginsSafely()
+    const tree = registry.get(treeId)
+    if (!tree) return { ok: false, error: `Unknown tree ${treeId}` }
+
+    settings.setTreeFrame(tree.path, { x: x as number, y: y as number })
     return { ok: true }
   })
 
@@ -441,7 +510,7 @@ app.whenReady().then(async () => {
       return { canceled: true, filePath: undefined }
     }
     // Normalize to the .tree extension (not every platform's dialog appends
-    // the filter extension) and approve the user's choice so kernel:create
+    // the filter extension) and approve the user's choice so trees:create
     // accepts exactly the path the dialog returned.
     let filePath = resolve(result.filePath)
     if (!filePath.endsWith('.tree')) filePath = `${filePath}.tree`
@@ -449,37 +518,56 @@ app.whenReady().then(async () => {
     return { canceled: false, filePath }
   })
 
-  // Create the window
+  // Open dialog for adding an existing world to the space
+  ipcMain.handle('dialog:showOpenTree', async () => {
+    if (!mainWindow) return { canceled: true, filePath: undefined }
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Open Tapestry World',
+      properties: ['openFile'],
+      filters: [{ name: 'Tapestry World', extensions: ['tree'] }],
+    })
+    if (result.canceled || result.filePaths.length === 0) {
+      return { canceled: true, filePath: undefined }
+    }
+    // Approve exactly what the user picked, so trees:open accepts a world
+    // deliberately chosen outside home (the same rule dialog:showSave uses).
+    const filePath = resolve(result.filePaths[0])
+    approvedPaths.add(filePath)
+    return { canceled: false, filePath }
+  })
+
+  // Create the window first: reopening worlds replays their journals, and
+  // that work should happen behind a window rather than before one.
   createWindow()
 
-  // Try to reopen the last file (D-03)
-  const lastFile = readLastOpened()
-  if (lastFile) {
-    // The restored path was chosen by the user in an earlier session
-    approvedPaths.add(resolve(lastFile))
-    // Open the kernel first; only a kernel failure means "no file loaded".
-    let opened = false
-    try {
-      const tree = registry.open(lastFile)
-      adoptAsOnlyTree(tree)
-      currentFilePath = lastFile
-      opened = true
-    } catch {
-      // D-03: if last file is missing/unreadable, show empty canvas
-      currentFilePath = null
-    }
+  // -------------------------------------------------------------------------
+  // Restore the space (D-18): the trees in settings, at their saved frames
+  // -------------------------------------------------------------------------
 
-    if (opened) {
-      // Plugin problems must not be mistaken for a missing file (D-33)
-      await loadPluginsSafely()
-      if (mainWindow) {
-        const sendFileOpened = () => mainWindow?.webContents.send('file-opened', lastFile)
-        if (mainWindow.webContents.isLoading()) {
-          mainWindow.webContents.once('did-finish-load', sendFileOpened)
-        } else {
-          sendFileOpened()
-        }
-      }
+  // A world opened before the space existed becomes the first entry.
+  settings.migrateLastOpened(getLastOpenedPath())
+
+  for (const tree of settings.read().trees) {
+    if (tree.kind !== 'native') continue
+    // These paths were chosen by the user in an earlier session.
+    approvedPaths.add(resolve(tree.path))
+    try {
+      registry.open(tree.path, { kind: 'native' })
+    } catch (err) {
+      // A tree that has been moved, deleted or damaged must not cost the user
+      // the rest of their space, so each reopen fails on its own.
+      console.error('[Main] could not reopen tree:', err)
+    }
+  }
+
+  // Plugin problems must not be mistaken for a missing world (D-33)
+  await loadPluginsSafely()
+
+  if (mainWindow) {
+    if (mainWindow.webContents.isLoading()) {
+      mainWindow.webContents.once('did-finish-load', notifyTreesChanged)
+    } else {
+      notifyTreesChanged()
     }
   }
 })

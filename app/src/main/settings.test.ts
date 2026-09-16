@@ -179,6 +179,109 @@ describe('SettingsStore.read validation', () => {
   })
 })
 
+describe('SettingsStore tree frames', () => {
+  it('round-trips a frame move and a removal', () => {
+    withTempDir((dir) => {
+      const settings = new SettingsStore(dir)
+      settings.addTree({ path: '/tmp/alpha.tree', kind: 'native', frame: { x: 0, y: 0 } })
+      settings.addTree({ path: '/tmp/beta.tree', kind: 'native', frame: { x: 544, y: 0 } })
+
+      settings.setTreeFrame('/tmp/alpha.tree', { x: -120, y: 80 })
+
+      // Read through a fresh store: the point is that it reached the file.
+      expect(new SettingsStore(dir).read().trees).toEqual([
+        { path: '/tmp/alpha.tree', kind: 'native', frame: { x: -120, y: 80 } },
+        { path: '/tmp/beta.tree', kind: 'native', frame: { x: 544, y: 0 } },
+      ])
+
+      settings.removeTree('/tmp/alpha.tree')
+
+      expect(new SettingsStore(dir).read().trees).toEqual([
+        { path: '/tmp/beta.tree', kind: 'native', frame: { x: 544, y: 0 } },
+      ])
+    })
+  })
+
+  it('does not move a tree that is already recorded', () => {
+    withTempDir((dir) => {
+      const settings = new SettingsStore(dir)
+      settings.addTree({ path: '/tmp/alpha.tree', kind: 'native', frame: { x: 10, y: 20 } })
+      settings.addTree({ path: '/tmp/alpha.tree', kind: 'native', frame: { x: 999, y: 999 } })
+
+      expect(settings.read().trees).toEqual([
+        { path: '/tmp/alpha.tree', kind: 'native', frame: { x: 10, y: 20 } },
+      ])
+    })
+  })
+})
+
+describe('SettingsStore.migrateLastOpened', () => {
+  /** Write a Phase 2 last-opened.json pointing at a real (empty) .tree file. */
+  function writeLastOpened(dir: string, treePath: string): string {
+    const lastOpened = join(dir, 'last-opened.json')
+    writeFileSync(lastOpened, JSON.stringify({ path: treePath }), 'utf-8')
+    return lastOpened
+  }
+
+  it('adopts the last opened world once, at frame (0, 0)', () => {
+    withTempDir((dir) => {
+      const treePath = join(dir, 'we.tree')
+      writeFileSync(treePath, 'tapestry\n', 'utf-8')
+      const lastOpened = writeLastOpened(dir, treePath)
+      const settings = new SettingsStore(dir)
+
+      expect(settings.migrateLastOpened(lastOpened)).toBe(true)
+      expect(settings.read().trees).toEqual([
+        { path: treePath, kind: 'native', frame: { x: 0, y: 0 } },
+      ])
+
+      // Second call is a no-op: a non-empty `trees` means it already ran, so
+      // no flag is needed and a later close cannot resurrect the old world.
+      expect(settings.migrateLastOpened(lastOpened)).toBe(false)
+      expect(settings.read().trees).toHaveLength(1)
+    })
+  })
+
+  it('migrates nothing when there is no last-opened file', () => {
+    withTempDir((dir) => {
+      const settings = new SettingsStore(dir)
+
+      expect(settings.migrateLastOpened(join(dir, 'last-opened.json'))).toBe(false)
+      expect(settings.read().trees).toEqual([])
+    })
+  })
+
+  it('migrates nothing when the recorded file no longer exists', () => {
+    withTempDir((dir) => {
+      const lastOpened = writeLastOpened(dir, join(dir, 'gone.tree'))
+      const settings = new SettingsStore(dir)
+
+      expect(settings.migrateLastOpened(lastOpened)).toBe(false)
+      expect(settings.read().trees).toEqual([])
+    })
+  })
+
+  it('migrates nothing from a corrupted or unsafe last-opened file', () => {
+    withTempDir((dir) => {
+      const settings = new SettingsStore(dir)
+      const lastOpened = join(dir, 'last-opened.json')
+
+      writeFileSync(lastOpened, '{', 'utf-8')
+      expect(settings.migrateLastOpened(lastOpened)).toBe(false)
+
+      // A relative path, and a path climbing out of its directory, are both
+      // refused by the same rule the IPC validator uses.
+      writeFileSync(lastOpened, JSON.stringify({ path: 'relative/we.tree' }), 'utf-8')
+      expect(settings.migrateLastOpened(lastOpened)).toBe(false)
+
+      writeFileSync(lastOpened, JSON.stringify({ path: '/tmp/../etc/we.tree' }), 'utf-8')
+      expect(settings.migrateLastOpened(lastOpened)).toBe(false)
+
+      expect(settings.read().trees).toEqual([])
+    })
+  })
+})
+
 describe('suggestUserName', () => {
   it('takes the first word of the full name', () => {
     expect(suggestUserName('Kaelen Cook', 'kaelencook')).toBe('kaelen')

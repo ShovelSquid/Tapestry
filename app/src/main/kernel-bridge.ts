@@ -378,60 +378,66 @@ export class KernelBridge {
 
   /**
    * Register IPC handlers on the given ipcMain instance. The main process
-   * entry point calls this to wire the open tree into Electron's IPC.
+   * entry point calls this to wire the open trees into Electron's IPC.
    *
-   * resolveBridge returns the bridge the renderer currently acts on. Several
-   * trees can be open (D-15), so the bridge is looked up per call rather than
-   * captured once; it throws when no tree is open.
+   * Every channel names its tree first (D-15). Several trees are open at once,
+   * so "the current world" is no longer a thing the main process can infer —
+   * the renderer says which tree it means, and resolveTree refuses an id that
+   * is not open. A tree id is not a capability the renderer can mint: it is
+   * the header digest of a file main itself opened.
    *
    * getHumanActor supplies the actor for every renderer-originated commit.
    * The renderer never sends one (D-06/D-07): a sandboxed window that could
    * name its own actor could sign changes as anyone.
    *
-   * `kernel:create` and `kernel:open` are deliberately NOT registered here.
-   * index.ts owns them, because opening a world also validates the path,
-   * updates the tree registry and loads plugins.
+   * `trees:open` and `trees:create` are deliberately NOT registered here.
+   * index.ts owns them, because opening a world also validates the path and
+   * updates the tree registry and settings.
    */
   static registerHandlers(
     ipcMain: any,
-    resolveBridge: () => KernelBridge,
+    resolveTree: (treeId: unknown) => KernelBridge,
     getHumanActor: () => Actor,
   ): void {
-    // (message, ops) only. A call in the old four-argument shape fails here,
-    // before the kernel sees it, rather than being reinterpreted.
-    ipcMain.handle('kernel:submit', (_event: any, message: unknown, ops: unknown) => {
-      if (typeof message !== 'string' || !Array.isArray(ops)) {
-        throw new Error('kernel:submit expects (message: string, ops: Op[])')
-      }
-      return resolveBridge().submitAs(getHumanActor(), message, ops as OpObject[])
+    // (treeId, message, ops). A call in the old two-argument shape fails here,
+    // before the kernel sees it, rather than being reinterpreted — which would
+    // mean writing into whichever tree happened to be first.
+    ipcMain.handle(
+      'kernel:submit',
+      (_event: any, treeId: unknown, message: unknown, ops: unknown) => {
+        if (typeof message !== 'string' || !Array.isArray(ops)) {
+          throw new Error('kernel:submit expects (treeId: string, message: string, ops: Op[])')
+        }
+        return resolveTree(treeId).submitAs(getHumanActor(), message, ops as OpObject[])
+      },
+    )
+
+    ipcMain.handle('kernel:getNodes', (_event: any, treeId: unknown) => {
+      return resolveTree(treeId).getNodes()
     })
 
-    ipcMain.handle('kernel:getNodes', () => {
-      return resolveBridge().getNodes()
+    ipcMain.handle('kernel:getNode', (_event: any, treeId: unknown, id: string) => {
+      return resolveTree(treeId).getNode(id)
     })
 
-    ipcMain.handle('kernel:getNode', (_event: any, id: string) => {
-      return resolveBridge().getNode(id)
+    ipcMain.handle('kernel:getEdges', (_event: any, treeId: unknown) => {
+      return resolveTree(treeId).getEdges()
     })
 
-    ipcMain.handle('kernel:getEdges', () => {
-      return resolveBridge().getEdges()
+    ipcMain.handle('kernel:status', (_event: any, treeId: unknown) => {
+      return resolveTree(treeId).status()
     })
 
-    ipcMain.handle('kernel:status', () => {
-      return resolveBridge().status()
+    ipcMain.handle('kernel:getHistoryIndex', (_event: any, treeId: unknown) => {
+      return resolveTree(treeId).getHistoryIndex()
     })
 
-    ipcMain.handle('kernel:getHistoryIndex', () => {
-      return resolveBridge().getHistoryIndex()
+    ipcMain.handle('kernel:undo', (_event: any, treeId: unknown) => {
+      return { ok: resolveTree(treeId).undo() }
     })
 
-    ipcMain.handle('kernel:undo', () => {
-      return { ok: resolveBridge().undo() }
-    })
-
-    ipcMain.handle('kernel:redo', () => {
-      return { ok: resolveBridge().redo() }
+    ipcMain.handle('kernel:redo', (_event: any, treeId: unknown) => {
+      return { ok: resolveTree(treeId).redo() }
     })
   }
 

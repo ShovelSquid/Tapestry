@@ -165,6 +165,77 @@ export class SettingsStore {
     this.update((settings) => ({ ...settings, userName: name }))
   }
 
+  /**
+   * Record a tree as open in the space, ignoring a path already listed.
+   *
+   * Reopening a path that is already recorded must not move its frame: the
+   * stored position is where the user put it.
+   */
+  addTree(entry: TreeSetting): void {
+    this.update((settings) => {
+      if (settings.trees.some((tree) => tree.path === entry.path)) return settings
+      return { ...settings, trees: [...settings.trees, entry] }
+    })
+  }
+
+  /** Move a tree's frame. A path that is not listed is left alone. */
+  setTreeFrame(path: string, frame: TreeFrameSetting): void {
+    this.update((settings) => ({
+      ...settings,
+      trees: settings.trees.map((tree) =>
+        tree.path === path ? { ...tree, frame: { x: frame.x, y: frame.y } } : tree,
+      ),
+    }))
+  }
+
+  /** Forget a tree. Its file and history are untouched — this is the space. */
+  removeTree(path: string): void {
+    this.update((settings) => ({
+      ...settings,
+      trees: settings.trees.filter((tree) => tree.path !== path),
+    }))
+  }
+
+  /**
+   * Adopt a Phase 2 `last-opened.json` as the first entry in `trees` (D-18).
+   *
+   * There is no forest file: the open trees live in settings. Someone
+   * upgrading has one world recorded in the old file, and losing it on upgrade
+   * would look exactly like losing the world. It is placed at frame (0, 0), so
+   * a single migrated tree renders where the single-tree canvas used to.
+   *
+   * Runs at most once without needing a flag: a non-empty `trees` means the
+   * migration has already happened (or the user has since opened something),
+   * and either way the old file is no longer the truth. Returns whether it
+   * migrated, so the caller can tell a first upgrade from an ordinary launch.
+   */
+  migrateLastOpened(lastOpenedFile: string): boolean {
+    if (this.read().trees.length > 0) return false
+
+    let treePath: unknown
+    try {
+      if (!existsSync(lastOpenedFile)) return false
+      const parsed = JSON.parse(readFileSync(lastOpenedFile, 'utf-8'))
+      treePath = parsed?.path
+    } catch {
+      // A corrupted or unreadable file migrates nothing, rather than failing
+      // the launch it is only meant to improve.
+      return false
+    }
+
+    if (!isSafeAbsolutePath(treePath)) return false
+    if (!resolve(treePath).endsWith('.tree')) return false
+    // A path recorded for a file that has since been deleted or moved would
+    // reopen as an error on every launch; treat it as nothing to migrate.
+    if (!existsSync(treePath)) return false
+
+    this.update((settings) => ({
+      ...settings,
+      trees: [{ path: treePath as string, kind: 'native', frame: { x: 0, y: 0 } }],
+    }))
+    return true
+  }
+
   /** Read, transform and write back, returning the written settings. */
   update(mutator: (settings: AppSettings) => AppSettings): AppSettings {
     const next = mutator(this.read())

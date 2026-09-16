@@ -143,15 +143,25 @@ describe('kernel:submit handler', () => {
     const dir = makeTempDir('actor')
     const treePath = join(dir, 'actor.tree')
     const ipc = makeFakeIpcMain()
-    // index.ts owns kernel:create/kernel:open now (it validates the path and
+    // index.ts owns trees:create/trees:open now (it validates the path and
     // updates the tree registry), so the test opens the world itself and hands
-    // registerHandlers the bridge the renderer acts on.
+    // registerHandlers a resolver for the one tree the renderer acts on.
     const bridge = new KernelBridge()
     bridge.create(treePath, 'actor')
-    KernelBridge.registerHandlers(ipc as any, () => bridge, () => humanActor('kaelen'))
+    const treeId = bridge.getHeaderDigest()
+    KernelBridge.registerHandlers(
+      ipc as any,
+      (id) => {
+        // Every channel names its tree first (D-15); an id that is not open is
+        // refused rather than falling back to "whichever world is loaded".
+        if (id !== treeId) throw new Error(`Unknown tree ${String(id)}`)
+        return bridge
+      },
+      () => humanActor('kaelen'),
+    )
 
     try {
-      ipc.invoke('kernel:submit', 'Create note', createNoteOps())
+      ipc.invoke('kernel:submit', treeId, 'Create note', createNoteOps())
 
       const lines = readFileSync(treePath, 'utf-8').split('\n')
       expect(lines).toContain('actor human user.kaelen')
@@ -161,18 +171,38 @@ describe('kernel:submit handler', () => {
     }
   })
 
-  it('refuses a call in the old four-argument shape', () => {
+  it('refuses calls that do not name a tree first', () => {
     const dir = makeTempDir('actor-legacy')
     const treePath = join(dir, 'legacy.tree')
     const ipc = makeFakeIpcMain()
     const bridge = new KernelBridge()
     bridge.create(treePath, 'legacy')
-    KernelBridge.registerHandlers(ipc as any, () => bridge, () => humanActor('kaelen'))
+    const treeId = bridge.getHeaderDigest()
+    KernelBridge.registerHandlers(
+      ipc as any,
+      (id) => {
+        if (id !== treeId) throw new Error(`Unknown tree ${String(id)}`)
+        return bridge
+      },
+      () => humanActor('kaelen'),
+    )
 
     try {
+      // The pre-D-15 shape (message, ops). Reinterpreting it would treat the
+      // message as a tree id and land the commit in the wrong journal, so it
+      // has to fail here rather than be guessed at.
+      expect(() => ipc.invoke('kernel:submit', 'Create note', createNoteOps())).toThrow(
+        'kernel:submit expects',
+      )
+
+      // The original four-argument shape, in which the caller named its own
+      // actor — still refused, so a renderer cannot sign as anyone (D-06).
       expect(() =>
         ipc.invoke('kernel:submit', 'human', 'local', 'Create note', createNoteOps()),
       ).toThrow('kernel:submit expects')
+
+      // A refusal writes nothing: the world is untouched by either attempt.
+      expect(bridge.getNodes()).toEqual([])
     } finally {
       bridge.close()
       rmSync(dir, { recursive: true, force: true })

@@ -119,6 +119,58 @@ html, body, #root {
   color: #E5484D;
 }
 
+/* ------------------------------------------------------------------------ */
+/* Tree frames (D-15) -- one per open tree, holding that tree's notes         */
+/*                                                                           */
+/* The frame is positioned and sized from computeFrameBounds, so the rect     */
+/* lives in JS; only the surface treatment is here. Plan 06 adds the hovered, */
+/* selected and dragging states and the full two-row header.                  */
+/* ------------------------------------------------------------------------ */
+
+.tapestry-tree-frame {
+  position: absolute;
+  box-sizing: border-box;
+  background: #F0EDE8;
+  border: 1px solid #E0DDD7;
+  /* Frame corner radius 16px: the declared "container shape" exception. */
+  border-radius: 16px;
+}
+
+/* Local (0,0) of the tree is translated to the frame origin by an inline
+   transform, so notes keep their stored frame-local positions. */
+.tapestry-tree-frame-content {
+  position: absolute;
+}
+
+/* 64px band, 16px horizontal padding, 4px row gap (Spacing Scale 3xl/md/xs) */
+.tapestry-frame-header {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 64px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  padding: 0 16px;
+  /* Plan 06 makes the header a drag handle; until then it never swallows a
+     pan that starts on the frame background. */
+  pointer-events: none;
+}
+
+/* Note Title role: 18/600/1.25 */
+.tapestry-frame-name {
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.25;
+  color: #2C2C2C;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Note card -- secondary color #FFFFFF */
 .tapestry-note-card {
   position: absolute;
