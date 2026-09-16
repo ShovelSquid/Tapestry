@@ -134,6 +134,14 @@ function errorMessage(err: unknown): string {
  * is not a name the window can invent.
  */
 function resolveTree(treeId: unknown): KernelBridge {
+  // A tree that would not open is refused with the reason, not as unknown: it
+  // is in the space and on screen, so "unknown tree" would be a worse answer
+  // than "this tree is damaged" (T-02.2-29).
+  if (typeof treeId === 'string') {
+    const refusal = registry.refusalFor(treeId)
+    if (refusal) throw new Error(refusal)
+  }
+
   if (typeof treeId !== 'string' || !TREE_ID_PATTERN.test(treeId)) {
     throw new Error(`Unknown tree ${String(treeId)}`)
   }
@@ -437,7 +445,10 @@ app.whenReady().then(async () => {
       return { ok: false, error: 'Invalid .tree file path' }
     }
     try {
-      const tree = registry.open(path, { kind: 'native' })
+      // A world that will not open still joins the space, as a frame carrying
+      // its reason: silently refusing it would leave Kaelen with a file picker
+      // that appeared to do nothing.
+      const tree = registry.tryOpen(path, { kind: 'native' })
       rememberTree(tree.path)
       notifyTreesChanged()
       return { ok: true, treeId: tree.id }
@@ -469,7 +480,7 @@ app.whenReady().then(async () => {
    */
   ipcMain.handle('trees:close', (_event, treeId: unknown) => {
     if (typeof treeId !== 'string') return { ok: false, error: 'Unknown tree' }
-    const tree = registry.get(treeId)
+    const tree = registry.entry(treeId)
     if (!tree) return { ok: false, error: `Unknown tree ${treeId}` }
 
     const treePath = tree.path
@@ -488,11 +499,34 @@ app.whenReady().then(async () => {
    */
   ipcMain.handle('trees:reveal', (_event, treeId: unknown) => {
     if (typeof treeId !== 'string') return { ok: false, error: 'Unknown tree' }
-    const tree = registry.get(treeId)
+    const tree = registry.entry(treeId)
     if (!tree) return { ok: false, error: `Unknown tree ${treeId}` }
 
     shell.showItemInFolder(tree.path)
     return { ok: true }
+  })
+
+  /**
+   * Try a tree that would not open again (UI-SPEC "Reopen tree").
+   *
+   * Kaelen's action rather than a retry loop: the cause — another Tapestry
+   * holding the lock, a file being put back — is outside this process, so
+   * polling for it would only burn cycles being wrong (T-02.2-31).
+   */
+  ipcMain.handle('trees:reopen', (_event, treeId: unknown) => {
+    if (typeof treeId !== 'string') return { ok: false, error: 'Unknown tree' }
+
+    try {
+      const tree = registry.reopen(treeId)
+      if (!tree) return { ok: false, error: `Unknown tree ${treeId}` }
+      notifyTreesChanged()
+      return { ok: true, treeId: tree.id }
+    } catch (err) {
+      // The retry itself failed in a way that is about the space (the same
+      // world is already open elsewhere): the list still changed.
+      notifyTreesChanged()
+      return { ok: false, error: errorMessage(err) }
+    }
   })
 
   /**
@@ -568,10 +602,11 @@ app.whenReady().then(async () => {
     // These paths were chosen by the user in an earlier session.
     approvedPaths.add(resolve(tree.path))
     try {
-      registry.open(tree.path, { kind: 'native' })
-    } catch (err) {
       // A tree that has been moved, deleted or damaged must not cost the user
-      // the rest of their space, so each reopen fails on its own.
+      // the rest of their space: it comes back as an unavailable frame holding
+      // the reason, rather than vanishing from the space it was part of.
+      registry.tryOpen(tree.path, { kind: 'native' })
+    } catch (err) {
       console.error('[Main] could not reopen tree:', err)
     }
   }
