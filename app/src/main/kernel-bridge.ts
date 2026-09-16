@@ -9,6 +9,7 @@
 
 import { join, resolve } from 'path'
 import { existsSync } from 'fs'
+import type { Actor } from './commands/actor'
 
 // ---------------------------------------------------------------------------
 // Load the native addon
@@ -48,25 +49,25 @@ const TapestryAddon = addon.TapestryAddon
 // Op and result types for the bridge layer
 // ---------------------------------------------------------------------------
 
-interface OpObject {
+export interface OpObject {
   op: string
   [key: string]: unknown
 }
 
-interface CommitResult {
+export interface CommitResult {
   seq: number
   digest: string
   nodeIds: string[]
   edgeIds: string[]
 }
 
-interface NodeData {
+export interface NodeData {
   id: string
   type: string
   props: Record<string, { type: string; value: string | number | boolean }>
 }
 
-interface EdgeData {
+export interface EdgeData {
   id: string
   from: string
   to: string
@@ -74,7 +75,7 @@ interface EdgeData {
   props: Record<string, { type: string; value: string | number | boolean }>
 }
 
-interface JournalStatus {
+export interface JournalStatus {
   kind: 'Ok' | 'TornTail' | 'Corrupt'
   offset: number
   bytes: number
@@ -163,6 +164,17 @@ export class KernelBridge {
     const result = this.instance.submit(actorKind, actorId, message, ops)
     this.afterCommit(result.seq)
     return result
+  }
+
+  /**
+   * Submit a commit on behalf of an actor the host has already resolved.
+   *
+   * This is the only submit path callers outside main should reach: the
+   * Actor comes from the host (getHumanActor, pluginActor, agentActor), never
+   * from the caller's arguments. See commands/actor.ts for the rule.
+   */
+  submitAs(actor: Actor, message: string, ops: OpObject[]): CommitResult {
+    return this.submit(actor.kind, actor.id, message, ops)
   }
 
   /**
@@ -260,10 +272,14 @@ export class KernelBridge {
   }
 
   /**
-   * Register IPC handlers on the given ipcMain instance. Plan 02 calls this
-   * from the main process entry point to wire the bridge into Electron's IPC.
+   * Register IPC handlers on the given ipcMain instance. The main process
+   * entry point calls this to wire the bridge into Electron's IPC.
+   *
+   * getHumanActor supplies the actor for every renderer-originated commit.
+   * The renderer never sends one (D-06/D-07): a sandboxed window that could
+   * name its own actor could sign changes as anyone.
    */
-  static registerHandlers(ipcMain: any): KernelBridge {
+  static registerHandlers(ipcMain: any, getHumanActor: () => Actor): KernelBridge {
     const bridge = new KernelBridge()
 
     ipcMain.handle('kernel:create', (_event: any, path: string, worldName: string) => {
@@ -276,14 +292,13 @@ export class KernelBridge {
       return { ok: true }
     })
 
-    ipcMain.handle('kernel:submit', (
-      _event: any,
-      actorKind: string,
-      actorId: string,
-      message: string,
-      ops: OpObject[],
-    ) => {
-      return bridge.submit(actorKind, actorId, message, ops)
+    // (message, ops) only. A call in the old four-argument shape fails here,
+    // before the kernel sees it, rather than being reinterpreted.
+    ipcMain.handle('kernel:submit', (_event: any, message: unknown, ops: unknown) => {
+      if (typeof message !== 'string' || !Array.isArray(ops)) {
+        throw new Error('kernel:submit expects (message: string, ops: Op[])')
+      }
+      return bridge.submitAs(getHumanActor(), message, ops as OpObject[])
     })
 
     ipcMain.handle('kernel:getNodes', () => {

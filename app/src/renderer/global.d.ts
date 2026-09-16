@@ -6,9 +6,8 @@
 interface TapestryKernelAPI {
   create(path: string, worldName: string): Promise<{ ok: boolean }>
   open(path: string): Promise<{ ok: boolean }>
+  /** No actor argument: the main process stamps it (D-06/D-07). */
   submit(
-    actorKind: string,
-    actorId: string,
     message: string,
     ops: any[],
   ): Promise<{

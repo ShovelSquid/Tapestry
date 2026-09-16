@@ -21,13 +21,12 @@ const tapestryAPI = {
     open: (path: string): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke('kernel:open', path),
 
-    submit: (
-      actorKind: string,
-      actorId: string,
-      message: string,
-      ops: any[],
-    ): Promise<any> =>
-      ipcRenderer.invoke('kernel:submit', actorKind, actorId, message, ops),
+    /**
+     * Submit a commit. No actor is sent: the main process stamps
+     * `human user.<name>` from the stored settings (D-06/D-07).
+     */
+    submit: (message: string, ops: any[]): Promise<any> =>
+      ipcRenderer.invoke('kernel:submit', message, ops),
 
     getNodes: (): Promise<any[]> =>
       ipcRenderer.invoke('kernel:getNodes'),

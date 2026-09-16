@@ -10,6 +10,8 @@
     "build": "npm run build:native && electron-vite build",
     "package": "npm run build && electron-forge package",
     "make": "npm run build && electron-forge make",
+    "test": "vitest run",
+    "build:js": "electron-vite build",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "postinstall": "npm run build:native"
   },
@@ -37,6 +39,7 @@
     "react": "^18.3.0",
     "react-dom": "^18.3.0",
     "typescript": "^5.5.0",
-    "vite": "^5.4.0"
+    "vite": "^5.4.0",
+    "vitest": "2.1.9"
   }
 }

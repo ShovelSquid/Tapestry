@@ -35,6 +35,18 @@ function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
 }
 
+/**
+ * Submit a change to the open world.
+ *
+ * The renderer names the change and the operations; it never names who made
+ * it. The Electron main process stamps `human user.<name>` from the stored
+ * settings (D-06/D-07), so a compromised or buggy renderer cannot sign a
+ * change as another person, as an agent, or as Tapestry itself.
+ */
+function submitChange(message: string, ops: any[]) {
+  return window.tapestry.kernel.submit(message, ops)
+}
+
 // ---------------------------------------------------------------------------
 // App
 // ---------------------------------------------------------------------------
@@ -199,9 +211,7 @@ export default function App(): React.ReactElement {
       // Create a new note node at the world-space click position
       try {
         setSaveState('saving')
-        const commitResult = await window.tapestry.kernel.submit(
-          'human',
-          'local',
+        const commitResult = await submitChange(
           'Create note',
           [
             {
@@ -242,9 +252,7 @@ export default function App(): React.ReactElement {
       setSaveState('saving')
 
       try {
-        await window.tapestry.kernel.submit(
-          'human',
-          'local',
+        await submitChange(
           'Move note',
           [
             {
@@ -289,9 +297,7 @@ export default function App(): React.ReactElement {
       setSaveState('saving')
 
       try {
-        await window.tapestry.kernel.submit(
-          'human',
-          'local',
+        await submitChange(
           'Pin thread center',
           [
             {
@@ -342,9 +348,7 @@ export default function App(): React.ReactElement {
       setSaveState('saving')
 
       try {
-        await window.tapestry.kernel.submit(
-          'human',
-          'local',
+        await submitChange(
           'Resize note',
           [
             {
@@ -381,9 +385,7 @@ export default function App(): React.ReactElement {
       setSaveState('saving')
 
       try {
-        await window.tapestry.kernel.submit(
-          'human',
-          'local',
+        await submitChange(
           'Resize note height',
           [
             {
@@ -420,9 +422,7 @@ export default function App(): React.ReactElement {
       setSaveState('saving')
 
       try {
-        await window.tapestry.kernel.submit(
-          'human',
-          'local',
+        await submitChange(
           'Connect notes',
           [
             {
@@ -481,9 +481,7 @@ export default function App(): React.ReactElement {
       setSaveState('saving')
 
       try {
-        await window.tapestry.kernel.submit(
-          'human',
-          'local',
+        await submitChange(
           'Update note text',
           [
             {
@@ -549,9 +547,7 @@ export default function App(): React.ReactElement {
       setSaveState('saving')
 
       try {
-        await window.tapestry.kernel.submit(
-          'human',
-          'local',
+        await submitChange(
           `Edit property ${key}`,
           [
             {
@@ -629,9 +625,7 @@ export default function App(): React.ReactElement {
       setSaveState('saving')
 
       try {
-        await window.tapestry.kernel.submit(
-          'human',
-          'local',
+        await submitChange(
           'Delete note',
           [
             {

@@ -14,6 +14,8 @@ import { isAbsolute, join, relative, resolve, sep } from 'path'
 import { readFileSync, writeFileSync, existsSync } from 'fs'
 import { KernelBridge } from './kernel-bridge'
 import { PluginHost } from './plugin-host'
+import { SettingsStore } from './settings'
+import { humanActor, type Actor } from './commands/actor'
 
 // ---------------------------------------------------------------------------
 // Window management
@@ -134,8 +136,27 @@ async function loadPluginsSafely(): Promise<void> {
 }
 
 app.whenReady().then(async () => {
+  // Settings (D-07): the stored user name signs every human commit.
+  const settings = new SettingsStore(app.getPath('userData'))
+
+  /**
+   * Resolve the actor for a renderer-originated commit.
+   *
+   * This is the only place a human actor is constructed. Throwing when no
+   * name is stored is deliberate: a change must never be signed with a
+   * placeholder, so the first-run prompt has to be answered before any commit
+   * can land.
+   */
+  function getHumanActor(): Actor {
+    const name = settings.getUserName()
+    if (name === null) {
+      throw new Error('Set your name before making changes')
+    }
+    return humanActor(name)
+  }
+
   // Register kernel IPC handlers
-  bridge = KernelBridge.registerHandlers(ipcMain)
+  bridge = KernelBridge.registerHandlers(ipcMain, getHumanActor)
 
   // Discover and load plugins
   const pluginsDir = join(app.getAppPath(), '..', 'plugins')
