@@ -14,9 +14,12 @@ import {
   DEFAULT_NOTE_HEIGHT,
   DEFAULT_NOTE_WIDTH,
   GREW_FROM_LABEL,
+  MAX_PLACE_STEPS,
   NEAR_GAP,
+  STACK_GAP,
   classifyRelation,
   compareIds,
+  displayPositions,
   grewFromParent,
   idNumber,
   isFollowing,
@@ -27,7 +30,10 @@ import {
   orderNeighbours,
   overlaps,
   rectGap,
+  resolveBeyond,
+  resolveNear,
   storedRect,
+  type PlacementPoint,
   type PlacementEdge,
   type PlacementNode,
   type PlacementProp,
@@ -296,5 +302,287 @@ describe('liesToward', () => {
     expect(liesToward(from, at(100, 174), toward)).toBe(false)
     expect(liesToward(from, at(0, 300), toward)).toBe(false)
     expect(liesToward(from, at(-300, 0), toward)).toBe(false)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// D-09 / D-10 resolvers
+// ---------------------------------------------------------------------------
+
+const CARD = { width: DEFAULT_NOTE_WIDTH, height: DEFAULT_NOTE_HEIGHT }
+
+describe('placement step constants', () => {
+  it('holds the stacking gutter and the step bound', () => {
+    expect(STACK_GAP).toBe(24)
+    expect(MAX_PLACE_STEPS).toBe(64)
+  })
+})
+
+describe('resolveNear (D-09)', () => {
+  it('starts CHILD_GAP right of the anchor, level with its top — the create_note spot', () => {
+    expect(resolveNear(rect(10, 20, 300, 120), CARD, [])).toEqual({ ok: true, x: 390, y: 20 })
+  })
+
+  it('steps down by one card height plus STACK_GAP past a blocker at the start spot', () => {
+    const blocker = rect(390, 20, 280, 120)
+    expect(resolveNear(rect(10, 20, 300, 120), CARD, [blocker])).toEqual({
+      ok: true,
+      x: 390,
+      y: 20 + DEFAULT_NOTE_HEIGHT + STACK_GAP,
+    })
+  })
+
+  it('ignores a blocker that only touches the start rect', () => {
+    const touching = rect(390, 140, 10, 10)
+    expect(resolveNear(rect(10, 20, 300, 120), CARD, [touching])).toEqual({ ok: true, x: 390, y: 20 })
+  })
+
+  it('reports no-clear-spot when one tall blocker covers every step', () => {
+    const tall = rect(390, 0, 10, 20 + MAX_PLACE_STEPS * (DEFAULT_NOTE_HEIGHT + STACK_GAP) + 1000)
+    expect(resolveNear(rect(10, 20, 300, 120), CARD, [tall])).toEqual({ ok: false, reason: 'no-clear-spot' })
+  })
+
+  it('finds the last permitted step but not one past it', () => {
+    const step = DEFAULT_NOTE_HEIGHT + STACK_GAP
+    const lastFree = rect(390, 0, 10, (MAX_PLACE_STEPS - 1) * step)
+    expect(resolveNear(rect(10, 0, 300, 120), CARD, [lastFree])).toEqual({
+      ok: true,
+      x: 390,
+      y: (MAX_PLACE_STEPS - 1) * step,
+    })
+    const allBlocked = rect(390, 0, 10, MAX_PLACE_STEPS * step - STACK_GAP + 1)
+    expect(resolveNear(rect(10, 0, 300, 120), CARD, [allBlocked])).toEqual({
+      ok: false,
+      reason: 'no-clear-spot',
+    })
+  })
+
+  it('reports not-finite for a non-finite anchor', () => {
+    expect(resolveNear(rect(Number.POSITIVE_INFINITY, 0, 280, 120), CARD, [])).toEqual({
+      ok: false,
+      reason: 'not-finite',
+    })
+    expect(resolveNear(rect(0, Number.NaN, 280, 120), CARD, [])).toEqual({ ok: false, reason: 'not-finite' })
+    expect(resolveNear(rect(1e308, 0, 1e308, 120), CARD, [])).toEqual({ ok: false, reason: 'not-finite' })
+  })
+})
+
+describe('resolveBeyond (D-10)', () => {
+  const beyond = rect(0, 0, 280, 120)
+
+  it('matches resolveNear for equal cards on a horizontal line', () => {
+    const from = rect(-400, 0, 280, 120)
+    const spot = resolveBeyond(beyond, from, CARD, [])
+    expect(spot).toEqual({ ok: true, x: 360, y: 0 })
+    expect(spot).toEqual(resolveNear(beyond, CARD, []))
+  })
+
+  it('lands below when the line is vertical', () => {
+    expect(resolveBeyond(beyond, rect(0, -300, 280, 120), CARD, [])).toEqual({ ok: true, x: 0, y: 360 })
+  })
+
+  it('gives a finite spot clear of the beyond-note on a diagonal', () => {
+    const spot = resolveBeyond(beyond, rect(-300, -300, 280, 120), CARD, [])
+    expect(spot.ok).toBe(true)
+    if (!spot.ok) return
+    expect(Number.isFinite(spot.x)).toBe(true)
+    expect(Number.isFinite(spot.y)).toBe(true)
+    expect(spot.x).toBeGreaterThan(0)
+    expect(spot.y).toBeGreaterThan(0)
+    expect(overlaps(rect(spot.x, spot.y, 280, 120), beyond)).toBe(false)
+  })
+
+  it('refuses equal centres as no-line', () => {
+    expect(resolveBeyond(beyond, rect(40, 10, 200, 100), CARD, [])).toEqual({ ok: false, reason: 'no-line' })
+  })
+
+  it('steps down when the start spot is blocked', () => {
+    const from = rect(-400, 0, 280, 120)
+    expect(resolveBeyond(beyond, from, CARD, [rect(360, 0, 280, 120)])).toEqual({
+      ok: true,
+      x: 360,
+      y: DEFAULT_NOTE_HEIGHT + STACK_GAP,
+    })
+  })
+
+  it('reports not-finite when the line itself overflows', () => {
+    expect(resolveBeyond(rect(1e200, 0, 280, 120), rect(-1e200, 0, 280, 120), CARD, [])).toEqual({
+      ok: false,
+      reason: 'not-finite',
+    })
+    expect(resolveBeyond(rect(1e308, 0, 280, 120), rect(-1e308, 0, 280, 120), CARD, [])).toEqual({
+      ok: false,
+      reason: 'not-finite',
+    })
+  })
+})
+
+// ---------------------------------------------------------------------------
+// displayPositions (D-02, D-05, D-07)
+// ---------------------------------------------------------------------------
+
+const NO_OVERRIDES: ReadonlyMap<string, PlacementPoint> = new Map()
+
+function overrides(entries: Record<string, PlacementPoint>): ReadonlyMap<string, PlacementPoint> {
+  return new Map(Object.entries(entries))
+}
+
+describe('displayPositions: fixed notes (D-02)', () => {
+  const edges = [grew('e1', 'n2', 'n1')]
+  const cases: Array<[string, Record<string, PlacementProp>]> = [
+    ['no pinned key', {}],
+    ['pinned true', { pinned: { type: 'bool', value: true } }],
+    ['pinned text "false"', { pinned: { type: 'text', value: 'false' } }],
+  ]
+
+  for (const [name, extra] of cases) {
+    it(`draws a grown note with ${name} at its stored spot, not following`, () => {
+      const spots = displayPositions([node('n1', 0, 0), node('n2', 2000, 2000, extra)], edges, NO_OVERRIDES)
+      expect(spots.get('n2')).toEqual({ x: 2000, y: 2000, following: false, followSpot: null })
+      expect(spots.get('n1')).toEqual({ x: 0, y: 0, following: false, followSpot: null })
+    })
+  }
+})
+
+describe('displayPositions: following notes (D-05)', () => {
+  const edges = [grew('e1', 'n2', 'n1')]
+  const nodes = [node('n1', 0, 0), node('n2', 2000, 2000, FOLLOWS)]
+
+  it('draws a following note beside its parent, not at its stored spot', () => {
+    expect(displayPositions(nodes, edges, NO_OVERRIDES).get('n2')).toEqual({
+      x: 360,
+      y: 0,
+      following: true,
+      followSpot: { x: 360, y: 0 },
+    })
+  })
+
+  it('moves a following note with a live override of its parent, writing nothing', () => {
+    const before = JSON.stringify(nodes)
+    const spots = displayPositions(nodes, edges, overrides({ n1: { x: 100, y: 50 } }))
+    expect(spots.get('n1')).toEqual({ x: 100, y: 50, following: false, followSpot: null })
+    expect(spots.get('n2')).toEqual({ x: 460, y: 50, following: true, followSpot: { x: 460, y: 50 } })
+    expect(JSON.stringify(nodes)).toBe(before)
+  })
+
+  it("lets a following note's own override win while followSpot stays derived", () => {
+    const spots = displayPositions(nodes, edges, overrides({ n2: { x: 5, y: 7 } }))
+    expect(spots.get('n2')).toEqual({ x: 5, y: 7, following: true, followSpot: { x: 360, y: 0 } })
+  })
+
+  it('stacks two following notes of one parent in id order', () => {
+    const spots = displayPositions(
+      [node('n3', 0, 0, FOLLOWS), node('n1', 0, 0), node('n2', 0, 0, FOLLOWS)],
+      [grew('e1', 'n2', 'n1'), grew('e2', 'n3', 'n1')],
+      NO_OVERRIDES,
+    )
+    expect(spots.get('n2')).toMatchObject({ x: 360, y: 0, following: true })
+    expect(spots.get('n3')).toMatchObject({ x: 360, y: 144, following: true })
+  })
+
+  it('pushes a following note down past a fixed note at the start spot', () => {
+    const spots = displayPositions(
+      [node('n1', 0, 0), node('n2', 360, 0), node('n3', 0, 0, FOLLOWS)],
+      [grew('e1', 'n3', 'n1')],
+      NO_OVERRIDES,
+    )
+    expect(spots.get('n3')).toMatchObject({ x: 360, y: 144, following: true })
+  })
+
+  it('does not treat a knot at the start spot as an obstacle', () => {
+    const spots = displayPositions(
+      [node('n1', 0, 0), knot('n2', 360, 0), node('n3', 0, 0, FOLLOWS)],
+      [grew('e1', 'n3', 'n1')],
+      NO_OVERRIDES,
+    )
+    expect(spots.get('n3')).toMatchObject({ x: 360, y: 0, following: true })
+  })
+
+  it('lets a grandchild follow a following child', () => {
+    const spots = displayPositions(
+      [node('n1', 0, 0), node('n2', 900, 900, FOLLOWS), node('n3', -900, 900, FOLLOWS)],
+      [grew('e1', 'n2', 'n1'), grew('e2', 'n3', 'n2')],
+      NO_OVERRIDES,
+    )
+    expect(spots.get('n2')).toMatchObject({ x: 360, y: 0, following: true })
+    expect(spots.get('n3')).toMatchObject({ x: 720, y: 0, following: true })
+  })
+
+  it('leaves a note fixed when its parent has a higher id', () => {
+    const spots = displayPositions(
+      [node('n1', 2000, 2000, FOLLOWS), node('n2', 0, 0)],
+      [grew('e1', 'n1', 'n2')],
+      NO_OVERRIDES,
+    )
+    expect(spots.get('n1')).toEqual({ x: 2000, y: 2000, following: false, followSpot: null })
+  })
+
+  it('draws a following note with no clear spot at its stored spot, followSpot null', () => {
+    const spots = displayPositions(
+      [node('n1', 0, 0), node('n2', 2000, 2000, FOLLOWS), node('n3', 360, 0, { height: { type: 'real', value: 20000 } })],
+      [grew('e1', 'n2', 'n1')],
+      NO_OVERRIDES,
+    )
+    expect(spots.get('n2')).toEqual({ x: 2000, y: 2000, following: true, followSpot: null })
+  })
+
+  it('draws an unplaced following note beside its parent', () => {
+    const unplaced: PlacementNode = { ...loose('n2'), props: FOLLOWS }
+    const clear = displayPositions([node('n1', 0, 0), unplaced], [grew('e1', 'n2', 'n1')], NO_OVERRIDES)
+    expect(clear.get('n2')).toEqual({ x: 360, y: 0, following: true, followSpot: { x: 360, y: 0 } })
+
+    const blocked = displayPositions(
+      [node('n1', 0, 0), unplaced, node('n3', 360, 0, { height: { type: 'real', value: 20000 } })],
+      [grew('e1', 'n2', 'n1')],
+      NO_OVERRIDES,
+    )
+    expect(blocked.get('n2')).toEqual({ x: 360, y: 0, following: true, followSpot: null })
+  })
+
+  it('gives an unplaced fixed note no entry unless it has an override', () => {
+    expect(displayPositions([loose('n5')], [], NO_OVERRIDES).has('n5')).toBe(false)
+    expect(displayPositions([loose('n5')], [], overrides({ n5: { x: 1, y: 2 } })).get('n5')).toEqual({
+      x: 1,
+      y: 2,
+      following: false,
+      followSpot: null,
+    })
+  })
+
+  it('uses a stored width on a following note for the next follower (D-07)', () => {
+    const wide = { ...FOLLOWS, width: { type: 'real', value: 400 } }
+    const nodesWide = [node('n1', 0, 0), node('n2', 0, 0, wide), node('n3', 0, 0, FOLLOWS)]
+    const nodesPlain = [node('n1', 0, 0), node('n2', 0, 0, FOLLOWS), node('n3', 0, 0, FOLLOWS)]
+    const chain = [grew('e1', 'n2', 'n1'), grew('e2', 'n3', 'n2')]
+    expect(displayPositions(nodesPlain, chain, NO_OVERRIDES).get('n3')).toMatchObject({ x: 720, y: 0 })
+    expect(displayPositions(nodesWide, chain, NO_OVERRIDES).get('n3')).toMatchObject({ x: 840, y: 0 })
+  })
+
+  it('gives the same map for any input order, and following always equals isFollowing', () => {
+    const world = [
+      node('n1', 0, 0),
+      node('n2', 0, 0, FOLLOWS),
+      node('n3', 360, 0),
+      knot('n4', 360, 144),
+      node('n5', 50, 50, FOLLOWS),
+      node('n10', 0, 0, FOLLOWS),
+      loose('n6'),
+      node('n7', 3000, 0, { pinned: { type: 'text', value: 'false' } }),
+    ]
+    const edges2 = [
+      grew('e1', 'n2', 'n1'),
+      grew('e2', 'n5', 'n2'),
+      grew('e3', 'n10', 'n1'),
+      grew('e4', 'n7', 'n1'),
+    ]
+    const forward = displayPositions(world, edges2, NO_OVERRIDES)
+    const backward = displayPositions([...world].reverse(), [...edges2].reverse(), NO_OVERRIDES)
+    const sorted = (map: Map<string, unknown>) => [...map.entries()].sort((a, b) => compareIds(a[0], b[0]))
+    expect(sorted(backward)).toEqual(sorted(forward))
+    for (const n of world) {
+      const entry = forward.get(n.id)
+      if (entry) expect(entry.following).toBe(isFollowing(n, world, edges2))
+    }
+    expect(forward.get('n10')).toMatchObject({ following: true, x: 360 })
   })
 })

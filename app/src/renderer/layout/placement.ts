@@ -50,6 +50,17 @@ export const NEAR_GAP = 2 * CHILD_GAP
 /** The edge label for a grown note; the edge runs from the child to its parent. */
 export const GREW_FROM_LABEL = 'grew-from'
 
+/** Vertical gutter between stacked cards: the gutter the 02.2 vault layout uses. */
+export const STACK_GAP = 24
+
+/**
+ * How many downward steps a resolver tries before giving up (D-09). Step 0 is
+ * the start spot, so the lowest candidate is `MAX_PLACE_STEPS - 1` card
+ * heights (plus gutters) below it. A discretion value: large enough for a
+ * crowded column, small enough that every resolve is cheap.
+ */
+export const MAX_PLACE_STEPS = 64
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -198,12 +209,16 @@ export function isFollowing(
   nodes: readonly PlacementNode[],
   edges: readonly PlacementEdge[],
 ): boolean {
+  const parentId = grewFromParent(node, edges)
+  const parent = parentId === null ? undefined : nodes.find((candidate) => candidate.id === parentId)
+  return followsParent(node, parent)
+}
+
+/** The rule behind `isFollowing`, given the parent already looked up (or undefined). */
+function followsParent(node: PlacementNode, parent: PlacementNode | undefined): boolean {
   if (isKnot(node)) return false
   const pinned = node.props['pinned']
   if (!pinned || pinned.type !== 'bool' || pinned.value !== false) return false
-  const parentId = grewFromParent(node, edges)
-  if (parentId === null) return false
-  const parent = nodes.find((candidate) => candidate.id === parentId)
   if (!parent) return false
   if (isKnot(parent) || !isPlaced(parent)) return false
   return idNumber(parent.id) < idNumber(node.id)
@@ -303,4 +318,198 @@ export function orderNeighbours(
     return compareIds(a.id, b.id)
   })
   return scored.map(({ id, rect, relation }) => ({ id, rect, relation }))
+}
+
+// ---------------------------------------------------------------------------
+// Resolvers (D-09, D-10)
+// ---------------------------------------------------------------------------
+
+/** Why a resolver found no spot. */
+export type SpotFailure = 'no-clear-spot' | 'no-line' | 'not-finite'
+
+/** A resolved top-left corner, or the reason there is none. */
+export type SpotResult = { ok: true; x: number; y: number } | { ok: false; reason: SpotFailure }
+
+/**
+ * From `start`, try each step down in turn — one card height plus
+ * `STACK_GAP` each — and return the first spot whose rectangle overlaps no
+ * obstacle. Bounded by `MAX_PLACE_STEPS`.
+ */
+function stepDown(start: PlacementPoint, size: PlacementSize, obstacles: readonly PlacementRect[]): SpotResult {
+  const stride = size.height + STACK_GAP
+  for (let k = 0; k < MAX_PLACE_STEPS; k++) {
+    const x = start.x
+    const y = start.y + k * stride
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return { ok: false, reason: 'not-finite' }
+    const candidate = rectAt({ x, y }, size)
+    let clear = true
+    for (const obstacle of obstacles) {
+      if (overlaps(candidate, obstacle)) {
+        clear = false
+        break
+      }
+    }
+    if (clear) return { ok: true, x, y }
+  }
+  return { ok: false, reason: 'no-clear-spot' }
+}
+
+/**
+ * Where a card of `size` goes near `anchor` (D-09): `CHILD_GAP` right of the
+ * anchor, level with its top — the spot `create_note` has always used — then
+ * down in steps until its footprint overlaps nothing.
+ */
+export function resolveNear(anchor: PlacementRect, size: PlacementSize, obstacles: readonly PlacementRect[]): SpotResult {
+  return stepDown({ x: anchor.x + anchor.width + CHILD_GAP, y: anchor.y }, size, obstacles)
+}
+
+/**
+ * Where a card of `size` goes beyond `beyond`, seen from `from` (D-10): the
+ * line from `from`'s centre through `beyond`'s centre is extended past
+ * `beyond`'s centre by `CHILD_GAP` plus one card width, which gives the new
+ * card's centre; then the same downward steps as `resolveNear`.
+ *
+ * Self-check: with cards of equal width on a horizontal line, the new card's
+ * left edge is `beyond.x + beyond.width + CHILD_GAP`, exactly `resolveNear`'s
+ * start. Equal centres have no line and are refused.
+ */
+export function resolveBeyond(
+  beyond: PlacementRect,
+  from: PlacementRect,
+  size: PlacementSize,
+  obstacles: readonly PlacementRect[],
+): SpotResult {
+  const origin = centreOf(from)
+  const through = centreOf(beyond)
+  const dx = through.x - origin.x
+  const dy = through.y - origin.y
+  const length2 = dx * dx + dy * dy
+  if (!Number.isFinite(length2)) return { ok: false, reason: 'not-finite' }
+  if (length2 === 0) return { ok: false, reason: 'no-line' }
+  const scale = (CHILD_GAP + size.width) / Math.sqrt(length2)
+  const start = {
+    x: through.x + dx * scale - size.width / 2,
+    y: through.y + dy * scale - size.height / 2,
+  }
+  return stepDown(start, size, obstacles)
+}
+
+// ---------------------------------------------------------------------------
+// Draw-time positions (D-05)
+// ---------------------------------------------------------------------------
+
+/** Where one note is drawn. */
+export interface DisplaySpot {
+  /**
+   * Where edges, frame bounds and `look` use the note: its live override
+   * (a drag in progress) if any, else its derived spot if it follows, else
+   * its stored spot.
+   */
+  x: number
+  y: number
+  /** The `isFollowing` answer for the note. */
+  following: boolean
+  /**
+   * The spot derived beside the parent, ignoring the note's own override.
+   * Null for fixed notes, and for a following note with no clear spot.
+   *
+   * The renderer hands the card `followSpot`, not `x`/`y`: when the note's
+   * own drag ends and its override is dropped, the card is already at the
+   * spot it will be drawn at, so it never jumps back.
+   */
+  followSpot: PlacementPoint | null
+}
+
+/**
+ * Where every note in one tree is drawn (D-05), with following notes placed
+ * beside their grew-from parents at draw time instead of at their stored
+ * spots. Moving a parent moves its followers with no write of any kind.
+ *
+ * `overrides` maps a node id to a live frame-local point (a drag in
+ * progress). Returns a new map; the inputs are not changed.
+ *
+ * Pass one gives every fixed note its override or stored spot (an unplaced
+ * fixed note with no override has no entry). Pass two resolves followers in
+ * ascending id order; a follower's parent always has a lower id, so it
+ * already has an entry. Every non-knot entry becomes an obstacle for the
+ * followers resolved after it; knots never block. Sizes come from
+ * `noteSize` only (D-07). The cost is one pass per note plus at most
+ * `MAX_PLACE_STEPS` checks per follower.
+ */
+export function displayPositions(
+  nodes: readonly PlacementNode[],
+  edges: readonly PlacementEdge[],
+  overrides: ReadonlyMap<string, PlacementPoint>,
+): Map<string, DisplaySpot> {
+  const sorted = [...nodes].sort((a, b) => compareIds(a.id, b.id))
+
+  const byId = new Map<string, PlacementNode>()
+  for (const node of nodes) {
+    // The first node with an id wins, as `Array.prototype.find` does in isFollowing.
+    if (!byId.has(node.id)) byId.set(node.id, node)
+  }
+  const parentOf = new Map<string, PlacementEdge>()
+  for (const edge of edges) {
+    if (edge.label !== GREW_FROM_LABEL) continue
+    const best = parentOf.get(edge.from)
+    if (best === undefined || compareIds(edge.id, best.id) < 0) parentOf.set(edge.from, edge)
+  }
+  const parentNode = (node: PlacementNode): PlacementNode | undefined => {
+    const edge = parentOf.get(node.id)
+    return edge === undefined ? undefined : byId.get(edge.to)
+  }
+
+  const spots = new Map<string, DisplaySpot>()
+  const obstacles: PlacementRect[] = []
+  const followers: Array<{ node: PlacementNode; parent: PlacementNode }> = []
+
+  for (const node of sorted) {
+    const parent = parentNode(node)
+    if (parent !== undefined && followsParent(node, parent)) {
+      followers.push({ node, parent })
+      continue
+    }
+    const override = overrides.get(node.id)
+    let spot: PlacementPoint | null = null
+    if (override !== undefined) {
+      spot = { x: override.x, y: override.y }
+    } else {
+      const stored = storedRect(node)
+      if (stored !== null) spot = { x: stored.x, y: stored.y }
+    }
+    if (spot === null) continue
+    spots.set(node.id, { x: spot.x, y: spot.y, following: false, followSpot: null })
+    if (!isKnot(node)) obstacles.push(rectAt(spot, noteSize(node)))
+  }
+
+  for (const { node, parent } of followers) {
+    const size = noteSize(node)
+    const parentSpot = spots.get(parent.id)
+    let parentRect: PlacementRect
+    if (parentSpot !== undefined) {
+      parentRect = rectAt(parentSpot, noteSize(parent))
+    } else {
+      // Unreachable while the parent is placed and has a lower id; kept so a
+      // malformed world still draws every follower somewhere.
+      const stored = storedRect(parent)
+      if (stored === null) continue
+      parentRect = stored
+    }
+
+    const resolved = resolveNear(parentRect, size, obstacles)
+    const followSpot: PlacementPoint | null = resolved.ok ? { x: resolved.x, y: resolved.y } : null
+
+    let drawn: PlacementPoint
+    const override = overrides.get(node.id)
+    const stored = storedRect(node)
+    if (override !== undefined) drawn = { x: override.x, y: override.y }
+    else if (followSpot !== null) drawn = { x: followSpot.x, y: followSpot.y }
+    else if (stored !== null) drawn = { x: stored.x, y: stored.y }
+    else drawn = { x: parentRect.x + parentRect.width + CHILD_GAP, y: parentRect.y }
+
+    spots.set(node.id, { x: drawn.x, y: drawn.y, following: true, followSpot })
+    obstacles.push(rectAt(drawn, size))
+  }
+
+  return spots
 }
