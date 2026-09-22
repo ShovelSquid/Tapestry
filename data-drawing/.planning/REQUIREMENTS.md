@@ -107,36 +107,36 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SIM-01 | TBD | Pending |
-| SIM-02 | TBD | Pending |
-| SIM-03 | TBD | Pending |
-| SIM-04 | TBD | Pending |
-| STRK-01 | TBD | Pending |
-| STRK-02 | TBD | Pending |
-| STRK-03 | TBD | Pending |
-| STRK-04 | TBD | Pending |
-| STRK-05 | TBD | Pending |
-| STRK-06 | TBD | Pending |
-| JRNL-01 | TBD | Pending |
-| JRNL-02 | TBD | Pending |
-| JRNL-03 | TBD | Pending |
-| JRNL-04 | TBD | Pending |
-| CANV-01 | TBD | Pending |
-| CANV-02 | TBD | Pending |
-| CANV-03 | TBD | Pending |
-| CANV-04 | TBD | Pending |
-| TIME-01 | TBD | Pending |
-| TIME-02 | TBD | Pending |
-| TIME-03 | TBD | Pending |
-| MARK-01 | TBD | Pending |
-| MARK-02 | TBD | Pending |
-| MARK-03 | TBD | Pending |
+| SIM-01 | Phase 1 | Pending |
+| SIM-02 | Phase 1 | Pending |
+| SIM-03 | Phase 1 | Pending |
+| SIM-04 | Phase 2 | Pending |
+| STRK-01 | Phase 1 | Pending |
+| STRK-02 | Phase 1 | Pending |
+| STRK-03 | Phase 1 | Pending |
+| STRK-04 | Phase 1 | Pending |
+| STRK-05 | Phase 2 | Pending |
+| STRK-06 | Phase 1 | Pending |
+| JRNL-01 | Phase 2 | Pending |
+| JRNL-02 | Phase 2 | Pending |
+| JRNL-03 | Phase 2 | Pending |
+| JRNL-04 | Phase 2 | Pending |
+| CANV-01 | Phase 1 | Pending |
+| CANV-02 | Phase 1 | Pending |
+| CANV-03 | Phase 1 | Pending |
+| CANV-04 | Phase 1 | Pending |
+| TIME-01 | Phase 3 | Pending |
+| TIME-02 | Phase 3 | Pending |
+| TIME-03 | Phase 3 | Pending |
+| MARK-01 | Phase 3 | Pending |
+| MARK-02 | Phase 3 | Pending |
+| MARK-03 | Phase 3 | Pending |
 
 **Coverage:**
 - v1 requirements: 24 total
-- Mapped to phases: 0
-- Unmapped: 24 ⚠️
+- Mapped to phases: 24
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-09-22*
-*Last updated: 2026-09-22 after initial definition*
+*Last updated: 2026-09-22 after roadmap revision (painting first; traceability remapped to 3 phases)*
