@@ -1,0 +1,1 @@
+{"content":"Integer sqrt: Newton iteration or base-2 digit-by-digit (chmike/fpsqrt) using only add/sub/shift; for Q32.32, sqrt(x<<32) on a 128-bit intermediate; both are exactly deterministic.","source":"web","provider":"websearch","confidence":"MEDIUM","fetched_at":"2026-09-22T17:12:07.715Z","ttl":86400000,"kind":"web"}

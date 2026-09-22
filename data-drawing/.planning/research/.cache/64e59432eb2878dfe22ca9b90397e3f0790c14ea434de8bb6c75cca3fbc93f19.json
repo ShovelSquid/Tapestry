@@ -1,0 +1,1 @@
+{"content":"OffscreenCanvas transferControlToOffscreen lets a Web Worker own WebGL/WebGPU rendering, decoupled from DOM; reported input latency improvement on main thread; three.js supports OffscreenCanvas.","source":"web","provider":"websearch","confidence":"MEDIUM","fetched_at":"2026-09-22T17:12:07.384Z","ttl":86400000,"kind":"web"}
