@@ -6,6 +6,7 @@
   "api": "1",
   "contributions": {
     "nodeTypes": [],
-    "commands": ["example.inspect"]
+    "commands": ["example.inspect"],
+    "surfaces": ["example.surface"]
   }
 }
