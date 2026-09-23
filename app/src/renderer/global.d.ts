@@ -127,6 +127,16 @@ interface TapestryPluginsAPI {
     commands: Record<string, { id: string; displayName: string; pluginName: string }>
     propertyPanels: Record<string, Array<{ nodeType: string; displayName: string; component: string; pluginName: string }>>
     inspectors: Record<string, { id: string; displayName: string; component: string; pluginName: string }>
+    /**
+     * Registered plugin surfaces (CANV-04), keyed by surface id. `pluginName`
+     * is the plugin directory id; the renderer builds
+     * `tapestry-plugin://<pluginName>/<entry>` from these two host-validated
+     * values and nothing else.
+     */
+    surfaces: Record<
+      string,
+      { id: string; displayName: string; entry: string; placement: 'stage'; pluginName: string }
+    >
   }>
   reload(name: string): Promise<{ status: string; reason?: string }>
   enable(name: string): Promise<{ status: string; reason?: string }>
@@ -136,6 +146,36 @@ interface TapestryPluginsAPI {
     args?: Record<string, unknown>,
     selectedNodes?: string[],
   ): Promise<{ ok: boolean; error?: string; crashed?: boolean }>
+}
+
+// ---------------------------------------------------------------------------
+// Plugin surface types (CANV-04)
+//
+// Mirrored from sdk/src/contributions.ts (SurfaceHost, SurfaceHandle,
+// SurfaceModule) because tsconfig.web.json's rootDir is src/renderer and
+// cannot import ../../../sdk/src. Keep member names in lockstep with the SDK.
+// ---------------------------------------------------------------------------
+
+/** Mirror of SDK `SurfaceHost`: what the host hands a surface at mount time. */
+interface TapestrySurfaceHost {
+  /** Host-owned, absolutely sized element; the plugin owns its children only. */
+  readonly container: HTMLElement
+  /** Identity of the tree the surface was opened for. */
+  readonly treeId: string
+  /** Subscribe to container size (CSS px width, height, DPR); returns unsubscribe. */
+  onResize(cb: (width: number, height: number, dpr: number) => void): () => void
+  /** Ask the host to unmount the surface (the host then calls dispose). */
+  close(): void
+}
+
+/** Mirror of SDK `SurfaceHandle`: `dispose` must be idempotent. */
+interface TapestrySurfaceHandle {
+  dispose(): void
+}
+
+/** Mirror of SDK `SurfaceModule`: the surface entry module's default export. */
+interface TapestrySurfaceModule {
+  mount(host: TapestrySurfaceHost): Promise<TapestrySurfaceHandle> | TapestrySurfaceHandle
 }
 
 interface TapestryDialogAPI {

@@ -24,6 +24,7 @@ import ForestBar from './components/ForestBar'
 import { LiveAnnouncer } from './components/LiveAnnouncer'
 import TransientNotice from './components/TransientNotice'
 import PluginErrorNotification from './components/PluginErrorNotification'
+import PluginSurfaceLayer, { SurfaceLauncher, type SurfaceInfo } from './components/PluginSurfaceLayer'
 import NamePromptDialog from './components/NamePromptDialog'
 import { useForest, type NodeRef } from './state/use-forest'
 
@@ -92,6 +93,10 @@ export default function App(): React.ReactElement {
   // Plugin contributions: maps node types to component names from plugins
   const [pluginNodeViews, setPluginNodeViews] = useState<Record<string, string>>({})
 
+  // Plugin surfaces (CANV-04): what the registry lists, and which one is open.
+  const [pluginSurfaces, setPluginSurfaces] = useState<SurfaceInfo[]>([])
+  const [openSurface, setOpenSurface] = useState<SurfaceInfo | null>(null)
+
   // Plugin error notification state (D-34)
   const [pluginError, setPluginError] = useState<{
     /** Plugin id used for reload — never the display name. */
@@ -132,6 +137,14 @@ export default function App(): React.ReactElement {
         views[nodeType] = (contrib as any).component
       }
       setPluginNodeViews(views)
+      setPluginSurfaces(
+        Object.values(contributions.surfaces ?? {}).map((s) => ({
+          id: s.id,
+          displayName: s.displayName,
+          entry: s.entry,
+          pluginName: s.pluginName,
+        })),
+      )
     } catch {
       // Plugins not available yet — empty views
     }
@@ -670,6 +683,9 @@ export default function App(): React.ReactElement {
           onNewWorld={handleNewWorld}
         />
 
+        {/* Plugin surfaces (CANV-04): one launcher per registered surface */}
+        <SurfaceLauncher surfaces={pluginSurfaces} onOpen={setOpenSurface} />
+
         {/* An agent write ended a rewound state (UA-14) */}
         {notice && <TransientNotice message={notice} onHide={() => setNotice(null)} />}
 
@@ -692,6 +708,15 @@ export default function App(): React.ReactElement {
             mode="first-run"
             initialName={suggestedName}
             onSave={handleSaveUserName}
+          />
+        )}
+
+        {/* An open plugin surface: full-window layer over the canvas (CANV-04) */}
+        {openSurface && (
+          <PluginSurfaceLayer
+            surface={openSurface}
+            treeId={selectedTreeId ?? ''}
+            onClose={() => setOpenSurface(null)}
           />
         )}
 
