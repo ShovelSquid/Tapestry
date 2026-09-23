@@ -1,0 +1,21 @@
+{
+  "name": "@tapestry/plugin-data-drawing",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Data Drawing painting surface plugin: fixed-point sim as WebAssembly in a module Worker",
+  "main": "index.js",
+  "scripts": {
+    "sim:wasm": "bash surface/scripts/build-wasm.sh",
+    "dev": "vite --config surface/vite.config.ts",
+    "build": "vite build --config surface/vite.config.ts",
+    "test": "vitest run --config surface/vitest.config.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.0",
+    "typescript": "^5.5.0",
+    "vite": "^5.4.0",
+    "vitest": "2.1.9"
+  },
+  "license": "MIT"
+}

@@ -1,0 +1,11 @@
+{
+  "name": "data-drawing",
+  "version": "1",
+  "displayName": "Data Drawing",
+  "main": "index.js",
+  "api": "1",
+  "contributions": {
+    "nodeTypes": [],
+    "commands": []
+  }
+}
