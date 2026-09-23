@@ -17,6 +17,13 @@
       "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
     },
     {
+      "name": "native-ubsan",
+      "displayName": "Native Debug + UBSan (Apple clang, -fsanitize=undefined, no recovery)",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug", "DDSIM_SANITIZE": "ON" }
+    },
+    {
       "name": "wasm-release",
       "displayName": "WebAssembly Release (Emscripten 6.0.10, pinned)",
       "generator": "Unix Makefiles",
@@ -32,6 +39,7 @@
   "buildPresets": [
     { "name": "native-debug", "configurePreset": "native-debug" },
     { "name": "native-release", "configurePreset": "native-release" },
+    { "name": "native-ubsan", "configurePreset": "native-ubsan" },
     { "name": "wasm-release", "configurePreset": "wasm-release" }
   ],
   "testPresets": [
@@ -43,6 +51,11 @@
     {
       "name": "native-release",
       "configurePreset": "native-release",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "native-ubsan",
+      "configurePreset": "native-ubsan",
       "output": { "outputOnFailure": true }
     }
   ]

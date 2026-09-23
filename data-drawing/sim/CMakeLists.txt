@@ -15,6 +15,7 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
 endif()
 
 option(DDSIM_BUILD_TESTS "Build the doctest suite and the fixture generator" ON)
+option(DDSIM_SANITIZE "Build every target with UBSan (-fsanitize=undefined, no recovery)" OFF)
 set(DDSIM_DOCTEST_DIR "${PROJECT_SOURCE_DIR}/../../tapestry/third_party/doctest" CACHE PATH
     "Directory holding doctest.h and doctest.cmake (test-only dependency)")
 set(DDSIM_EMSDK_VERSION "6.0.10" CACHE STRING
@@ -62,6 +63,20 @@ target_compile_options(ddsim_settings INTERFACE
     -Wall -Wextra -Wpedantic -Wshadow -Wconversion
     -ffp-contract=off
     -fwrapv)
+
+# UBSan preset (native-ubsan): the sanitizer rides the same interface so the
+# library, the tests, the fixture generator and the replay CLI are all
+# instrumented — pitfall 2 says the full fixture set must run sanitized, not
+# a subset. No recovery: the first finding fails the run.
+if(DDSIM_SANITIZE)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+        target_compile_options(ddsim_settings INTERFACE -fsanitize=undefined -fno-sanitize-recover=all)
+        target_link_options(ddsim_settings INTERFACE -fsanitize=undefined -fno-sanitize-recover=all)
+        message(STATUS "ddsim: UBSan enabled on every target (DDSIM_SANITIZE=ON)")
+    else()
+        message(FATAL_ERROR "ddsim: DDSIM_SANITIZE needs Clang or GCC, found ${CMAKE_CXX_COMPILER_ID}")
+    endif()
+endif()
 
 # ---------------------------------------------------------------------------
 # Vendored dependency of the library itself — the only one.
