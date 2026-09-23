@@ -13,12 +13,13 @@
  * trees by name through the shared command layer (D-01).
  */
 
-import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, net, protocol, shell } from 'electron'
 import { isAbsolute, join, relative, resolve, sep } from 'path'
 import { execFileSync } from 'child_process'
 import { userInfo } from 'os'
 import { KernelBridge } from './kernel-bridge'
 import { PluginHost } from './plugin-host'
+import { PLUGIN_SCHEME, SCHEME_PRIVILEGES, makePluginSchemeHandler } from './plugin-scheme'
 import { SettingsStore, suggestUserName, type TreeFrameSetting } from './settings'
 import { agentActor, humanActor, isValidActorName, type Actor } from './commands/actor'
 import { buildConnectCommand } from './agents/connect-command'
@@ -29,6 +30,15 @@ import { ConnectionCommands } from './commands/connections'
 import { runAgentTool, type AgentCommands } from './commands/agent-tools'
 import { AgentRegistry, agentSocketPath } from './agents/registry'
 import { AgentSocketServer } from './agents/socket-server'
+
+// ---------------------------------------------------------------------------
+// Plugin surface scheme (CANV-04)
+// ---------------------------------------------------------------------------
+
+// Must run before app 'ready': Electron refuses privileged-scheme
+// registration afterwards. The handler itself is attached inside whenReady,
+// once the plugins directory is known.
+protocol.registerSchemesAsPrivileged([{ scheme: PLUGIN_SCHEME, privileges: SCHEME_PRIVILEGES }])
 
 // ---------------------------------------------------------------------------
 // Window management
@@ -237,6 +247,14 @@ app.whenReady().then(async () => {
 
   // Register plugin IPC handlers
   PluginHost.registerHandlers(ipcMain, pluginHost)
+
+  // Serve plugin surface modules, their Workers and .wasm from the same
+  // plugins directory PluginHost loads from (CANV-04). The handler only ever
+  // serves what resolvePluginFile returns; everything else is a 404.
+  protocol.handle(
+    PLUGIN_SCHEME,
+    makePluginSchemeHandler(pluginsDir, { fetchFile: (fileUrl) => net.fetch(fileUrl) }),
+  )
 
   // Wire plugin error notifications to the renderer (D-34)
   pluginHost.onPluginError = (
