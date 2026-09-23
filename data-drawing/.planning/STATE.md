@@ -3,15 +3,15 @@ gsd_state_version: "1.0"
 current_phase: 01
 current_phase_name: Painting with the Pen
 status: executing
-stopped_at: Completed 01-02-PLAN.md
-last_updated: "2026-09-23T01:24:59.819Z"
+stopped_at: Completed 01-03-PLAN.md
+last_updated: "2026-09-23T01:45:17.346Z"
 last_activity: 2026-09-22
 last_activity_desc: Phase 01 execution started
 progress:
   total_phases: 3
   completed_phases: 0
   total_plans: 8
-  completed_plans: 2
+  completed_plans: 3
   percent: 0
 ---
 
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-09-22)
 ## Current Position
 
 Phase: 01 (Painting with the Pen) — EXECUTING
-Plan: 3 of 8
+Plan: 4 of 8
 Status: Ready to execute
 Last activity: 2026-09-22 — Phase 01 execution started
 
@@ -59,6 +59,7 @@ Progress: [░░░░░░░░░░] 0%
 |------|----------|-------|-------|
 | Phase 01 P01 | 27 min | 3 tasks | 45 files |
 | Phase 01 P02 | 30 min | 3 tasks | 8 files |
+| Phase 01 P03 | 14 min | 3 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -82,6 +83,11 @@ Recent decisions affecting current work:
 - [Phase 01]: CANV-04 contract: A-same-realm, kernel omitted. SurfaceContribution + same-realm import() over tapestry-plugin://<lowercase plugin-id>/<path>; SurfaceHost carries no kernel handle in API 1 (Phase 2 adds a plugin-signed IPC route) — Human decision (Kaelen via the 01-02 checkpoint): smallest host change, plugin dev page and Tapestry load the identical dist/; the renderer's only kernel route signs as the human, so handing it to a plugin would violate D-06
 - [Phase 01]: resolvePluginFile refuses raw or percent-encoded dot segments before URL parsing; the WHATWG parser would otherwise normalise them away and the plan's traversal fixtures could not answer null
 - [Phase 01]: CANV-04 left unmarked after 01-02: shared-ID gate (01-04, 01-06, 01-08 also declare it)
+- [Phase 01]: Debug contract asserts (div by zero, sqrt negative) are proven from a forked child observing SIGABRT; the zero clamp is checked directly in Release (a per-TU assert-off macro would split the inline definition across TUs)
+- [Phase 01]: div_q32 is a general 96-by-64-bit long division with a fixed 96 iterations, not precomputed reciprocals, so 01-05 gets exact floor division with one rounding path
+- [Phase 01]: seed_stream(world, purpose, entity) seeds splitmix64 on world XOR purpose XOR entity (interfaces block), so seed_stream(seed, 0, 0) equals the 01-01 seed_from and the goldens are untouched; rng golden first output 0x0bab45d9a0e3ae53 frozen
+- [Phase 01]: sim.cpp unchanged for strict restore: the 157-offset byte sweep proves 01-01 read_canonical is already reject-or-exact (0 silent corrections)
+- [Phase 01]: SIM-01 marked complete after 01-03; SIM-02 left to the shared-ID gate (01-05 also declares it)
 
 ### Pending Todos
 
@@ -104,6 +110,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-23T01:24:38.770Z
-Stopped at: Completed 01-02-PLAN.md
+Last session: 2026-09-23T01:45:17.332Z
+Stopped at: Completed 01-03-PLAN.md
 Resume file: None

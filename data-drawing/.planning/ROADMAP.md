@@ -37,7 +37,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   4. Three or four brush presets differing in description and mass can be picked; editing a brush creates a new version, and a stroke made with the old version keeps it and replays to the same nodes.
   5. Replaying the session's recorded action list from tick zero in the Worker reproduces the node field and hash shown live; in the native build, replaying the same synthetic stroke log twice, across Debug and Release, across two processes, and after a serialize/restore round trip yields the same SHA-256 state hash at every checkpoint; the build fails if `float`, `double`, `<cmath>`, `<random>`, or `unordered_` appear in the sim target; nodes are emitted at the brush's spacing with ids derived from stroke ordinal and emission index, so replaying with one stroke inserted leaves every other stroke's node ids unchanged.
 
-**Plans:** 2/8 plans executed
+**Plans:** 3/8 plans executed
 **UI hint**: yes
 
 Plans:
@@ -48,7 +48,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 01-03-PLAN.md — Determinism harness completion: full fx64 op set with __int128 oracles, PRNG streams, UBSan preset, reject-or-exact restore, ddsim_replay CLI, two-process and Debug/Release goldens
+- [x] 01-03-PLAN.md — Determinism harness completion: full fx64 op set with __int128 oracles, PRNG streams, UBSan preset, reject-or-exact restore, ddsim_replay CLI, two-process and Debug/Release goldens
 - [ ] 01-04-PLAN.md — CANV-04 renderer half (outer repo): PluginSurfaceLayer + launcher, the example plugin's spike surface (import, module Worker, .wasm over the scheme), human-verified in dev and built loads
 
 **Wave 3** *(blocked on Wave 2 completion)*
@@ -130,6 +130,6 @@ Phases execute in numeric order: 1 → 2 → 3
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Painting with the Pen | 2/8 | In Progress|  |
+| 1. Painting with the Pen | 3/8 | In Progress|  |
 | 2. Readable Journal | 0/TBD | Not started | - |
 | 3. Timeline and Marks | 0/TBD | Not started | - |
