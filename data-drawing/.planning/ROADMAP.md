@@ -33,8 +33,18 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. The sim runs as WebAssembly in a renderer Web Worker reached only through a flat C ABI; the renderer reads state through read-only views copied between steps and can never mutate it. The placeholder renderer colors each node from a hash of its brush description, and a cursor overlay draws the pen position, the brush body position, and the spring between them.
   4. Three or four brush presets differing in description and mass can be picked; editing a brush creates a new version, and a stroke made with the old version keeps it and replays to the same nodes.
   5. Replaying the session's recorded action list from tick zero in the Worker reproduces the node field and hash shown live; in the native build, replaying the same synthetic stroke log twice, across Debug and Release, across two processes, and after a serialize/restore round trip yields the same SHA-256 state hash at every checkpoint; the build fails if `float`, `double`, `<cmath>`, `<random>`, or `unordered_` appear in the sim target; nodes are emitted at the brush's spacing with ids derived from stroke ordinal and emission index, so replaying with one stroke inserted leaves every other stroke's node ids unchanged.
-**Plans**: TBD
+**Plans:** 8 plans
 **UI hint**: yes
+
+Plans:
+- [ ] 01-01-PLAN.md — Walking skeleton (tracer): ddsim C++20 library with fx64/hash/C ABI, Emscripten 6.0.10 Wasm, module Worker SimHost, dev page showing tick and hash; one DefineBrush equals the native golden
+- [ ] 01-02-PLAN.md — CANV-04 host half (outer repo): decision checkpoint on the SurfaceContribution contract, SDK types, PluginHost.registerSurface, privileged tapestry-plugin:// scheme with containment/MIME/CORS
+- [ ] 01-03-PLAN.md — Determinism harness completion: full fx64 op set with __int128 oracles, PRNG streams, UBSan preset, reject-or-exact restore, ddsim_replay CLI, two-process and Debug/Release goldens
+- [ ] 01-04-PLAN.md — CANV-04 renderer half (outer repo): PluginSurfaceLayer + launcher, the example plugin's spike surface (import, module Worker, .wasm over the scheme), human-verified in dev and built loads
+- [ ] 01-05-PLAN.md — Sim behaviour: stroke actions with tilt/twist, spring-damper brush body from mass, emission at spacing with (ordinal, index) ids, versioned presets, synthetic-stroke goldens, insert/tpf/version tests, Wasm parity
+- [ ] 01-06-PLAN.md — Surface mounted in Tapestry, pen measured on this Mac, then the deterministic fence (native pointer listener, capture, coalesced, predicted preview-only, quantize once) with the measured constants
+- [ ] 01-07-PLAN.md — Legitimacy checkpoint then three.js stage (node field coloured by description hash, pen/body/spring overlay), brush picker with versioning, TS encoder proven against C++ goldens, live painting in the dev page
+- [ ] 01-08-PLAN.md — Inside Tapestry: replay-from-zero equality, main-thread vs Worker latency, backend report, 20 open/close cycles, feel verification of the presets with the pen
 
 Planning notes:
 - Wave 1 is the harness, and the pen surface builds on it: fx64 Q32.32 on int64 with portable widening multiply, ids with reserved branch-tag bits, seeded PRNG with per-entity streams, POD state, canonical serialize/restore/hash, CI grep, `-fwrapv` and UBSan in tests, all passing on a no-op `step()` before any behaviour rule exists. Pin the tick rate (60 Hz recommended) as a constant here; changing it later is a new world. Establish the `wasm` CMake preset and pin the Emscripten version on this skeleton so toolchain failures surface with no behaviour to blame.
@@ -93,6 +103,6 @@ Phases execute in numeric order: 1 → 2 → 3
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Painting with the Pen | 0/TBD | Not started | - |
+| 1. Painting with the Pen | 0/8 | Not started | - |
 | 2. Readable Journal | 0/TBD | Not started | - |
 | 3. Timeline and Marks | 0/TBD | Not started | - |
