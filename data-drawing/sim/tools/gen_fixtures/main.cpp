@@ -5,6 +5,7 @@
 // Usage: ddsim_gen_fixtures <output-dir>
 #include "golden_support.hpp"
 
+#include <cstdint>
 #include <cstdio>
 #include <string>
 
@@ -41,6 +42,27 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    std::printf("wrote %s/noop.actions and %s/one-brush.actions\n", dir.c_str(), dir.c_str());
+    // many-brushes: 50 DefineBrush actions, one per tick 0..49 (ids 1..50),
+    // descriptions cycling through five strings — two of them multibyte
+    // UTF-8 on purpose, because desc_len counts bytes — masses cycling
+    // 1, 4, 16, 64; radius 0.75, spacing 0.5, identity curve.
+    std::string many = header("50 DefineBrush actions at ticks 0..49 (ids 1..50); descriptions cycle ink / green rust / loneliness / \xe9\x9d\x92\xe8\x8b\x94 / rust \xe2\x9c\x93 (UTF-8 bytes); masses cycle 1, 4, 16, 64; radius 0.75, spacing 0.5, identity curve");
+    many += "seed 7\n";
+    const char* descriptions[5] = {"ink", "green rust", "loneliness", "\xe9\x9d\x92\xe8\x8b\x94", "rust \xe2\x9c\x93"};
+    const std::int64_t masses[4] = {ddsim::fx64::ONE, ddsim::fx64::ONE * 4, ddsim::fx64::ONE * 16, ddsim::fx64::ONE * 64};
+    for (std::uint32_t i = 0; i < 50; ++i) {
+        ddsim_test::BrushSpec b = ddsim_test::inkBrush();
+        b.id = i + 1;
+        b.description = descriptions[i % 5];
+        b.mass_raw = masses[i % 4];
+        many += "action " + std::to_string(i) + " " + ddsim_test::hex(ddsim_test::encodeDefineBrush(b)) + "\n";
+    }
+    many += "checkpoint 0\ncheckpoint 25\ncheckpoint 50\ncheckpoint 600\n";
+    if (!ddsim_test::writeFile(dir + "/many-brushes.actions", many)) {
+        std::fprintf(stderr, "cannot write %s/many-brushes.actions\n", dir.c_str());
+        return 1;
+    }
+
+    std::printf("wrote %s/{noop,one-brush,many-brushes}.actions\n", dir.c_str());
     return 0;
 }

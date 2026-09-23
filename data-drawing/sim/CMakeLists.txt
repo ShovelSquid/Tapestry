@@ -126,6 +126,35 @@ if(DDSIM_BUILD_TESTS)
     add_test(NAME ddsim_forbidden_tokens
         COMMAND ${CMAKE_COMMAND} -DROOT=${PROJECT_SOURCE_DIR}
                 -P ${PROJECT_SOURCE_DIR}/cmake/forbidden_tokens.cmake)
+
+    # Headless replay CLI — the tool a person runs to verify "same file, same
+    # seed, same hash". It drives the sim only through ddsim_c.h, the ABI the
+    # Wasm build exports, and shares the fixture parser and replay rule with
+    # the tests (tests/golden_support.hpp).
+    add_executable(ddsim_replay tools/ddsim_replay/main.cpp)
+    target_link_libraries(ddsim_replay PRIVATE ddsim)
+    target_include_directories(ddsim_replay PRIVATE ${PROJECT_SOURCE_DIR}/tests)
+    target_compile_definitions(ddsim_replay PRIVATE
+        DDSIM_GOLDEN_DIR="${PROJECT_SOURCE_DIR}/tests/golden")
+
+    # SIM-02, two-process half: every committed fixture is replayed by two
+    # fresh processes (different ASLR, allocator state) whose outputs must be
+    # identical to each other and to the committed .sha256, then once more
+    # with --roundtrip (serialize/restore into a second sim at every
+    # checkpoint). Both native presets run this against the same committed
+    # golden, so Debug-vs-Release equality is checked on every run.
+    file(GLOB DDSIM_FIXTURES CONFIGURE_DEPENDS ${PROJECT_SOURCE_DIR}/tests/golden/*.actions)
+    foreach(fixture IN LISTS DDSIM_FIXTURES)
+        get_filename_component(fixture_name ${fixture} NAME_WE)
+        get_filename_component(fixture_dir ${fixture} DIRECTORY)
+        add_test(NAME golden_two_process_${fixture_name}
+            COMMAND ${CMAKE_COMMAND}
+                -DREPLAY=$<TARGET_FILE:ddsim_replay>
+                -DACTIONS=${fixture}
+                -DEXPECTED=${fixture_dir}/${fixture_name}.sha256
+                -DWORK=${CMAKE_CURRENT_BINARY_DIR}/two_process
+                -P ${PROJECT_SOURCE_DIR}/cmake/two_process.cmake)
+    endforeach()
 endif()
 
 # ---------------------------------------------------------------------------

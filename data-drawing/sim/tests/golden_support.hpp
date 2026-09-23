@@ -291,10 +291,13 @@ inline bool parseSha256(const std::string& text, std::vector<GoldenLine>& out) {
     return true;
 }
 
-// The replay rule. `onCheckpoint(tick, sim)` runs after that tick's applies
-// and before its step. Returns false if any apply is rejected.
-template <typename Callback>
-bool replayFixture(const Fixture& f, ddsim::Sim& sim, Callback&& onCheckpoint) {
+// The replay rule, written once over an abstract driver so the doctest suite
+// (ddsim::Sim) and ddsim_replay (the flat C ABI) cannot drift apart:
+// `apply(bytes, len)` returns a DD_* code, `step()` advances one tick,
+// `onCheckpoint(tick)` runs after that tick's applies and before its step.
+// Returns false if any apply is rejected.
+template <typename Apply, typename Step, typename OnCheckpoint>
+bool replayFixtureWith(const Fixture& f, Apply&& apply, Step&& step, OnCheckpoint&& onCheckpoint) {
     std::uint64_t max = 0;
     for (const auto& a : f.actions) {
         if (a.tick > max) max = a.tick;
@@ -306,18 +309,34 @@ bool replayFixture(const Fixture& f, ddsim::Sim& sim, Callback&& onCheckpoint) {
     for (std::uint64_t t = 0; t <= max; ++t) {
         for (const auto& a : f.actions) {
             if (a.tick == t) {
-                if (sim.apply(a.bytes.data(), static_cast<std::uint32_t>(a.bytes.size())) != DD_OK) {
+                if (apply(a.bytes.data(), static_cast<std::uint32_t>(a.bytes.size())) != DD_OK) {
                     return false;
                 }
             }
         }
         if (nextCheckpoint < f.checkpoints.size() && f.checkpoints[nextCheckpoint] == t) {
-            onCheckpoint(t, sim);
+            onCheckpoint(t);
             ++nextCheckpoint;
         }
-        sim.step();
+        step();
     }
     return true;
+}
+
+// The same rule over the C++ class: `onCheckpoint(tick, sim)`.
+template <typename Callback>
+bool replayFixture(const Fixture& f, ddsim::Sim& sim, Callback&& onCheckpoint) {
+    return replayFixtureWith(
+        f, [&](const std::uint8_t* bytes, std::uint32_t len) { return sim.apply(bytes, len); },
+        [&]() { sim.step(); }, [&](std::uint64_t tick) { onCheckpoint(tick, sim); });
+}
+
+// The same rule over the flat C ABI: `onCheckpoint(tick, dd_sim*)`.
+template <typename Callback>
+bool replayFixtureAbi(const Fixture& f, dd_sim* sim, Callback&& onCheckpoint) {
+    return replayFixtureWith(
+        f, [&](const std::uint8_t* bytes, std::uint32_t len) { return dd_apply(sim, bytes, len); },
+        [&]() { dd_step(sim); }, [&](std::uint64_t tick) { onCheckpoint(tick, sim); });
 }
 
 inline std::string goldenPath(const std::string& name, const std::string& ext) {
