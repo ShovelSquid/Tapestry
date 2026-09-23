@@ -3,15 +3,15 @@ gsd_state_version: "1.0"
 current_phase: 01
 current_phase_name: Painting with the Pen
 status: executing
-stopped_at: Completed 01-01-PLAN.md
-last_updated: "2026-09-23T00:44:44.934Z"
+stopped_at: Completed 01-02-PLAN.md
+last_updated: "2026-09-23T01:24:59.819Z"
 last_activity: 2026-09-22
 last_activity_desc: Phase 01 execution started
 progress:
   total_phases: 3
   completed_phases: 0
   total_plans: 8
-  completed_plans: 1
+  completed_plans: 2
   percent: 0
 ---
 
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-09-22)
 ## Current Position
 
 Phase: 01 (Painting with the Pen) — EXECUTING
-Plan: 2 of 8
+Plan: 3 of 8
 Status: Ready to execute
 Last activity: 2026-09-22 — Phase 01 execution started
 
@@ -58,6 +58,7 @@ Progress: [░░░░░░░░░░] 0%
 | Plan | Duration | Tasks | Files |
 |------|----------|-------|-------|
 | Phase 01 P01 | 27 min | 3 tasks | 45 files |
+| Phase 01 P02 | 30 min | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -78,6 +79,9 @@ Recent decisions affecting current work:
 - [Phase 01]: Worker encodes DefineBrush and assigns brush ids (it is the recorder); rejected messages carry actionKind
 - [Phase 01]: Vite lib mode inlines assets: build-only dd-wasm-as-file plugin keeps ddsim.wasm a file and the entry is pinned to surface.js
 - [Phase 01]: SIM-01/02/03 left unmarked after 01-01: shared-ID gate (01-03, 01-05, 01-08 also declare them)
+- [Phase 01]: CANV-04 contract: A-same-realm, kernel omitted. SurfaceContribution + same-realm import() over tapestry-plugin://<lowercase plugin-id>/<path>; SurfaceHost carries no kernel handle in API 1 (Phase 2 adds a plugin-signed IPC route) — Human decision (Kaelen via the 01-02 checkpoint): smallest host change, plugin dev page and Tapestry load the identical dist/; the renderer's only kernel route signs as the human, so handing it to a plugin would violate D-06
+- [Phase 01]: resolvePluginFile refuses raw or percent-encoded dot segments before URL parsing; the WHATWG parser would otherwise normalise them away and the plan's traversal fixtures could not answer null
+- [Phase 01]: CANV-04 left unmarked after 01-02: shared-ID gate (01-04, 01-06, 01-08 also declare it)
 
 ### Pending Todos
 
@@ -100,6 +104,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-23T00:44:44.922Z
-Stopped at: Completed 01-01-PLAN.md
+Last session: 2026-09-23T01:24:38.770Z
+Stopped at: Completed 01-02-PLAN.md
 Resume file: None
