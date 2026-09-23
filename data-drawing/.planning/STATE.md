@@ -1,17 +1,17 @@
 ---
 gsd_state_version: "1.0"
-current_phase: 1
+current_phase: 01
 current_phase_name: Painting with the Pen
 status: executing
-stopped_at: Roadmap revised (painting first); awaiting approval, then `/gsd-plan-phase 1`
-last_updated: "2026-09-23T00:07:36.290Z"
+stopped_at: Completed 01-01-PLAN.md
+last_updated: "2026-09-23T00:44:44.934Z"
 last_activity: 2026-09-22
-last_activity_desc: "Roadmap revised at Kaelen's request: painting with the pen is Phase 1 (3 phases, 24/24 v1 requirements mapped)"
+last_activity_desc: Phase 01 execution started
 progress:
   total_phases: 3
   completed_phases: 0
   total_plans: 8
-  completed_plans: 0
+  completed_plans: 1
   percent: 0
 ---
 
@@ -22,14 +22,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-09-22)
 
 **Core value:** The same file, seed, and pinned versions reproduce the same node state at every tick of every branch, so every mark is an object that can be revisited and edited later rather than a pixel that is gone.
-**Current focus:** Phase 1 — Painting with the Pen
+**Current focus:** Phase 01 — Painting with the Pen
 
 ## Current Position
 
-Phase: 1 (Painting with the Pen) — READY TO EXECUTE
-Plan: 0 of TBD in current phase
+Phase: 01 (Painting with the Pen) — EXECUTING
+Plan: 2 of 8
 Status: Ready to execute
-Last activity: 2026-09-22 — Roadmap revised at Kaelen's request: painting with the pen is Phase 1 (3 phases, 24/24 v1 requirements mapped)
+Last activity: 2026-09-22 — Phase 01 execution started
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -53,6 +53,11 @@ Progress: [░░░░░░░░░░] 0%
 - Trend: -
 
 *Updated after each plan completion*
+**Per-Plan Metrics:**
+
+| Plan | Duration | Tasks | Files |
+|------|----------|-------|-------|
+| Phase 01 P01 | 27 min | 3 tasks | 45 files |
 
 ## Accumulated Context
 
@@ -68,6 +73,11 @@ Recent decisions affecting current work:
 - [Roadmap]: The Tapestry host surface extension point (CANV-04) is an external dependency that now gates Phase 1's last wave, not Phase 3; a surface compiled into the app is not an acceptable interim, but waves 1 through 3 and the surface in the plugin's own dev loop do not wait on it.
 - [Roadmap]: The replay oracle CLI (SIM-06) and native-vs-Wasm CI test (SIM-05) are v2; v1 verification is the Worker sim's hash against the hash recorded at save.
 - [Roadmap]: Sim core is fixed-point integer, bit-identical; Tapestry Phase 3's "numeric compatibility envelope" is to be tightened to "identical or invalid" for Data Drawing worlds (note filed during Phase 2).
+- [Phase 01]: fx64 deletes floating-point construction through a constrained template so the forbidden-token gate can scan include/ itself
+- [Phase 01]: emsdk 6.0.10 bootstrapped with emsdk's own bundled Python 3.13.3 (system Python is 3.9.6); no Homebrew
+- [Phase 01]: Worker encodes DefineBrush and assigns brush ids (it is the recorder); rejected messages carry actionKind
+- [Phase 01]: Vite lib mode inlines assets: build-only dd-wasm-as-file plugin keeps ddsim.wasm a file and the entry is pinned to surface.js
+- [Phase 01]: SIM-01/02/03 left unmarked after 01-01: shared-ID gate (01-03, 01-05, 01-08 also declare them)
 
 ### Pending Todos
 
@@ -90,6 +100,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-22
-Stopped at: Roadmap revised (painting first); awaiting approval, then `/gsd-plan-phase 1`
+Last session: 2026-09-23T00:44:44.922Z
+Stopped at: Completed 01-01-PLAN.md
 Resume file: None

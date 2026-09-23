@@ -37,13 +37,13 @@ Decimal phases appear between their surrounding integers in numeric order.
   4. Three or four brush presets differing in description and mass can be picked; editing a brush creates a new version, and a stroke made with the old version keeps it and replays to the same nodes.
   5. Replaying the session's recorded action list from tick zero in the Worker reproduces the node field and hash shown live; in the native build, replaying the same synthetic stroke log twice, across Debug and Release, across two processes, and after a serialize/restore round trip yields the same SHA-256 state hash at every checkpoint; the build fails if `float`, `double`, `<cmath>`, `<random>`, or `unordered_` appear in the sim target; nodes are emitted at the brush's spacing with ids derived from stroke ordinal and emission index, so replaying with one stroke inserted leaves every other stroke's node ids unchanged.
 
-**Plans:** 8 plans
+**Plans:** 1/8 plans executed
 **UI hint**: yes
 
 Plans:
 **Wave 1**
 
-- [ ] 01-01-PLAN.md — Walking skeleton (tracer): ddsim C++20 library with fx64/hash/C ABI, Emscripten 6.0.10 Wasm, module Worker SimHost, dev page showing tick and hash; one DefineBrush equals the native golden
+- [x] 01-01-PLAN.md — Walking skeleton (tracer): ddsim C++20 library with fx64/hash/C ABI, Emscripten 6.0.10 Wasm, module Worker SimHost, dev page showing tick and hash; one DefineBrush equals the native golden
 - [ ] 01-02-PLAN.md — CANV-04 host half (outer repo): decision checkpoint on the SurfaceContribution contract, SDK types, PluginHost.registerSurface, privileged tapestry-plugin:// scheme with containment/MIME/CORS
 
 **Wave 2** *(blocked on Wave 1 completion)*
@@ -130,6 +130,6 @@ Phases execute in numeric order: 1 → 2 → 3
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Painting with the Pen | 0/8 | Not started | - |
+| 1. Painting with the Pen | 1/8 | In Progress|  |
 | 2. Readable Journal | 0/TBD | Not started | - |
 | 3. Timeline and Marks | 0/TBD | Not started | - |
