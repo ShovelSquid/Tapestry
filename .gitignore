@@ -12,6 +12,7 @@ tapestry/build-kernel/
 data-drawing/sim/build/
 plugins/data-drawing/surface/wasm/
 plugins/data-drawing/surface/dist/
+plugins/mathspace/wasm/
 
 # Autonomous driver session logs
 autonomy/logs/

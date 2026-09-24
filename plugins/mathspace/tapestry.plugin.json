@@ -1,0 +1,12 @@
+{
+  "name": "mathspace",
+  "version": "1",
+  "displayName": "Mathspace",
+  "main": "index.js",
+  "api": "1",
+  "contributions": {
+    "nodeTypes": [],
+    "commands": ["mathspace.run", "mathspace.pause", "mathspace.step"],
+    "surfaces": []
+  }
+}
