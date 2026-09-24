@@ -24,6 +24,7 @@
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'fs'
 import { isAbsolute, join, resolve } from 'path'
 import { isValidActorName } from './commands/actor'
+import { SETTINGS_POINTER_KEY, SETTINGS_VERSION } from './space/shapes'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -80,6 +81,11 @@ function isFiniteNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value)
 }
 
+/** A safe absolute path whose resolved form ends in `.tree`. */
+export function isSafeTreePath(value: unknown): value is string {
+  return isSafeAbsolutePath(value) && resolve(value).endsWith('.tree')
+}
+
 /**
  * Validate one entry from the `trees` array, returning a normalized copy or
  * null. A malformed entry is dropped rather than failing the whole read: one
@@ -89,8 +95,7 @@ function validateTree(raw: unknown): TreeSetting | null {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
   const entry = raw as Record<string, unknown>
 
-  if (!isSafeAbsolutePath(entry.path)) return null
-  if (!resolve(entry.path).endsWith('.tree')) return null
+  if (!isSafeTreePath(entry.path)) return null
 
   if (entry.kind !== 'native' && entry.kind !== 'vault') return null
 
@@ -142,6 +147,28 @@ function validateSettings(parsed: Record<string, unknown> | null): AppSettings {
   }
 
   return { version, userName, agentsEnabled, trees }
+}
+
+/**
+ * The tree a Phase 2 `last-opened.json` names, or null.
+ *
+ * The old file is untrusted input: a corrupted or unreadable file, a path that
+ * is not a safe absolute `.tree` path, or a file that has since been deleted
+ * or moved all read as nothing, rather than failing the launch this is only
+ * meant to improve. Shared by `migrateLastOpened` and the 2.6 forest import
+ * (answer 2.5), so both apply the same checks.
+ */
+export function readLastOpenedTree(lastOpenedFile: string): string | null {
+  let treePath: unknown
+  try {
+    if (!existsSync(lastOpenedFile)) return null
+    const parsed = JSON.parse(readFileSync(lastOpenedFile, 'utf-8'))
+    treePath = parsed?.path
+  } catch {
+    return null
+  }
+  if (!isSafeTreePath(treePath)) return null
+  return existsSync(treePath) ? treePath : null
 }
 
 // ---------------------------------------------------------------------------
@@ -201,6 +228,40 @@ export class SettingsStore {
     return { trees, skipped }
   }
 
+  /**
+   * The Tapestry tree's path from the pointer (2.6 D-02, answer 2.1), or null.
+   *
+   * The pointer decides which file is opened as the Tapestry tree, and the
+   * file is hand-editable, so only a safe absolute `.tree` path is returned
+   * (T-2.6-03). Anything else reads as no pointer at all.
+   */
+  getTapestryPointer(): string | null {
+    const pointer = this.readRaw()?.[SETTINGS_POINTER_KEY]
+    if (!pointer || typeof pointer !== 'object' || Array.isArray(pointer)) return null
+    const path = (pointer as Record<string, unknown>).path
+    return isSafeTreePath(path) ? path : null
+  }
+
+  /**
+   * Write the pointer to the Tapestry tree and raise `version` to 2.
+   *
+   * This is the last step of the first-launch import (answer 2.4), so a crash
+   * before it leaves settings.json exactly as it was. `trees` and every other
+   * key are written back raw (D-10); `version` is never lowered (case I).
+   */
+  setTapestryPointer(path: string): void {
+    if (!isSafeTreePath(path)) {
+      throw new Error('Invalid Tapestry tree path')
+    }
+    const raw = this.readRaw() ?? {}
+    const fileVersion = validVersion(raw.version) ?? DEFAULT_SETTINGS.version
+    this.writeRaw({
+      ...raw,
+      version: Math.max(fileVersion, SETTINGS_VERSION),
+      [SETTINGS_POINTER_KEY]: { path },
+    })
+  }
+
   /** The stored user name, or null when none has been chosen yet. */
   getUserName(): string | null {
     return this.read().userName
@@ -248,7 +309,9 @@ export class SettingsStore {
   /**
    * Adopt a Phase 2 `last-opened.json` as the first entry in `trees` (D-18).
    *
-   * There is no forest file: the open trees live in settings. Someone
+   * Superseded in 2.6 by the forest import (`space/migrate.ts`, answer 2.5),
+   * which folds last-opened.json into the forest instead; kept until Plan 03
+   * stops index.ts calling it. Before 2.6 the open trees lived here. Someone
    * upgrading has one world recorded in the old file, and losing it on upgrade
    * would look exactly like losing the world. It is placed at frame (0, 0), so
    * a single migrated tree renders where the single-tree canvas used to.
@@ -261,26 +324,12 @@ export class SettingsStore {
   migrateLastOpened(lastOpenedFile: string): boolean {
     if (this.read().trees.length > 0) return false
 
-    let treePath: unknown
-    try {
-      if (!existsSync(lastOpenedFile)) return false
-      const parsed = JSON.parse(readFileSync(lastOpenedFile, 'utf-8'))
-      treePath = parsed?.path
-    } catch {
-      // A corrupted or unreadable file migrates nothing, rather than failing
-      // the launch it is only meant to improve.
-      return false
-    }
-
-    if (!isSafeAbsolutePath(treePath)) return false
-    if (!resolve(treePath).endsWith('.tree')) return false
-    // A path recorded for a file that has since been deleted or moved would
-    // reopen as an error on every launch; treat it as nothing to migrate.
-    if (!existsSync(treePath)) return false
+    const treePath = readLastOpenedTree(lastOpenedFile)
+    if (treePath === null) return false
 
     this.update((settings) => ({
       ...settings,
-      trees: [{ path: treePath as string, kind: 'native', frame: { x: 0, y: 0 } }],
+      trees: [{ path: treePath, kind: 'native', frame: { x: 0, y: 0 } }],
     }))
     return true
   }
@@ -329,8 +378,13 @@ export class SettingsStore {
       merged.trees = settings.trees
     }
 
+    this.writeRaw(merged)
+  }
+
+  /** Write a whole object atomically: a temp file, then a rename over the target. */
+  private writeRaw(object: Record<string, unknown>): void {
     const tmpPath = `${this.path}.tmp`
-    writeFileSync(tmpPath, `${JSON.stringify(merged, null, 2)}\n`, 'utf-8')
+    writeFileSync(tmpPath, `${JSON.stringify(object, null, 2)}\n`, 'utf-8')
     renameSync(tmpPath, this.path)
   }
 }

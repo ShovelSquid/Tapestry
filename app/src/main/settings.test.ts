@@ -441,6 +441,104 @@ describe('SettingsStore passthrough (2.6 D-10)', () => {
   })
 })
 
+describe('SettingsStore Tapestry pointer (2.6 D-02)', () => {
+  const v1 = {
+    version: 1,
+    userName: 'kaelen',
+    agentsEnabled: true,
+    trees: [
+      { path: '/tmp/tapestry-fixture/bega.tree', kind: 'native', frame: { x: -245.5, y: -65.25 } },
+      { path: 'relative.tree', kind: 'native', frame: { x: 1, y: 2 } },
+    ],
+  }
+
+  function writeFixture(settings: SettingsStore, extra: Record<string, unknown> = {}): void {
+    writeFileSync(settings.path, JSON.stringify({ ...v1, ...extra }, null, 2), 'utf-8')
+  }
+
+  it('reads null when there is no pointer', () => {
+    withTempDir((dir) => {
+      const settings = new SettingsStore(dir)
+      writeFixture(settings)
+      expect(settings.getTapestryPointer()).toBeNull()
+    })
+  })
+
+  it.each([
+    ['a relative path', { path: 'Tapestry/Tapestry.tree' }],
+    ['a .. segment', { path: '/tmp/a/../Tapestry.tree' }],
+    ['a path that is not a .tree', { path: '/tmp/Tapestry.json' }],
+    ['a non-object pointer', '/tmp/Tapestry.tree'],
+    ['an array pointer', ['/tmp/Tapestry.tree']],
+    ['a non-string path', { path: 42 }],
+  ])('reads %s as no pointer', (_label, pointer) => {
+    withTempDir((dir) => {
+      const settings = new SettingsStore(dir)
+      writeFixture(settings, { tapestry: pointer })
+      expect(settings.getTapestryPointer()).toBeNull()
+    })
+  })
+
+  it('writes the pointer and version 2, leaving trees exactly as they were', () => {
+    withTempDir((dir) => {
+      const settings = new SettingsStore(dir)
+      writeFixture(settings, { futureKey: { a: 1 } })
+      const home = join(dir, 'space', 'Tapestry.tree')
+
+      settings.setTapestryPointer(home)
+
+      const written = JSON.parse(readFileSync(settings.path, 'utf-8'))
+      expect(written.version).toBe(2)
+      expect(written.tapestry).toEqual({ path: home })
+      expect(written.trees).toEqual(v1.trees)
+      expect(written.futureKey).toEqual({ a: 1 })
+      expect(written.userName).toBe('kaelen')
+      expect(settings.getTapestryPointer()).toBe(home)
+    })
+  })
+
+  it('never lowers a newer version when writing the pointer (case I)', () => {
+    withTempDir((dir) => {
+      const settings = new SettingsStore(dir)
+      writeFixture(settings, { version: 5 })
+      settings.setTapestryPointer(join(dir, 'Tapestry.tree'))
+      expect(JSON.parse(readFileSync(settings.path, 'utf-8')).version).toBe(5)
+    })
+  })
+
+  it('keeps the pointer through a later setUserName', () => {
+    withTempDir((dir) => {
+      const settings = new SettingsStore(dir)
+      writeFixture(settings)
+      const home = join(dir, 'Tapestry.tree')
+      settings.setTapestryPointer(home)
+
+      settings.setUserName('sam')
+
+      const written = JSON.parse(readFileSync(settings.path, 'utf-8'))
+      expect(written.tapestry).toEqual({ path: home })
+      expect(written.version).toBe(2)
+      expect(written.trees).toEqual(v1.trees)
+      expect(settings.getTapestryPointer()).toBe(home)
+    })
+  })
+
+  it.each(['relative/Tapestry.tree', '/tmp/a/../Tapestry.tree', '/tmp/Tapestry.json', ''])(
+    'refuses %j and leaves the file bytes unchanged',
+    (bad) => {
+      withTempDir((dir) => {
+        const settings = new SettingsStore(dir)
+        writeFixture(settings)
+        const before = readFileSync(settings.path, 'utf-8')
+
+        expect(() => settings.setTapestryPointer(bad)).toThrow('Invalid Tapestry tree path')
+
+        expect(readFileSync(settings.path, 'utf-8')).toBe(before)
+      })
+    },
+  )
+})
+
 describe('suggestUserName', () => {
   it('takes the first word of the full name', () => {
     expect(suggestUserName('Kaelen Cook', 'kaelencook')).toBe('kaelen')
