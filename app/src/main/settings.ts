@@ -2,13 +2,23 @@
  * SettingsStore — `userData/settings.json`, the app's small persistent
  * preferences file.
  *
- * It holds the user name that signs every human commit (D-07), whether agents
- * may connect, and the trees open in the space with their frame positions.
+ * It holds the user name that signs every human commit (D-07) and whether
+ * agents may connect. Until phase 2.6 it also held the trees open in the space
+ * with their frame positions; from 2.6 that arrangement moves to the forest
+ * tree (2.6 D-01 supersedes 2.2 D-18), and the `trees` list here becomes the
+ * readable backup it was imported from.
  *
  * The file is user-editable plain JSON, so nothing read from it is trusted:
  * a hand-edited `userName` with a space or a line break would otherwise be
  * spliced straight into an `actor` line. Every field is validated on read and
  * an invalid one falls back to its default rather than propagating.
+ *
+ * Writes are a passthrough, not a rewrite. Every top-level key this build does
+ * not understand is written back with its value, and the raw `trees` value is
+ * written back exactly as found unless a legacy tree writer replaced it. So
+ * the old list stays an untouched backup (2.6 D-10), and a file written by a
+ * newer or older build sharing this userData is not damaged by this one
+ * (2.6 RESEARCH Pitfall 6). `version` is read from the file and never lowered.
  */
 
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'fs'
@@ -37,7 +47,11 @@ export interface TreeSetting {
 }
 
 export interface AppSettings {
-  version: 1
+  /**
+   * The file's own version when it is a positive safe integer, otherwise 1.
+   * Written back as found; this build never raises it.
+   */
+  version: number
   /** The `<name>` in `actor human user.<name>`, or null before first run. */
   userName: string | null
   agentsEnabled: boolean
@@ -98,6 +112,38 @@ function validateTree(raw: unknown): TreeSetting | null {
   return validated
 }
 
+/** A positive safe integer read from the file's `version`, or null. */
+function validVersion(value: unknown): number | null {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : null
+}
+
+/**
+ * Validate the parsed file into the fields this build understands. A null
+ * (missing or unparseable file) reads as defaults.
+ */
+function validateSettings(parsed: Record<string, unknown> | null): AppSettings {
+  if (!parsed) return { ...DEFAULT_SETTINGS, trees: [] }
+
+  const version = validVersion(parsed.version) ?? DEFAULT_SETTINGS.version
+
+  const userName = isValidActorName(parsed.userName) ? parsed.userName : null
+
+  const agentsEnabled =
+    typeof parsed.agentsEnabled === 'boolean'
+      ? parsed.agentsEnabled
+      : DEFAULT_SETTINGS.agentsEnabled
+
+  const trees: TreeSetting[] = []
+  if (Array.isArray(parsed.trees)) {
+    for (const entry of parsed.trees) {
+      const validated = validateTree(entry)
+      if (validated) trees.push(validated)
+    }
+  }
+
+  return { version, userName, agentsEnabled, trees }
+}
+
 // ---------------------------------------------------------------------------
 // SettingsStore
 // ---------------------------------------------------------------------------
@@ -115,41 +161,44 @@ export class SettingsStore {
   }
 
   /**
+   * Parse the file once, returning its top-level object, or null for a
+   * missing, unreadable, unparseable or non-object file.
+   */
+  private readRaw(): Record<string, unknown> | null {
+    let raw: unknown
+    try {
+      if (!existsSync(this.path)) return null
+      raw = JSON.parse(readFileSync(this.path, 'utf-8'))
+    } catch {
+      return null
+    }
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
+    return raw as Record<string, unknown>
+  }
+
+  /**
    * Read and validate the settings file.
    *
    * A missing, unreadable or unparseable file reads as defaults — a corrupted
    * preferences file is an inconvenience, never a failure to start.
    */
   read(): AppSettings {
-    let raw: unknown
-    try {
-      if (!existsSync(this.path)) return { ...DEFAULT_SETTINGS, trees: [] }
-      raw = JSON.parse(readFileSync(this.path, 'utf-8'))
-    } catch {
-      return { ...DEFAULT_SETTINGS, trees: [] }
-    }
+    return validateSettings(this.readRaw())
+  }
 
-    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-      return { ...DEFAULT_SETTINGS, trees: [] }
-    }
-    const parsed = raw as Record<string, unknown>
-
-    const userName = isValidActorName(parsed.userName) ? parsed.userName : null
-
-    const agentsEnabled =
-      typeof parsed.agentsEnabled === 'boolean'
-        ? parsed.agentsEnabled
-        : DEFAULT_SETTINGS.agentsEnabled
-
-    const trees: TreeSetting[] = []
-    if (Array.isArray(parsed.trees)) {
-      for (const entry of parsed.trees) {
-        const validated = validateTree(entry)
-        if (validated) trees.push(validated)
-      }
-    }
-
-    return { version: 1, userName, agentsEnabled, trees }
+  /**
+   * The legacy `trees` list for the one-time import into the forest tree.
+   *
+   * `skipped` counts raw entries that do not validate, so the import can say
+   * how many it left behind (2.6 RESEARCH case J). Those entries stay in the
+   * file: this reads, it never cleans.
+   */
+  readLegacyTrees(): { trees: TreeSetting[]; skipped: number } {
+    const raw = this.readRaw()
+    const trees = validateSettings(raw).trees
+    const rawTrees = raw?.trees
+    const skipped = Array.isArray(rawTrees) ? rawTrees.length - trees.length : 0
+    return { trees, skipped }
   }
 
   /** The stored user name, or null when none has been chosen yet. */
@@ -236,24 +285,52 @@ export class SettingsStore {
     return true
   }
 
-  /** Read, transform and write back, returning the written settings. */
+  /**
+   * Read, transform and write back, returning the written settings.
+   *
+   * Only a mutator that returns a new `trees` array (the legacy tree writers)
+   * rewrites the list; every other write leaves the raw `trees` value alone.
+   */
   update(mutator: (settings: AppSettings) => AppSettings): AppSettings {
-    const next = mutator(this.read())
-    this.write(next)
+    const current = this.read()
+    const next = mutator(current)
+    this.write(next, { treesReplaced: next.trees !== current.trees })
     return next
   }
 
   /**
-   * Write atomically: a temp file in the same directory, then a rename over
+   * Merge the known fields over the file as it is on disk and write the
+   * result atomically: a temp file in the same directory, then a rename over
    * the target. A crash mid-write leaves the previous settings intact instead
    * of a truncated file.
+   *
+   * Unknown top-level keys keep their values and their order. `trees` is the
+   * raw value from disk unless the mutator replaced it. `version` is never
+   * written lower than a valid version already in the file.
    *
    * Failures propagate. Silently swallowing them would let the app report a
    * saved name that was never written.
    */
-  private write(settings: AppSettings): void {
+  private write(settings: AppSettings, opts: { treesReplaced: boolean }): void {
+    const raw = this.readRaw() ?? {}
+    const merged: Record<string, unknown> = { ...raw }
+
+    for (const [key, value] of Object.entries(settings)) {
+      if (key === 'trees') continue
+      merged[key] = value
+    }
+
+    const fileVersion = validVersion(raw.version)
+    if (fileVersion !== null && fileVersion > settings.version) {
+      merged.version = fileVersion
+    }
+
+    if (opts.treesReplaced || !Object.prototype.hasOwnProperty.call(raw, 'trees')) {
+      merged.trees = settings.trees
+    }
+
     const tmpPath = `${this.path}.tmp`
-    writeFileSync(tmpPath, `${JSON.stringify(settings, null, 2)}\n`, 'utf-8')
+    writeFileSync(tmpPath, `${JSON.stringify(merged, null, 2)}\n`, 'utf-8')
     renameSync(tmpPath, this.path)
   }
 }

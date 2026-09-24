@@ -282,6 +282,165 @@ describe('SettingsStore.migrateLastOpened', () => {
   })
 })
 
+describe('SettingsStore passthrough (2.6 D-10)', () => {
+  /**
+   * A file this build does not fully understand: a newer version, a pointer
+   * key a later plan adds, 2.2's agentHttp, an arbitrary future key, and a
+   * `trees` list holding one malformed entry (a relative path).
+   */
+  const fixture = {
+    version: 2,
+    userName: 'old',
+    agentsEnabled: true,
+    tapestry: { path: '/tmp/passthrough/Tapestry.tree' },
+    agentHttp: { enabled: false, port: 47831 },
+    trees: [
+      { path: '/tmp/passthrough/ok.tree', kind: 'native', frame: { x: 12.5, y: -4 } },
+      { path: 'relative/bad.tree', kind: 'native', frame: { x: 0, y: 0 } },
+    ],
+    futureKey: ['a', 1, { nested: true }],
+  }
+
+  function writeFixture(settings: SettingsStore, content: unknown): void {
+    writeFileSync(settings.path, `${JSON.stringify(content, null, 2)}\n`, 'utf-8')
+  }
+
+  function readFile(settings: SettingsStore): Record<string, unknown> {
+    return JSON.parse(readFileSync(settings.path, 'utf-8')) as Record<string, unknown>
+  }
+
+  it('keeps unknown keys, the version and the raw trees list through setUserName', () => {
+    withTempDir((dir) => {
+      const settings = new SettingsStore(dir)
+      writeFixture(settings, fixture)
+
+      settings.setUserName('kaelen')
+
+      const written = readFile(settings)
+      expect(written.version).toBe(2)
+      expect(written.userName).toBe('kaelen')
+      expect(written.tapestry).toEqual(fixture.tapestry)
+      expect(written.agentHttp).toEqual(fixture.agentHttp)
+      expect(written.futureKey).toEqual(fixture.futureKey)
+      // The malformed entry is still there: the old list is a backup, never cleaned.
+      expect(written.trees).toEqual(fixture.trees)
+      // Unknown keys keep their place in the file.
+      expect(Object.keys(written)).toEqual(Object.keys(fixture))
+    })
+  })
+
+  it('keeps the same keys through the agents switch update', () => {
+    withTempDir((dir) => {
+      const settings = new SettingsStore(dir)
+      writeFixture(settings, fixture)
+
+      settings.update((s) => ({ ...s, agentsEnabled: false }))
+
+      const written = readFile(settings)
+      expect(written.agentsEnabled).toBe(false)
+      expect(written.version).toBe(2)
+      expect(written.userName).toBe('old')
+      expect(written.tapestry).toEqual(fixture.tapestry)
+      expect(written.agentHttp).toEqual(fixture.agentHttp)
+      expect(written.futureKey).toEqual(fixture.futureKey)
+      expect(written.trees).toEqual(fixture.trees)
+    })
+  })
+
+  it('reads the version from the file and writes a higher one back as found', () => {
+    withTempDir((dir) => {
+      const settings = new SettingsStore(dir)
+      writeFixture(settings, { ...fixture, version: 7 })
+
+      expect(settings.read().version).toBe(7)
+      settings.setUserName('kaelen')
+
+      expect(readFile(settings).version).toBe(7)
+    })
+  })
+
+  it('never lowers a valid version even when a mutator asks for it', () => {
+    withTempDir((dir) => {
+      const settings = new SettingsStore(dir)
+      writeFixture(settings, { ...fixture, version: 3 })
+
+      settings.update((s) => ({ ...s, version: 1 }))
+
+      expect(readFile(settings).version).toBe(3)
+    })
+  })
+
+  it('leaves a version 1 file at version 1', () => {
+    withTempDir((dir) => {
+      const settings = new SettingsStore(dir)
+      writeFixture(settings, { version: 1, userName: null, agentsEnabled: true, trees: [] })
+
+      settings.setUserName('kaelen')
+
+      expect(readFile(settings).version).toBe(1)
+    })
+  })
+
+  it('reads an invalid version as 1', () => {
+    withTempDir((dir) => {
+      const settings = new SettingsStore(dir)
+      writeFixture(settings, { ...fixture, version: 'two' })
+
+      expect(settings.read().version).toBe(1)
+    })
+  })
+
+  it('writes the trees list byte for byte when a write does not touch it', () => {
+    withTempDir((dir) => {
+      const settings = new SettingsStore(dir)
+      writeFixture(settings, fixture)
+      const treesBefore = JSON.stringify(readFile(settings).trees)
+
+      settings.setUserName('kaelen')
+      settings.update((s) => ({ ...s, agentsEnabled: false }))
+
+      expect(JSON.stringify(readFile(settings).trees)).toBe(treesBefore)
+    })
+  })
+
+  it('counts the malformed legacy entries it skips', () => {
+    withTempDir((dir) => {
+      const settings = new SettingsStore(dir)
+      writeFixture(settings, fixture)
+
+      expect(settings.readLegacyTrees()).toEqual({
+        trees: [{ path: '/tmp/passthrough/ok.tree', kind: 'native', frame: { x: 12.5, y: -4 } }],
+        skipped: 1,
+      })
+    })
+  })
+
+  it('reports nothing skipped when trees is absent or not a list', () => {
+    withTempDir((dir) => {
+      const settings = new SettingsStore(dir)
+      expect(settings.readLegacyTrees()).toEqual({ trees: [], skipped: 0 })
+
+      writeFixture(settings, { version: 1, trees: 'nonsense' })
+      expect(settings.readLegacyTrees()).toEqual({ trees: [], skipped: 0 })
+    })
+  })
+
+  it('writes the full known shape when there is no file yet', () => {
+    withTempDir((dir) => {
+      const settings = new SettingsStore(dir)
+
+      settings.setUserName('kaelen')
+
+      expect(readFile(settings)).toEqual({
+        version: 1,
+        userName: 'kaelen',
+        agentsEnabled: true,
+        trees: [],
+      })
+    })
+  })
+})
+
 describe('suggestUserName', () => {
   it('takes the first word of the full name', () => {
     expect(suggestUserName('Kaelen Cook', 'kaelencook')).toBe('kaelen')
