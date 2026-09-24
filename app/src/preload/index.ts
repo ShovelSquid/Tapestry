@@ -20,6 +20,7 @@ interface ChatOpenState {
   transcript: ChatEvent[]
   busy: boolean
   resumed: boolean
+  allowShell: boolean
 }
 
 // ---------------------------------------------------------------------------
@@ -242,6 +243,9 @@ const tapestryAPI = {
       ipcRenderer.invoke('chat:send', treeId, text),
     stop: (treeId: string): Promise<ChatResult<null>> => ipcRenderer.invoke('chat:stop', treeId),
     newChat: (treeId: string): Promise<ChatResult<null>> => ipcRenderer.invoke('chat:new', treeId),
+    /** The chat's Allow shell (not sandboxed) switch (D-15), from the next message. */
+    setAllowShell: (treeId: string, on: boolean): Promise<ChatResult<null>> =>
+      ipcRenderer.invoke('chat:setAllowShell', treeId, on),
   },
 
   /** Something happened in a workspace's chat. */

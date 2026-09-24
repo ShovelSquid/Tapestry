@@ -216,6 +216,10 @@ export interface UseChat {
   send: (text: string) => Promise<boolean>
   stop: () => Promise<void>
   newChat: () => Promise<void>
+  /** The chat's Allow shell (not sandboxed) switch (D-15). */
+  allowShell: boolean
+  /** Change the switch; the panel confirms before turning it on. */
+  setAllowShell: (on: boolean) => Promise<void>
 }
 
 export function useChat(treeId: string): UseChat {
@@ -223,6 +227,7 @@ export function useChat(treeId: string): UseChat {
   const [busy, setBusy] = useState(false)
   const [workspace, setWorkspace] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [allowShell, setAllowShellState] = useState(false)
 
   useEffect(() => {
     let loaded = false
@@ -230,6 +235,7 @@ export function useChat(treeId: string): UseChat {
     setEvents([])
     setBusy(false)
     setError(null)
+    setAllowShellState(false)
 
     // Subscribe first. Events that arrive before open answers are already in
     // the transcript it returns, so they are dropped rather than doubled.
@@ -246,6 +252,7 @@ export function useChat(treeId: string): UseChat {
         setWorkspace(result.value.workspace)
         setEvents(result.value.transcript)
         setBusy(result.value.busy)
+        setAllowShellState(result.value.allowShell)
       } else {
         setError(result.error)
       }
@@ -278,12 +285,24 @@ export function useChat(treeId: string): UseChat {
       setEvents([])
       setBusy(false)
       setError(null)
+      // A new chat starts sandboxed.
+      setAllowShellState(false)
     } else {
       setError(result.error)
     }
   }, [treeId])
 
+  const setAllowShell = useCallback(
+    async (on: boolean) => {
+      setError(null)
+      const result = await window.tapestry.chat.setAllowShell(treeId, on)
+      if (result.ok) setAllowShellState(on)
+      else setError(result.error)
+    },
+    [treeId],
+  )
+
   const transcript = useMemo(() => foldChatEvents(events), [events])
 
-  return { workspace, transcript, busy, error, send, stop, newChat }
+  return { workspace, transcript, busy, error, send, stop, newChat, allowShell, setAllowShell }
 }

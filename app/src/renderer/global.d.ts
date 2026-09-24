@@ -255,6 +255,8 @@ interface TapestryChatOpenState {
   busy: boolean
   /** The conversation continues one from an earlier launch. */
   resumed: boolean
+  /** The chat's Allow shell (not sandboxed) switch (D-15); off after every relaunch. */
+  allowShell: boolean
 }
 
 /** The in-app chat (02.7 D-12). No token or file path ever comes back. */
@@ -263,6 +265,8 @@ interface TapestryChatAPI {
   send(treeId: string, text: string): Promise<TapestryChatResult<null>>
   stop(treeId: string): Promise<TapestryChatResult<null>>
   newChat(treeId: string): Promise<TapestryChatResult<null>>
+  /** Turn the chat's shell on or off from the next message on (D-15). */
+  setAllowShell(treeId: string, on: boolean): Promise<TapestryChatResult<null>>
 }
 
 interface TapestryAPI {

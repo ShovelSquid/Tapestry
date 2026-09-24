@@ -7,10 +7,11 @@
  * in its --mcp-config file.
  *
  * Environment:
- *   FAKE_CLAUDE_RECORD         write { argv, cwd, env } here as JSON at start,
+ *   FAKE_CLAUDE_RECORD         write { argv, cwd, env, pid } here as JSON at start,
  *                              and append the same line to <RECORD>.log; every
  *                              stdin user line is appended to <RECORD>.stdin
- *   FAKE_CLAUDE_SCENARIO       text | edit | signed-out | crash | slow | session-lost
+ *   FAKE_CLAUDE_SCENARIO       text | edit | signed-out | crash | slow | session-lost |
+ *                              shell-edit | delayed-text
  *   FAKE_CLAUDE_SCENARIO_FILE  if set and readable, its trimmed content
  *                              overrides FAKE_CLAUDE_SCENARIO for this spawn
  *
@@ -22,6 +23,10 @@
  *   slow          start `sleep 60` in our process group, record both pids, never answer
  *   session-lost  with --resume: an error result "No conversation found ...";
  *                 otherwise the text scenario
+ *   shell-edit    append "shell was here" to src/nested/deep.txt in its cwd with
+ *                 node fs (a stand-in for Bash, which a test must not need),
+ *                 reported as a Bash tool_use, its tool_result, text and result
+ *   delayed-text  the init line, then the text scenario 400 ms later
  */
 
 import { spawn } from 'node:child_process'
@@ -43,7 +48,7 @@ const sessionId = flagValue('--resume') ?? flagValue('--session-id') ?? 'no-sess
 
 const record = process.env.FAKE_CLAUDE_RECORD
 if (record) {
-  const payload = JSON.stringify({ argv, cwd: process.cwd(), env: process.env })
+  const payload = JSON.stringify({ argv, cwd: process.cwd(), env: process.env, pid: process.pid })
   writeFileSync(record, payload)
   appendFileSync(`${record}.log`, `${payload}\n`)
 }
@@ -61,12 +66,15 @@ function emit(message) {
   process.stdout.write(`${JSON.stringify(message)}\n`)
 }
 
+/** The built-in tools --tools asked for, as the real CLI lists them at init. */
+const builtinTools = (flagValue('--tools') ?? '').split(',').filter((t) => t.length > 0)
+
 function init() {
   emit({
     type: 'system',
     subtype: 'init',
     session_id: sessionId,
-    tools: [],
+    tools: builtinTools,
     mcp_servers: [{ name: 'tapestry', status: 'connected' }],
     permissionMode: 'dontAsk',
   })
@@ -184,6 +192,38 @@ async function editTurn() {
 }
 
 // ---------------------------------------------------------------------------
+// The shell-edit scenario: what Claude Code's Bash would do, done directly
+// ---------------------------------------------------------------------------
+
+function shellEditTurn() {
+  const command = 'echo shell was here >> src/nested/deep.txt'
+  const toolUseId = 'toolu_fake_shell_0001'
+  emit({
+    type: 'assistant',
+    message: {
+      role: 'assistant',
+      content: [{ type: 'tool_use', id: toolUseId, name: 'Bash', input: { command } }],
+    },
+    session_id: sessionId,
+  })
+  appendFileSync(join(process.cwd(), 'src', 'nested', 'deep.txt'), 'shell was here\n')
+  emit({
+    type: 'user',
+    message: {
+      role: 'user',
+      content: [{ type: 'tool_result', tool_use_id: toolUseId, is_error: false, content: '' }],
+    },
+    session_id: sessionId,
+  })
+  emit({
+    type: 'assistant',
+    message: { role: 'assistant', content: [{ type: 'text', text: 'I ran the command.' }] },
+    session_id: sessionId,
+  })
+  result(false, 'I ran the command.')
+}
+
+// ---------------------------------------------------------------------------
 
 let initialised = false
 
@@ -221,6 +261,16 @@ async function onUserLine() {
       if (!initialised) init()
       initialised = true
       await editTurn()
+      return
+    case 'shell-edit':
+      if (!initialised) init()
+      initialised = true
+      shellEditTurn()
+      return
+    case 'delayed-text':
+      init()
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 400))
+      replayText()
       return
     case 'text':
     default:

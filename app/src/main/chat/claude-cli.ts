@@ -36,12 +36,25 @@ export const BUILTIN_TOOL_NAMES = [
   'MultiEdit',
 ] as const
 
+/**
+ * The built-in tools a chat gets while its **Allow shell (not sandboxed)**
+ * switch is on (D-15): the shell and Claude Code's own file tools. WebFetch,
+ * WebSearch and subagents stay off, and `--permission-mode dontAsk` denies
+ * anything not listed. Names confirmed against Claude Code 2.1.282 (02.7-04).
+ */
+export const SHELL_TOOLS = ['Bash', 'Read', 'Edit', 'Write', 'Glob', 'Grep'] as const
+
 export interface ClaudeArgsOptions {
   sessionId: string
   /** Continue an existing session (`--resume`) rather than naming a new one. */
   resume: boolean
   mcpConfigPath: string
   systemPrompt: string
+  /**
+   * The chat's shell switch (D-15). False when omitted, which gives the
+   * sandboxed default argv (D-14).
+   */
+  allowShell?: boolean
 }
 
 /**
@@ -56,8 +69,10 @@ export interface ClaudeArgsOptions {
  * - `--mcp-config <file>` + `--strict-mcp-config`: load Tapestry's MCP shim and
  *   nothing else — not the person's other servers, not the workspace's.
  * - `--tools ''`: every built-in tool is off, Bash and the file tools included
- *   (D-14). The shell switch (02.7-04) is the only way to turn them on.
- * - `--allowedTools mcp__tapestry`: Tapestry's tools run without asking.
+ *   (D-14). The shell switch (02.7-04) is the only way to turn them on: with
+ *   `allowShell` the value is `Bash,Read,Edit,Write,Glob,Grep` instead.
+ * - `--allowedTools mcp__tapestry`: Tapestry's tools run without asking; with
+ *   `allowShell`, the shell tools too (`mcp__tapestry,Bash,Read,...`).
  * - `--permission-mode dontAsk` + `--permission-prompts none`: anything else
  *   that would prompt is denied, since nobody can answer a prompt in -p.
  * - `--setting-sources user`: -p skips the workspace-trust dialog, so an
@@ -72,6 +87,12 @@ export interface ClaudeArgsOptions {
  * variadic list cannot swallow anything that follows it.
  */
 export function buildClaudeArgs(options: ClaudeArgsOptions): string[] {
+  // The only code path in Tapestry that names a built-in Claude Code tool.
+  // It is reached only when a person turned the chat's shell switch on and
+  // confirmed it in this app session (D-15).
+  const shell = options.allowShell === true
+  const tools = shell ? SHELL_TOOLS.join(',') : ''
+  const allowedTools = [`mcp__${CHAT_MCP_SERVER}`, ...(shell ? SHELL_TOOLS : [])].join(',')
   return [
     '-p',
     '--input-format',
@@ -84,9 +105,9 @@ export function buildClaudeArgs(options: ClaudeArgsOptions): string[] {
     options.mcpConfigPath,
     '--strict-mcp-config',
     '--tools',
-    '',
+    tools,
     '--allowedTools',
-    `mcp__${CHAT_MCP_SERVER}`,
+    allowedTools,
     '--permission-mode',
     'dontAsk',
     '--permission-prompts',

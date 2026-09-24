@@ -72,6 +72,13 @@ export interface ChatEngine {
   /** End the running turn. The conversation stays resumable. */
   stop(): Promise<void>
 
+  /**
+   * The chat's shell switch (D-15), from the next message on. Engines with no
+   * shell (the API-key engine) leave it out. Resolves once any process that
+   * had the old tools and was idle has ended.
+   */
+  setAllowShell?(on: boolean): Promise<void>
+
   /** Stop and release everything this engine holds. */
   dispose(): Promise<void>
 

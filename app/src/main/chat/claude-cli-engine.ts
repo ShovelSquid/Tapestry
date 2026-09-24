@@ -14,6 +14,10 @@
  *
  * Message text goes only over stdin. The panel agent's token is only in the
  * MCP config file the CLI reads; it is never in argv or in the environment.
+ *
+ * The shell switch (D-15) is read at spawn time. Changing it while idle ends
+ * the live process quietly, so the next message resumes the same session with
+ * the new tools; changing it during a turn ends the process after that turn.
  */
 
 import { spawn, type ChildProcess } from 'node:child_process'
@@ -48,6 +52,8 @@ export interface ClaudeCliEngineOptions {
   env: Record<string, string>
   /** A turn running longer than this is stopped. Defaults to 30 minutes. */
   turnTimeoutMs?: number
+  /** The chat's shell switch (D-15). Defaults to off. */
+  allowShell?: boolean
 }
 
 interface RunningProcess {
@@ -57,6 +63,8 @@ interface RunningProcess {
   stopping: boolean
   exited: boolean
   stderr: string
+  /** Whether this process was given the shell tools. */
+  allowShell: boolean
 }
 
 /** True while any process in the group led by `pid` is alive. */
@@ -98,14 +106,37 @@ export class ClaudeCliEngine implements ChatEngine {
   private turnTimer: ReturnType<typeof setTimeout> | null = null
   private sawAssistant = false
   private disposed = false
+  /** The shell switch, as the next spawn will read it. */
+  private shellOn: boolean
+  /** Processes ended because the switch changed, until they are gone. */
+  private readonly ending = new Set<Promise<void>>()
 
   constructor(options: ClaudeCliEngineOptions) {
     this.options = options
     this.turnTimeoutMs = options.turnTimeoutMs ?? 30 * 60_000
+    this.shellOn = options.allowShell === true
   }
 
   get busy(): boolean {
     return this.turnBusy
+  }
+
+  /** The shell switch as the next spawn will read it. */
+  get allowShell(): boolean {
+    return this.shellOn
+  }
+
+  /**
+   * Change the shell switch from the next message on (D-15). An idle process
+   * that has the other tool set is ended quietly (no `done`); a busy one keeps
+   * its turn and is ended after that turn's `done`. Resolves once every
+   * process ended this way is gone.
+   */
+  async setAllowShell(on: boolean): Promise<void> {
+    this.shellOn = on === true
+    const proc = this.proc
+    if (proc && !this.turnBusy) this.endIfStale(proc)
+    await Promise.all([...this.ending])
   }
 
   async start(options: ChatStartOptions): Promise<{ sessionId: string; resumed: boolean }> {
@@ -182,6 +213,21 @@ export class ClaudeCliEngine implements ChatEngine {
 
   // -------------------------------------------------------------------------
 
+  /**
+   * End `proc` quietly when its tools no longer match the switch. It stops
+   * being the chat's process at once, so the next send spawns (with
+   * `--resume`) rather than writing to it.
+   */
+  private endIfStale(proc: RunningProcess): void {
+    if (this.proc !== proc || proc.exited || proc.stopping) return
+    if (proc.allowShell === this.shellOn) return
+    this.proc = null
+    const ending = this.terminate(proc).finally(() => {
+      this.ending.delete(ending)
+    })
+    this.ending.add(ending)
+  }
+
   private emit(event: ChatEvent): void {
     for (const listener of [...this.listeners]) {
       try {
@@ -240,6 +286,7 @@ export class ClaudeCliEngine implements ChatEngine {
         resume: this.hasHistory,
         mcpConfigPath,
         systemPrompt,
+        allowShell: this.shellOn,
       }),
     ]
 
@@ -261,7 +308,14 @@ export class ClaudeCliEngine implements ChatEngine {
       return
     }
 
-    const proc: RunningProcess = { child, pid: child.pid, stopping: false, exited: false, stderr: '' }
+    const proc: RunningProcess = {
+      child,
+      pid: child.pid,
+      stopping: false,
+      exited: false,
+      stderr: '',
+      allowShell: this.shellOn,
+    }
     this.proc = proc
     if (child.pid !== undefined) this.liveGroups.add(child.pid)
 
@@ -355,6 +409,8 @@ export class ClaudeCliEngine implements ChatEngine {
         this.endTurn()
       }
       this.emit(event)
+      // The switch changed during this turn: it applies from the next one.
+      if (event.type === 'done') this.endIfStale(proc)
     }
   }
 }

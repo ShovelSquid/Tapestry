@@ -13,6 +13,14 @@
  *
  * Everything here goes through the ChatEngine interface; only the default
  * engine factory knows about the Claude Code CLI.
+ *
+ * Each chat has an **Allow shell (not sandboxed)** switch (D-15). It is off for
+ * every new chat and after every relaunch: a person's consent lasts for this
+ * session of the app. chats.json keeps its last state only so the chat can say
+ * it was reset. Whatever Claude changes through the shell or Claude Code's own
+ * file tools bypasses Tapestry's tools, so after each turn that ran with the
+ * shell on, the workspace is caught up and those changes enter the tree as
+ * `plugin workspace.watcher` observed changes (D-06), never as the chat agent.
  */
 
 import { accessSync, chmodSync, constants, existsSync, mkdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
@@ -34,6 +42,12 @@ export const RESUMED_NOTICE =
   "Continuing your earlier conversation; earlier messages aren't shown here."
 export const SESSION_LOST_NOTICE =
   "The earlier conversation couldn't be resumed, so this is a new one."
+export const SHELL_ON_NOTICE =
+  "Shell access is on for this chat — not sandboxed. From your next message Claude can run commands and use Claude Code's own file tools in the workspace folder, and anything your account can reach. Its file changes are recorded as observed changes, author unknown."
+export const SHELL_OFF_NOTICE =
+  "Shell access is off for this chat. From your next message Claude can reach only Tapestry's workspace tools."
+export const SHELL_RESET_NOTICE =
+  'Shell access was on in this chat before Tapestry restarted. It is off now; turn it on again if you still want it.'
 
 const MAX_MESSAGE_CHARS = 100_000
 const MAX_TRANSCRIPT_EVENTS = 2000
@@ -48,7 +62,11 @@ export interface ChatLaunch {
 export interface ChatServiceOptions {
   userDataDir: string
   agents: AgentRegistry
-  workspaces: { openWorkspaces(): OpenWorkspace[] }
+  workspaces: {
+    openWorkspaces(): OpenWorkspace[]
+    /** Record what the folder says that the tree does not, as observed (D-06). */
+    catchUp(treeId: string): Promise<void>
+  }
   launch: ChatLaunch
   isBridgeEnabled: () => boolean
   emit: (treeId: string, event: ChatEvent) => void
@@ -64,6 +82,8 @@ export interface ChatOpenState {
   transcript: ChatEvent[]
   busy: boolean
   resumed: boolean
+  /** The chat's shell switch (D-15). */
+  allowShell: boolean
 }
 
 interface Chat {
@@ -81,11 +101,25 @@ interface Chat {
   resentAfterLoss: boolean
   /** Swallowing the failed turn of a lost session until its `done`. */
   recovering: boolean
+  /** The shell switch (D-15): off for every new chat and after every relaunch. */
+  allowShell: boolean
+  /** The running turn started with the shell on, so it ends with a catch-up. */
+  turnShell: boolean
+  /** A shell-on turn's catch-up, recorded before its `done`; null when none runs. */
+  settling: Promise<void> | null
+  /** Switch changes reaching the engine, in order. */
+  shellChange: Promise<void>
+}
+
+interface ChatsEntry {
+  sessionId?: string
+  /** The shell switch's last state; `on` is rewritten to false at each launch. */
+  shell?: { on: boolean; changedAt: string }
 }
 
 interface ChatsFile {
   version: 1
-  chats: Record<string, { sessionId: string }>
+  chats: Record<string, ChatsEntry>
 }
 
 function isExecutableFile(path: string): boolean {
@@ -116,10 +150,13 @@ export class ChatService {
   private readonly liveEngines = new Set<ChatEngine>()
   /** Trees whose MCP config file may exist. */
   private readonly configTreeIds = new Set<string>()
+  /** Workspace roots whose shell was on before this launch, until their chat says so. */
+  private readonly shellResetRoots = new Set<string>()
 
   constructor(options: ChatServiceOptions) {
     this.options = options
     this.chatDir = join(options.userDataDir, 'chat')
+    this.resetShellsFromLastLaunch()
   }
 
   /** The chat for an open workspace, with what the panel needs to show it. */
@@ -129,9 +166,32 @@ export class ChatService {
       workspace: chat.name,
       sessionId: chat.sessionId,
       transcript: [...chat.transcript],
-      busy: chat.engine?.busy ?? false,
+      busy: (chat.engine?.busy ?? false) || chat.settling !== null,
       resumed: chat.resumedFromDisk,
+      allowShell: chat.allowShell,
     }
+  }
+
+  /**
+   * Turn the chat's shell on or off (D-15), from the next message on. The
+   * panel asks for confirmation before turning it on. Each change is recorded
+   * as a notice in the chat and as the chat's state in chats.json.
+   */
+  async setAllowShell(treeId: string, on: unknown): Promise<void> {
+    if (typeof on !== 'boolean') throw new Error('The shell switch must be on or off')
+    const chat = this.chatFor(treeId)
+    if (chat.allowShell !== on) {
+      chat.allowShell = on
+      this.persistShell(chat)
+      this.record(chat, { type: 'notice', text: on ? SHELL_ON_NOTICE : SHELL_OFF_NOTICE })
+    }
+    // Serialized, so a quick on/off/on cannot leave two processes.
+    const engine = chat.engine
+    const change = chat.shellChange
+      .catch(() => undefined)
+      .then(() => engine?.setAllowShell?.(chat.allowShell))
+    chat.shellChange = change.catch(() => undefined)
+    await change
   }
 
   async send(treeId: string, text: unknown): Promise<void> {
@@ -142,6 +202,10 @@ export class ChatService {
       throw new Error(`A message can be at most ${MAX_MESSAGE_CHARS} characters`)
     }
     const chat = this.chatFor(treeId)
+    if (chat.engine?.busy) throw new Error(STILL_ANSWERING_MESSAGE)
+    // A switch change or the last shell turn's catch-up finishes first.
+    await chat.shellChange
+    if (chat.settling) await chat.settling
     if (chat.engine?.busy) throw new Error(STILL_ANSWERING_MESSAGE)
 
     if (!this.options.isBridgeEnabled()) {
@@ -164,7 +228,7 @@ export class ChatService {
     chat.lastText = text
     chat.resentAfterLoss = false
     this.record(chat, { type: 'user', text })
-    engine.send(text)
+    this.sendToEngine(chat, engine, text)
   }
 
   async stop(treeId: string): Promise<void> {
@@ -180,6 +244,11 @@ export class ChatService {
     chat.transcript = []
     chat.lastText = null
     this.persistSession(chat)
+    // A new chat starts sandboxed.
+    if (chat.allowShell) {
+      chat.allowShell = false
+      this.persistShell(chat)
+    }
   }
 
   /** The workspace closed: stop its chat and delete its MCP config file. */
@@ -238,10 +307,23 @@ export class ChatService {
         lastText: null,
         resentAfterLoss: false,
         recovering: false,
+        allowShell: false,
+        turnShell: false,
+        settling: null,
+        shellChange: Promise.resolve(),
       }
       this.chats.set(treeId, chat)
+      if (this.shellResetRoots.delete(ws.realRoot)) {
+        this.record(chat, { type: 'notice', text: SHELL_RESET_NOTICE })
+      }
     }
     return chat
+  }
+
+  /** Send one message, noting whether its turn runs with the shell on. */
+  private sendToEngine(chat: Chat, engine: ChatEngine, text: string): void {
+    chat.turnShell = chat.allowShell
+    engine.send(text)
   }
 
   private async ensureEngine(chat: Chat, binaryPath: string, fresh = false): Promise<ChatEngine> {
@@ -257,6 +339,7 @@ export class ChatService {
       mcpConfigPath,
       systemPrompt: chatSystemPrompt(chat.name),
       env: childEnv(process.env),
+      allowShell: chat.allowShell,
     }
     const engine = (this.options.createEngine ?? ((o) => new ClaudeCliEngine(o)))(engineOptions)
     chat.engine = engine
@@ -300,7 +383,29 @@ export class ChatService {
       chat.sessionId = event.sessionId
       this.persistSession(chat)
     }
+
+    // A turn that ran with the shell on (ok or not: a crash or Stop may follow
+    // a command that changed files) is caught up before its `done` is shown,
+    // so what it changed is in the tree, as observed, when the turn ends.
+    if (event.type === 'done' && chat.turnShell) {
+      chat.turnShell = false
+      const settling = this.catchUpAfterShellTurn(chat).finally(() => {
+        if (chat.settling === settling) chat.settling = null
+        this.record(chat, event)
+      })
+      chat.settling = settling
+      return
+    }
     this.record(chat, event)
+  }
+
+  /** Never throws: a failed catch-up is logged, and the next one retries. */
+  private async catchUpAfterShellTurn(chat: Chat): Promise<void> {
+    try {
+      await this.options.workspaces.catchUp(chat.treeId)
+    } catch (err) {
+      console.error('[ChatService] could not record the shell turn\'s file changes:', err)
+    }
   }
 
   private async resendAfterLoss(chat: Chat): Promise<void> {
@@ -316,13 +421,14 @@ export class ChatService {
     }
     chat.resentAfterLoss = true
     const engine = await this.ensureEngine(chat, binary.path, true)
-    engine.send(text)
+    this.sendToEngine(chat, engine, text)
   }
 
   private async dropEngine(chat: Chat): Promise<void> {
     const engine = chat.engine
     chat.engine = null
     chat.recovering = false
+    chat.turnShell = false
     chat.unsubscribe?.()
     chat.unsubscribe = null
     if (engine) {
@@ -390,10 +496,21 @@ export class ChatService {
       const parsed = JSON.parse(readFileSync(path, 'utf-8')) as Partial<ChatsFile>
       const chats: ChatsFile['chats'] = {}
       if (parsed && typeof parsed.chats === 'object' && parsed.chats !== null) {
-        for (const [root, entry] of Object.entries(parsed.chats)) {
-          if (entry && typeof entry.sessionId === 'string' && entry.sessionId.length > 0) {
-            chats[root] = { sessionId: entry.sessionId }
+        for (const [root, raw] of Object.entries(parsed.chats)) {
+          const entry = raw as Partial<ChatsEntry> | null
+          if (!entry || typeof entry !== 'object') continue
+          const kept: ChatsEntry = {}
+          if (typeof entry.sessionId === 'string' && entry.sessionId.length > 0) {
+            kept.sessionId = entry.sessionId
           }
+          const shell = entry.shell
+          if (shell && typeof shell === 'object' && typeof shell.on === 'boolean') {
+            kept.shell = {
+              on: shell.on,
+              changedAt: typeof shell.changedAt === 'string' ? shell.changedAt : '',
+            }
+          }
+          if (kept.sessionId !== undefined || kept.shell !== undefined) chats[root] = kept
         }
       }
       return { version: 1, chats }
@@ -403,19 +520,65 @@ export class ChatService {
     }
   }
 
+  private writeChats(file: ChatsFile): void {
+    this.ensureChatDir()
+    writePrivateFile(this.chatsFilePath(), JSON.stringify(file, null, 2))
+  }
+
+  /** Change one root's entry, dropping it when nothing is left in it. */
+  private updateEntry(realRoot: string, change: (entry: ChatsEntry) => void): void {
+    const file = this.readChats()
+    const entry: ChatsEntry = { ...file.chats[realRoot] }
+    change(entry)
+    if (entry.sessionId === undefined && entry.shell === undefined) {
+      delete file.chats[realRoot]
+    } else {
+      file.chats[realRoot] = entry
+    }
+    this.writeChats(file)
+  }
+
   private persistSession(chat: Chat): void {
     try {
-      const file = this.readChats()
-      if (chat.sessionId) {
-        file.chats[chat.realRoot] = { sessionId: chat.sessionId }
-      } else {
-        delete file.chats[chat.realRoot]
-      }
-      this.ensureChatDir()
-      writePrivateFile(this.chatsFilePath(), JSON.stringify(file, null, 2))
+      this.updateEntry(chat.realRoot, (entry) => {
+        if (chat.sessionId) entry.sessionId = chat.sessionId
+        else delete entry.sessionId
+      })
     } catch (err) {
       // Losing this only means the next launch starts a new conversation.
       console.error('[ChatService] could not write chats.json:', err)
+    }
+  }
+
+  private persistShell(chat: Chat): void {
+    try {
+      this.updateEntry(chat.realRoot, (entry) => {
+        entry.shell = { on: chat.allowShell, changedAt: new Date().toISOString() }
+      })
+    } catch (err) {
+      // The switch itself still works; only the record of it is missing.
+      console.error('[ChatService] could not write chats.json:', err)
+    }
+  }
+
+  /**
+   * A relaunch turns every chat's shell off (D-15). Each chat whose shell was
+   * on says so the first time it is opened.
+   */
+  private resetShellsFromLastLaunch(): void {
+    if (!existsSync(this.chatsFilePath())) return
+    try {
+      const file = this.readChats()
+      const changedAt = new Date().toISOString()
+      for (const [root, entry] of Object.entries(file.chats)) {
+        if (entry.shell?.on !== true) continue
+        entry.shell = { on: false, changedAt }
+        this.shellResetRoots.add(root)
+      }
+      if (this.shellResetRoots.size > 0) this.writeChats(file)
+    } catch (err) {
+      // The switch is off in memory whatever the file says.
+      console.error('[ChatService] could not reset the shell switches in chats.json:', err)
     }
   }
 }

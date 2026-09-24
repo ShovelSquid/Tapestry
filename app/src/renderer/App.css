@@ -1627,6 +1627,76 @@ html, body, #root {
   align-self: flex-start;
 }
 
+/* The chat's shell switch (D-15): off by default, confirmed before on. */
+.tapestry-chat-shell-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.tapestry-chat-shell-switch {
+  align-self: flex-start;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.4;
+  color: #2C2C2C;
+  cursor: pointer;
+}
+
+.tapestry-chat-shell-switch:focus-visible {
+  outline: 2px solid #4A7CFF;
+  outline-offset: 2px;
+}
+
+.tapestry-chat-shell-track {
+  position: relative;
+  width: 28px;
+  height: 16px;
+  flex: none;
+  border-radius: 8px;
+  background: #E0DDD7;
+}
+
+.tapestry-chat-shell-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #FFFFFF;
+}
+
+.tapestry-chat-shell-switch--on .tapestry-chat-shell-track {
+  background: #E5484D;
+}
+
+.tapestry-chat-shell-switch--on .tapestry-chat-shell-thumb {
+  left: 14px;
+}
+
+.tapestry-chat-shell-risk {
+  font-size: 12px;
+  line-height: 1.4;
+  color: #6B6B6B;
+}
+
+/* Shown under the header for as long as the shell is on. */
+.tapestry-chat-shell-banner {
+  padding: 6px 16px;
+  background: #E5484D;
+  color: #FFFFFF;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
 /* Right-click menu (D-19): sits above the chat panel and the canvas. */
 .tapestry-context-menu {
   z-index: 300;

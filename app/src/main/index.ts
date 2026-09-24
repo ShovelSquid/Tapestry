@@ -393,6 +393,19 @@ app.whenReady().then(async () => {
     }
   })
 
+  // The shell switch (D-15). The panel asks for confirmation before `on`; a
+  // non-boolean is refused rather than read as either state.
+  ipcMain.handle('chat:setAllowShell', async (_event, treeId: unknown, on: unknown) => {
+    try {
+      const id = chatTreeId(treeId)
+      if (typeof on !== 'boolean') return { ok: false, error: 'The shell switch must be on or off' }
+      await chat.setAllowShell(id, on)
+      return { ok: true, value: null }
+    } catch (err) {
+      return { ok: false, error: errorMessage(err) }
+    }
+  })
+
   ipcMain.handle('chat:new', async (_event, treeId: unknown) => {
     try {
       await chat.newChat(chatTreeId(treeId))

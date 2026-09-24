@@ -12,6 +12,7 @@ import { join, resolve } from 'node:path'
 import {
   BUILTIN_TOOL_NAMES,
   CHAT_MCP_SERVER,
+  SHELL_TOOLS,
   SIGNED_OUT_MESSAGE,
   buildClaudeArgs,
   chatSystemPrompt,
@@ -85,6 +86,47 @@ describe('buildClaudeArgs', () => {
     expect(args.filter((a) => a === '--tools')).toHaveLength(1)
     expect(args).toHaveLength(buildClaudeArgs({ ...BASE, resume: false }).length)
   })
+})
+
+describe('buildClaudeArgs and the shell switch (D-15)', () => {
+  const SHELL_ON_TOOLS = 'Bash,Read,Edit,Write,Glob,Grep'
+  const SHELL_ON_ALLOWED = 'mcp__tapestry,Bash,Read,Edit,Write,Glob,Grep'
+
+  for (const resume of [false, true]) {
+    for (const allowShell of [undefined, false] as const) {
+      it(`names no built-in tool with the shell ${allowShell === undefined ? 'omitted' : 'off'} (${resume ? 'resume' : 'new'})`, () => {
+        const args = buildClaudeArgs({ ...BASE, resume, ...(allowShell === undefined ? {} : { allowShell }) })
+        expect(args).toEqual(buildClaudeArgs({ ...BASE, resume }))
+        for (const element of args) {
+          for (const part of element.split(',')) {
+            for (const tool of BUILTIN_TOOL_NAMES) {
+              expect(part === tool || part.startsWith(tool)).toBe(false)
+            }
+          }
+        }
+      })
+    }
+
+    it(`gives the shell tools, and changes nothing else, with the shell on (${resume ? 'resume' : 'new'})`, () => {
+      const on = buildClaudeArgs({ ...BASE, resume, allowShell: true })
+      const off = buildClaudeArgs({ ...BASE, resume })
+      expect(SHELL_TOOLS.join(',')).toBe(SHELL_ON_TOOLS)
+      expect(after(on, '--tools')).toBe(SHELL_ON_TOOLS)
+      expect(after(on, '--allowedTools')).toBe(SHELL_ON_ALLOWED)
+      expect(on).toHaveLength(off.length)
+
+      // Without those two values, the argv is exactly the sandboxed one.
+      const strip = (args: string[]): string[] =>
+        args.filter((_, i) => args[i - 1] !== '--tools' && args[i - 1] !== '--allowedTools')
+      expect(strip(on)).toEqual(strip(off))
+      expect(after(on, '--permission-mode')).toBe('dontAsk')
+      expect(on).toContain('--strict-mcp-config')
+      expect(on).not.toContain('--restricted')
+      for (const tool of ['WebFetch', 'WebSearch', 'Task', 'NotebookEdit']) {
+        expect(on.some((element) => element.split(',').includes(tool))).toBe(false)
+      }
+    })
+  }
 })
 
 describe('userMessageLine', () => {

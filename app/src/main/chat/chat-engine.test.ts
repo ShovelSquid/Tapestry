@@ -30,6 +30,9 @@ import {
   CHAT_AGENT_NAME,
   RESUMED_NOTICE,
   SESSION_LOST_NOTICE,
+  SHELL_OFF_NOTICE,
+  SHELL_ON_NOTICE,
+  SHELL_RESET_NOTICE,
 } from './chat-service'
 import {
   ClaudeCliEngine,
@@ -37,7 +40,7 @@ import {
   TURN_TIMEOUT_MESSAGE,
   type ClaudeCliEngineOptions,
 } from './claude-cli-engine'
-import { SIGNED_OUT_MESSAGE, buildClaudeArgs, chatSystemPrompt } from './claude-cli'
+import { BUILTIN_TOOL_NAMES, SIGNED_OUT_MESSAGE, buildClaudeArgs, chatSystemPrompt } from './claude-cli'
 import type { ChatEvent } from './engine'
 
 const FAKE_CLAUDE = resolve(process.cwd(), 'test', 'fixtures', 'fake-claude', 'fake-claude.mjs')
@@ -164,6 +167,7 @@ interface Recorded {
   argv: string[]
   cwd: string
   env: Record<string, string>
+  pid: number
 }
 
 function readRecord(path: string): Recorded {
@@ -474,5 +478,216 @@ describe('ChatService failures and lifecycle', () => {
     const realRoot = second.workspaces.workspaceFor(second.tree.id)!.realRoot
     expect(chats.chats[realRoot]).toBeUndefined()
     expect(statSync(join(first.ws.dir, 'chat', 'chats.json')).mode & 0o777).toBe(0o600)
+  }, 30000)
+})
+
+// ---------------------------------------------------------------------------
+// The Allow shell switch (02.7-04, D-15)
+// ---------------------------------------------------------------------------
+
+const SHELL_ON_TOOLS = 'Bash,Read,Edit,Write,Glob,Grep'
+const SHELL_ON_ALLOWED = 'mcp__tapestry,Bash,Read,Edit,Write,Glob,Grep'
+
+/** The argv the chat would get with the shell off: exactly 02.7-02's default. */
+function defaultArgv(h: Harness, sessionId: string, resume: boolean): string[] {
+  return buildClaudeArgs({
+    sessionId,
+    resume,
+    mcpConfigPath: h.chat.configPathFor(h.tree.id),
+    systemPrompt: chatSystemPrompt(h.tree.name),
+  })
+}
+
+function expectNoBuiltinTool(argv: string[]): void {
+  for (const element of argv) {
+    for (const part of element.split(',')) {
+      for (const tool of BUILTIN_TOOL_NAMES) {
+        expect(part === tool || part.startsWith(tool)).toBe(false)
+      }
+    }
+  }
+}
+
+function expectShellArgv(argv: string[]): void {
+  expect(flagValue(argv, '--tools')).toBe(SHELL_ON_TOOLS)
+  expect(flagValue(argv, '--allowedTools')).toBe(SHELL_ON_ALLOWED)
+}
+
+function chatsEntry(h: Harness): { sessionId?: string; shell?: { on: boolean; changedAt: string } } | undefined {
+  const chats = JSON.parse(readFileSync(join(h.ws.dir, 'chat', 'chats.json'), 'utf-8'))
+  return chats.chats[h.workspaces.workspaceFor(h.tree.id)!.realRoot]
+}
+
+function notices(h: Harness): string[] {
+  return h.events.filter((e) => e.type === 'notice').map((e) => (e as { text: string }).text)
+}
+
+/** Every commit block in the tree file. */
+function commitBlocks(h: Harness): string[] {
+  return readFileSync(h.tree.path, 'utf-8').split('@commit ').slice(1)
+}
+
+describe('the Allow shell switch', () => {
+  it('starts off, and turning it on while idle ends the process and resumes with the shell tools', async () => {
+    const h = await startHarness({ scenario: 'text' })
+    expect(h.chat.open(h.tree.id).allowShell).toBe(false)
+    await h.chat.send(h.tree.id, 'first')
+    await waitFor(() => doneCount(h.events) === 1)
+
+    const first = recordedSpawns(h)[0]
+    const sessionId = flagValue(first.argv, '--session-id')!
+    expect(first.argv).toEqual(defaultArgv(h, sessionId, false))
+    expectNoBuiltinTool(first.argv)
+    expect(pidAlive(first.pid)).toBe(true)
+
+    await h.chat.setAllowShell(h.tree.id, true)
+    // Ended quietly: its group is gone and no turn was reported as ended.
+    await waitFor(() => !pidAlive(first.pid), 5000)
+    expect(doneCount(h.events)).toBe(1)
+    expect(h.chat.open(h.tree.id).allowShell).toBe(true)
+    expect(notices(h)).toEqual([SHELL_ON_NOTICE])
+    expect(h.chat.open(h.tree.id).transcript).toContainEqual({ type: 'notice', text: SHELL_ON_NOTICE })
+    expect(chatsEntry(h)?.shell?.on).toBe(true)
+    expect(chatsEntry(h)?.sessionId).toBe(sessionId)
+
+    await h.chat.send(h.tree.id, 'second')
+    await waitFor(() => doneCount(h.events) === 2)
+    const spawns = recordedSpawns(h)
+    expect(spawns).toHaveLength(2)
+    expect(flagValue(spawns[1].argv, '--resume')).toBe(sessionId)
+    expectShellArgv(spawns[1].argv)
+    expect(spawns[1].cwd).toBe(h.workspaces.workspaceFor(h.tree.id)!.realRoot)
+
+    // Off again: the next spawn is the default argv once more.
+    await h.chat.setAllowShell(h.tree.id, false)
+    await waitFor(() => !pidAlive(spawns[1].pid), 5000)
+    expect(notices(h)).toEqual([SHELL_ON_NOTICE, SHELL_OFF_NOTICE])
+    expect(chatsEntry(h)?.shell?.on).toBe(false)
+    await h.chat.send(h.tree.id, 'third')
+    await waitFor(() => doneCount(h.events) === 3)
+    const third = recordedSpawns(h)[2]
+    expect(third.argv).toEqual(defaultArgv(h, sessionId, true))
+    expectNoBuiltinTool(third.argv)
+  }, 30000)
+
+  it('refuses a switch value that is not a boolean', async () => {
+    const h = await startHarness()
+    await expect(h.chat.setAllowShell(h.tree.id, 'yes')).rejects.toThrow('The shell switch must be on or off')
+    expect(h.chat.open(h.tree.id).allowShell).toBe(false)
+  }, 30000)
+
+  it('a change during a turn leaves that turn running until Stop, then applies', async () => {
+    const scenarioFile = join(makeScenarioDir(), 'scenario')
+    writeFileSync(scenarioFile, 'slow')
+    const h = await startHarness({ scenarioFile })
+    await h.chat.send(h.tree.id, 'take your time')
+    const pids = await slowPids(h)
+
+    await h.chat.setAllowShell(h.tree.id, true)
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 300))
+    expect(pidAlive(pids.fake)).toBe(true)
+    expect(pidAlive(pids.sleep)).toBe(true)
+    expect(h.chat.open(h.tree.id).busy).toBe(true)
+
+    await h.chat.stop(h.tree.id)
+    await expectAllDead(pids)
+
+    writeFileSync(scenarioFile, 'text')
+    await h.chat.send(h.tree.id, 'now')
+    await waitFor(() => h.events.filter((e) => e.type === 'done').length === 2)
+    const spawns = recordedSpawns(h)
+    expect(spawns).toHaveLength(2)
+    expectShellArgv(spawns[1].argv)
+    expect(flagValue(spawns[1].argv, '--resume')).toBe(flagValue(spawns[0].argv, '--session-id'))
+  }, 30000)
+
+  it('a change during a turn applies after that turn\'s done', async () => {
+    const scenarioFile = join(makeScenarioDir(), 'scenario')
+    writeFileSync(scenarioFile, 'delayed-text')
+    const h = await startHarness({ scenarioFile })
+    await h.chat.send(h.tree.id, 'first')
+    await waitFor(() => h.events.some((e) => e.type === 'session'))
+    const first = recordedSpawns(h)[0]
+
+    await h.chat.setAllowShell(h.tree.id, true)
+    expect(pidAlive(first.pid)).toBe(true)
+    await waitFor(() => doneCount(h.events) === 1)
+    expect(h.events.at(-1)).toMatchObject({ type: 'done', ok: true })
+    await waitFor(() => !pidAlive(first.pid), 5000)
+    expect(doneCount(h.events)).toBe(1)
+
+    writeFileSync(scenarioFile, 'text')
+    await h.chat.send(h.tree.id, 'second')
+    await waitFor(() => doneCount(h.events) === 2)
+    const spawns = recordedSpawns(h)
+    expect(spawns).toHaveLength(2)
+    expectShellArgv(spawns[1].argv)
+    expect(flagValue(spawns[1].argv, '--resume')).toBe(flagValue(first.argv, '--session-id'))
+  }, 30000)
+
+  it('is off again after a relaunch, and the chat says it was reset', async () => {
+    const first = await startHarness({ scenario: 'text' })
+    await first.chat.send(first.tree.id, 'hello')
+    await waitFor(() => doneCount(first.events) === 1)
+    const sessionId = flagValue(recordedSpawns(first)[0].argv, '--session-id')!
+    await first.chat.setAllowShell(first.tree.id, true)
+    expect(chatsEntry(first)?.shell?.on).toBe(true)
+    await first.chat.disposeAll()
+
+    // A relaunch: a new service over the same app data.
+    const second = await startHarness({ scenario: 'text', existing: first })
+    expect(chatsEntry(first)?.shell?.on).toBe(false)
+    const opened = second.chat.open(second.tree.id)
+    expect(opened.allowShell).toBe(false)
+    expect(opened.transcript).toContainEqual({ type: 'notice', text: SHELL_RESET_NOTICE })
+
+    await second.chat.send(second.tree.id, 'still there?')
+    await waitFor(() => doneCount(second.events) === 1)
+    const argv = readRecord(second.record).argv
+    expect(argv).toEqual(defaultArgv(second, sessionId, true))
+    expectNoBuiltinTool(argv)
+
+    // Said once, not at every open.
+    expect(second.chat.open(second.tree.id).transcript.filter(
+      (e) => e.type === 'notice' && e.text === SHELL_RESET_NOTICE,
+    )).toHaveLength(1)
+  }, 30000)
+
+  it('New chat starts with the shell off', async () => {
+    const h = await startHarness({ scenario: 'text' })
+    await h.chat.setAllowShell(h.tree.id, true)
+    await h.chat.newChat(h.tree.id)
+    expect(h.chat.open(h.tree.id).allowShell).toBe(false)
+    expect(chatsEntry(h)?.shell?.on).toBe(false)
+
+    await h.chat.send(h.tree.id, 'fresh')
+    await waitFor(() => doneCount(h.events) === 1)
+    const argv = readRecord(h.record).argv
+    expect(argv).toEqual(defaultArgv(h, flagValue(argv, '--session-id')!, false))
+  }, 30000)
+
+  it('records a file the shell changed as observed by workspace.watcher, after the turn', async () => {
+    const h = await startHarness({ scenario: 'shell-edit' })
+    await h.chat.setAllowShell(h.tree.id, true)
+    await h.chat.send(h.tree.id, 'run echo shell was here >> src/nested/deep.txt')
+    await waitFor(() => doneCount(h.events) === 1, 20000)
+
+    expectShellArgv(readRecord(h.record).argv)
+    expect(readFileSync(join(h.ws.root, 'src', 'nested', 'deep.txt'), 'utf-8')).toBe(
+      'deep text\nshell was here\n',
+    )
+    const call = h.events.find((e) => e.type === 'tool-call') as Extract<ChatEvent, { type: 'tool-call' }>
+    expect(call.name).toBe('Bash')
+
+    // Already in the tree when the turn's done is shown.
+    const blocks = commitBlocks(h)
+    const observed = blocks.filter((b) => b.includes('observed change to src/nested/deep.txt'))
+    expect(observed).toHaveLength(1)
+    expect(observed[0]).toContain('actor plugin workspace.watcher')
+    expect(observed[0]).not.toContain(`agent.${CHAT_AGENT_NAME}`)
+    expect(
+      blocks.filter((b) => b.includes(`agent.${CHAT_AGENT_NAME}`) && b.includes('src/nested/deep.txt')),
+    ).toHaveLength(0)
+    expect(h.events.at(-1)).toMatchObject({ type: 'done', ok: true })
   }, 30000)
 })

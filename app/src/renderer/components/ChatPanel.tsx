@@ -8,9 +8,15 @@
  * It sits outside the canvas transform, fixed to the right edge. Keys,
  * pointer presses and wheel scrolling inside it stay inside it, as in a file
  * window, so typing never deletes a note and scrolling never pans the space.
+ *
+ * Its header holds the chat's shell switch (D-15). Turning it on needs a
+ * confirmation that states the risk, and a banner shows while it is on. Main
+ * turns it off for every new chat and after every relaunch.
  */
 
-import React, { useContext, useEffect, useRef, useState } from 'react'
+import React, { useContext, useEffect, useId, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
+import Dialog from './Dialog'
 import {
   ChatContext,
   composeFirstMessage,
@@ -147,7 +153,8 @@ function Conversation({
   attachment: ChatAttachment | null
   seq: number
 }): React.ReactElement {
-  const { workspace, transcript, busy, error, send, stop, newChat } = useChat(treeId)
+  const { workspace, transcript, busy, error, send, stop, newChat, allowShell, setAllowShell } =
+    useChat(treeId)
   const [draft, setDraft] = useState('')
   const [attachment, setAttachment] = useState<ChatAttachment | null>(initialAttachment)
 
@@ -193,7 +200,13 @@ function Conversation({
         <div className="tapestry-chat-subtitle">
           Edits go through Tapestry's workspace tools as agent.claude-chat
         </div>
+        <ShellSwitch on={allowShell} onChange={setAllowShell} />
       </div>
+      {allowShell && (
+        <div className="tapestry-chat-shell-banner" role="status">
+          Shell on — not sandboxed
+        </div>
+      )}
 
       <div ref={scrollRef} className="tapestry-chat-transcript" aria-live="polite">
         {transcript.map((item, index) => {
@@ -283,6 +296,86 @@ function Conversation({
         </div>
       </div>
     </PanelShell>
+  )
+}
+
+/**
+ * The shell switch, with the line that says what it risks. Turning it on
+ * opens the confirmation; turning it off applies at once.
+ */
+function ShellSwitch({
+  on,
+  onChange,
+}: {
+  on: boolean
+  onChange: (on: boolean) => Promise<void>
+}): React.ReactElement {
+  const riskId = useId()
+  const [confirming, setConfirming] = useState(false)
+  const keepOffRef = useRef<HTMLButtonElement>(null)
+
+  return (
+    <div className="tapestry-chat-shell-row">
+      <button
+        type="button"
+        role="switch"
+        aria-checked={on}
+        aria-describedby={riskId}
+        className={on ? 'tapestry-chat-shell-switch tapestry-chat-shell-switch--on' : 'tapestry-chat-shell-switch'}
+        onClick={() => {
+          if (on) void onChange(false)
+          else setConfirming(true)
+        }}
+      >
+        <span className="tapestry-chat-shell-track" aria-hidden="true">
+          <span className="tapestry-chat-shell-thumb" />
+        </span>
+        Allow shell (not sandboxed)
+      </button>
+      <span id={riskId} className="tapestry-chat-shell-risk">
+        Lets Claude run commands outside Tapestry's workspace rules
+      </span>
+
+      {confirming &&
+        // Portalled, so the panel's own stacking context cannot bury the modal.
+        createPortal(
+          <Dialog
+            title="Allow shell for this chat?"
+            // Escape keeps the shell off: the safe answer is the default one.
+            onDismiss={() => setConfirming(false)}
+            initialFocusRef={keepOffRef as React.RefObject<HTMLElement>}
+            buttons={
+              <>
+                <button
+                  ref={keepOffRef}
+                  type="button"
+                  className="tapestry-button--secondary"
+                  onClick={() => setConfirming(false)}
+                >
+                  Keep shell off
+                </button>
+                <button
+                  type="button"
+                  className="tapestry-button--destructive"
+                  onClick={() => {
+                    setConfirming(false)
+                    void onChange(true)
+                  }}
+                >
+                  Allow shell
+                </button>
+              </>
+            }
+          >
+            <p className="tapestry-dialog-text">
+              Claude will be able to run commands and change any file your account can reach, outside
+              Tapestry's workspace rules. Its file changes are recorded as observed changes, author
+              unknown. This lasts until you turn it off or restart Tapestry.
+            </p>
+          </Dialog>,
+          document.body,
+        )}
+    </div>
   )
 }
 
