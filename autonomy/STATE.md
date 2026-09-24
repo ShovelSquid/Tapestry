@@ -15,7 +15,7 @@ replay tool and goldens are kept.
 | --- | --- |
 | 1 engine over the kernel | built and tested headlessly (`836a4da`); only the human GUI confirmation is open, see Blocked |
 | 2 expressions | done headlessly (`c5d134e`, `d6e9c0b`): golden `plot` hashes across processes and builds, `<f>.expr text` props bind through the runner so the bound value is committed as a kernel prop after a step (the inspector reads props, so it shows it; a human look is still open like phase 1's), and `diff.hpp` exists for phase 4 |
-| 3 force rules | engine (`22bc70c`, `f90b3c7`, `872831b`, `919c06e`, `e0b6942`): force and `set.<f>` rules under unary, pair and global scope with `select`, mass integrator, `pinned`, `RuleDims`, goldens `gravity` and `pair`; plugin side (`204ced5`): rule nodes, `mathspace.error` for compile-time failures; open: runtime-skip reporting (RULE-07), presets, then the plan's done condition check |
+| 3 force rules | engine (`22bc70c`, `f90b3c7`, `872831b`, `919c06e`, `e0b6942`): force and `set.<f>` rules under unary, pair and global scope with `select`, mass integrator, `pinned`, `RuleDims`, goldens `gravity` and `pair`; plugin side (`204ced5`, `9b28407`): rule nodes, `mathspace.error` for compile-time problems and runtime skips (RULE-07); open: presets, then the plan's done condition check (three roadmap examples from preset rule nodes) |
 | 4 constraints | not started |
 | 5 views | not started |
 | 6 metrics | not started |
@@ -28,22 +28,32 @@ viewer; it is theirs to edit.)
 
 ## Next
 
-1. **RULE-07 runtime errors.** The engine skips silently at runtime
-   (a per-visit eval error, a `set.<f>` the target lacks, a rule whose
-   program is at the wrong dim or whose `scope`/`select` is malformed);
-   the plugin writes only compile-time problems. Add an `ms_errors`
-   C ABI call (not in the hash, not in the snapshot bytes): per rule id,
-   a skip count for the last tick and the last `VmError`/reason code,
-   collected in `step.cpp` into a `std::vector` on `World` that step()
-   resets (it is not serialized, so `restore`/`==` ignore it; the
-   forbidden-token gate allows `vector`). Then `Engine.errors()` in
-   `engine.js` and have `runner.js` fold `rule <id>: skipped N targets
-   (<reason>)` into `mathspace.error` via `errorOps` (its diff against
-   the kernel's text already dedups). Test: doctest on the counts, a
-   runner test with a rule reading `self.nope`. Bump `MS_ABI_VERSION`.
-2. Presets under `plugins/mathspace/presets/` and the roadmap examples;
-   then the GUI checklist (phase 1 item, phase 2 `y.expr`, and a gravity
-   rule) for a human.
+1. **Presets (plan phase 3).** `plugins/mathspace/presets/<name>.json`,
+   one per plan preset: `gravity-field`, `nbody`, `drag`,
+   `spring-to-anchor`, plus the roadmap examples `anger` (proximity to
+   chips raises `anger`: a pair `set.anger` with `select` on
+   `other.kind`-like field or distance), `gold` (a global or unary
+   accumulator `set.gold = self.gold + rate`), and `push` (a movement/
+   force example). Shape: `{ "name", "description", "nodes": [{ "type":
+   "mathspace/rule@1", "props": { "scope": {"type":"text",...},
+   "force.expr": ... } }] }`, using the `.tree` spelling
+   (`self.position`, `other.position`), so `buildImage` accepts it
+   unchanged. Plugin side: `presets.js` loads the directory and a
+   command `mathspace.preset` per file (`mathspace.preset.gravity-field`,
+   displayName from the JSON) whose handler submits one commit of
+   `createNode` ops (`sdk/src/index.ts` CreateNodeOp, check its id
+   field and whether `position.x/y` must be set) at a fixed position.
+   Test: vitest that every preset file compiles clean through the
+   runner against a two-body fake kernel (no `problems`, no
+   `mathspace.error` op) and that each roadmap example changes the
+   field it promises after `stepOnce`. Register the commands in
+   `index.js` and list them in `tapestry.plugin.json` if the manifest
+   enumerates commands (it has a `commands` array; check the host's
+   validation in `app/src/main/plugin-host.ts`).
+2. Phase 3 done check: the plan's condition is "the three roadmap
+   examples run in the app from preset rule nodes with no engine change
+   between them". Headless: one vitest running all three presets on one
+   engine build. The "in the app" part joins the GUI checklist below.
 3. **GUI confirmation of phases 1 and 2 (human, or a session that can
    drive Electron).** `npm install` at the root (or symlink node_modules,
    see Learned), `npm run build:native` in `app/` if
@@ -55,6 +65,11 @@ viewer; it is theirs to edit.)
 
 ## Done
 
+- `9b28407` ms3 RULE-07 runtime skips (`MS_ABI_VERSION` 2): `World::reports`
+  (per rule: skip count, last reason; not hashed, goldens unchanged),
+  `ms_errors_ptr/len` + `ms_skip_reason_name`, `Engine.errors()`, runner
+  sums skips per rule over a commit's ticks into `mathspace.error` as
+  `step: skipped N visits (Reason)`; runner and C ABI tests.
 - `e0b6942` ms3 pair and global scope (`MS_STEP_VERSION` 7): ordered
   pairs with `other` bound in law and `select`, global visits the rule
   once; golden `gravity` loses its dormant pair rule, golden `pair` added.
@@ -89,6 +104,21 @@ viewer; it is theirs to edit.)
 
 ## Decisions
 
+- RULE-07 runtime channel (`9b28407`). Reasons are one byte: below 16
+  an `expr::VmError` (the force, select or set program failed on a
+  visit), 16+ a whole-rule `Skip` (`NoScope`, `NoSpace`, `BadSelect`,
+  `WrongDim`, `NoTargetField`); a whole-rule skip counts once, the
+  reason kept is the last skip's in step order. A pinned target of a
+  set rule is not a skip (it is what RULE-08 promises). Reports live on
+  `World` but outside `==`, the walk and the snapshot; `ms_world`
+  re-encodes them after each `ms_step` and clears on `ms_restore`. The
+  runner sums the counts over the ticks since the last commit, so the
+  text carries the count and rewrites the property on every commit
+  while the rule keeps failing (accepted: it is the record RULE-07
+  asks for). Not detected: two rules writing one field, and a bound
+  field on a plain note that fails (both stay silent; a plan item if
+  wanted). Set rules ran on for a `set.<f>` no target has: that is
+  `NoTargetField` on every visit, so a typo in `set.<f>` is now visible.
 - Pair and global scope (`e0b6942`). Pair visits ordered pairs (a,b) and
   (b,a), `self` receives: the design's gravity example is a force on
   `self` in terms of `other`, so Newton's third law is the user's
