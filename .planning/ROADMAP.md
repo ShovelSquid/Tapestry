@@ -345,7 +345,7 @@ Plans:
   6. Note positions are untouched: `position.x/y` stay node properties and D-27's thread frame is not moved — that migration is a later phase after 2.3 (#4)
   7. No code writes the Tapestry-tree or forest-tree record shape, or migrates `settings.json`, until Kaelen has approved the exact type strings, keys and labels and the migration at a blocking checkpoint (#17, #18)
 
-**Plans:** 3/6 plans executed
+**Plans:** 4/6 plans executed
 
 Plans:
 **Wave 1**
@@ -362,7 +362,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3)*
 
-- [ ] 02.6-04-PLAN.md — Membership and identity: open/create/close/vault-add recorded in the forest; a tree is its digest (moved files, copies, impostors, duplicates, reserved files) (D-01..D-03, D-12)
+- [x] 02.6-04-PLAN.md — Membership and identity: open/create/close/vault-add recorded in the forest; a tree is its digest (moved files, copies, impostors, duplicates, reserved files) (D-01..D-03, D-12)
 
 **Wave 5** *(blocked on Wave 4)*
 
