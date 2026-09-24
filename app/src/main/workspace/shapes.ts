@@ -14,6 +14,7 @@ import { realpathSync } from 'fs'
 import { basename, join, resolve } from 'path'
 import { TAPESTRY_TMP_MARKER } from '../mirror/atomic-write'
 import type { MirrorLayout, MirrorShape } from '../mirror/plan'
+import { COLLAPSED_KEY, SUBSPACE_KEY } from '../../renderer/layout/subspaces'
 
 export const WORKSPACE_TEXT_TYPE = 'tapestry.workspace/text@1'
 export const WORKSPACE_FILE_TYPE = 'tapestry.workspace/file@1'
@@ -26,14 +27,28 @@ export const FILE_EXT = 'file.ext'
 export const FILE_BYTES = 'file.bytes'
 export const FILE_UNREADABLE = 'file.unreadable'
 
+/**
+ * Tapestry keys on a workspace folder (02.7 D-21), never `file.*`: `subspace`
+ * (bool true) says the folder's children are positioned relative to it, and
+ * `collapsed` (bool) says it is drawn as its header only. Neither is ever read
+ * from or written to disk. One definition, shared with the canvas.
+ */
+export const FOLDER_SUBSPACE = SUBSPACE_KEY
+export const FOLDER_COLLAPSED = COLLAPSED_KEY
+
+/**
+ * Folder interiors are four cards wide. A row is 304 tall because a collapsed
+ * text card measures about 270px with its provenance footer.
+ */
 export const WORKSPACE_LAYOUT: MirrorLayout = Object.freeze({
-  columns: 6,
+  columns: 4,
   columnStep: 304,
-  rowStep: 224,
+  rowStep: 304,
   labelHeight: 40,
   groupGap: 224,
   textCardWidth: 280,
   fileCardWidth: 240,
+  subspaces: true,
 })
 
 export const WORKSPACE_SHAPE: MirrorShape = Object.freeze({

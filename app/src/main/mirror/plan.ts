@@ -13,6 +13,19 @@ import { lstatSync } from 'fs'
 import { join, resolve } from 'path'
 import type { NodeData, OpObject } from '../kernel-bridge'
 import { decodeText, readBoundedBytes, type FolderEntry } from './fs'
+import { FRAME_GAP } from '../../renderer/layout/frames'
+import {
+  CARD_ESTIMATE,
+  COLLAPSED_KEY,
+  FOLDER_FRAME,
+  SUBSPACE_KEY,
+  folderHierarchy,
+  isSubspace,
+  storedPosition,
+  subspaceRects,
+  type FolderHierarchy,
+  type SubspaceLayout,
+} from '../../renderer/layout/subspaces'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -28,6 +41,14 @@ export interface MirrorLayout {
   groupGap: number
   textCardWidth: number
   fileCardWidth: number
+  /**
+   * Folders are subspaces (02.7 D-21): each item's position is local to its
+   * folder, every folder starts collapsed, and appends go below what a folder
+   * already holds. Default false, which leaves the vault's flat layout as it
+   * was. The geometry is the shared `renderer/layout/subspaces.ts`, which
+   * knows the workspace record types, so only the workspace shape sets this.
+   */
+  subspaces?: boolean
 }
 
 export interface MirrorShape {
@@ -232,6 +253,68 @@ export function layoutFolderGrid(model: MirrorModel, layout: MirrorLayout): Map<
   return positions
 }
 
+/** Where a collapsed folder's origin goes when its header's top is `top`. */
+function collapsedFolderOrigin(top: number): Point {
+  return { x: FOLDER_FRAME.padding, y: top + FOLDER_FRAME.padding + FOLDER_FRAME.headerHeight }
+}
+
+/** The bottom of a grid of `count` cards laid from local y = 0. */
+function gridBottom(layout: MirrorLayout, count: number): number {
+  const rows = Math.ceil(count / layout.columns)
+  return (rows - 1) * layout.rowStep + CARD_ESTIMATE.height
+}
+
+/**
+ * Where every item and folder sits on first import, as folder subspaces
+ * (02.7 D-21). Positions are local to the parent folder (the workspace frame
+ * for top-level items).
+ *
+ * Inside every folder, and at the root: its files in a grid from local (0, 0),
+ * then its child folders stacked below them as collapsed headers FRAME_GAP
+ * apart. Every folder starts collapsed, so a repository of hundreds of files
+ * opens as its root files and a compact column of folder headers. Pure and
+ * total: the same folder lays out the same way everywhere.
+ */
+export function layoutSubspaces(
+  model: { folders: ReadonlySet<string>; paths: ReadonlyMap<string, unknown> },
+  layout: MirrorLayout,
+): Map<string, Point> {
+  const positions = new Map<string, Point>()
+  const items = [...model.paths.keys()].sort()
+
+  const folders = new Set(model.folders)
+  for (const rel of items) for (const a of ancestorsOf(rel)) folders.add(a)
+  for (const folder of [...folders]) for (const a of ancestorsOf(folder)) folders.add(a)
+
+  const filesIn = new Map<string, string[]>()
+  for (const rel of items) {
+    if (folders.has(rel)) continue
+    const parent = parentOf(rel)
+    const list = filesIn.get(parent) ?? []
+    list.push(rel)
+    filesIn.set(parent, list)
+  }
+  const foldersIn = new Map<string, string[]>()
+  for (const folder of [...folders].sort()) {
+    const parent = parentOf(folder)
+    const list = foldersIn.get(parent) ?? []
+    list.push(folder)
+    foldersIn.set(parent, list)
+  }
+
+  for (const container of ['', ...[...folders].sort()]) {
+    const files = filesIn.get(container) ?? []
+    files.forEach((rel, i) => positions.set(rel, gridSlot(layout, { x: 0, y: 0 }, i)))
+    let top = files.length > 0 ? gridBottom(layout, files.length) + FRAME_GAP : 0
+    for (const folder of foldersIn.get(container) ?? []) {
+      positions.set(folder, collapsedFolderOrigin(top))
+      top += FOLDER_FRAME.headerHeight + FRAME_GAP
+    }
+  }
+
+  return positions
+}
+
 // ---------------------------------------------------------------------------
 // Planning
 // ---------------------------------------------------------------------------
@@ -256,6 +339,25 @@ interface PlanContext {
   lowestY: number
   /** First-import positions, when the tree held nothing of this shape. */
   grid: Map<string, Point> | null
+  /** Subspace appends (layout.subspaces), built on first use. */
+  subspace: SubspaceAppends | null
+}
+
+/** Where the next new item goes inside one folder ('' is the root). */
+interface AppendSlot {
+  /** The lowest edge of everything the folder holds, or null when empty. */
+  bottom: number | null
+  /** The top of the row new files are filling, or null for a fresh row. */
+  rowTop: number | null
+  /** The next column in that row. */
+  col: number
+}
+
+interface SubspaceAppends {
+  hierarchy: FolderHierarchy
+  rects: SubspaceLayout
+  byId: Map<string, NodeData>
+  slots: Map<string, AppendSlot>
 }
 
 function isShapeNode(node: NodeData, shape: MirrorShape): boolean {
@@ -270,6 +372,7 @@ function makeContext(nodes: NodeData[], shape: MirrorShape, model: MirrorModel |
     folderPos: new Map(),
     lowestY: Number.NEGATIVE_INFINITY,
     grid: null,
+    subspace: null,
   }
   let any = false
   for (const node of nodes) {
@@ -287,12 +390,81 @@ function makeContext(nodes: NodeData[], shape: MirrorShape, model: MirrorModel |
       ctx.childCount.set(parent, (ctx.childCount.get(parent) ?? 0) + 1)
     }
   }
-  if (!any && model) ctx.grid = layoutFolderGrid(model, shape.layout)
+  if (!any && model) {
+    ctx.grid = shape.layout.subspaces ? layoutSubspaces(model, shape.layout) : layoutFolderGrid(model, shape.layout)
+  }
+  if (shape.layout.subspaces) {
+    const shapeNodes = nodes.filter((node) => isShapeNode(node, shape))
+    ctx.subspace = {
+      hierarchy: folderHierarchy(shapeNodes),
+      rects: subspaceRects(shapeNodes, () => undefined),
+      byId: new Map(shapeNodes.map((node) => [node.id, node])),
+      slots: new Map(),
+    }
+  }
   return ctx
+}
+
+/**
+ * The append state of one folder, from what it already holds. A folder
+ * created earlier in this same plan holds nothing yet.
+ */
+function appendSlot(ctx: PlanContext, sub: SubspaceAppends, folder: string): AppendSlot {
+  const known = sub.slots.get(folder)
+  if (known) return known
+
+  let bottom: number | null = null
+  const existing = folder === '' ? null : ctx.byPath.get(folder)
+  if (folder === '' || (existing && existing !== 'planned')) {
+    const id = folder === '' ? null : (existing as NodeData).id
+    for (const child of sub.hierarchy.childrenOf.get(id) ?? []) {
+      const rect = sub.rects.folderRects.get(child)
+      const node = sub.byId.get(child)
+      const edge = rect
+        ? rect.y + rect.height
+        : node
+          ? storedPosition(node).y + CARD_ESTIMATE.height
+          : null
+      if (edge !== null) bottom = bottom === null ? edge : Math.max(bottom, edge)
+    }
+  }
+  const slot: AppendSlot = { bottom, rowTop: null, col: 0 }
+  sub.slots.set(folder, slot)
+  return slot
+}
+
+/** A new folder: a collapsed header below everything its parent holds. */
+function newSubspaceFolderPosition(ctx: PlanContext, sub: SubspaceAppends, rel: string): Point {
+  const slot = appendSlot(ctx, sub, parentOf(rel))
+  const top = slot.bottom === null ? 0 : slot.bottom + FRAME_GAP
+  slot.bottom = top + FOLDER_FRAME.headerHeight
+  // Files that arrive after it start a fresh row below it.
+  slot.rowTop = null
+  slot.col = 0
+  return collapsedFolderOrigin(top)
+}
+
+/** A new file: the next slot of a fresh row below everything its folder holds. */
+function newSubspaceItemPosition(ctx: PlanContext, sub: SubspaceAppends, rel: string): Point {
+  const layout = ctx.shape.layout
+  const slot = appendSlot(ctx, sub, parentOf(rel))
+  if (slot.rowTop === null || slot.col >= layout.columns) {
+    slot.rowTop = slot.bottom === null ? 0 : slot.bottom + FRAME_GAP
+    slot.col = 0
+  }
+  const at = { x: slot.col * layout.columnStep, y: slot.rowTop }
+  slot.col += 1
+  slot.bottom = Math.max(slot.bottom ?? at.y, at.y + CARD_ESTIMATE.height)
+  return at
 }
 
 function newFolderPosition(ctx: PlanContext, rel: string): Point {
   const fromGrid = ctx.grid?.get(rel)
+  if (!fromGrid && ctx.subspace) {
+    const at = newSubspaceFolderPosition(ctx, ctx.subspace, rel)
+    ctx.folderPos.set(rel, at)
+    return at
+  }
   const at = fromGrid ?? {
     x: 0,
     y: Number.isFinite(ctx.lowestY)
@@ -310,6 +482,7 @@ function newItemPosition(ctx: PlanContext, rel: string): Point {
   ctx.childCount.set(parent, index + 1)
   const fromGrid = ctx.grid?.get(rel)
   if (fromGrid) return fromGrid
+  if (ctx.subspace) return newSubspaceItemPosition(ctx, ctx.subspace, rel)
 
   const layout = ctx.shape.layout
   const folder = parent === '' ? { x: 0, y: 0 } : (ctx.folderPos.get(parent) ?? { x: 0, y: 0 })
@@ -340,7 +513,18 @@ function createOp(ctx: PlanContext, rel: string, state: PathState, at: Point): O
   const { shape } = ctx
   const path = { [shape.keys.path]: { type: 'text', value: rel } }
   if (state.kind === 'folder') {
-    return { op: 'createNode', type: shape.folderType, props: { ...path, ...positionProps(at) } }
+    // A subspace folder says so, and starts collapsed (02.7 D-21).
+    const subspace: Record<string, PropValue> = shape.layout.subspaces
+      ? {
+          [SUBSPACE_KEY]: { type: 'bool', value: true },
+          [COLLAPSED_KEY]: { type: 'bool', value: true },
+        }
+      : {}
+    return {
+      op: 'createNode',
+      type: shape.folderType,
+      props: { ...path, ...positionProps(at), ...subspace },
+    }
   }
   if (state.kind === 'text') {
     return {
@@ -532,6 +716,61 @@ export function planMirror(
   if (chunk.length > 0) ops.push(chunk)
 
   return { ops, summary }
+}
+
+/**
+ * The one-time arrangement of an older workspace tree into folder subspaces
+ * (02.7 D-21).
+ *
+ * 02.7-01 stacked every folder as a label on one long column, with every
+ * position relative to the workspace frame. Converting those numbers would
+ * leave nested frames overlapping their parents' siblings, so the tree is
+ * re-laid out with layoutSubspaces over the paths it records, every folder
+ * collapsed. Earlier positions stay in history.
+ *
+ * Returns [] when every folder already says `subspace` (so a second open
+ * writes nothing), and otherwise position.x/position.y for every node whose
+ * position changes, plus `subspace` and `collapsed` true on every folder.
+ * Never a `file.*` key.
+ */
+export function planSubspaceMigration(nodes: readonly NodeData[], shape: MirrorShape): OpObject[] {
+  const shapeNodes = nodes.filter((node) => isShapeNode(node, shape))
+  const folderNodes = shapeNodes.filter((node) => node.type === shape.folderType)
+  if (folderNodes.every((node) => isSubspace(node))) return []
+
+  const folders = new Set<string>()
+  const paths = new Map<string, true>()
+  const idsByPath = new Map<string, NodeData>()
+  for (const node of shapeNodes) {
+    const path = stringProp(node, shape.keys.path)
+    if (path === null) continue
+    idsByPath.set(path, node)
+    if (node.type === shape.folderType) folders.add(path)
+    else paths.set(path, true)
+  }
+
+  const positions = layoutSubspaces({ folders, paths }, shape.layout)
+  const ops: OpObject[] = []
+  for (const [path, node] of [...idsByPath.entries()].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))) {
+    const at = positions.get(path)
+    if (at) {
+      const x = node.props['position.x']
+      const y = node.props['position.y']
+      if (!x || x.value !== at.x) {
+        ops.push({ op: 'setProperty', target: node.id, key: 'position.x', type: 'real', value: at.x })
+      }
+      if (!y || y.value !== at.y) {
+        ops.push({ op: 'setProperty', target: node.id, key: 'position.y', type: 'real', value: at.y })
+      }
+    }
+    if (node.type === shape.folderType) {
+      ops.push(
+        { op: 'setProperty', target: node.id, key: SUBSPACE_KEY, type: 'bool', value: true },
+        { op: 'setProperty', target: node.id, key: COLLAPSED_KEY, type: 'bool', value: true },
+      )
+    }
+  }
+  return ops
 }
 
 // ---------------------------------------------------------------------------

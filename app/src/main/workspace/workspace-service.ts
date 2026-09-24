@@ -16,7 +16,7 @@ import { existsSync, lstatSync, mkdirSync, realpathSync } from 'fs'
 import { homedir } from 'os'
 import { isAbsolute, resolve } from 'path'
 import type { Actor } from '../commands/actor'
-import { WORKSPACE_WATCHER_ACTOR } from '../commands/actor'
+import { SYSTEM_ACTOR, WORKSPACE_WATCHER_ACTOR } from '../commands/actor'
 import { prepareWriteFor, type CommandHooks } from '../commands/notes'
 import type { CommitResult, NodeData } from '../kernel-bridge'
 import { writeFileAtomicSync } from '../mirror/atomic-write'
@@ -27,6 +27,7 @@ import {
   groupStamp,
   planMirror,
   planPathChange,
+  planSubspaceMigration,
   readPathState,
   type MirrorModel,
   type PathState,
@@ -127,6 +128,7 @@ export class WorkspaceService implements WorkspaceLookup {
     const tree = requireOpen(entry)
 
     this.remember(tree.id, target)
+    this.arrangeSubspaces(tree)
     await this.catchUp(tree.id)
     return tree
   }
@@ -154,11 +156,34 @@ export class WorkspaceService implements WorkspaceLookup {
 
     this.remember(entry.id, target)
     try {
+      this.arrangeSubspaces(entry)
+    } catch (err) {
+      console.error(`[WorkspaceService] arranging ${name} into folder subspaces failed:`, err)
+    }
+    try {
       await this.catchUp(entry.id)
     } catch (err) {
       console.error(`[WorkspaceService] catch-up of ${name} failed:`, err)
     }
     return entry
+  }
+
+  /**
+   * The one-time arrangement of a tree laid out before folders were subspaces
+   * (02.7 D-21): one commit by `system tapestry`, touching only positions,
+   * `subspace` and `collapsed`. A tree already arranged writes nothing.
+   */
+  private arrangeSubspaces(tree: OpenTree): void {
+    const ops = planSubspaceMigration(tree.bridge.getNodes(), WORKSPACE_SHAPE)
+    if (ops.length === 0) return
+    this.requireHealthy(tree)
+    prepareWriteFor(tree, SYSTEM_ACTOR, this.hooks)
+    const result = tree.bridge.submitAs(
+      SYSTEM_ACTOR,
+      `arrange workspace ${tree.name} into folder subspaces`,
+      ops,
+    )
+    this.committed(tree.id, SYSTEM_ACTOR, result)
   }
 
   // -------------------------------------------------------------------------
