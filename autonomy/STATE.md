@@ -184,34 +184,22 @@ viewer; it is theirs to edit.)
   that data-drawing's ropes do not replay bit-for-bit under mathspace or
   let a pair constraint visit write `other` too (a semantic change to
   "a rule writes self"; not taken at ms4).
-- doctest's `CHECK(a && b)` is a compile error ("Expression Too
-  Complex"): bind the conjunction to a `bool` first. A golden with a new
-  name needs `touch tests/golden/ms/<f>.actions <f>.sha256` before the
-  build (the glob), then `MS_WRITE_FIXTURES=1 mathspace_tests
-  -tc="*golden <f>*"` fails once on the empty `.sha256` after writing the
-  `.actions`; `ms_replay --write-golden` fills it. Rebuilding the Wasm
-  (`source ~/emsdk/emsdk_env.sh; npm run engine:wasm`) is needed after any
-  golden re-record or the plugin's `engine.test.js` fails on old hashes.
+- New golden: `touch tests/golden/ms/<f>.actions <f>.sha256`, build (the
+  glob), `MS_WRITE_FIXTURES=1 mathspace_tests -tc="*golden <f>*"` (fails
+  once on the empty `.sha256`), `ms_replay --write-golden` fills it. Then
+  `source ~/emsdk/emsdk_env.sh; npm run engine:wasm` in `plugins/mathspace`
+  (~15 s, untracked output) or `engine.test.js` fails on old hashes.
 - macOS has no `timeout`. The grammar has no `and`: multiply predicates.
 - doctest: `MESSAGE` ignores `std::hex`; wrap a `const char*` first
-  token of `CHECK_MESSAGE` in `std::string`; a helper named `apply`
+  token of `CHECK_MESSAGE` in `std::string`; `CHECK(a && b)` does not
+  compile, bind the conjunction to a `bool`; a helper named `apply`
   collides with `std::apply` via ADL.
-- `app/native/build/Release/tapestry_addon.node` is copied from the
-  primary checkout (`/Users/kaelencook/Tapestry/app/native/build/Release/`,
-  identical sources; `build:native` needs Electron headers), gitignored.
-  The plugin's vitest imports `app/test/helpers/temp-tree.ts` and
-  `app/src/main/plugin-host.ts`, which load in plain Node.
-- `node_modules` is a gitignored symlink to the primary checkout's
-  (vitest 2.1.9). Plugin files are CommonJS, so the vitest config is
-  `.mjs` and tests reach `engine.js` via `createRequire`. Wasm:
-  `source ~/emsdk/emsdk_env.sh` (6.0.10), then `npm run engine:wasm` in
-  `plugins/mathspace` (~15 s, copies into `plugins/mathspace/wasm/`,
-  untracked), then `npm test` there; `engine.test.js` replays every
-  golden through the Wasm module, so re-recorded goldens need a rebuild.
+- Toolchain: `app/native/build/Release/tapestry_addon.node` and
+  `node_modules` (vitest 2.1.9) are gitignored copies/symlinks from the
+  primary checkout `/Users/kaelencook/Tapestry`. Plugin files are
+  CommonJS; the ESM test shims (`test/image-cjs.js`, `test/engine-cjs.js`)
+  list exports by name, so a new export is `undefined` until added there.
   `_ms_create` takes a BigInt seed and `_ms_tick` returns one.
-- The ESM test shims (`test/image-cjs.js`, `test/engine-cjs.js`) list
-  the exports by name: a new export from `image.js` is `undefined` in
-  the tests until it is added there (it cost a puzzled minute).
 - Re-record every golden after a `MS_STEP_VERSION` bump:
   `build/native-debug/ms_replay <f>.actions --write-golden <f>.sha256`
   for the seven files, then Release and UBSan must agree.
