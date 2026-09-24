@@ -5,10 +5,10 @@ current_phase: "02.2"
 current_phase_name: Obsidian Bridge
 status: executing
 stopped_at: Completed 02.2-07-PLAN.md
-last_updated: "2026-09-24T08:36:18.624Z"
+last_updated: "2026-09-24T08:59:59.042Z"
 last_activity: 2026-09-24
 last_activity_desc: Phase 02.4 Lock Model complete and rebased onto the main line; Phase 02.2 still executing
-state_head: 1500b322fc4be49cbc916cbd13892ff3b481f7d4
+state_head: 065c43610c751e3aea01c78238490768fab1973c
 progress:
   total_phases: 11
   completed_phases: 1
@@ -156,6 +156,7 @@ None yet.
 | 260924-1c5 | Improve facial fidelity/expressiveness of the hands-face-voice real-time face tracker: enable FaceLandmarker blendshapes and render the full face tessellation mesh (not just contours) in the 3D view | 2026-09-24 | 46d8cc8 | [260924-1c5-improve-facial-fidelity-expressiveness-o](./quick/260924-1c5-improve-facial-fidelity-expressiveness-o/) |
 | 8 | In hands-face-voice/, cap the metrics line width under the landmarks panel so it stops jittering and pushing the 3D panel off to the side | 2026-09-24 | 1500b32 | — |
 | 260924-2ej | In hands-face-voice/, add a dead-zone tolerance plus EMA smoothing to the 3D landmark point cloud in scene3d.js, keyed per (hand/face/pose slot, point) and reset when a slot disappears and reappears | 2026-09-24 | d6ebf0c | [260924-2ej-in-hands-face-voice-add-a-movement-toler](./quick/260924-2ej-in-hands-face-voice-add-a-movement-toler/) |
+| 10 | In hands-face-voice/scene3d.js, raise JITTER_TOLERANCE and add a SNAP_THRESHOLD so large movements jump directly instead of easing through EMA | 2026-09-24 | 065c436 | — |
 
 ### Roadmap Evolution
 
