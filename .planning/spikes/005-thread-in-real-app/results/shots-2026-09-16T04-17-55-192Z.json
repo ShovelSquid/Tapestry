@@ -1,0 +1,22 @@
+{
+  "contexts": {
+    "created": 2,
+    "disposed": 1,
+    "lost": 1
+  },
+  "stats": {
+    "glyphs": 62474,
+    "letters": 75847,
+    "atlasCells": 663,
+    "atlasOverflow": 0,
+    "rasterCount": 664,
+    "rasterMsAvg": 0.24834337334586196,
+    "rasterMsMax": 29.799999997019768,
+    "rasterMsLast": 0.7000000029802322,
+    "liveCopies": 1,
+    "liveCopyMsAvg": 3.0999999940395355,
+    "instanceMB": 3.3364715576171875,
+    "mipmaps": true,
+    "clipped": 0
+  }
+}

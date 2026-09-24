@@ -1,0 +1,106 @@
+{
+  "hours": 8,
+  "letters": 64552,
+  "sessions": 27,
+  "results": [
+    {
+      "phase": "still-whole-thread",
+      "spanSeconds": 28800,
+      "pxPerEm": 0.003888888888888889,
+      "frames": 151,
+      "fps": 59.88023952095874,
+      "frameP95": 17,
+      "frameMax": 17.399999999999864,
+      "dropRate": 0,
+      "privateMB": 0
+    },
+    {
+      "phase": "still-one-hour",
+      "spanSeconds": 3600,
+      "pxPerEm": 0.031111111111111114,
+      "frames": 150,
+      "fps": 59.88023952095874,
+      "frameP95": 17.099999999999454,
+      "frameMax": 17.400000000000546,
+      "dropRate": 0,
+      "privateMB": 0
+    },
+    {
+      "phase": "still-one-minute",
+      "spanSeconds": 60,
+      "pxPerEm": 1.8666666666666667,
+      "frames": 151,
+      "fps": 59.88023952095874,
+      "frameP95": 17.199999999999818,
+      "frameMax": 17.599999999999454,
+      "dropRate": 0,
+      "privateMB": 0
+    },
+    {
+      "phase": "still-five-seconds",
+      "spanSeconds": 5,
+      "pxPerEm": 22.400000000000002,
+      "frames": 150,
+      "fps": 59.880239520962,
+      "frameP95": 17.100000000000364,
+      "frameMax": 17.700000000000728,
+      "dropRate": 0,
+      "privateMB": 0
+    },
+    {
+      "phase": "still-single-dots",
+      "spanSeconds": 0.25,
+      "pxPerEm": 448,
+      "frames": 151,
+      "fps": 59.880239520962,
+      "frameP95": 17.299999999999272,
+      "frameMax": 17.600000000000364,
+      "dropRate": 0,
+      "privateMB": 0
+    },
+    {
+      "phase": "zoom-sweep",
+      "spanSeconds": 28800,
+      "pxPerEm": 0.003888888888888889,
+      "frames": 181,
+      "fps": 59.880239520962,
+      "frameP95": 17.100000000000364,
+      "frameMax": 17.700000000000728,
+      "dropRate": 0,
+      "privateMB": 0
+    },
+    {
+      "phase": "pan-at-60s-span",
+      "spanSeconds": 60,
+      "pxPerEm": 1.8666666666666667,
+      "frames": 181,
+      "fps": 59.880239520968516,
+      "frameP95": 17.200000000000728,
+      "frameMax": 17.600000000002183,
+      "dropRate": 0,
+      "privateMB": 0
+    },
+    {
+      "phase": "fly-between-sessions",
+      "spanSeconds": 45,
+      "pxPerEm": 2.488888888888889,
+      "frames": 230,
+      "fps": 59.880239520968516,
+      "frameP95": 17.200000000000728,
+      "frameMax": 17.69999999999709,
+      "dropRate": 0,
+      "privateMB": 0
+    },
+    {
+      "phase": "scrubber-drag-whole-history",
+      "spanSeconds": 120,
+      "pxPerEm": 0.9333333333333333,
+      "frames": 241,
+      "fps": 59.880239520968516,
+      "frameP95": 17.200000000000728,
+      "frameMax": 17.600000000002183,
+      "dropRate": 0,
+      "privateMB": 0
+    }
+  ]
+}

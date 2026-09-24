@@ -1,0 +1,217 @@
+// The single-writer transaction kernel. submit() is the only way anything
+// changes, and its order is fixed: validate and apply through a
+// World::Transaction that saves just the nodes and edges each op touches,
+// encode, write and sync through the journal, and only then commit the
+// transaction. Anything that returns before that restores the world from the
+// saved copies, so atomicity costs one commit's footprint rather than a copy
+// of the whole world.
+
+#include "kernel/Kernel.hpp"
+
+#include "kernel/Value.hpp"
+#include "kernel/tree/Codec.hpp"
+
+#include <utility>
+#include <variant>
+
+namespace tapestry::kernel {
+namespace {
+
+std::unique_ptr<Clock> clockOrSystem(std::unique_ptr<Clock> clock) {
+    if (clock) {
+        return clock;
+    }
+    return std::make_unique<SystemClock>();
+}
+
+std::optional<OpenFailure> checkWorldName(const std::string& name) {
+    if (!isToken(name) || !isValidText(name)) {
+        return OpenFailure{OpenFailure::Kind::Io, "world name is not one token: " + name};
+    }
+    if (name.size() > tree::kMaxLineBytes) {
+        return OpenFailure{OpenFailure::Kind::Io,
+            "world name exceeds " + std::to_string(tree::kMaxLineBytes) + " bytes"};
+    }
+    return std::nullopt;
+}
+
+} // namespace
+
+Kernel::Kernel(std::unique_ptr<Journal> journal, std::unique_ptr<Clock> clock)
+    : m_journal(std::move(journal)), m_clock(std::move(clock)) {}
+
+Expected<std::unique_ptr<Kernel>, OpenFailure> Kernel::create(const std::filesystem::path& path,
+    std::string worldName, std::unique_ptr<Clock> clock) {
+    if (auto failure = checkWorldName(worldName)) {
+        return *failure;
+    }
+    auto ticking = clockOrSystem(std::move(clock));
+    HeaderRecord header;
+    header.world = std::move(worldName);
+    header.created = ticking->now();
+    auto journal = Journal::create(path, header);
+    if (!journal) {
+        return journal.error();
+    }
+    return fromJournal(std::move(journal.value()), std::move(ticking));
+}
+
+Expected<std::unique_ptr<Kernel>, OpenFailure> Kernel::createWithSink(std::unique_ptr<Sink> sink,
+    std::string worldName, std::unique_ptr<Clock> clock) {
+    if (auto failure = checkWorldName(worldName)) {
+        return *failure;
+    }
+    auto ticking = clockOrSystem(std::move(clock));
+    HeaderRecord header;
+    header.world = std::move(worldName);
+    header.created = ticking->now();
+    auto journal = Journal::createWithSink(std::move(sink), header);
+    if (!journal) {
+        return journal.error();
+    }
+    return fromJournal(std::move(journal.value()), std::move(ticking));
+}
+
+Expected<std::unique_ptr<Kernel>, OpenFailure> Kernel::open(const std::filesystem::path& path, OpenPolicy policy,
+    std::unique_ptr<Clock> clock) {
+    auto journal = Journal::open(path, policy);
+    if (!journal) {
+        return journal.error();
+    }
+    return fromJournal(std::move(journal.value()), clockOrSystem(std::move(clock)));
+}
+
+Expected<std::unique_ptr<Kernel>, OpenFailure> Kernel::openBytes(std::string bytes, std::unique_ptr<Sink> sink,
+    std::unique_ptr<Clock> clock) {
+    auto journal = Journal::openBytes(std::move(bytes), std::move(sink));
+    if (!journal) {
+        return journal.error();
+    }
+    return fromJournal(std::move(journal.value()), clockOrSystem(std::move(clock)));
+}
+
+Expected<std::unique_ptr<Kernel>, OpenFailure> Kernel::fromJournal(std::unique_ptr<Journal> journal,
+    std::unique_ptr<Clock> clock) {
+    std::unique_ptr<Kernel> kernel(new Kernel(std::move(journal), std::move(clock)));
+    // Replay every verified commit with its committed ids, one commit at a
+    // time inside its own transaction so a commit that will not apply leaves
+    // the world at the previous commit rather than half-way through: the
+    // transaction's destructor restores what the refused commit had already
+    // touched. A verified record the world refuses is corruption of the
+    // history, not a crash.
+    for (std::size_t index = 0; index < kernel->m_journal->commitCount(); ++index) {
+        const CommitRecord commit = kernel->m_journal->commits()[index];
+        World::Transaction transaction = kernel->m_world.begin();
+        for (const Op& original : commit.ops) {
+            Op op = original;
+            if (auto rejection = transaction.prepare(op)) {
+                kernel->m_journal->markCorrupt(commit.seq, "apply: " + rejection->detail);
+                return kernel;
+            }
+            transaction.apply(op);
+        }
+        transaction.commit();
+    }
+    return kernel;
+}
+
+Expected<CommitResult, Rejection> Kernel::submit(const Proposal& proposal) {
+    using Kind = Rejection::Kind;
+    if (m_journal->status().kind != JournalStatus::Kind::Ok) {
+        return Rejection{Kind::JournalNotClean, m_journal->status().reason};
+    }
+    if (!isValidActorKind(proposal.actor.kind) || !isToken(proposal.actor.id) || !isValidText(proposal.actor.id)) {
+        return Rejection{Kind::BadActor, proposal.actor.kind + " " + proposal.actor.id};
+    }
+    if (proposal.actor.id.size() > tree::kMaxLineBytes) {
+        return Rejection{Kind::BadActor, "actor id exceeds " + std::to_string(tree::kMaxLineBytes) + " bytes"};
+    }
+    if (!isValidText(proposal.message)) {
+        return Rejection{Kind::BadValue, "message is not valid UTF-8"};
+    }
+    if (proposal.message.size() > tree::kMaxLineBytes) {
+        return Rejection{Kind::BadValue, "message exceeds " + std::to_string(tree::kMaxLineBytes) + " bytes"};
+    }
+
+    // The tick this commit applies at, read before any op moves it: a commit
+    // carrying `advance 3` still applies at the tick before the move, and the
+    // next commit's tick line shows the new value. The world now changes in
+    // place, so reading it after the loop would write a tick line no reader
+    // could decode — a reopen would fail TickMismatch on our own file.
+    const Tick tickBefore = m_world.tick();
+
+    // 1. Validate and apply every op inside a transaction, which saves what
+    //    each op touches; ids are assigned here.
+    World::Transaction transaction = m_world.begin();
+    CommitRecord record;
+    CommitResult result;
+    for (const Op& original : proposal.ops) {
+        Op op = original;
+        if (auto rejection = transaction.prepare(op)) {
+            return *rejection;
+        }
+        if (const auto* create = std::get_if<CreateNode>(&op)) {
+            result.nodeIds.push_back(create->id);
+        } else if (const auto* edge = std::get_if<CreateEdge>(&op)) {
+            result.edgeIds.push_back(edge->id);
+        }
+        transaction.apply(op);
+        record.ops.push_back(std::move(op));
+    }
+
+    // 2. Build and encode the record.
+    record.seq = m_journal->lastSeq() + 1;
+    record.parent = m_journal->lastDigest();
+    record.branch = "main";
+    record.recorded = m_clock->now();
+    record.tick = tickBefore;
+    record.actor = proposal.actor;
+    record.message = proposal.message;
+    const tree::Encoded encoded = tree::encodeCommit(record);
+    auto check = tree::decodeCommit(encoded.bytes, 0, record.parent, record.seq, record.tick);
+    if (!check) {
+        return Rejection{Kind::BadValue, "record would not decode: " + check.error().detail};
+    }
+
+    // 3. Durable write, then sync. A failure here changes nothing.
+    if (auto failure = m_journal->append(encoded, record)) {
+        return Rejection{Kind::Io, failure->what};
+    }
+
+    // 4. Only now is the change kept: commit() drops the saved copies, so
+    //    nothing can put the world back afterwards.
+    transaction.commit();
+    result.seq = record.seq;
+    result.digest = encoded.digest;
+    return result;
+}
+
+void Kernel::replayUpTo(CommitSeq maxSeq) {
+    World fresh;
+    for (std::size_t index = 0; index < m_journal->commitCount(); ++index) {
+        const CommitRecord& commit = m_journal->commits()[index];
+        if (commit.seq > maxSeq) break;
+        // A commit whose op is refused is skipped whole: the transaction goes
+        // out of scope without commit() and puts back what it had applied.
+        World::Transaction transaction = fresh.begin();
+        bool ok = true;
+        for (const Op& original : commit.ops) {
+            Op op = original;
+            if (transaction.prepare(op).has_value()) {
+                ok = false;
+                break;
+            }
+            transaction.apply(op);
+        }
+        if (ok) {
+            transaction.commit();
+        }
+    }
+    m_world = std::move(fresh);
+}
+
+RepairResult Kernel::repair() { return m_journal->repair(m_clock->now()); }
+
+std::optional<IoError> Kernel::saveAs(const std::filesystem::path& path) const { return m_journal->saveAs(path); }
+
+} // namespace tapestry::kernel

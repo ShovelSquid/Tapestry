@@ -1,0 +1,25 @@
+{
+  "results": [
+    {
+      "hours": 8,
+      "keystrokes": 64552,
+      "sessions": 27,
+      "batches": 26812,
+      "commits": 26814,
+      "properties": 26840,
+      "bytes": 8338921,
+      "bytesPerKeystroke": 129.1814506134589,
+      "writeMs": 135194.556167,
+      "openMs": 22667.64158300002,
+      "readMs": 29.371458999987226,
+      "redrawMs": 17.175625000003492,
+      "commitsPerSecond": 198.3215948938084,
+      "status": "Ok",
+      "redrawn": 64552,
+      "identical": true,
+      "mismatch": null,
+      "excerpt": "set n1 keys.000001 text <<TEXT\n@ 0.000\n+0.000 o\n+0.127 k\n+0.127  \nTEXT\n@end sha",
+      "file": "/var/folders/2n/p1yrph0972g59t19ygt_xg340000gn/T/spike006-l6hkC9/thread-8h.tree"
+    }
+  ]
+}

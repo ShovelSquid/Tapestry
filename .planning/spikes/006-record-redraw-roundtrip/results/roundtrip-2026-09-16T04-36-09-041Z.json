@@ -1,0 +1,25 @@
+{
+  "results": [
+    {
+      "hours": 8,
+      "keystrokes": 64552,
+      "sessions": 27,
+      "batches": 2428,
+      "commits": 2430,
+      "properties": 2456,
+      "bytes": 1282811,
+      "bytesPerKeystroke": 19.87252137811377,
+      "writeMs": 9670.606375,
+      "openMs": 231.70874999999978,
+      "readMs": 2.1287910000010015,
+      "redrawMs": 9.023541999998997,
+      "commitsPerSecond": 251.07008866339055,
+      "status": "Ok",
+      "redrawn": 64552,
+      "identical": false,
+      "mismatch": "time at 12: 1.524 vs 1.5219661254159533",
+      "excerpt": "set n1 keys.000001 text <<TEXT\n@ 0.000\n+0.000 o\n+0.127 k\n+0.127  \n+0.127 i\n+0.127  \n+0.127 n\n+0.127 e\n+0.127 e\n+0.127 d\n+0.127  \n+0.127 t\n+0.127 o\n+0.127  \n+0.127 s\n+0.127 t\n+0.127 a\n+0.127 r\n+0.127 t\n+0.127  \n+0.127 w\n+0.127 r\n+0.127 i\n+0.127 t\n+0.127 i\n+0.127 n\n+0.127 g\n+0.127  \n+0.127 m\n+0.127 y\n+0.127  \n+0.127 n\n+0.127 o\n+0.127 t\n+0.127 e\n+0.127 s\n+0.127  \n+0.127 h\n+0.127 e\n+0.127 r\n+0.127 e\nTEXT\n@end sha",
+      "file": null
+    }
+  ]
+}

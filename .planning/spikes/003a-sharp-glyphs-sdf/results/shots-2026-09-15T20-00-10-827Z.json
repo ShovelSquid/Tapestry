@@ -1,0 +1,103 @@
+{
+  "log": [
+    {
+      "at": "2026-09-15T19:59:54.317Z",
+      "category": "layer-ready",
+      "ms": 18.299999997019768
+    },
+    {
+      "at": "2026-09-15T19:59:54.608Z",
+      "category": "load",
+      "name": "1h",
+      "buildMs": 288,
+      "glyphs": 4408,
+      "letters": 5359,
+      "atlasCells": 475,
+      "atlasOverflow": 0,
+      "rasterCount": 476,
+      "rasterMsAvg": 0.5920168066851231,
+      "rasterMsMax": 80.79999999701977,
+      "rasterMsLast": 2.2000000029802322,
+      "liveCopies": 0,
+      "liveCopyMsAvg": 0,
+      "instanceMB": 0.23541259765625,
+      "mipmaps": true,
+      "clipped": 0
+    },
+    {
+      "at": "2026-09-15T19:59:56.234Z",
+      "category": "shot",
+      "name": "live",
+      "sidePx": 16
+    },
+    {
+      "at": "2026-09-15T19:59:57.865Z",
+      "category": "shot",
+      "name": "live-oblique",
+      "sidePx": 16
+    },
+    {
+      "at": "2026-09-15T19:59:59.482Z",
+      "category": "shot",
+      "name": "side-8px",
+      "sidePx": 8
+    },
+    {
+      "at": "2026-09-15T20:00:01.079Z",
+      "category": "shot",
+      "name": "side-16px",
+      "sidePx": 16
+    },
+    {
+      "at": "2026-09-15T20:00:02.697Z",
+      "category": "shot",
+      "name": "side-24px",
+      "sidePx": 24
+    },
+    {
+      "at": "2026-09-15T20:00:04.313Z",
+      "category": "shot",
+      "name": "side-48px",
+      "sidePx": 48
+    },
+    {
+      "at": "2026-09-15T20:00:05.939Z",
+      "category": "shot",
+      "name": "side-120px",
+      "sidePx": 120
+    },
+    {
+      "at": "2026-09-15T20:00:07.568Z",
+      "category": "shot",
+      "name": "side-240px",
+      "sidePx": 240
+    },
+    {
+      "at": "2026-09-15T20:00:09.198Z",
+      "category": "shot",
+      "name": "unicode-48px",
+      "sidePx": 48
+    },
+    {
+      "at": "2026-09-15T20:00:10.827Z",
+      "category": "shot",
+      "name": "unicode-240px",
+      "sidePx": 240
+    }
+  ],
+  "stats": {
+    "glyphs": 4486,
+    "letters": 5449,
+    "atlasCells": 475,
+    "atlasOverflow": 0,
+    "rasterCount": 476,
+    "rasterMsAvg": 0.5920168066851231,
+    "rasterMsMax": 80.79999999701977,
+    "rasterMsLast": 2.2000000029802322,
+    "liveCopies": 0,
+    "liveCopyMsAvg": 0,
+    "instanceMB": 0.2395782470703125,
+    "mipmaps": true,
+    "clipped": 0
+  }
+}

@@ -1,2 +1,28 @@
+# Dependencies
+node_modules/
+
+# Build output
 build/
+app/native/build/
+app/dist/
+app/out/
+app/forge-out/
+sdk/dist/
+tapestry/build-kernel/
+data-drawing/sim/build/
+plugins/data-drawing/surface/wasm/
+plugins/data-drawing/surface/dist/
+
+# Autonomous driver session logs
 autonomy/logs/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+*.swp
+*.swo
+*~
+.idea/
+.vscode/

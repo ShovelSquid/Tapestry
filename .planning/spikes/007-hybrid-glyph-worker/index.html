@@ -1,0 +1,49 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Spike 007 — hybrid glyphs</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #0d0f14; overflow: hidden; }
+      canvas { display: block; }
+      #hud {
+        position: fixed; top: 12px; left: 12px; padding: 10px 12px; border-radius: 8px;
+        background: rgba(10, 12, 18, 0.82); color: #cfd6e6; white-space: pre;
+        font: 12px/1.45 ui-monospace, "SF Mono", Menlo, monospace; pointer-events: none;
+      }
+      #typer {
+        position: fixed; top: 150px; left: 50%; transform: translateX(-50%);
+        width: min(760px, 70vw); max-height: 260px; overflow: auto;
+        background: rgba(16, 19, 27, 0.92); border: 1px solid #2a3040; border-radius: 10px;
+        padding: 14px 16px; box-shadow: 0 18px 40px rgba(0, 0, 0, 0.55);
+      }
+      #editor { color: #e8ecf6; font: 15px/1.6 ui-sans-serif, -apple-system, "Helvetica Neue", sans-serif; }
+      #editor .ProseMirror { outline: none; white-space: pre-wrap; min-height: 80px; }
+    </style>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "/node_modules/three/build/three.module.js",
+          "@mapbox/tiny-sdf": "/node_modules/@mapbox/tiny-sdf/index.js",
+          "prosemirror-state": "/node_modules/prosemirror-state/dist/index.js",
+          "prosemirror-view": "/node_modules/prosemirror-view/dist/index.js",
+          "prosemirror-model": "/node_modules/prosemirror-model/dist/index.js",
+          "prosemirror-transform": "/node_modules/prosemirror-transform/dist/index.js",
+          "prosemirror-keymap": "/node_modules/prosemirror-keymap/dist/index.js",
+          "prosemirror-commands": "/node_modules/prosemirror-commands/dist/index.js",
+          "prosemirror-history": "/node_modules/prosemirror-history/dist/index.js",
+          "prosemirror-schema-basic": "/node_modules/prosemirror-schema-basic/dist/index.js",
+          "orderedmap": "/node_modules/orderedmap/dist/index.js",
+          "rope-sequence": "/node_modules/rope-sequence/dist/index.js",
+          "w3c-keyname": "/node_modules/w3c-keyname/index.js"
+        }
+      }
+    </script>
+    <link rel="stylesheet" href="/node_modules/prosemirror-view/style/prosemirror.css" />
+  </head>
+  <body>
+    <div id="hud"></div>
+    <div id="typer"><div id="editor"></div></div>
+    <script type="module" src="./hybrid.js"></script>
+  </body>
+</html>

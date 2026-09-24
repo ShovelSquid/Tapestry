@@ -1,0 +1,49 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Spike 008 — scrub to any moment</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #0d0f14; overflow: hidden;
+        font: 14px/1.5 ui-sans-serif, -apple-system, "Helvetica Neue", sans-serif; color: #e8ecf6; }
+      #hud {
+        position: fixed; top: 12px; left: 12px; padding: 10px 12px; border-radius: 8px;
+        background: rgba(10, 12, 18, 0.82); color: #cfd6e6; white-space: pre; z-index: 5;
+        font: 12px/1.45 ui-monospace, "SF Mono", Menlo, monospace; pointer-events: none;
+      }
+      /* The text window above the line (D-09/D-18): the document as it was. */
+      #doc {
+        position: fixed; top: 150px; left: 50%; transform: translateX(-50%);
+        width: min(860px, 78vw); height: 420px; overflow: hidden;
+        background: rgba(16, 19, 27, 0.94); border: 1px solid #2a3040; border-radius: 10px;
+        padding: 18px 22px; box-shadow: 0 18px 40px rgba(0, 0, 0, 0.55);
+        white-space: pre-wrap; word-break: break-word;
+      }
+      /* D-18: the letter at the scrubbed moment is highlighted. */
+      #doc mark { background: #3c5a8a; color: #fff; border-radius: 2px; }
+      #doc .tail { opacity: 0.35; }
+      /* D-17: a thin date scrubber along the bottom. */
+      #scrubber {
+        position: fixed; left: 0; right: 0; bottom: 0; height: 84px;
+        background: linear-gradient(to top, rgba(10,12,18,0.96), rgba(10,12,18,0.0));
+        display: flex; flex-direction: column; justify-content: flex-end; padding: 0 24px 14px;
+      }
+      #track { position: relative; height: 26px; }
+      #ticks { position: absolute; inset: 0; pointer-events: none; }
+      #ticks div { position: absolute; top: 12px; width: 1px; height: 10px; background: #46506a; }
+      #ticks span { position: absolute; top: -2px; font: 11px ui-monospace, Menlo, monospace; color: #8891a8; transform: translateX(-50%); }
+      #range { width: 100%; margin: 0; }
+      #readout { font: 12px ui-monospace, Menlo, monospace; color: #cfd6e6; padding-top: 6px; }
+    </style>
+  </head>
+  <body>
+    <div id="hud"></div>
+    <div id="doc"></div>
+    <div id="scrubber">
+      <div id="track"><div id="ticks"></div></div>
+      <input id="range" type="range" min="0" max="10000" value="10000" step="1" />
+      <div id="readout"></div>
+    </div>
+    <script type="module" src="./scrub.js"></script>
+  </body>
+</html>

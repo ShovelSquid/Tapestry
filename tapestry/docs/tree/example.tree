@@ -1,0 +1,68 @@
+@tree 1 43
+world example
+created 2026-09-08T21:15:07Z
+@end sha256:d8a34e5a4217fb3d4a8d968e7003df018b80bfb71ff2f748a968113455554c90
+@commit 1 347
+parent sha256:d8a34e5a4217fb3d4a8d968e7003df018b80bfb71ff2f748a968113455554c90
+branch main
+recorded 2026-09-08T21:16:07Z
+tick 0
+actor human kaelen
+message "first note"
+create-node n1 tapestry.notes/note@1
+set n1 body text <<TEXT
+Met Sam at dinner.
+Loves architecture and weird bird memes.
+TEXT
+set n1 event time 2026-09-07
+set n1 title text "Sam"
+@end sha256:8d5f947f7b4c3beedc59a6a7d61e18cea52ba7e71e564f328bf75cd2b4d31341
+@commit 2 303
+parent sha256:8d5f947f7b4c3beedc59a6a7d61e18cea52ba7e71e564f328bf75cd2b4d31341
+branch main
+recorded 2026-09-08T21:17:07Z
+tick 0
+actor human kaelen
+message "who Sam is"
+create-node n2 example.people/person@2
+set n2 anger int 3
+set n2 name text "Sam"
+set n2 position.x real 12.5
+set n2 position.y real -3
+@end sha256:c1be9108cbbcb96ac7b8fcbbb73a1e2cf7be779bd009ffddb68caf2feb52427c
+@commit 3 249
+parent sha256:c1be9108cbbcb96ac7b8fcbbb73a1e2cf7be779bd009ffddb68caf2feb52427c
+branch main
+recorded 2026-09-08T21:18:07Z
+tick 0
+actor plugin example.people
+message "link note to person"
+create-edge e1 n1 n2 mentions
+set e1 note text "first meeting"
+@end sha256:f125ae1531576f1c91823a9546fa6f4cf33cf52a22b4afb7782428dc46a2d3cb
+@commit 4 208
+parent sha256:f125ae1531576f1c91823a9546fa6f4cf33cf52a22b4afb7782428dc46a2d3cb
+branch main
+recorded 2026-09-08T21:19:07Z
+tick 0
+actor human kaelen
+message "corrected dinner date"
+set n1 event time 2026-09-06
+@end sha256:5e7124de89e141504c81c96d7af3a24371a4fc322f263852fefdd675e172084b
+@commit 5 189
+parent sha256:5e7124de89e141504c81c96d7af3a24371a4fc322f263852fefdd675e172084b
+branch main
+recorded 2026-09-08T21:20:07Z
+tick 0
+actor system tapestry
+message "advance simulation"
+advance 3
+@end sha256:1e3c6313f82aa00fc5a82e6b732a3b6919e96d0c9f40eeef5c2de0a3d8035605
+@commit 6 166
+parent sha256:1e3c6313f82aa00fc5a82e6b732a3b6919e96d0c9f40eeef5c2de0a3d8035605
+branch main
+recorded 2026-09-08T21:21:07Z
+tick 3
+actor human kaelen
+set n2 anger int 4
+@end sha256:8083c729577231f07251d7e8f5d036e13107a020e48be395d15e8eace5ced9a4

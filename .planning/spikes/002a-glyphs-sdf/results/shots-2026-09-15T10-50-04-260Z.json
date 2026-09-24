@@ -1,0 +1,59 @@
+{
+  "log": [
+    {
+      "at": "2026-09-15T10:49:51.422Z",
+      "category": "load",
+      "name": "1h",
+      "buildMs": 355.19999998807907,
+      "glyphs": 4725
+    },
+    {
+      "at": "2026-09-15T10:49:53.028Z",
+      "category": "shot",
+      "name": "live",
+      "sidePx": 16
+    },
+    {
+      "at": "2026-09-15T10:49:54.628Z",
+      "category": "shot",
+      "name": "live-oblique",
+      "sidePx": 16
+    },
+    {
+      "at": "2026-09-15T10:49:56.244Z",
+      "category": "shot",
+      "name": "side-8px",
+      "sidePx": 8
+    },
+    {
+      "at": "2026-09-15T10:49:57.843Z",
+      "category": "shot",
+      "name": "side-12px",
+      "sidePx": 12
+    },
+    {
+      "at": "2026-09-15T10:49:59.444Z",
+      "category": "shot",
+      "name": "side-16px",
+      "sidePx": 16
+    },
+    {
+      "at": "2026-09-15T10:50:01.061Z",
+      "category": "shot",
+      "name": "side-24px",
+      "sidePx": 24
+    },
+    {
+      "at": "2026-09-15T10:50:02.660Z",
+      "category": "shot",
+      "name": "side-48px",
+      "sidePx": 48
+    },
+    {
+      "at": "2026-09-15T10:50:04.260Z",
+      "category": "shot",
+      "name": "side-120px",
+      "sidePx": 120
+    }
+  ]
+}

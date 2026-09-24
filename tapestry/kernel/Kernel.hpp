@@ -1,0 +1,103 @@
+#pragma once
+
+#include "kernel/Digest.hpp"
+#include "kernel/Ids.hpp"
+#include "kernel/Ops.hpp"
+#include "kernel/Result.hpp"
+#include "kernel/Time.hpp"
+#include "kernel/World.hpp"
+#include "kernel/journal/Journal.hpp"
+#include "kernel/journal/Sink.hpp"
+
+#include <filesystem>
+#include <memory>
+#include <string>
+#include <vector>
+
+namespace tapestry::kernel {
+
+// What a caller asks the kernel to commit: who, why, and the ops. Ids in
+// creation ops are 0; the kernel assigns them and returns them.
+struct Proposal {
+    Actor actor;
+    std::string message;
+    std::vector<Op> ops;
+};
+
+// What a successful submit returns: the commit's seq and digest, and the ids
+// the creation ops received, in op order.
+struct CommitResult {
+    CommitSeq seq;
+    Digest digest;
+    std::vector<NodeId> nodeIds;
+    std::vector<EdgeId> edgeIds;
+};
+
+// The single-writer transaction kernel: one open world, one journal, one way
+// to change anything. Phase 2 plugin proposals go through the same submit().
+class Kernel {
+public:
+    // A new world in a new file: writes the @tree header durably. The world
+    // name is one token. A null clock means SystemClock. If creation cannot
+    // finish, the newly-created path is removed before the error is returned.
+    static Expected<std::unique_ptr<Kernel>, OpenFailure> create(const std::filesystem::path& path,
+        std::string worldName, std::unique_ptr<Clock> clock = nullptr);
+    static Expected<std::unique_ptr<Kernel>, OpenFailure> createWithSink(std::unique_ptr<Sink> sink,
+        std::string worldName, std::unique_ptr<Clock> clock = nullptr);
+
+    // An existing file: scans and verifies the journal, then rebuilds the
+    // world by replaying every verified commit with its committed ids. On
+    // failure no file is created or modified.
+    static Expected<std::unique_ptr<Kernel>, OpenFailure> open(const std::filesystem::path& path,
+        OpenPolicy policy, std::unique_ptr<Clock> clock = nullptr);
+    static Expected<std::unique_ptr<Kernel>, OpenFailure> openBytes(std::string bytes,
+        std::unique_ptr<Sink> sink, std::unique_ptr<Clock> clock = nullptr);
+
+    // The only mutation path, in this fixed order: refuse unless the journal
+    // is Ok; validate the actor; prepare and apply every op through a
+    // World::Transaction, which saves the nodes and edges each op touches
+    // before changing the world in place (assigning ids); build the record
+    // (seq = lastSeq + 1, parent = lastDigest, branch main, recorded = clock
+    // now, tick = the tick the world held before this commit's advance ops,
+    // captured before the loop); encode; Journal::append (write, then sync);
+    // and only then commit the transaction, dropping the saved copies. Every
+    // earlier return rolls the world back from those copies, so what is
+    // copied is one commit's footprint rather than the whole world, so a
+    // world with a long history reopens in time linear in its ops rather
+    // than squared. A Rejection or an I/O
+    // error at any point leaves both the file and world() exactly as before.
+    Expected<CommitResult, Rejection> submit(const Proposal& proposal);
+
+    const World& world() const { return m_world; }
+    const JournalStatus& status() const { return m_journal->status(); }
+    const Journal& journal() const { return *m_journal; }
+    CommitSeq lastSeq() const { return m_journal->lastSeq(); }
+
+    // Replay the journal's verified commits up to (and including) maxSeq,
+    // rebuilding the world from scratch. Used by undo/redo to navigate
+    // through the commit history without modifying the journal. The journal
+    // remains unchanged — only the in-memory world is reset and rebuilt.
+    void replayUpTo(CommitSeq maxSeq);
+
+    // Explicit repair of a torn tail (Journal::repair), the sidecar stamped
+    // with this kernel's clock. The world does not change: it never held
+    // anything from the tail.
+    RepairResult repair();
+
+    // A byte-identical copy of the verified journal into a new file
+    // (Journal::saveAs). The source is never touched.
+    std::optional<IoError> saveAs(const std::filesystem::path& path) const;
+
+private:
+    Kernel(std::unique_ptr<Journal> journal, std::unique_ptr<Clock> clock);
+
+    // Replays the journal's verified commits into the world.
+    static Expected<std::unique_ptr<Kernel>, OpenFailure> fromJournal(std::unique_ptr<Journal> journal,
+        std::unique_ptr<Clock> clock);
+
+    std::unique_ptr<Journal> m_journal;
+    std::unique_ptr<Clock> m_clock;
+    World m_world;
+};
+
+} // namespace tapestry::kernel

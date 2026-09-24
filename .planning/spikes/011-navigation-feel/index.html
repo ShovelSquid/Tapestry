@@ -1,0 +1,53 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Spike 011 — navigation feel</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #0d0f14; overflow: hidden;
+        font: 14px/1.5 ui-sans-serif, -apple-system, "Helvetica Neue", sans-serif; color: #e8ecf6; }
+      canvas { display: block; }
+      #hud {
+        position: fixed; top: 12px; left: 12px; padding: 10px 12px; border-radius: 8px;
+        background: rgba(10, 12, 18, 0.82); color: #cfd6e6; white-space: pre; z-index: 5;
+        font: 12px/1.45 ui-monospace, "SF Mono", Menlo, monospace; pointer-events: none;
+      }
+      /* D-17: a thin date scrubber along the bottom. The timeline never changes. */
+      #scrubber {
+        position: fixed; left: 0; right: 0; bottom: 0; height: 66px; z-index: 4;
+        background: linear-gradient(to top, rgba(10,12,18,0.96), rgba(10,12,18,0));
+        padding: 0 24px 12px; display: flex; flex-direction: column; justify-content: flex-end;
+      }
+      #bar { position: relative; height: 30px; cursor: ew-resize; }
+      #bar .rail { position: absolute; left: 0; right: 0; top: 19px; height: 3px; background: #2a3040; border-radius: 2px; }
+      /* Each session is a mark on the rail; gaps between them keep their true length (D-16). */
+      #bar .session { position: absolute; top: 15px; height: 11px; background: #5a7fb8; border-radius: 2px; }
+      #bar .window { position: absolute; top: 11px; height: 19px; border: 1px solid #9ab4dd;
+        background: rgba(154, 180, 221, 0.18); border-radius: 3px; pointer-events: none; }
+      #bar .day { position: absolute; top: 0; width: 1px; height: 8px; background: #46506a; }
+      #bar .dayLabel { position: absolute; top: -2px; font: 10px ui-monospace, Menlo, monospace;
+        color: #7d8699; transform: translateX(-50%); }
+      #readout { font: 12px ui-monospace, Menlo, monospace; color: #cfd6e6; padding-top: 4px; }
+    </style>
+    <!-- Pages are served over HTTP by 002-shared/launch.cjs, so bare specifiers
+         need mapping: navigate.js imports three, and 003-shared/sdf-rasterizer.js
+         imports @mapbox/tiny-sdf. Without this the module never evaluates and the
+         launcher simply waits out its timeout. -->
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "/node_modules/three/build/three.module.js",
+          "@mapbox/tiny-sdf": "/node_modules/@mapbox/tiny-sdf/index.js"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div id="hud"></div>
+    <div id="scrubber">
+      <div id="bar"><div class="rail"></div><div class="window"></div></div>
+      <div id="readout"></div>
+    </div>
+    <script type="module" src="./navigate.js"></script>
+  </body>
+</html>

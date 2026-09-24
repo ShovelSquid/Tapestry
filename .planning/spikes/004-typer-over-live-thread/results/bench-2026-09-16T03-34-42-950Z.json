@@ -1,0 +1,4646 @@
+{
+  "results": [
+    {
+      "load": "empty",
+      "phase": "typing-20cps",
+      "unpairedInputs": 0,
+      "glyphs": 90,
+      "letters": 112,
+      "atlasCells": 20,
+      "atlasOverflow": 0,
+      "rasterCount": 21,
+      "rasterMsAvg": 1.180952380100886,
+      "rasterMsMax": 14.100000008940697,
+      "rasterMsLast": 0.5999999940395355,
+      "liveCopies": 20,
+      "liveCopyMsAvg": 0.10499999970197678,
+      "instanceMB": 0.0048065185546875,
+      "mipmaps": true,
+      "clipped": 0,
+      "keystrokes": 112,
+      "inputDelay": {
+        "n": 112,
+        "median": 0,
+        "p95": 0.10000000894069672,
+        "max": 0.10000000894069672
+      },
+      "applyMs": {
+        "n": 112,
+        "median": 0.30000001192092896,
+        "p95": 1.2000000029802322,
+        "max": 17.700000002980232
+      },
+      "paintMs": {
+        "n": 112,
+        "median": 8.699999999999818,
+        "p95": 15.599999997019722,
+        "max": 16
+      },
+      "frames": 380,
+      "fps": 59.88023952095874,
+      "frameP95": 17.59999999999991,
+      "frameMax": 17.799999999999727,
+      "dropRate": 0,
+      "privateMB": 75.1416015625
+    },
+    {
+      "load": "empty",
+      "phase": "burst-40cps",
+      "unpairedInputs": 0,
+      "glyphs": 204,
+      "letters": 141,
+      "atlasCells": 21,
+      "atlasOverflow": 0,
+      "rasterCount": 22,
+      "rasterMsAvg": 1.1454545442353596,
+      "rasterMsMax": 14.100000008940697,
+      "rasterMsLast": 0.3999999910593033,
+      "liveCopies": 21,
+      "liveCopyMsAvg": 0.1095238093818937,
+      "instanceMB": 0.010894775390625,
+      "mipmaps": true,
+      "clipped": 0,
+      "keystrokes": 141,
+      "inputDelay": {
+        "n": 141,
+        "median": 0,
+        "p95": 0.10000000894069672,
+        "max": 0.10000000894069672
+      },
+      "applyMs": {
+        "n": 141,
+        "median": 0.29999999701976776,
+        "p95": 0.5,
+        "max": 1.0999999940395355
+      },
+      "paintMs": {
+        "n": 141,
+        "median": 7.400000008939969,
+        "p95": 15,
+        "max": 16.100000000000364
+      },
+      "frames": 259,
+      "fps": 59.880239520962,
+      "frameP95": 17.5,
+      "frameMax": 17.700000000000728,
+      "dropRate": 0,
+      "privateMB": 82.0634765625
+    },
+    {
+      "load": "empty",
+      "phase": "paste-2000",
+      "unpairedInputs": 0,
+      "glyphs": 1804,
+      "letters": 2000,
+      "atlasCells": 21,
+      "atlasOverflow": 0,
+      "rasterCount": 22,
+      "rasterMsAvg": 1.1454545442353596,
+      "rasterMsMax": 14.100000008940697,
+      "rasterMsLast": 0.3999999910593033,
+      "liveCopies": 21,
+      "liveCopyMsAvg": 0.1095238093818937,
+      "instanceMB": 0.096343994140625,
+      "mipmaps": true,
+      "clipped": 0,
+      "keystrokes": 1,
+      "inputDelay": {
+        "n": 0,
+        "median": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "applyMs": {
+        "n": 1,
+        "median": 2.6000000089406967,
+        "p95": 2.6000000089406967,
+        "max": 2.6000000089406967
+      },
+      "paintMs": {
+        "n": 0,
+        "median": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "frames": 90,
+      "fps": 59.880239520962,
+      "frameP95": 17.600000000000364,
+      "frameMax": 33.399999999999636,
+      "dropRate": 0.011111111111111112,
+      "privateMB": 83.3291015625
+    },
+    {
+      "load": "8h",
+      "phase": "typing-20cps",
+      "unpairedInputs": 0,
+      "glyphs": 62521,
+      "letters": 112,
+      "atlasCells": 662,
+      "atlasOverflow": 0,
+      "rasterCount": 663,
+      "rasterMsAvg": 0.2969834086896787,
+      "rasterMsMax": 26.200000002980232,
+      "rasterMsLast": 0.20000000298023224,
+      "liveCopies": 662,
+      "liveCopyMsAvg": 0.008761329345652704,
+      "instanceMB": 3.3389816284179688,
+      "mipmaps": true,
+      "clipped": 0,
+      "keystrokes": 112,
+      "inputDelay": {
+        "n": 112,
+        "median": 0,
+        "p95": 0.09999999403953552,
+        "max": 0.10000000894069672
+      },
+      "applyMs": {
+        "n": 112,
+        "median": 0.29999999701976776,
+        "p95": 0.5,
+        "max": 0.7999999970197678
+      },
+      "paintMs": {
+        "n": 112,
+        "median": 9.100000002981687,
+        "p95": 15.799999999999272,
+        "max": 16.899999997018313
+      },
+      "frames": 379,
+      "fps": 59.880239520962,
+      "frameP95": 17.600000000002183,
+      "frameMax": 17.700000000000728,
+      "dropRate": 0,
+      "privateMB": 123.5166015625
+    },
+    {
+      "load": "8h",
+      "phase": "burst-40cps",
+      "unpairedInputs": 0,
+      "glyphs": 62636,
+      "letters": 142,
+      "atlasCells": 662,
+      "atlasOverflow": 0,
+      "rasterCount": 663,
+      "rasterMsAvg": 0.2969834086896787,
+      "rasterMsMax": 26.200000002980232,
+      "rasterMsLast": 0.20000000298023224,
+      "liveCopies": 662,
+      "liveCopyMsAvg": 0.008761329345652704,
+      "instanceMB": 3.345123291015625,
+      "mipmaps": true,
+      "clipped": 0,
+      "keystrokes": 142,
+      "inputDelay": {
+        "n": 142,
+        "median": 0,
+        "p95": 0.09999999403953552,
+        "max": 0.10000000894069672
+      },
+      "applyMs": {
+        "n": 142,
+        "median": 0.20000000298023224,
+        "p95": 0.4000000059604645,
+        "max": 0.5
+      },
+      "paintMs": {
+        "n": 142,
+        "median": 8.300000008941424,
+        "p95": 15.900000000001455,
+        "max": 16.100000008940697
+      },
+      "frames": 258,
+      "fps": 59.88023952095548,
+      "frameP95": 17.400000000001455,
+      "frameMax": 17.700000000000728,
+      "dropRate": 0,
+      "privateMB": 119.9384765625
+    },
+    {
+      "load": "8h",
+      "phase": "paste-2000",
+      "unpairedInputs": 0,
+      "glyphs": 64236,
+      "letters": 2000,
+      "atlasCells": 662,
+      "atlasOverflow": 0,
+      "rasterCount": 663,
+      "rasterMsAvg": 0.2969834086896787,
+      "rasterMsMax": 26.200000002980232,
+      "rasterMsLast": 0.20000000298023224,
+      "liveCopies": 662,
+      "liveCopyMsAvg": 0.008761329345652704,
+      "instanceMB": 3.430572509765625,
+      "mipmaps": true,
+      "clipped": 0,
+      "keystrokes": 1,
+      "inputDelay": {
+        "n": 0,
+        "median": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "applyMs": {
+        "n": 1,
+        "median": 3.2000000029802322,
+        "p95": 3.2000000029802322,
+        "max": 3.2000000029802322
+      },
+      "paintMs": {
+        "n": 0,
+        "median": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "frames": 91,
+      "fps": 59.88023952095548,
+      "frameP95": 17.599999999998545,
+      "frameMax": 17.700000000000728,
+      "dropRate": 0,
+      "privateMB": 121.4072265625
+    }
+  ],
+  "log": [
+    {
+      "at": "2026-09-16T03:34:15.182Z",
+      "category": "load",
+      "name": "empty",
+      "buildMs": 0.09999999403953552,
+      "glyphs": 0,
+      "letters": 0,
+      "atlasCells": 0,
+      "atlasOverflow": 0,
+      "rasterCount": 0,
+      "rasterMsAvg": 0,
+      "rasterMsMax": 0,
+      "rasterMsLast": 0,
+      "liveCopies": 0,
+      "liveCopyMsAvg": 0,
+      "instanceMB": 0,
+      "mipmaps": true,
+      "clipped": 0
+    },
+    {
+      "at": "2026-09-16T03:34:22.251Z",
+      "category": "bench-step",
+      "load": "empty",
+      "phase": "typing-20cps",
+      "unpairedInputs": 0,
+      "glyphs": 90,
+      "letters": 112,
+      "atlasCells": 20,
+      "atlasOverflow": 0,
+      "rasterCount": 21,
+      "rasterMsAvg": 1.180952380100886,
+      "rasterMsMax": 14.100000008940697,
+      "rasterMsLast": 0.5999999940395355,
+      "liveCopies": 20,
+      "liveCopyMsAvg": 0.10499999970197678,
+      "instanceMB": 0.0048065185546875,
+      "mipmaps": true,
+      "clipped": 0,
+      "keystrokes": 112,
+      "inputDelay": {
+        "n": 112,
+        "median": 0,
+        "p95": 0.10000000894069672,
+        "max": 0.10000000894069672
+      },
+      "applyMs": {
+        "n": 112,
+        "median": 0.30000001192092896,
+        "p95": 1.2000000029802322,
+        "max": 17.700000002980232
+      },
+      "paintMs": {
+        "n": 112,
+        "median": 8.699999999999818,
+        "p95": 15.599999997019722,
+        "max": 16
+      },
+      "frames": 380,
+      "fps": 59.88023952095874,
+      "frameP95": 17.59999999999991,
+      "frameMax": 17.799999999999727,
+      "dropRate": 0,
+      "privateMB": 75.1416015625
+    },
+    {
+      "at": "2026-09-16T03:34:27.071Z",
+      "category": "bench-step",
+      "load": "empty",
+      "phase": "burst-40cps",
+      "unpairedInputs": 0,
+      "glyphs": 204,
+      "letters": 141,
+      "atlasCells": 21,
+      "atlasOverflow": 0,
+      "rasterCount": 22,
+      "rasterMsAvg": 1.1454545442353596,
+      "rasterMsMax": 14.100000008940697,
+      "rasterMsLast": 0.3999999910593033,
+      "liveCopies": 21,
+      "liveCopyMsAvg": 0.1095238093818937,
+      "instanceMB": 0.010894775390625,
+      "mipmaps": true,
+      "clipped": 0,
+      "keystrokes": 141,
+      "inputDelay": {
+        "n": 141,
+        "median": 0,
+        "p95": 0.10000000894069672,
+        "max": 0.10000000894069672
+      },
+      "applyMs": {
+        "n": 141,
+        "median": 0.29999999701976776,
+        "p95": 0.5,
+        "max": 1.0999999940395355
+      },
+      "paintMs": {
+        "n": 141,
+        "median": 7.400000008939969,
+        "p95": 15,
+        "max": 16.100000000000364
+      },
+      "frames": 259,
+      "fps": 59.880239520962,
+      "frameP95": 17.5,
+      "frameMax": 17.700000000000728,
+      "dropRate": 0,
+      "privateMB": 82.0634765625
+    },
+    {
+      "at": "2026-09-16T03:34:28.897Z",
+      "category": "bench-step",
+      "load": "empty",
+      "phase": "paste-2000",
+      "unpairedInputs": 0,
+      "glyphs": 1804,
+      "letters": 2000,
+      "atlasCells": 21,
+      "atlasOverflow": 0,
+      "rasterCount": 22,
+      "rasterMsAvg": 1.1454545442353596,
+      "rasterMsMax": 14.100000008940697,
+      "rasterMsLast": 0.3999999910593033,
+      "liveCopies": 21,
+      "liveCopyMsAvg": 0.1095238093818937,
+      "instanceMB": 0.096343994140625,
+      "mipmaps": true,
+      "clipped": 0,
+      "keystrokes": 1,
+      "inputDelay": {
+        "n": 0,
+        "median": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "applyMs": {
+        "n": 1,
+        "median": 2.6000000089406967,
+        "p95": 2.6000000089406967,
+        "max": 2.6000000089406967
+      },
+      "paintMs": {
+        "n": 0,
+        "median": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "frames": 90,
+      "fps": 59.880239520962,
+      "frameP95": 17.600000000000364,
+      "frameMax": 33.399999999999636,
+      "dropRate": 0.011111111111111112,
+      "privateMB": 83.3291015625
+    },
+    {
+      "at": "2026-09-16T03:34:29.099Z",
+      "category": "load",
+      "name": "8h",
+      "buildMs": 195.20000000298023,
+      "glyphs": 62431,
+      "letters": 75795,
+      "atlasCells": 662,
+      "atlasOverflow": 0,
+      "rasterCount": 663,
+      "rasterMsAvg": 0.2969834086896787,
+      "rasterMsMax": 26.200000002980232,
+      "rasterMsLast": 0.20000000298023224,
+      "liveCopies": 662,
+      "liveCopyMsAvg": 0.008761329345652704,
+      "instanceMB": 3.3341751098632812,
+      "mipmaps": true,
+      "clipped": 0
+    },
+    {
+      "at": "2026-09-16T03:34:36.321Z",
+      "category": "bench-step",
+      "load": "8h",
+      "phase": "typing-20cps",
+      "unpairedInputs": 0,
+      "glyphs": 62521,
+      "letters": 112,
+      "atlasCells": 662,
+      "atlasOverflow": 0,
+      "rasterCount": 663,
+      "rasterMsAvg": 0.2969834086896787,
+      "rasterMsMax": 26.200000002980232,
+      "rasterMsLast": 0.20000000298023224,
+      "liveCopies": 662,
+      "liveCopyMsAvg": 0.008761329345652704,
+      "instanceMB": 3.3389816284179688,
+      "mipmaps": true,
+      "clipped": 0,
+      "keystrokes": 112,
+      "inputDelay": {
+        "n": 112,
+        "median": 0,
+        "p95": 0.09999999403953552,
+        "max": 0.10000000894069672
+      },
+      "applyMs": {
+        "n": 112,
+        "median": 0.29999999701976776,
+        "p95": 0.5,
+        "max": 0.7999999970197678
+      },
+      "paintMs": {
+        "n": 112,
+        "median": 9.100000002981687,
+        "p95": 15.799999999999272,
+        "max": 16.899999997018313
+      },
+      "frames": 379,
+      "fps": 59.880239520962,
+      "frameP95": 17.600000000002183,
+      "frameMax": 17.700000000000728,
+      "dropRate": 0,
+      "privateMB": 123.5166015625
+    },
+    {
+      "at": "2026-09-16T03:34:41.135Z",
+      "category": "bench-step",
+      "load": "8h",
+      "phase": "burst-40cps",
+      "unpairedInputs": 0,
+      "glyphs": 62636,
+      "letters": 142,
+      "atlasCells": 662,
+      "atlasOverflow": 0,
+      "rasterCount": 663,
+      "rasterMsAvg": 0.2969834086896787,
+      "rasterMsMax": 26.200000002980232,
+      "rasterMsLast": 0.20000000298023224,
+      "liveCopies": 662,
+      "liveCopyMsAvg": 0.008761329345652704,
+      "instanceMB": 3.345123291015625,
+      "mipmaps": true,
+      "clipped": 0,
+      "keystrokes": 142,
+      "inputDelay": {
+        "n": 142,
+        "median": 0,
+        "p95": 0.09999999403953552,
+        "max": 0.10000000894069672
+      },
+      "applyMs": {
+        "n": 142,
+        "median": 0.20000000298023224,
+        "p95": 0.4000000059604645,
+        "max": 0.5
+      },
+      "paintMs": {
+        "n": 142,
+        "median": 8.300000008941424,
+        "p95": 15.900000000001455,
+        "max": 16.100000008940697
+      },
+      "frames": 258,
+      "fps": 59.88023952095548,
+      "frameP95": 17.400000000001455,
+      "frameMax": 17.700000000000728,
+      "dropRate": 0,
+      "privateMB": 119.9384765625
+    },
+    {
+      "at": "2026-09-16T03:34:42.948Z",
+      "category": "bench-step",
+      "load": "8h",
+      "phase": "paste-2000",
+      "unpairedInputs": 0,
+      "glyphs": 64236,
+      "letters": 2000,
+      "atlasCells": 662,
+      "atlasOverflow": 0,
+      "rasterCount": 663,
+      "rasterMsAvg": 0.2969834086896787,
+      "rasterMsMax": 26.200000002980232,
+      "rasterMsLast": 0.20000000298023224,
+      "liveCopies": 662,
+      "liveCopyMsAvg": 0.008761329345652704,
+      "instanceMB": 3.430572509765625,
+      "mipmaps": true,
+      "clipped": 0,
+      "keystrokes": 1,
+      "inputDelay": {
+        "n": 0,
+        "median": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "applyMs": {
+        "n": 1,
+        "median": 3.2000000029802322,
+        "p95": 3.2000000029802322,
+        "max": 3.2000000029802322
+      },
+      "paintMs": {
+        "n": 0,
+        "median": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "frames": 91,
+      "fps": 59.88023952095548,
+      "frameP95": 17.599999999998545,
+      "frameMax": 17.700000000000728,
+      "dropRate": 0,
+      "privateMB": 121.4072265625
+    }
+  ],
+  "samples": [
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 921.2999999970198,
+      "inputDelay": 0.09999999403953552,
+      "applyMs": 17.700000002980232,
+      "paintMs": 13.60000000298021
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 998.2000000029802,
+      "inputDelay": 0,
+      "applyMs": 1.2999999970197678,
+      "paintMs": 2.3999999970197905
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 1052.5,
+      "inputDelay": 0,
+      "applyMs": 0.7000000029802322,
+      "paintMs": 15.700000000000045
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 1105.5,
+      "inputDelay": 0,
+      "applyMs": 0.7999999970197678,
+      "paintMs": 12.700000000000045
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 1159.3999999910593,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 8.700000008940606
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 1213.5,
+      "inputDelay": 0,
+      "applyMs": 1.2000000029802322,
+      "paintMs": 4.599999999999909
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 1268.2000000029802,
+      "inputDelay": 0,
+      "applyMs": 1.1000000089406967,
+      "paintMs": 15.599999997019722
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 1321.7000000029802,
+      "inputDelay": 0.09999999403953552,
+      "applyMs": 0.5999999940395355,
+      "paintMs": 13.199999997019859
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 1375.5,
+      "inputDelay": 0.09999999403953552,
+      "applyMs": 0.5,
+      "paintMs": 9.400000000000091
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 1429.2999999970198,
+      "inputDelay": 0.09999999403953552,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 5.600000002980323
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 1482.2000000029802,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 2.6999999970198587
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 1535.5,
+      "inputDelay": 0,
+      "applyMs": 0.7000000029802322,
+      "paintMs": 16
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 1588,
+      "inputDelay": 0,
+      "applyMs": 0.4000000059604645,
+      "paintMs": 13.5
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 1641.0999999940395,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 10.400000005960464
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 1693.7999999970198,
+      "inputDelay": 0,
+      "applyMs": 1,
+      "paintMs": 7.700000002980232
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 1748.0999999940395,
+      "inputDelay": 0,
+      "applyMs": 1.2000000029802322,
+      "paintMs": 3.4000000059604645
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 1803.2999999970198,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 13.900000002980278
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 1855.7999999970198,
+      "inputDelay": 0,
+      "applyMs": 0.3999999910593033,
+      "paintMs": 11.400000002980278
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 1909.3999999910593,
+      "inputDelay": 0,
+      "applyMs": 0.4000000059604645,
+      "paintMs": 7.800000008940742
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 1963,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 5.099999999999909
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 2016,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 1.2000000000000455
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 2069,
+      "inputDelay": 0,
+      "applyMs": 1.0999999940395355,
+      "paintMs": 15.800000000000182
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 2123.2999999970198,
+      "inputDelay": 0,
+      "applyMs": 1.300000011920929,
+      "paintMs": 11.500000002980414
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 2178.3999999910593,
+      "inputDelay": 0.10000000894069672,
+      "applyMs": 0.4000000059604645,
+      "paintMs": 6.500000008940788
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 2231.7000000029802,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 2.1999999970198587
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 2286.2000000029802,
+      "inputDelay": 0.09999999403953552,
+      "applyMs": 0.3999999910593033,
+      "paintMs": 14.299999997019768
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 2338.5,
+      "inputDelay": 0,
+      "applyMs": 0.30000001192092896,
+      "paintMs": 12.099999999999909
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 2392.2000000029802,
+      "inputDelay": 0.09999999403953552,
+      "applyMs": 0.7999999970197678,
+      "paintMs": 8.299999997019768
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 2446.8999999910593,
+      "inputDelay": 0,
+      "applyMs": 0.5,
+      "paintMs": 4.700000008940606
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 2501.2999999970198,
+      "inputDelay": 0,
+      "applyMs": 0.7000000029802322,
+      "paintMs": 0.3000000029801413
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 2555.2999999970198,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 12.90000000298005
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 2608.8999999910593,
+      "inputDelay": 0,
+      "applyMs": 0.3999999910593033,
+      "paintMs": 9.300000008940515
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 2662.5999999940395,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 4.600000005960283
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 2715.7000000029802,
+      "inputDelay": 0,
+      "applyMs": 0.09999999403953552,
+      "paintMs": 1.4999999970195859
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 2768.7999999970198,
+      "inputDelay": 0.09999999403953552,
+      "applyMs": 0.7999999970197678,
+      "paintMs": -0.5999999970199497
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 2822.8999999910593,
+      "inputDelay": 0.10000000894069672,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 12.000000008940788
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 2876.5999999940395,
+      "inputDelay": 0,
+      "applyMs": 1.0999999940395355,
+      "paintMs": 8.200000005960646
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 2930.0999999940395,
+      "inputDelay": 0,
+      "applyMs": 0.7999999970197678,
+      "paintMs": 4.200000005960646
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 2984.5,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 0.3000000000001819
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 3037.5,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 14
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 3089.8999999910593,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 11.600000008940697
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 3142.2000000029802,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 9.499999997019586
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 3195.8999999910593,
+      "inputDelay": 0.10000000894069672,
+      "applyMs": 0.4000000059604645,
+      "paintMs": 5.700000008940606
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 3249,
+      "inputDelay": 0,
+      "applyMs": 0.3999999910593033,
+      "paintMs": 2.599999999999909
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 3303.5999999940395,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 14.600000005960283
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 3356.3999999910593,
+      "inputDelay": 0,
+      "applyMs": 0.5,
+      "paintMs": 11.800000008940515
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 3410.5,
+      "inputDelay": 0,
+      "applyMs": 0.4000000059604645,
+      "paintMs": 6.699999999999818
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 3463.7999999970198,
+      "inputDelay": 0,
+      "applyMs": 0.3999999910593033,
+      "paintMs": 4.40000000298005
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 3517.7999999970198,
+      "inputDelay": 0,
+      "applyMs": 0.3999999910593033,
+      "paintMs": -0.5999999970199497
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 3571.0999999940395,
+      "inputDelay": 0.10000000894069672,
+      "applyMs": 0.4000000059604645,
+      "paintMs": 13.900000005960464
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 3624.5999999940395,
+      "inputDelay": 0,
+      "applyMs": 0.19999998807907104,
+      "paintMs": 10.300000005960555
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 3677.0999999940395,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 7.9000000059604645
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 3730.0999999940395,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 4.9000000059604645
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 3781.7000000029802,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 3.2999999970197678
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 3834.7000000029802,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 0.1999999970198587
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 3888.7000000029802,
+      "inputDelay": 0,
+      "applyMs": 0.5,
+      "paintMs": 12.999999997019586
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 3942.5,
+      "inputDelay": 0,
+      "applyMs": 0.4000000059604645,
+      "paintMs": 8.699999999999818
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 3996.8999999910593,
+      "inputDelay": 0,
+      "applyMs": 1.2999999970197678,
+      "paintMs": 4.100000008940697
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 4051.7999999970198,
+      "inputDelay": 0.09999999403953552,
+      "applyMs": 0.7000000029802322,
+      "paintMs": -0.1999999970198587
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 4106.20000000298,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 12.09999999701995
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 4159.5,
+      "inputDelay": 0.09999999403953552,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 8.800000000000182
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 4213.5999999940395,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 4.600000005960283
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 4266.5999999940395,
+      "inputDelay": 0,
+      "applyMs": 0.30000001192092896,
+      "paintMs": 1.5000000059608283
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 4319.0999999940395,
+      "inputDelay": 0,
+      "applyMs": 0.3999999910593033,
+      "paintMs": 15.700000005960646
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 4371.5,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 13.399999999999636
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 4424.5,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 10.399999999999636
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 4476.5999999940395,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 8.200000005960646
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 4528.899999991059,
+      "inputDelay": 0,
+      "applyMs": 0.10000000894069672,
+      "paintMs": 5.600000008940697
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 4581.29999999702,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 2.800000002980596
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 4634.399999991059,
+      "inputDelay": 0.10000000894069672,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 0.6000000089406967
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 4686.79999999702,
+      "inputDelay": 0.09999999403953552,
+      "applyMs": 0.19999998807907104,
+      "paintMs": 14.700000002980232
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 4739.20000000298,
+      "inputDelay": 0,
+      "applyMs": 0.09999999403953552,
+      "paintMs": 12.299999997019768
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 4791.20000000298,
+      "inputDelay": 0,
+      "applyMs": 0.09999999403953552,
+      "paintMs": 10.299999997019768
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 4843.5,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 7.5
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 4896.5999999940395,
+      "inputDelay": 0.10000000894069672,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 5.000000005960828
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 4950.899999991059,
+      "inputDelay": 0.10000000894069672,
+      "applyMs": 0.4000000059604645,
+      "paintMs": 0.8000000089405148
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 5005.79999999702,
+      "inputDelay": 0,
+      "applyMs": 0.3999999910593033,
+      "paintMs": 12.40000000298005
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 5059.79999999702,
+      "inputDelay": 0,
+      "applyMs": 0.4000000059604645,
+      "paintMs": 7.700000002980232
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 5114.20000000298,
+      "inputDelay": 0,
+      "applyMs": 0.5,
+      "paintMs": 4.09999999701995
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 5169,
+      "inputDelay": 0,
+      "applyMs": 0.30000001192092896,
+      "paintMs": 15.899999999999636
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 5222.20000000298,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 12.699999997019404
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 5276.20000000298,
+      "inputDelay": 0,
+      "applyMs": 1.2999999970197678,
+      "paintMs": 8.799999997019768
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 5331.20000000298,
+      "inputDelay": 0,
+      "applyMs": 1,
+      "paintMs": 3.699999997019404
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 5386.5,
+      "inputDelay": 0.09999999403953552,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 15
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 5439.899999991059,
+      "inputDelay": 0,
+      "applyMs": 0.5,
+      "paintMs": 11.70000000894106
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 5493.70000000298,
+      "inputDelay": 0,
+      "applyMs": 0.5,
+      "paintMs": 7.799999997019768
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 5547.399999991059,
+      "inputDelay": 0,
+      "applyMs": 1.2000000029802322,
+      "paintMs": 4.100000008940697
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 5602.70000000298,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 15.499999997019586
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 5655.70000000298,
+      "inputDelay": 0,
+      "applyMs": 0.4000000059604645,
+      "paintMs": 12.499999997019586
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 5708.70000000298,
+      "inputDelay": 0,
+      "applyMs": 0.4000000059604645,
+      "paintMs": 9.59999999701995
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 5762.70000000298,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 5.499999997019586
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 5816.899999991059,
+      "inputDelay": 0.10000000894069672,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 1.3000000089405148
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 5870.0999999940395,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 14.8000000059601
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 5923.5,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 11.300000000000182
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 5977,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 8
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 6031.0999999940395,
+      "inputDelay": 0,
+      "applyMs": 0.4000000059604645,
+      "paintMs": 3.8000000059601007
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 6086.70000000298,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 14.799999997019768
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 6139.70000000298,
+      "inputDelay": 0.09999999403953552,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 11.799999997019768
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 6193,
+      "inputDelay": 0,
+      "applyMs": 0.3999999910593033,
+      "paintMs": 8.5
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 6246.79999999702,
+      "inputDelay": 0.09999999403953552,
+      "applyMs": 0.19999998807907104,
+      "paintMs": 4.700000002980232
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 6299.899999991059,
+      "inputDelay": 0.10000000894069672,
+      "applyMs": 0.4000000059604645,
+      "paintMs": 1.6000000089406967
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 6353.5999999940395,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 14.700000005960646
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 6407.20000000298,
+      "inputDelay": 0,
+      "applyMs": 0.5,
+      "paintMs": 11.09999999701995
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 6461.70000000298,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 6.59999999701995
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 6515.79999999702,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 1.7000000029802322
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 6569.5999999940395,
+      "inputDelay": 0,
+      "applyMs": 0.30000001192092896,
+      "paintMs": 15.3000000059601
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 6622,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 12.800000000000182
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 6675.29999999702,
+      "inputDelay": 0,
+      "applyMs": 0.5,
+      "paintMs": 9.700000002980232
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 6728.5,
+      "inputDelay": 0.09999999403953552,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 6.300000000000182
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 6782.5,
+      "inputDelay": 0,
+      "applyMs": 0.9000000059604645,
+      "paintMs": 2.399999999999636
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 6836.29999999702,
+      "inputDelay": 0.09999999403953552,
+      "applyMs": 0.19999998807907104,
+      "paintMs": 15.200000002980232
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 6889.399999991059,
+      "inputDelay": 0,
+      "applyMs": 0.4000000059604645,
+      "paintMs": 12.20000000894106
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 7752.20000000298,
+      "inputDelay": 0,
+      "applyMs": 0.3999999910593033,
+      "paintMs": -0.6000000029798684
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 7781.79999999702,
+      "inputDelay": 0,
+      "applyMs": 0.5,
+      "paintMs": 3.1000000029798684
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 7810.29999999702,
+      "inputDelay": 0,
+      "applyMs": 0.5,
+      "paintMs": 8.000000002980414
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 7838.20000000298,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 13.399999997020132
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 7867.0999999940395,
+      "inputDelay": 0,
+      "applyMs": 0.3999999910593033,
+      "paintMs": 1.2000000059606464
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 7896.899999991059,
+      "inputDelay": 0,
+      "applyMs": 0.4000000059604645,
+      "paintMs": 4.600000008940697
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 7924.899999991059,
+      "inputDelay": 0,
+      "applyMs": 0.4000000059604645,
+      "paintMs": 9.900000008940879
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 7953.399999991059,
+      "inputDelay": 0,
+      "applyMs": 0.5,
+      "paintMs": 14.70000000894106
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 7982,
+      "inputDelay": 0.09999999403953552,
+      "applyMs": 0.5,
+      "paintMs": 2.800000000000182
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 8010.5,
+      "inputDelay": 0,
+      "applyMs": 0.5,
+      "paintMs": 7.699999999999818
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 8037.70000000298,
+      "inputDelay": 0.09999999403953552,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 13.799999997019768
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 8066.20000000298,
+      "inputDelay": 0.09999999403953552,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 1.9999999970195859
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 8095.20000000298,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 5.399999997020132
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 8122.899999991059,
+      "inputDelay": 0,
+      "applyMs": 0.3999999910593033,
+      "paintMs": 12.000000008940333
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 8152.29999999702,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": -0.699999997019404
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 8181.899999991059,
+      "inputDelay": 0,
+      "applyMs": 0.4000000059604645,
+      "paintMs": 3.000000008940333
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 8211.70000000298,
+      "inputDelay": 0,
+      "applyMs": 0.4000000059604645,
+      "paintMs": 6.499999997020495
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 8239.39999999106,
+      "inputDelay": 0,
+      "applyMs": 0.19999998807907104,
+      "paintMs": 12.100000008940697
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 8269.5,
+      "inputDelay": 0,
+      "applyMs": 0.3999999910593033,
+      "paintMs": 15.5
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 8298.09999999404,
+      "inputDelay": 0,
+      "applyMs": 0.3999999910593033,
+      "paintMs": 3.5000000059608283
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 8327.20000000298,
+      "inputDelay": 0,
+      "applyMs": 0.5999999940395355,
+      "paintMs": 7.699999997019404
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 8354.89999999106,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 13.300000008941424
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 8383.39999999106,
+      "inputDelay": 0.10000000894069672,
+      "applyMs": 0.5,
+      "paintMs": 1.6000000089406967
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 8412.70000000298,
+      "inputDelay": 0,
+      "applyMs": 0.5,
+      "paintMs": 5.299999997019768
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 8440.29999999702,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 11.300000002980596
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 8469.59999999404,
+      "inputDelay": 0,
+      "applyMs": 0.4000000059604645,
+      "paintMs": 15.3000000059601
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 8498.79999999702,
+      "inputDelay": 0,
+      "applyMs": 0.4000000059604645,
+      "paintMs": 1.9000000029809598
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 8527,
+      "inputDelay": 0.09999999403953552,
+      "applyMs": 0.4000000059604645,
+      "paintMs": 7.899999999999636
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 8554.59999999404,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 13.600000005961192
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 8583.70000000298,
+      "inputDelay": 0,
+      "applyMs": 0.7000000029802322,
+      "paintMs": 0.19999999701940396
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 8615,
+      "inputDelay": 0,
+      "applyMs": 0.5,
+      "paintMs": 3.2999999999992724
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 8644.09999999404,
+      "inputDelay": 0,
+      "applyMs": 0.3999999910593033,
+      "paintMs": 7.500000005960828
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 8672.79999999702,
+      "inputDelay": 0,
+      "applyMs": 0.4000000059604645,
+      "paintMs": 12.200000002980232
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 8701.89999999106,
+      "inputDelay": 0,
+      "applyMs": 0.5,
+      "paintMs": -0.2999999910589395
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 8732.29999999702,
+      "inputDelay": 0.09999999403953552,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 2.6000000029798684
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 8760.39999999106,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 7.900000008939969
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 8787.79999999702,
+      "inputDelay": 0,
+      "applyMs": 0.30000001192092896,
+      "paintMs": 13.800000002980596
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 8816.20000000298,
+      "inputDelay": 0,
+      "applyMs": 0.5999999940395355,
+      "paintMs": 1.0999999970190402
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 8847,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 4.5
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 8875.09999999404,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 9.8000000059601
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 8903,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 15.200000000000728
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 8932.20000000298,
+      "inputDelay": 0,
+      "applyMs": 0.4000000059604645,
+      "paintMs": 2.699999997019404
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 8960.39999999106,
+      "inputDelay": 0.10000000894069672,
+      "applyMs": 0.19999998807907104,
+      "paintMs": 7.300000008941424
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 8988.20000000298,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 13.09999999701904
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 9017.20000000298,
+      "inputDelay": 0,
+      "applyMs": 0.5999999940395355,
+      "paintMs": 1.0999999970190402
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 9048,
+      "inputDelay": 0,
+      "applyMs": 0.5,
+      "paintMs": 3.600000000000364
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 9077.29999999702,
+      "inputDelay": 0.09999999403953552,
+      "applyMs": 0.4000000059604645,
+      "paintMs": 6.90000000298096
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 9105.70000000298,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 12.59999999701904
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 9134.29999999702,
+      "inputDelay": 0,
+      "applyMs": 0.4000000059604645,
+      "paintMs": 0.6000000029798684
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 9164.89999999106,
+      "inputDelay": 0,
+      "applyMs": 0.5,
+      "paintMs": 3.3000000089414243
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 9194.09999999404,
+      "inputDelay": 0,
+      "applyMs": 0.3999999910593033,
+      "paintMs": 6.600000005961192
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 9222.29999999702,
+      "inputDelay": 0,
+      "applyMs": 0.6000000089406967,
+      "paintMs": 12.600000002979868
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 9251.20000000298,
+      "inputDelay": 0,
+      "applyMs": 0.5,
+      "paintMs": 0.39999999702013156
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 9282.20000000298,
+      "inputDelay": 0,
+      "applyMs": 0.4000000059604645,
+      "paintMs": 2.699999997019404
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 9310.89999999106,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 7.400000008939969
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 9338.59999999404,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 13.000000005960828
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 9367.5,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 0.7999999999992724
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 9398,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 3.5
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 9427.29999999702,
+      "inputDelay": 0.09999999403953552,
+      "applyMs": 0.7000000029802322,
+      "paintMs": 7.500000002979505
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 9455.59999999404,
+      "inputDelay": 0.10000000894069672,
+      "applyMs": 0.5,
+      "paintMs": 12.500000005960828
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 9483.89999999106,
+      "inputDelay": 0,
+      "applyMs": 0.4000000059604645,
+      "paintMs": 0.8000000089414243
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 9513.89999999106,
+      "inputDelay": 0,
+      "applyMs": 0.4000000059604645,
+      "paintMs": 4.400000008939969
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 9542.5,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 9.100000000000364
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 9569.5,
+      "inputDelay": 0,
+      "applyMs": 0.30000001192092896,
+      "paintMs": 14.5
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 9597.79999999702,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 3.800000002980596
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 9625.39999999106,
+      "inputDelay": 0.10000000894069672,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 9.500000008940333
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 9652.5,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 15
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 9681.09999999404,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 2.9000000059604645
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 9709.70000000298,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 8.499999997020495
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 9736.70000000298,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 14.899999997020132
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 9764.70000000298,
+      "inputDelay": 0.09999999403953552,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 3.59999999701904
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 9792.70000000298,
+      "inputDelay": 0,
+      "applyMs": 0.3999999910593033,
+      "paintMs": 8.899999997020132
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 9820.89999999106,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 14.000000008940333
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 9849.79999999702,
+      "inputDelay": 0,
+      "applyMs": 0.4000000059604645,
+      "paintMs": 1.800000002980596
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 9878.70000000298,
+      "inputDelay": 0.09999999403953552,
+      "applyMs": 0.5,
+      "paintMs": 6.299999997019768
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 9907.29999999702,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 11.000000002979505
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 9936.09999999404,
+      "inputDelay": 0,
+      "applyMs": 0.4000000059604645,
+      "paintMs": 15.200000005959737
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 9963.39999999106,
+      "inputDelay": 0,
+      "applyMs": 0.30000001192092896,
+      "paintMs": 4.7000000089410605
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 9989.39999999106,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 12.000000008940333
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 10017.5,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 0.6000000000003638
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 10046.79999999702,
+      "inputDelay": 0,
+      "applyMs": 0.4000000059604645,
+      "paintMs": 3.7000000029802322
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 10074.89999999106,
+      "inputDelay": 0.10000000894069672,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 9.90000000893997
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 10102,
+      "inputDelay": 0.09999999403953552,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 16.100000000000364
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 10130.5,
+      "inputDelay": 0,
+      "applyMs": 0.09999999403953552,
+      "paintMs": 4.299999999999272
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 10157.59999999404,
+      "inputDelay": 0,
+      "applyMs": 0.09999999403953552,
+      "paintMs": 10.100000005961192
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 10187.39999999106,
+      "inputDelay": 0.10000000894069672,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 14.000000008940333
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 10215.5,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 2.600000000000364
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 10243.79999999702,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 7.600000002979868
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 10271.5,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 13.299999999999272
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 10299.20000000298,
+      "inputDelay": 0,
+      "applyMs": 0.10000000894069672,
+      "paintMs": 1.3999999970201316
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 10326.70000000298,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 8.199999997019404
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 10354,
+      "inputDelay": 0,
+      "applyMs": 0.5,
+      "paintMs": 13.5
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 10382.79999999702,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 2.0000000029795046
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 10410.5,
+      "inputDelay": 0,
+      "applyMs": 0.19999998807907104,
+      "paintMs": 7.600000000000364
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 10437.89999999106,
+      "inputDelay": 0.10000000894069672,
+      "applyMs": 0.10000000894069672,
+      "paintMs": 13.600000008940697
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 10465.79999999702,
+      "inputDelay": 0,
+      "applyMs": 0.19999998807907104,
+      "paintMs": 2.300000002980596
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 10493.09999999404,
+      "inputDelay": 0,
+      "applyMs": 0.10000000894069672,
+      "paintMs": 8.3000000059601
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 10519.70000000298,
+      "inputDelay": 0,
+      "applyMs": 0.10000000894069672,
+      "paintMs": 15.199999997019404
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 10546.59999999404,
+      "inputDelay": 0,
+      "applyMs": 0.10000000894069672,
+      "paintMs": 4.9000000059604645
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 10573.20000000298,
+      "inputDelay": 0,
+      "applyMs": 0.10000000894069672,
+      "paintMs": 11.699999997019404
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 10601.39999999106,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 8.940332918427885e-9
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 10630.29999999702,
+      "inputDelay": 0,
+      "applyMs": 0.10000000894069672,
+      "paintMs": 4.500000002979505
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 10656.59999999404,
+      "inputDelay": 0,
+      "applyMs": 0.19999998807907104,
+      "paintMs": 11.600000005961192
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 10684,
+      "inputDelay": 0,
+      "applyMs": 0.09999999403953552,
+      "paintMs": 0.8999999999996362
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 10711.59999999404,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 6.700000005959737
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 10738.70000000298,
+      "inputDelay": 0.09999999403953552,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 12.899999997020132
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 10766.89999999106,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 1.2000000089410605
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 10794.79999999702,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 6.700000002980232
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 10822.09999999404,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 12.700000005959737
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 10850.5,
+      "inputDelay": 0,
+      "applyMs": 0.4000000059604645,
+      "paintMs": 1
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 10880.39999999106,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 4.600000008940697
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 10909.09999999404,
+      "inputDelay": 0,
+      "applyMs": 0.3999999910593033,
+      "paintMs": 9.100000005961192
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 10937.5,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 13.899999999999636
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 10965.70000000298,
+      "inputDelay": 0,
+      "applyMs": 0.4000000059604645,
+      "paintMs": 2.2999999970197678
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 10994.5,
+      "inputDelay": 0,
+      "applyMs": 0.4000000059604645,
+      "paintMs": 7.100000000000364
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 11022.09999999404,
+      "inputDelay": 0,
+      "applyMs": 0.30000001192092896,
+      "paintMs": 12.700000005959737
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 11050.29999999702,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 1.1000000029798684
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 11080.5,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 4.299999999999272
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 11109.59999999404,
+      "inputDelay": 0,
+      "applyMs": 1.0999999940395355,
+      "paintMs": 8.600000005961192
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 11138.59999999404,
+      "inputDelay": 0,
+      "applyMs": 0.30000001192092896,
+      "paintMs": 12.8000000059601
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 11167.09999999404,
+      "inputDelay": 0.10000000894069672,
+      "applyMs": 0.4000000059604645,
+      "paintMs": 1.0000000059608283
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 11197.79999999702,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 3.800000002980596
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 11226.20000000298,
+      "inputDelay": 0,
+      "applyMs": 0.5,
+      "paintMs": 8.59999999701904
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 11254.20000000298,
+      "inputDelay": 0.09999999403953552,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 13.899999997020132
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 11283.29999999702,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 1.5000000029795046
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 11312.70000000298,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 5.499999997020495
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 11341,
+      "inputDelay": 0.09999999403953552,
+      "applyMs": 0.4000000059604645,
+      "paintMs": 10.5
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 11369.89999999106,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 14.90000000893997
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 11398.89999999106,
+      "inputDelay": 0.10000000894069672,
+      "applyMs": 0.5,
+      "paintMs": 2.6000000089406967
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 11428.29999999702,
+      "inputDelay": 0,
+      "applyMs": 0.4000000059604645,
+      "paintMs": 6.500000002979505
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 11457,
+      "inputDelay": 0,
+      "applyMs": 0.19999998807907104,
+      "paintMs": 11.100000000000364
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 11484.70000000298,
+      "inputDelay": 0,
+      "applyMs": 0.30000001192092896,
+      "paintMs": 0.09999999701904017
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 11514.39999999106,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 3.8000000089414243
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 11542,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 9.600000000000364
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 11569.29999999702,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 15.500000002979505
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 11597.39999999106,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 4.000000008940333
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 11624.5,
+      "inputDelay": 0,
+      "applyMs": 0.09999999403953552,
+      "paintMs": 10.299999999999272
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 11652.89999999106,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 14.20000000894106
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 11680.20000000298,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 4.199999997019404
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 11707.70000000298,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 10.299999997019768
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 11735.59999999404,
+      "inputDelay": 0.10000000894069672,
+      "applyMs": 0.19999998807907104,
+      "paintMs": 14.8000000059601
+    },
+    {
+      "letters": 2000,
+      "inputType": null,
+      "stamp": null,
+      "inputDelay": null,
+      "applyMs": 2.6000000089406967,
+      "paintMs": null
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 14988.5,
+      "inputDelay": 0,
+      "applyMs": 0.5,
+      "paintMs": 13.100000000000364
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 15041.79999999702,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 9.800000002980596
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 15096.79999999702,
+      "inputDelay": 0.09999999403953552,
+      "applyMs": 0.5,
+      "paintMs": 4.700000002980232
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 15151.5,
+      "inputDelay": 0,
+      "applyMs": 0.7999999970197678,
+      "paintMs": 0
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 15206.89999999106,
+      "inputDelay": 0,
+      "applyMs": 0.4000000059604645,
+      "paintMs": 11.300000008941424
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 15261.5,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 6.700000000000728
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 15315.89999999106,
+      "inputDelay": 0.10000000894069672,
+      "applyMs": 0.5,
+      "paintMs": 1.4000000089399691
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 15370.5,
+      "inputDelay": 0,
+      "applyMs": 0.19999998807907104,
+      "paintMs": 13.399999999999636
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 15423.70000000298,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 11.09999999701904
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 15476.29999999702,
+      "inputDelay": 0.09999999403953552,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 8.600000002979868
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 15529.5,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 4.600000000000364
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 15582.79999999702,
+      "inputDelay": 0.09999999403953552,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 2.1000000029798684
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 15636,
+      "inputDelay": 0,
+      "applyMs": 0.4000000059604645,
+      "paintMs": 15.600000000000364
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 15690.20000000298,
+      "inputDelay": 0,
+      "applyMs": 0.4000000059604645,
+      "paintMs": 10.399999997020132
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 15743.20000000298,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 8.399999997020132
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 15796.39999999106,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 5.2000000089410605
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 15850.09999999404,
+      "inputDelay": 0,
+      "applyMs": 0.30000001192092896,
+      "paintMs": 1.5000000059608283
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 15904.20000000298,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 14.09999999701904
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 15957,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 10.299999999999272
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 16010.70000000298,
+      "inputDelay": 0,
+      "applyMs": 0.5,
+      "paintMs": 7.499999997020495
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 16065.39999999106,
+      "inputDelay": 0,
+      "applyMs": 0.5,
+      "paintMs": 2.8000000089414243
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 16119.5,
+      "inputDelay": 0,
+      "applyMs": 0.3999999910593033,
+      "paintMs": 15.100000000000364
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 16172.70000000298,
+      "inputDelay": 0.09999999403953552,
+      "applyMs": 0.4000000059604645,
+      "paintMs": 12.199999997019404
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 16226.5,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 8.299999999999272
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 16280.5,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 3.399999999999636
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 16335.20000000298,
+      "inputDelay": 0,
+      "applyMs": 0.3999999910593033,
+      "paintMs": 16.39999999702013
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 16388.39999999106,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 13.100000008940697
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 16441.29999999702,
+      "inputDelay": 0,
+      "applyMs": 0.30000001192092896,
+      "paintMs": 9.200000002980232
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 16495.09999999404,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 6.500000005959009
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 16549.20000000298,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 1.9999999970204954
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 16602.39999999106,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 15.800000008941424
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 16656,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 12.200000000000728
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 16709.89999999106,
+      "inputDelay": 0,
+      "applyMs": 0.4000000059604645,
+      "paintMs": 8.300000008941424
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 16764.70000000298,
+      "inputDelay": 0,
+      "applyMs": 0.30000001192092896,
+      "paintMs": 3.4999999970204954
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 16819,
+      "inputDelay": 0,
+      "applyMs": 0.09999999403953552,
+      "paintMs": 15.799999999999272
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 16871.79999999702,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 13.100000002981687
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 16923.79999999702,
+      "inputDelay": 0,
+      "applyMs": 0.10000000894069672,
+      "paintMs": 11.000000002979505
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 16977.09999999404,
+      "inputDelay": 0,
+      "applyMs": 0.4000000059604645,
+      "paintMs": 7.80000000596192
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 17031.39999999106,
+      "inputDelay": 0,
+      "applyMs": 0.5,
+      "paintMs": 2.400000008939969
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 17086.20000000298,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 15.399999997018313
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 17140.09999999404,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 11.50000000595901
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 17194.5,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 7.099999999998545
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 17247.89999999106,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 3.6000000089406967
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 17301.5,
+      "inputDelay": 0.09999999403953552,
+      "applyMs": 0.30000001192092896,
+      "paintMs": 0.09999999999854481
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 17357.09999999404,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 11.100000005961192
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 17411.09999999404,
+      "inputDelay": 0,
+      "applyMs": 0.3999999910593033,
+      "paintMs": 6.200000005959737
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 17464.89999999106,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 3.3000000089414243
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 17518.39999999106,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": -0.1999999910585757
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 17571.89999999106,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 12.000000008942152
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 17625.79999999702,
+      "inputDelay": 0,
+      "applyMs": 0.30000001192092896,
+      "paintMs": 9.100000002981687
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 17680.29999999702,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 4.700000002980232
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 17734,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 0.9000000000014552
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 17787.5,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 14
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 17840.20000000298,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 11.299999997019768
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 17894.29999999702,
+      "inputDelay": 0,
+      "applyMs": 0.4000000059604645,
+      "paintMs": 7.300000002978777
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 17948.79999999702,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 2.7000000029802322
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 18003,
+      "inputDelay": 0,
+      "applyMs": 0.5999999940395355,
+      "paintMs": 14.200000000000728
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 18057.29999999702,
+      "inputDelay": 0,
+      "applyMs": 0.3999999910593033,
+      "paintMs": 10.90000000298096
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 18112.29999999702,
+      "inputDelay": 0,
+      "applyMs": 0.3999999910593033,
+      "paintMs": 4.90000000298096
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 18166.89999999106,
+      "inputDelay": 0,
+      "applyMs": 0.3999999910593033,
+      "paintMs": 1.3000000089414243
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 18222.39999999106,
+      "inputDelay": 0.10000000894069672,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 12.500000008942152
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 18276,
+      "inputDelay": 0,
+      "applyMs": 0.4000000059604645,
+      "paintMs": 8.799999999999272
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 18330.5,
+      "inputDelay": 0.09999999403953552,
+      "applyMs": 0.5999999940395355,
+      "paintMs": 3.400000000001455
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 18386.29999999702,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 15.300000002978777
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 18438.89999999106,
+      "inputDelay": 0,
+      "applyMs": 0.3999999910593033,
+      "paintMs": 12.600000008940697
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 18492.29999999702,
+      "inputDelay": 0.09999999403953552,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 9.300000002978777
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 18546.5,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 4
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 18600.70000000298,
+      "inputDelay": 0,
+      "applyMs": 0.4000000059604645,
+      "paintMs": 0.7999999970197678
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 18656.29999999702,
+      "inputDelay": 0,
+      "applyMs": 0.4000000059604645,
+      "paintMs": 10.90000000298096
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 18709.59999999404,
+      "inputDelay": 0,
+      "applyMs": 0.09999999403953552,
+      "paintMs": 8.600000005961192
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 18764.39999999106,
+      "inputDelay": 0,
+      "applyMs": 0.4000000059604645,
+      "paintMs": 3.8000000089414243
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 18819.39999999106,
+      "inputDelay": 0,
+      "applyMs": 0.3999999910593033,
+      "paintMs": 15.40000000893997
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 18872.39999999106,
+      "inputDelay": 0,
+      "applyMs": 0.4000000059604645,
+      "paintMs": 12.500000008942152
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 18926.29999999702,
+      "inputDelay": 0.09999999403953552,
+      "applyMs": 0.5,
+      "paintMs": 7.700000002980232
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 18981.20000000298,
+      "inputDelay": 0,
+      "applyMs": 0.3999999910593033,
+      "paintMs": 3.09999999701904
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 19036,
+      "inputDelay": 0.09999999403953552,
+      "applyMs": 0.3999999910593033,
+      "paintMs": 15.5
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 19089,
+      "inputDelay": 0,
+      "applyMs": 0.30000001192092896,
+      "paintMs": 12.5
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 19141.89999999106,
+      "inputDelay": 0,
+      "applyMs": 0.6000000089406967,
+      "paintMs": 9.700000008939242
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 19196.89999999106,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 4.600000008940697
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 19251,
+      "inputDelay": 0.09999999403953552,
+      "applyMs": 0.5,
+      "paintMs": 0.5999999999985448
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 19305.09999999404,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 13.100000005961192
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 19357.70000000298,
+      "inputDelay": 0,
+      "applyMs": 0.30000001192092896,
+      "paintMs": 10.59999999701904
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 19411.5,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 6.700000000000728
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 19465.09999999404,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 3.100000005961192
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 19518.5,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 16.299999999999272
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 19571,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 13.799999999999272
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 19624.70000000298,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 10.09999999701904
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 19677.70000000298,
+      "inputDelay": 0,
+      "applyMs": 0.3999999910593033,
+      "paintMs": 7.199999997021223
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 19731.89999999106,
+      "inputDelay": 0,
+      "applyMs": 0.19999998807907104,
+      "paintMs": 2.900000008939969
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 19784.70000000298,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 16.899999997018313
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 19836.89999999106,
+      "inputDelay": 0,
+      "applyMs": 0.09999999403953552,
+      "paintMs": 14.700000008939242
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 19889.70000000298,
+      "inputDelay": 0,
+      "applyMs": 0.4000000059604645,
+      "paintMs": 11.799999997019768
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 19943.5,
+      "inputDelay": 0,
+      "applyMs": 0.5,
+      "paintMs": 8
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 19998.29999999702,
+      "inputDelay": 0,
+      "applyMs": 0.5,
+      "paintMs": 2.300000002978777
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 20052.89999999106,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 15.300000008941424
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 20105.39999999106,
+      "inputDelay": 0.10000000894069672,
+      "applyMs": 0.19999998807907104,
+      "paintMs": 12.700000008939242
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 20158.5,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 9.700000000000728
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 20212.09999999404,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 6.100000005961192
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 20265.70000000298,
+      "inputDelay": 0,
+      "applyMs": 0.19999998807907104,
+      "paintMs": 2.4999999970204954
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 20318.79999999702,
+      "inputDelay": 0,
+      "applyMs": 0.4000000059604645,
+      "paintMs": 16.100000002981687
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 20371.59999999404,
+      "inputDelay": 0,
+      "applyMs": 0.09999999403953552,
+      "paintMs": 13.200000005959737
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 20424,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 10.900000000001455
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 20478,
+      "inputDelay": 0,
+      "applyMs": 0.09999999403953552,
+      "paintMs": 5.799999999999272
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 20530.70000000298,
+      "inputDelay": 0.09999999403953552,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 4.09999999701904
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 20584.09999999404,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 0.8000000059619197
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 20637.5,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 14
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 20690.79999999702,
+      "inputDelay": 0,
+      "applyMs": 0.19999998807907104,
+      "paintMs": 10.800000002978777
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 20743.5,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 8
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 20796.59999999404,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 4.9000000059604645
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 20851,
+      "inputDelay": 0,
+      "applyMs": 0.5,
+      "paintMs": 0.5
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 20905.09999999404,
+      "inputDelay": 0,
+      "applyMs": 0.10000000894069672,
+      "paintMs": 12.50000000595901
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 20958.70000000298,
+      "inputDelay": 0.09999999403953552,
+      "applyMs": 0.4000000059604645,
+      "paintMs": 9.499999997020495
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 21821,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 13.5
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 21850,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 1.5
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 21881.39999999106,
+      "inputDelay": 0.10000000894069672,
+      "applyMs": 0.4000000059604645,
+      "paintMs": 3.400000008939969
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 21909.79999999702,
+      "inputDelay": 0,
+      "applyMs": 0.3999999910593033,
+      "paintMs": 8.40000000298096
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 21938.29999999702,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 13.200000002980232
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 21966.39999999106,
+      "inputDelay": 0,
+      "applyMs": 0.10000000894069672,
+      "paintMs": 1.8000000089414243
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 21994.09999999404,
+      "inputDelay": 0,
+      "applyMs": 0.09999999403953552,
+      "paintMs": 7.4000000059604645
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 22020.79999999702,
+      "inputDelay": 0,
+      "applyMs": 0.09999999403953552,
+      "paintMs": 14.000000002979505
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 22048.70000000298,
+      "inputDelay": 0,
+      "applyMs": 0.09999999403953552,
+      "paintMs": 2.7999999970197678
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 22076.20000000298,
+      "inputDelay": 0.09999999403953552,
+      "applyMs": 0.10000000894069672,
+      "paintMs": 8.59999999701904
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 22104.29999999702,
+      "inputDelay": 0,
+      "applyMs": 0.09999999403953552,
+      "paintMs": 12.90000000298096
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 22133,
+      "inputDelay": 0.09999999403953552,
+      "applyMs": 0.4000000059604645,
+      "paintMs": 1.7999999999992724
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 22161.79999999702,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 6.40000000298096
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 22189.89999999106,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 11.600000008940697
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 22218.89999999106,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 16.000000008942152
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 22248.59999999404,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 2.9000000059604645
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 22276.79999999702,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 8.000000002979505
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 22305,
+      "inputDelay": 0,
+      "applyMs": 0.30000001192092896,
+      "paintMs": 13.200000000000728
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 22334.09999999404,
+      "inputDelay": 0,
+      "applyMs": 0.4000000059604645,
+      "paintMs": 0.8000000059619197
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 22364.20000000298,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 2.9999999970204954
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 22391.39999999106,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 10.100000008940697
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 22418.79999999702,
+      "inputDelay": 0.09999999403953552,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 16.100000002981687
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 22446.59999999404,
+      "inputDelay": 0,
+      "applyMs": 0.19999998807907104,
+      "paintMs": 4.9000000059604645
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 22474.29999999702,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 9.800000002978777
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 22502.29999999702,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 15.90000000298096
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 22529.79999999702,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 5.000000002979505
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 22556.59999999404,
+      "inputDelay": 0,
+      "applyMs": 0.4000000059604645,
+      "paintMs": 11.200000005959737
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 22586.09999999404,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 15.400000005960464
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 22616,
+      "inputDelay": 0,
+      "applyMs": 0.19999998807907104,
+      "paintMs": 2.2000000000007276
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 22644.79999999702,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 6.700000002980232
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 22672.5,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 12.299999999999272
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 22700.09999999404,
+      "inputDelay": 0,
+      "applyMs": 0.19999998807907104,
+      "paintMs": 1.4000000059604645
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 22727.59999999404,
+      "inputDelay": 0,
+      "applyMs": 0.09999999403953552,
+      "paintMs": 7.30000000596192
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 22754.20000000298,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 13.899999997018313
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 22781.39999999106,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 3.500000008942152
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 22808,
+      "inputDelay": 0,
+      "applyMs": 0.09999999403953552,
+      "paintMs": 10.099999999998545
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 22835.5,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 16.099999999998545
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 22864,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 4.200000000000728
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 22891.59999999404,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 9.900000005960464
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 22920.70000000298,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 14.09999999701904
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 22949.5,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 2
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 22977.79999999702,
+      "inputDelay": 0,
+      "applyMs": 0.3999999910593033,
+      "paintMs": 7.000000002979505
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 23006.09999999404,
+      "inputDelay": 0,
+      "applyMs": 0.3999999910593033,
+      "paintMs": 12.100000005961192
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 23034.79999999702,
+      "inputDelay": 0,
+      "applyMs": 0.4000000059604645,
+      "paintMs": 2.979504643008113e-9
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 23064.5,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 3.7000000000007276
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 23091.70000000298,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 9.09999999701904
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 23119.29999999702,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 15.500000002979505
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 23148.39999999106,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 3.000000008942152
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 23177,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 7.799999999999272
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 23204.70000000298,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 12.699999997021223
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 23233.89999999106,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 0.9000000089399691
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 23264.79999999702,
+      "inputDelay": 0,
+      "applyMs": 0.30000001192092896,
+      "paintMs": 3.40000000298096
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 23293.5,
+      "inputDelay": 0.09999999403953552,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 8
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 23322.70000000298,
+      "inputDelay": 0,
+      "applyMs": 0.3999999910593033,
+      "paintMs": 11.199999997021223
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 23352.09999999404,
+      "inputDelay": 0,
+      "applyMs": 0.09999999403953552,
+      "paintMs": 16.100000005961192
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 23381,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 3.7999999999992724
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 23409.09999999404,
+      "inputDelay": 0.10000000894069672,
+      "applyMs": 0.3999999910593033,
+      "paintMs": 9.100000005961192
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 23437.39999999106,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 14.100000008940697
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 23465.59999999404,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 2.600000005961192
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 23493.39999999106,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 8.100000008940697
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 23520.59999999404,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 14.200000005959737
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 23548.39999999106,
+      "inputDelay": 0,
+      "applyMs": 0.09999999403953552,
+      "paintMs": 2.6000000089406967
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 23575,
+      "inputDelay": 0.09999999403953552,
+      "applyMs": 0.09999999403953552,
+      "paintMs": 9.900000000001455
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 23602.59999999404,
+      "inputDelay": 0,
+      "applyMs": 0.09999999403953552,
+      "paintMs": 15.600000005961192
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 23630.89999999106,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 3.900000008939969
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 23657.59999999404,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 10.600000005961192
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 23685.39999999106,
+      "inputDelay": 0,
+      "applyMs": 0.19999998807907104,
+      "paintMs": 16.100000008940697
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 23714.09999999404,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 4.100000005961192
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 23742.09999999404,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 9.400000005960464
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 23768.89999999106,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 15.40000000893997
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 23797.09999999404,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 4.4000000059604645
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 23825.09999999404,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 9.80000000596192
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 23853,
+      "inputDelay": 0,
+      "applyMs": 0.4000000059604645,
+      "paintMs": 14.5
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 23881.89999999106,
+      "inputDelay": 0,
+      "applyMs": 0.5,
+      "paintMs": 3.000000008942152
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 23910.59999999404,
+      "inputDelay": 0,
+      "applyMs": 0.4000000059604645,
+      "paintMs": 7.500000005959009
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 23938.20000000298,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 13.09999999701904
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 23967.20000000298,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 0.9999999970204954
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 23997.39999999106,
+      "inputDelay": 0,
+      "applyMs": 0.4000000059604645,
+      "paintMs": 4.100000008940697
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 24025.79999999702,
+      "inputDelay": 0,
+      "applyMs": 0.5,
+      "paintMs": 9.000000002979505
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 24054.5,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 13.599999999998545
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 24083,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 0.9000000000014552
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 24112.70000000298,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 5.09999999701904
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 24141.29999999702,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 10.200000002980232
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 24169.79999999702,
+      "inputDelay": 0.09999999403953552,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 14.100000002981687
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 24199.20000000298,
+      "inputDelay": 0,
+      "applyMs": 0.4000000059604645,
+      "paintMs": 2.2999999970197678
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 24227.89999999106,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 6.900000008939969
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 24255.5,
+      "inputDelay": 0,
+      "applyMs": 0.4000000059604645,
+      "paintMs": 12.700000000000728
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 24284.39999999106,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 0.5000000089421519
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 24313.39999999106,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 4.7000000089392415
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 24340.79999999702,
+      "inputDelay": 0,
+      "applyMs": 0.19999998807907104,
+      "paintMs": 10.700000002980232
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 24369,
+      "inputDelay": 0.09999999403953552,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 15.299999999999272
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 24398,
+      "inputDelay": 0,
+      "applyMs": 0.3999999910593033,
+      "paintMs": 3.5
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 24426.20000000298,
+      "inputDelay": 0.09999999403953552,
+      "applyMs": 0.09999999403953552,
+      "paintMs": 8.59999999701904
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 24453.39999999106,
+      "inputDelay": 0,
+      "applyMs": 0.19999998807907104,
+      "paintMs": 14.800000008941424
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 24481.09999999404,
+      "inputDelay": 0.10000000894069672,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 3.700000005959737
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 24508.70000000298,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 9.399999997018313
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 24535.39999999106,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 16.100000008940697
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 24563.89999999106,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 3.6000000089406967
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 24592.29999999702,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 9.200000002980232
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 24620.5,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 14.299999999999272
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 24648.39999999106,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 3.1000000089406967
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 24676.39999999106,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 7.800000008941424
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 24703.70000000298,
+      "inputDelay": 0,
+      "applyMs": 0,
+      "paintMs": 14.499999997020495
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 24732.09999999404,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 2.700000005959737
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 24759.89999999106,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 8.300000008941424
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 24786.39999999106,
+      "inputDelay": 0,
+      "applyMs": 0.10000000894069672,
+      "paintMs": 15.100000008940697
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 24813.79999999702,
+      "inputDelay": 0,
+      "applyMs": 0.09999999403953552,
+      "paintMs": 4.300000002978777
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 24840.59999999404,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 10.900000005960464
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 24868.29999999702,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": -0.09999999701904017
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 24898.5,
+      "inputDelay": 0.09999999403953552,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 3
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 24927.59999999404,
+      "inputDelay": 0.10000000894069672,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 7.30000000596192
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 24955.79999999702,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 12.300000002978777
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 24983.79999999702,
+      "inputDelay": 0,
+      "applyMs": 0.10000000894069672,
+      "paintMs": 1.0000000029795046
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 25012.20000000298,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 5.899999997018313
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 25040.39999999106,
+      "inputDelay": 0.10000000894069672,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 11.100000008940697
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 25069.20000000298,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 15.59999999701904
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 25097.39999999106,
+      "inputDelay": 0,
+      "applyMs": 0.19999998807907104,
+      "paintMs": 3.500000008942152
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 25124.79999999702,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 10.000000002979505
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 25152.70000000298,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 15.399999997018313
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 25181.89999999106,
+      "inputDelay": 0,
+      "applyMs": 0.4000000059604645,
+      "paintMs": 3.000000008942152
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 25211.09999999404,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 7.000000005959009
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 25239,
+      "inputDelay": 0,
+      "applyMs": 0.19999998807907104,
+      "paintMs": 12.599999999998545
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 25267.79999999702,
+      "inputDelay": 0,
+      "applyMs": 0.4000000059604645,
+      "paintMs": 0.40000000298095983
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 25298.5,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 3
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 25325.59999999404,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 9.200000005959737
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 25352.39999999106,
+      "inputDelay": 0,
+      "applyMs": 0.4000000059604645,
+      "paintMs": 15.800000008941424
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 25381.09999999404,
+      "inputDelay": 0,
+      "applyMs": 0.19999998807907104,
+      "paintMs": 3.700000005959737
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 25408.59999999404,
+      "inputDelay": 0,
+      "applyMs": 0.19999998807907104,
+      "paintMs": 9.600000005961192
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 25436.5,
+      "inputDelay": 0.09999999403953552,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 15
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 25465.09999999404,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 3.100000005961192
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 25492.29999999702,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 9.200000002980232
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 25519,
+      "inputDelay": 0,
+      "applyMs": 0.09999999403953552,
+      "paintMs": 15.900000000001455
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 25546.59999999404,
+      "inputDelay": 0,
+      "applyMs": 0,
+      "paintMs": 4.9000000059604645
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 25573.29999999702,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 11.500000002979505
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 25600.89999999106,
+      "inputDelay": 0.10000000894069672,
+      "applyMs": 0.19999998807907104,
+      "paintMs": 0.6000000089406967
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 25631.29999999702,
+      "inputDelay": 0,
+      "applyMs": 0.09999999403953552,
+      "paintMs": 3.5000000029795046
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 25659.39999999106,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 8.300000008941424
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 25688.20000000298,
+      "inputDelay": 0,
+      "applyMs": 0.30000001192092896,
+      "paintMs": 13.299999997019768
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 25716.79999999702,
+      "inputDelay": 0,
+      "applyMs": 0.29999999701976776,
+      "paintMs": 1.4000000029809598
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 25745,
+      "inputDelay": 0.09999999403953552,
+      "applyMs": 0.10000000894069672,
+      "paintMs": 6.5
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 25771.70000000298,
+      "inputDelay": 0,
+      "applyMs": 0.20000000298023224,
+      "paintMs": 13.199999997021223
+    },
+    {
+      "letters": 1,
+      "inputType": "insertText",
+      "stamp": 25799.20000000298,
+      "inputDelay": 0,
+      "applyMs": 0.4000000059604645,
+      "paintMs": 2.2999999970197678
+    },
+    {
+      "letters": 2000,
+      "inputType": null,
+      "stamp": null,
+      "inputDelay": null,
+      "applyMs": 3.2000000029802322,
+      "paintMs": null
+    }
+  ]
+}

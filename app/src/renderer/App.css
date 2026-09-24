@@ -1,0 +1,1400 @@
+/* Tapestry App -- visual values from UI-SPEC.md */
+
+/* Reset */
+*, *::before, *::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, sans-serif;
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.5;
+  color: #2C2C2C;
+}
+
+/* App layout */
+.tapestry-app {
+  width: 100%;
+  height: 100%;
+  position: relative;
+}
+
+/* Canvas -- dominant color #F7F5F0 */
+.tapestry-canvas {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  background-color: #F7F5F0;
+  overflow: hidden;
+  cursor: default;
+  touch-action: none; /* Prevent browser pan/zoom on touch */
+}
+
+/* Transformed canvas container -- notes and connections live here */
+.tapestry-canvas-container {
+  pointer-events: none; /* Let viewport receive pan events */
+}
+
+.tapestry-canvas-container > * {
+  pointer-events: auto; /* Notes and SVG re-enable events */
+}
+
+/* SVG connection overlay */
+.tapestry-connections-svg {
+  pointer-events: none !important;
+}
+
+/* Empty state -- centered text */
+.tapestry-empty-state {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  pointer-events: none;
+  user-select: none;
+  z-index: 1;
+}
+
+.tapestry-empty-heading {
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.25;
+  color: #2C2C2C;
+  margin-bottom: 8px;
+}
+
+.tapestry-empty-body {
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.5;
+  color: #6B6B6B;
+}
+
+/* The save indicator that used to sit in this corner is gone: the space holds
+   several trees, so each frame's header carries its own status instead. See
+   .tapestry-frame-status below. */
+
+/* ------------------------------------------------------------------------ */
+/* Tree frames (D-15) -- one per open tree, holding that tree's notes         */
+/*                                                                           */
+/* The frame is positioned and sized from computeFrameBounds, so the rect     */
+/* lives in JS; only the surface treatment is here. Plan 06 adds the hovered, */
+/* selected and dragging states and the full two-row header.                  */
+/* ------------------------------------------------------------------------ */
+
+.tapestry-tree-frame {
+  position: absolute;
+  box-sizing: border-box;
+  background: #F0EDE8;
+  border: 1px solid #E0DDD7;
+  /* Frame corner radius 16px: the declared "container shape" exception. */
+  border-radius: 16px;
+}
+
+/* Local (0,0) of the tree is translated to the frame origin by an inline
+   transform, so notes keep their stored frame-local positions. */
+.tapestry-tree-frame-content {
+  position: absolute;
+}
+
+/* Frame states (UI-SPEC "Tree frame visual states"). Dragging and selected
+   both use the 2px accent border; only dragging adds the lift. */
+.tapestry-tree-frame--hovered {
+  border: 1px solid #B0ADA6;
+}
+
+.tapestry-tree-frame--selected {
+  border: 2px solid #4A7CFF;
+}
+
+.tapestry-tree-frame--dragging {
+  border: 2px solid #4A7CFF;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+}
+
+/* 64px band, 16px horizontal padding, 4px row gap (Spacing Scale 3xl/md/xs) */
+.tapestry-frame-header {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 64px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  padding: 0 16px;
+  /* The header is the frame's drag handle. */
+  cursor: grab;
+  user-select: none;
+}
+
+.tapestry-tree-frame--dragging .tapestry-frame-header {
+  cursor: grabbing;
+}
+
+/* Row 1: name, with the right slot Plan 06 fills. Row 2: kind, then status. */
+.tapestry-frame-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  /* sm token, the gap between kind label and status */
+  gap: 8px;
+  min-width: 0;
+}
+
+/* Note Title role: 18/600/1.25 */
+.tapestry-frame-name {
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.25;
+  color: #2C2C2C;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Label role: 13/400/1.4, Muted */
+.tapestry-frame-kind {
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: #6B6B6B;
+  white-space: nowrap;
+}
+
+/* Status truncates at 320px: the declared exception, sized so it stays on one
+   line inside the 480px minimum frame. Full text rides in the title tooltip. */
+.tapestry-frame-status {
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: #6B6B6B;
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tapestry-frame-status--error {
+  color: #E5484D;
+}
+
+/* A tree that would not open: dashed and unfilled, so it reads as a place
+   held open rather than as a working frame (UI-SPEC "Unavailable"). */
+.tapestry-tree-frame--unavailable {
+  background: #F7F5F0;
+  border: 1px dashed #B0ADA6;
+}
+
+/* Fills what is left of the frame under the 64px header band. */
+.tapestry-frame-unavailable-body {
+  position: absolute;
+  top: 64px;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  /* md between the copy and its actions, lg/2xl inset from the frame edge. */
+  gap: 16px;
+  padding: 24px 48px;
+  text-align: center;
+}
+
+/* Body role: 16/400/1.5 */
+.tapestry-frame-unavailable-text {
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.5;
+  color: #2C2C2C;
+  max-width: 384px;
+}
+
+.tapestry-frame-unavailable-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/*
+ * Present to a screen reader, absent to the eye. Not display:none and not
+ * hidden: either would take the live regions out of the accessibility tree,
+ * which is the one thing they exist to be in.
+ */
+.tapestry-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Note card -- secondary color #FFFFFF */
+.tapestry-note-card {
+  position: absolute;
+  min-width: 200px;
+  max-width: 400px;
+  background-color: #FFFFFF;
+  border: 1px solid #E0DDD7;
+  border-radius: 8px;
+  padding: 16px;
+  padding-top: 24px; /* Extra top for drag handle */
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.06);
+  cursor: default;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  display: flex;
+  flex-direction: column;
+}
+
+.tapestry-note-card--selected {
+  border: 2px solid #4A7CFF;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.10);
+}
+
+.tapestry-note-card--editing {
+  border-color: #4A7CFF;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.10);
+}
+
+.tapestry-note-card--connect-target {
+  border: 2px solid #4A7CFF;
+  box-shadow: 0 0 0 4px rgba(74, 124, 255, 0.20);
+}
+
+/* Drag handle -- invisible strip at top of note (D-01) */
+.tapestry-note-drag-handle {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 20px;
+  cursor: grab;
+  border-radius: 8px 8px 0 0;
+}
+
+.tapestry-note-drag-handle:active {
+  cursor: grabbing;
+}
+
+/* Editable title input */
+.tapestry-note-title-input {
+  display: block;
+  width: 100%;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.25;
+  color: #2C2C2C;
+  margin-bottom: 6px;
+  padding: 0;
+  font-family: inherit;
+}
+
+.tapestry-note-title-input::placeholder {
+  color: #B0ADA6;
+  font-weight: 400;
+}
+
+.tapestry-note-title-input:read-only {
+  cursor: default;
+}
+
+/* ProseMirror editor inside note card */
+.tapestry-note-editor {
+  min-height: 1.5em;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.tapestry-note-editor .ProseMirror {
+  outline: none;
+  min-height: 1.5em;
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.5;
+  color: #2C2C2C;
+}
+
+.tapestry-note-editor .ProseMirror p {
+  margin: 0 0 4px 0;
+}
+
+.tapestry-note-editor .ProseMirror p:last-child {
+  margin-bottom: 0;
+}
+
+/* Rich text formatting (D-23) */
+.tapestry-note-editor .ProseMirror strong {
+  font-weight: 600;
+}
+
+.tapestry-note-editor .ProseMirror em {
+  font-style: italic;
+}
+
+.tapestry-note-editor .ProseMirror h1,
+.tapestry-note-editor .ProseMirror h2,
+.tapestry-note-editor .ProseMirror h3 {
+  font-weight: 600;
+  margin: 0 0 8px 0;
+}
+
+.tapestry-note-editor .ProseMirror h1 {
+  font-size: 22px;
+  line-height: 1.25;
+}
+
+.tapestry-note-editor .ProseMirror h2 {
+  font-size: 18px;
+  line-height: 1.3;
+}
+
+.tapestry-note-editor .ProseMirror h3 {
+  font-size: 16px;
+  line-height: 1.4;
+}
+
+/* ProseMirror placeholder for empty editors */
+.tapestry-note-editor .ProseMirror:empty::before {
+  content: 'Start typing...';
+  color: #B0ADA6;
+  pointer-events: none;
+  font-style: italic;
+}
+
+/* ======================================================================= */
+/* Note controls -- bubbly round buttons (D-06)                            */
+/* ======================================================================= */
+
+.tapestry-note-controls {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+}
+
+.tapestry-control-bubble {
+  position: absolute;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+  padding: 0;
+}
+
+.tapestry-control-bubble:hover {
+  transform: scale(1.143); /* 32/28 */
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.20);
+}
+
+/* Connection handle -- right edge, accent #4A7CFF */
+.tapestry-control-bubble--connect {
+  background-color: #4A7CFF;
+  right: -14px;
+  top: 50%;
+  margin-top: -14px;
+}
+
+/* Delete bubble -- top-right corner, destructive #E5484D */
+.tapestry-control-bubble--delete {
+  background-color: #E5484D;
+  right: -10px;
+  top: -10px;
+}
+
+/* ======================================================================= */
+/* Resize handles (D-08)                                                   */
+/* ======================================================================= */
+
+.tapestry-resize-handle {
+  position: absolute;
+  background: transparent;
+  z-index: 2;
+}
+
+/* Side handles */
+.tapestry-resize-handle--right {
+  right: -3px;
+  top: 20px;
+  bottom: 20px;
+  width: 6px;
+  cursor: ew-resize;
+}
+
+.tapestry-resize-handle--left {
+  left: -3px;
+  top: 20px;
+  bottom: 20px;
+  width: 6px;
+  cursor: ew-resize;
+}
+
+.tapestry-resize-handle--top {
+  top: -3px;
+  left: 20px;
+  right: 20px;
+  height: 6px;
+  cursor: ns-resize;
+}
+
+.tapestry-resize-handle--bottom {
+  bottom: -3px;
+  left: 20px;
+  right: 20px;
+  height: 6px;
+  cursor: ns-resize;
+}
+
+/* Corner handles */
+.tapestry-resize-handle--corner-tr,
+.tapestry-resize-handle--corner-tl,
+.tapestry-resize-handle--corner-br,
+.tapestry-resize-handle--corner-bl {
+  width: 10px;
+  height: 10px;
+}
+
+.tapestry-resize-handle--corner-tr {
+  top: -3px;
+  right: -3px;
+  cursor: nesw-resize;
+}
+
+.tapestry-resize-handle--corner-tl {
+  top: -3px;
+  left: -3px;
+  cursor: nwse-resize;
+}
+
+.tapestry-resize-handle--corner-br {
+  bottom: -3px;
+  right: -3px;
+  cursor: nwse-resize;
+}
+
+.tapestry-resize-handle--corner-bl {
+  bottom: -3px;
+  left: -3px;
+  cursor: nesw-resize;
+}
+
+/* Body is a ProseMirror doc that failed schema validation: shown raw, read-only */
+.tapestry-editor-unreadable .ProseMirror {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 12px;
+  color: #6B6B6B;
+  cursor: not-allowed;
+}
+
+/* ---- Passage marks (D-11, D-13, UI-SPEC) ---- */
+
+.passage-mark {
+  background-color: rgba(74, 124, 255, 0.08);
+  border-radius: 2px;
+  transition: background-color 150ms ease;
+}
+
+.passage-mark:hover {
+  background-color: rgba(74, 124, 255, 0.15);
+}
+
+.passage-mark.active {
+  background-color: rgba(74, 124, 255, 0.25);
+}
+
+/* ---- Gradient-of-focus passage decorations (D-14, UI-SPEC) ---- */
+/* Applied as inline decorations by the passage ProseMirror plugin.  */
+
+.tapestry-passage-idle {
+  background-color: rgba(74, 124, 255, 0.08);
+  border-radius: 2px;
+}
+
+.tapestry-passage-active {
+  background-color: rgba(74, 124, 255, 0.25);
+  box-shadow: inset 2px 0 0 0 rgba(74, 124, 255, 0.80);
+  border-radius: 2px;
+}
+
+.tapestry-passage-level1 {
+  background-color: rgba(74, 124, 255, 0.15);
+  box-shadow: inset 2px 0 0 0 rgba(74, 124, 255, 0.50);
+  border-radius: 2px;
+}
+
+.tapestry-passage-level2 {
+  background-color: rgba(74, 124, 255, 0.10);
+  box-shadow: inset 2px 0 0 0 rgba(74, 124, 255, 0.30);
+  border-radius: 2px;
+}
+
+/* ---- Thread center node (D-16/D-17/D-18) ---- */
+
+.thread-center-node {
+  background: #ffffff;
+  border: 1.5px solid #C8C5BE;
+  border-radius: 8px;
+  padding: 8px;
+  cursor: grab;
+  transition: border-color 150ms ease, box-shadow 150ms ease, opacity 150ms ease;
+}
+
+.thread-center-node.ghost {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.thread-center-node.hovered,
+.thread-center-node.ghost.hovered {
+  opacity: 1;
+  pointer-events: auto;
+  border-color: #4A7CFF;
+}
+
+.thread-center-node.editing {
+  opacity: 1;
+  pointer-events: auto;
+  border-color: #4A7CFF;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  cursor: default;
+}
+
+.thread-center-editor {
+  min-height: 28px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.thread-center-editor .ProseMirror {
+  outline: none;
+  min-height: 28px;
+}
+
+.thread-center-editor .ProseMirror p {
+  margin: 0;
+}
+
+/* ---- Lists inside editors (D-23) ----
+ * The global reset zeroes padding on every element, which removes the
+ * default padding-inline-start on ul/ol. With list-style-position: outside
+ * the markers are drawn in that (now zero-width) region and clipped by the
+ * editor's overflow, so bullets and numbers were invisible. */
+.tapestry-note-editor .ProseMirror ul,
+.tapestry-note-editor .ProseMirror ol,
+.thread-center-editor .ProseMirror ul,
+.thread-center-editor .ProseMirror ol {
+  padding-left: 1.5em;
+  margin: 0 0 4px 0;
+}
+
+.tapestry-note-editor .ProseMirror ul,
+.thread-center-editor .ProseMirror ul {
+  list-style-type: disc;
+}
+
+.tapestry-note-editor .ProseMirror ol,
+.thread-center-editor .ProseMirror ol {
+  list-style-type: decimal;
+}
+
+.tapestry-note-editor .ProseMirror li > p,
+.thread-center-editor .ProseMirror li > p {
+  margin: 0;
+}
+
+/* ---- Floating formatting toolbar (D-24/D-25) ---- */
+
+.floating-toolbar {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: #FFFFFF;
+  border: 1px solid #E0DDD7;
+  border-radius: 8px;
+  padding: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  z-index: 50;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+.ft-btn {
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 600;
+  color: #2C2C2C;
+  transition: background 100ms ease;
+}
+
+.ft-btn:hover {
+  background: #F0EDE8;
+}
+
+.ft-btn.active {
+  background: #EDF2FF;
+  color: #4A7CFF;
+}
+
+.ft-sep {
+  width: 1px;
+  height: 20px;
+  background: #E0DDD7;
+  margin: 0 2px;
+}
+
+.ft-submenu-wrap {
+  position: relative;
+}
+
+.ft-submenu {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-top: 4px;
+  background: #FFFFFF;
+  border: 1px solid #E0DDD7;
+  border-radius: 8px;
+  padding: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  z-index: 51;
+  min-width: 80px;
+}
+
+.ft-sub-btn {
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+  padding: 6px 12px;
+  text-align: left;
+  cursor: pointer;
+  font-size: 13px;
+  color: #2C2C2C;
+  white-space: nowrap;
+  transition: background 100ms ease;
+}
+
+.ft-sub-btn:hover {
+  background: #F0EDE8;
+}
+
+.ft-sub-btn.active {
+  background: #EDF2FF;
+  color: #4A7CFF;
+}
+
+.ft-color-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+  min-width: auto;
+  flex-direction: unset;
+}
+
+.ft-color-swatch {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: border-color 100ms ease, transform 100ms ease;
+}
+
+.ft-color-swatch:hover {
+  border-color: #4A7CFF;
+  transform: scale(1.15);
+}
+
+/* ---- Passage chooser (D-15) ---- */
+
+.passage-chooser {
+  background: #FFFFFF;
+  border: 1px solid #E0DDD7;
+  border-radius: 8px;
+  padding: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  z-index: 60;
+  min-width: 160px;
+}
+
+.passage-chooser-header {
+  font-size: 11px;
+  font-weight: 600;
+  color: #6B6B6B;
+  padding: 4px 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.passage-chooser-item {
+  display: block;
+  width: 100%;
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+  padding: 6px 8px;
+  text-align: left;
+  cursor: pointer;
+  font-size: 13px;
+  color: #2C2C2C;
+}
+
+.passage-chooser-item:hover {
+  background: #EDF2FF;
+}
+
+/* ------------------------------------------------------------------------ */
+/* Dialogs (shared shell) -- UI-SPEC "Dialogs (shared shell)"                */
+/* ------------------------------------------------------------------------ */
+
+.tapestry-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(44, 44, 44, 0.24);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Above the plugin error notification (10000) so a modal is never buried. */
+  z-index: 10001;
+}
+
+.tapestry-dialog {
+  background: #FFFFFF;
+  border: 1px solid #E0DDD7;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  width: 440px;
+  padding: 24px;
+}
+
+/* Heading role: 22/600/1.25 */
+.tapestry-dialog-title {
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.25;
+  color: #2C2C2C;
+}
+
+.tapestry-dialog-body {
+  margin-top: 16px;
+}
+
+/* Body role: 16/400/1.5 */
+.tapestry-dialog-text {
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.5;
+  color: #2C2C2C;
+}
+
+.tapestry-dialog-buttons {
+  margin-top: 24px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* ------------------------------------------------------------------------ */
+/* Dialog form fields                                                        */
+/* ------------------------------------------------------------------------ */
+
+/* Label role: 13/400/1.4 */
+.tapestry-field-label {
+  display: block;
+  margin-top: 16px;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: #6B6B6B;
+}
+
+.tapestry-field-input {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  padding: 6px 8px;
+  font-family: inherit;
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.5;
+  color: #2C2C2C;
+  background: #FFFFFF;
+  border: 1px solid #E0DDD7;
+  border-radius: 8px;
+}
+
+.tapestry-field-input::placeholder {
+  color: #B0ADA6;
+}
+
+/* The exact line this name will write into the .tree file. */
+.tapestry-dialog-preview {
+  margin-top: 8px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: #6B6B6B;
+  word-break: break-all;
+}
+
+.tapestry-field-error {
+  margin-top: 4px;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: #E5484D;
+}
+
+/* ------------------------------------------------------------------------ */
+/* Buttons                                                                   */
+/* ------------------------------------------------------------------------ */
+
+.tapestry-button--primary,
+.tapestry-button--secondary,
+.tapestry-button--destructive {
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.tapestry-button--primary {
+  background: #4A7CFF;
+  color: #FFFFFF;
+  border: none;
+}
+
+.tapestry-button--primary:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.tapestry-button--secondary {
+  background: #FFFFFF;
+  color: #2C2C2C;
+  border: 1px solid #E0DDD7;
+}
+
+.tapestry-button--destructive {
+  background: #E5484D;
+  color: #FFFFFF;
+  border: none;
+}
+
+/* ------------------------------------------------------------------------ */
+/* Provenance footer and badges (DRAW-04, D-06, D-07, D-21)                  */
+/*                                                                           */
+/* Neutral by contract: Muted text and glyphs, Border rule, no accent. The   */
+/* actor id is the meaning, so it is never replaced by a color or a shape.   */
+/* ------------------------------------------------------------------------ */
+
+.tapestry-provenance-footer {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #E0DDD7;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  /* Label role: 13/400/1.4 */
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: #6B6B6B;
+  /* Lets the badge text below shrink far enough to ellipsize. */
+  min-width: 0;
+}
+
+/*
+ * A note you wrote and last changed yourself reveals its footer on hover,
+ * selection, editing or keyboard focus. Fading rather than unmounting keeps
+ * the card's height fixed, so notes do not jump as the pointer crosses them.
+ */
+.tapestry-provenance-footer--hidden {
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.tapestry-note-card:hover .tapestry-provenance-footer--hidden,
+.tapestry-note-card:focus-within .tapestry-provenance-footer--hidden,
+.tapestry-note-card--selected .tapestry-provenance-footer--hidden,
+.tapestry-note-card--editing .tapestry-provenance-footer--hidden {
+  opacity: 1;
+}
+
+.tapestry-provenance-badge {
+  display: inline-flex;
+  align-items: center;
+  /* xs token: the glyph-to-text gap. */
+  gap: 4px;
+  min-width: 0;
+  color: #6B6B6B;
+}
+
+/* The glyph keeps its 16px however narrow the card gets. */
+.tapestry-provenance-badge > svg {
+  flex: none;
+}
+
+/*
+ * A long agent id truncates here rather than widening the card. The full id
+ * stays in the footer's title tooltip and its accessible name.
+ */
+.tapestry-provenance-badge-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Keyboard focus ring for the controls this phase adds. */
+.tapestry-button--primary:focus-visible,
+.tapestry-button--secondary:focus-visible,
+.tapestry-button--destructive:focus-visible,
+.tapestry-field-input:focus-visible {
+  outline: 2px solid #4A7CFF;
+  outline-offset: 2px;
+}
+
+/* ------------------------------------------------------------------------ */
+/* Forest bar -- top-left chrome (UI-SPEC "Forest bar")                      */
+/*                                                                           */
+/* It holds only what is true of the whole space; per-tree save status now   */
+/* lives in each frame's header (.tapestry-frame-status).                    */
+/* contains it, so the indicator's own absolute placement is neutralised      */
+/* here rather than by changing that component.                              */
+/* ------------------------------------------------------------------------ */
+
+.tapestry-forest-bar {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  /* sm token */
+  gap: 8px;
+}
+
+.tapestry-forest-popover-anchor {
+  position: relative;
+  display: inline-flex;
+}
+
+/* 32px height / 0 12px padding: the declared forest-bar button exception. */
+.tapestry-forest-button {
+  height: 32px;
+  padding: 0 12px;
+  background: #FFFFFF;
+  border: 1px solid #E0DDD7;
+  border-radius: 8px;
+  font-family: inherit;
+  /* Label role: 13/400/1.4 */
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: #2C2C2C;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.tapestry-forest-button:hover {
+  border-color: #B0ADA6;
+}
+
+/* ------------------------------------------------------------------------ */
+/* Small popover menus -- the PassageChooser surface, shared by the forest    */
+/* bar's Add tree menu and each frame's Tree options menu                     */
+/* ------------------------------------------------------------------------ */
+
+.tapestry-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 200px;
+  background: #FFFFFF;
+  border: 1px solid #E0DDD7;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  padding: 4px;
+  z-index: 210;
+}
+
+/* Under a right-aligned button (the frame's Tree options), the menu hangs
+   from the same edge rather than off the side of the frame. */
+.tapestry-menu--right {
+  left: auto;
+  right: 0;
+}
+
+/* 0 12px inset: menu items and buttons indent their labels identically. */
+.tapestry-menu-item {
+  display: block;
+  width: 100%;
+  padding: 6px 12px;
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  font-family: inherit;
+  /* Label role: 13/400/1.4 */
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: #2C2C2C;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.tapestry-menu-item:hover {
+  background: #F0EDE8;
+}
+
+/* 32px icon-only control, carried from the 02.1 toolbar hit target. */
+.tapestry-icon-button {
+  width: 32px;
+  height: 32px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: #6B6B6B;
+  cursor: pointer;
+}
+
+/* The frame surface is already #F0EDE8, so the hover needs its own step. */
+.tapestry-icon-button:hover {
+  background: #E7E3DC;
+}
+
+.tapestry-menu-item:focus-visible,
+.tapestry-icon-button:focus-visible {
+  outline: 2px solid #4A7CFF;
+  outline-offset: 2px;
+}
+
+/* Anchors the Tree options menu to its button inside the header row. */
+.tapestry-frame-menu-wrap {
+  position: relative;
+  flex: none;
+  display: inline-flex;
+}
+
+/* ------------------------------------------------------------------------ */
+/* Agents panel -- popover on the PassageChooser surface                     */
+/* ------------------------------------------------------------------------ */
+
+.tapestry-agents-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  min-width: 320px;
+  background: #FFFFFF;
+  border: 1px solid #E0DDD7;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  /* md token */
+  padding: 16px;
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  text-align: left;
+}
+
+/* Note Title role: 18/600/1.25 */
+.tapestry-agents-heading {
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.25;
+  color: #2C2C2C;
+}
+
+/* Label role, Muted: the panel's explanatory copy. */
+.tapestry-agents-body {
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: #6B6B6B;
+}
+
+.tapestry-agents-note {
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: #6B6B6B;
+}
+
+.tapestry-agents-switch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  background: transparent;
+  border: none;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: #2C2C2C;
+  cursor: pointer;
+}
+
+/*
+ * The switch is Ink rather than accent when on: the accent budget is reserved
+ * for the elements the UI-SPEC lists, and a settings toggle is not one.
+ */
+.tapestry-agents-switch-track {
+  flex: none;
+  width: 32px;
+  height: 18px;
+  border-radius: 9px;
+  background: #E0DDD7;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px;
+  transition: background-color 120ms ease;
+}
+
+.tapestry-agents-switch[aria-checked='true'] .tapestry-agents-switch-track {
+  background: #2C2C2C;
+}
+
+.tapestry-agents-switch-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #FFFFFF;
+  transition: transform 120ms ease;
+}
+
+.tapestry-agents-switch[aria-checked='true'] .tapestry-agents-switch-thumb {
+  transform: translateX(14px);
+}
+
+.tapestry-agents-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tapestry-agents-connect {
+  align-self: flex-start;
+  margin-top: 8px;
+}
+
+/* ------------------------------------------------------------------------ */
+/* One agent row                                                             */
+/* ------------------------------------------------------------------------ */
+
+.tapestry-agent-row {
+  display: flex;
+  align-items: center;
+  /* sm token */
+  gap: 8px;
+  padding: 4px 0;
+  min-width: 0;
+}
+
+.tapestry-agent-glyph {
+  flex: none;
+  color: #6B6B6B;
+}
+
+.tapestry-agent-text {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  /* Lets the id below shrink far enough to ellipsize. */
+  min-width: 0;
+}
+
+/*
+ * A long agent name truncates rather than widening the popover. The full
+ * actor id stays in the title tooltip, so it is never the only copy on screen.
+ */
+.tapestry-agent-id {
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: #2C2C2C;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tapestry-agent-status {
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: #6B6B6B;
+}
+
+.tapestry-agent-menu-wrap {
+  position: relative;
+  flex: none;
+}
+
+/* 32px hit target, carried from the 02.1 toolbar. */
+.tapestry-agent-menu-button {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: #6B6B6B;
+  cursor: pointer;
+}
+
+.tapestry-agent-menu-button:hover {
+  background: #F0EDE8;
+}
+
+.tapestry-agent-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 160px;
+  background: #FFFFFF;
+  border: 1px solid #E0DDD7;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  padding: 4px;
+  z-index: 210;
+}
+
+.tapestry-agent-menu-item {
+  display: block;
+  width: 100%;
+  padding: 6px 8px;
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: #2C2C2C;
+  cursor: pointer;
+}
+
+.tapestry-agent-menu-item:hover {
+  background: #F0EDE8;
+}
+
+/* ------------------------------------------------------------------------ */
+/* Connect-agent dialog: helper copy and the command block                   */
+/* ------------------------------------------------------------------------ */
+
+.tapestry-dialog-helper {
+  margin-top: 4px;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: #6B6B6B;
+}
+
+/*
+ * The command is long, has no spaces to wrap at in its quoted paths, and must
+ * be copyable in full: it carries a token shown exactly once. So it breaks
+ * anywhere and scrolls past 120px rather than stretching the dialog.
+ */
+.tapestry-command-block {
+  margin-top: 8px;
+  padding: 8px;
+  max-height: 120px;
+  overflow: auto;
+  background: #F7F5F0;
+  border: 1px solid #E0DDD7;
+  border-radius: 8px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: #2C2C2C;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* ------------------------------------------------------------------------ */
+/* Transient notice -- top center, auto-hiding (UA-14)                       */
+/* ------------------------------------------------------------------------ */
+
+.tapestry-transient-notice {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10000;
+  max-width: 440px;
+  background: #FFFFFF;
+  border: 1px solid #E0DDD7;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  padding: 12px 20px;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: #2C2C2C;
+}
+
+/* Keyboard focus rings for the forest bar and agents panel controls. */
+.tapestry-forest-button:focus-visible,
+.tapestry-agents-switch:focus-visible,
+.tapestry-agent-menu-button:focus-visible,
+.tapestry-agent-menu-item:focus-visible {
+  outline: 2px solid #4A7CFF;
+  outline-offset: 2px;
+}

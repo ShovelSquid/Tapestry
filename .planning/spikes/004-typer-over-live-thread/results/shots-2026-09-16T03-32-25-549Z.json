@@ -1,0 +1,44 @@
+{
+  "log": [
+    {
+      "at": "2026-09-16T03:32:20.471Z",
+      "category": "load",
+      "name": "8h",
+      "buildMs": 329.3999999910593,
+      "glyphs": 62431,
+      "letters": 75795,
+      "atlasCells": 662,
+      "atlasOverflow": 0,
+      "rasterCount": 663,
+      "rasterMsAvg": 0.4672699848451226,
+      "rasterMsMax": 94.20000000298023,
+      "rasterMsLast": 1.5,
+      "liveCopies": 0,
+      "liveCopyMsAvg": 0,
+      "instanceMB": 3.3341751098632812,
+      "mipmaps": true,
+      "clipped": 0
+    }
+  ],
+  "stats": {
+    "glyphs": 62486,
+    "letters": 75864,
+    "atlasCells": 662,
+    "atlasOverflow": 0,
+    "rasterCount": 663,
+    "rasterMsAvg": 0.4672699848451226,
+    "rasterMsMax": 94.20000000298023,
+    "rasterMsLast": 1.5,
+    "liveCopies": 0,
+    "liveCopyMsAvg": 0,
+    "instanceMB": 3.3371124267578125,
+    "mipmaps": true,
+    "clipped": 0
+  },
+  "paint": {
+    "n": 69,
+    "median": 12.400000008940879,
+    "p95": 685.1000000059605,
+    "max": 866.1000000059605
+  }
+}

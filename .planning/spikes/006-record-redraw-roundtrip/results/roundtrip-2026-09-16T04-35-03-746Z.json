@@ -1,0 +1,25 @@
+{
+  "results": [
+    {
+      "hours": 4,
+      "keystrokes": 29956,
+      "sessions": 13,
+      "batches": 12331,
+      "commits": 12333,
+      "properties": 12345,
+      "bytes": 3827380,
+      "bytesPerKeystroke": 127.76672452930966,
+      "writeMs": 55006.319416,
+      "openMs": 4647.467541000005,
+      "readMs": 9.345499999995809,
+      "redrawMs": 8.347708000001148,
+      "commitsPerSecond": 224.1742427218865,
+      "status": "Ok",
+      "redrawn": 29956,
+      "identical": true,
+      "mismatch": null,
+      "excerpt": "set n1 keys.000001 text <<TEXT\n@ 0.000\n+0.000 o\n+0.127 k\n+0.127  \nTEXT\n@end sha",
+      "file": null
+    }
+  ]
+}

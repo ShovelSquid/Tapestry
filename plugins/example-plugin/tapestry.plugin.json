@@ -1,0 +1,12 @@
+{
+  "name": "example-plugin",
+  "version": "1",
+  "displayName": "Example Property Inspector",
+  "main": "index.js",
+  "api": "1",
+  "contributions": {
+    "nodeTypes": [],
+    "commands": ["example.inspect"],
+    "surfaces": ["example.surface"]
+  }
+}

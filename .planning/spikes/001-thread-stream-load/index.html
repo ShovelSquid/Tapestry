@@ -1,0 +1,28 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Spike 001 — thread stream load</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #0d0f14; overflow: hidden; }
+      canvas { display: block; }
+      #hud {
+        position: fixed; top: 12px; left: 12px; padding: 10px 12px; border-radius: 8px;
+        background: rgba(10, 12, 18, 0.78); color: #cfd6e6; white-space: pre;
+        font: 12px/1.45 ui-monospace, "SF Mono", Menlo, monospace; pointer-events: none;
+      }
+      #export {
+        position: fixed; top: 12px; right: 12px; padding: 6px 10px; border-radius: 6px;
+        border: 1px solid #3a4152; background: #1a1e28; color: #cfd6e6; font: 12px system-ui;
+      }
+    </style>
+    <script type="importmap">
+      { "imports": { "three": "../node_modules/three/build/three.module.js" } }
+    </script>
+  </head>
+  <body>
+    <div id="hud"></div>
+    <button id="export">Export log</button>
+    <script type="module" src="./thread.js"></script>
+  </body>
+</html>

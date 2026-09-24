@@ -1,0 +1,18 @@
+{
+ "command": "/Users/kaelencook/conductor/workspaces/Tapestry/tehran/tapestry/build-kernel/tapestry_kernel_tests -ts=journal",
+ "exitCode": 1,
+ "targetTest": "journal: a failed sync rejects the commit and leaves the world untouched",
+ "targetFile": "tapestry/kernel_tests/journal_test.cpp",
+ "expected": "After a sync that fails (or a write that stops mid-record) the journal reports TornTail at the verified prefix with the unacknowledged byte count and lastGoodSeq, and a further submit is refused JournalNotClean instead of writing a second @commit N on top of unconfirmed bytes; lastGoodSeq names the last verified commit in every status; a bad byte count in a commit head line reports the record's head-line offset",
+ "actual": "4 of 9 journal cases fail on assertions: the journal stays Ok after an unacknowledged append and accepts the next submit; lastGoodSeq is 0 at every Ok boundary of the truncation sweep; a flipped count digit in commit 2 reports offset 974 (inside commit 3). The 5 passing cases pin tracer behavior that already existed (write/sync order, refusal while torn/corrupt, flock, header-only fresh world, open never modifies the file).",
+ "output": "ok 1 - journal: every commit is written then synced before submit returns\nnot ok 2 - journal: a failed sync rejects the commit and leaves the world untouched\n  # 0 == 1\n  # 0 == 588\n  # 0 == 366\nnot ok 3 - journal: a write that stops mid-record is a torn tail, never a partial commit\n  # 0 == 1\n  # 0 == 588\n  # 0 == 20\nnot ok 4 - journal: exhaustive prefix truncation never accepts a partial record\n  # 0 == 1\n  # 0 == 2\n  # 0 == 3\nnot ok 5 - journal: single-byte corruption is never accepted\n  # false\nok 6 - journal: appends are refused while torn or corrupt\nok 7 - journal: a second opener is locked out\nok 8 - journal: a fresh world is only the header and empty or missing files are diagnosed\nok 9 - journal: open twice yields the same digests and never modifies the file\n1..9\n# tests 9\n# pass 5\n# fail 4\n# cancelled 0\n# source: doctest -r=junit transcription (/tmp/tapestry-red-junit.xml)\n",
+ "tests": 9,
+ "pass": 5,
+ "fail": 4,
+ "failing_tests": [
+  "journal: a failed sync rejects the commit and leaves the world untouched",
+  "journal: a write that stops mid-record is a torn tail, never a partial commit",
+  "journal: exhaustive prefix truncation never accepts a partial record",
+  "journal: single-byte corruption is never accepted"
+ ]
+}

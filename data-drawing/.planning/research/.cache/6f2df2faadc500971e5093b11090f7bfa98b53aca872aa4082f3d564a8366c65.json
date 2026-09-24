@@ -1,0 +1,1 @@
+{"content":"BLAKE3 official C implementation 1.8.7 (2026-08-20): blake3_hasher_init/update/finalize, 32-byte output, CMake build with NEON via BLAKE3_USE_NEON and portable-only via BLAKE3_NO_* flags. Tapestry kernel already uses SHA-256 for commit chaining.","source":"web","provider":"github","confidence":"HIGH","fetched_at":"2026-09-22T17:12:07.221Z","ttl":86400000,"kind":"web"}

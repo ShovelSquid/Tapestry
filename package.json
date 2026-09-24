@@ -1,0 +1,12 @@
+{
+  "name": "tapestry-workspace",
+  "private": true,
+  "workspaces": [
+    "app",
+    "sdk",
+    "plugins/*"
+  ],
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.7.0"
+  }
+}

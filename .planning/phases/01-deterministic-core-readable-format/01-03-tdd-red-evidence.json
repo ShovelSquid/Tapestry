@@ -1,0 +1,27 @@
+{
+ "command": "/Users/kaelencook/conductor/workspaces/Tapestry/tehran/tapestry/build-kernel/tapestry_kernel_tests -ts=codec",
+ "exitCode": 1,
+ "targetTest": "codec: every op and value type round-trips byte-identically",
+ "targetFile": "tapestry/kernel_tests/codec_test.cpp",
+ "expected": "encodeCommit of a record with every op alternative and value type decodes to the same record and re-encodes to identical bytes; World validates and applies unset/create-edge/delete-node/delete-edge/advance",
+ "actual": "6 of 10 codec cases fail on assertions against RED stubs (the encoder emits nothing for the five new verbs, the decoder reports them UnsupportedOp, World accepts and ignores them); the 4 passing cases cover tracer behavior that already existed (block selection, non-ASCII text, limits, unclosed block)",
+ "output": "not ok 1 - codec: every op and value type round-trips byte-identically\n  # 18446744073709551615 != 18446744073709551615\n  # 18446744073709551615 != 18446744073709551615\n  # 18446744073709551615 != 18446744073709551615\n  # 18446744073709551615 != 18446744073709551615\n  # 18446744073709551615 != 18446744073709551615\n  # 18446744073709551615 != 18446744073709551615\n  # 8 == 14\nok 2 - codec: text is inline up to 80 bytes and a block beyond that or with a newline\nok 3 - codec: non-ASCII text round-trips byte-identically and the byte count is UTF-8 length\nnot ok 4 - codec: a NUL byte or invalid UTF-8 in the body is InvalidUtf8 at that line\n  # 194 == 178\n  # 194 == 178\n  # 190 == 187\nok 5 - codec: a line over kMaxLineBytes or a count over kMaxRecordBytes is LimitExceeded\nnot ok 6 - codec: x- lines survive verbatim, unknown verbs stop the load, malformed lines are named\n  # 18446744073709551615 != 18446744073709551615\n  # 7 == 8\n  # 7 == 8\nnot ok 7 - codec: seq gaps, chain breaks and any flipped body byte are refused\n  # 190 == 0\n  # 190 == 0\n  # 190 == 0\n  # 190 == 0\n  # 190 == 0\n  # 190 == 0\n  # 190 == 0\n  # 190 == 0\n  # 190 == 0\n  # 190 == 0\n  # 190 == 0\n  # 190 == 0\nok 8 - codec: an unclosed block and a short @end digest are refused\nnot ok 9 - codec: the world validates every op and assigns ids only in prepare\n  # {?} == 6\n  # {?} == 6\n  # {?} == 5\n  # {?} == 5\n  # {?} == 2\n  # {?} == 0\n  # {?} == 0\n  # {?} == 0\n  # {?} == 0\n  # {?} == 8\n  # {?} == {?}\n  # {?} == 1\nnot ok 10 - codec: the world applies edges, cascading deletes, unset and advance with tombstoned ids\n  # 0 == 1\n1..10\n# tests 10\n# pass 4\n# fail 6\n# cancelled 0\n# source: doctest -r=junit transcription (/tmp/tapestry-red-junit.xml)\n",
+ "verdict": "RED_EVIDENCE_OK",
+ "reason": "target_test_failed",
+ "evidence": {
+  "command": "/Users/kaelencook/conductor/workspaces/Tapestry/tehran/tapestry/build-kernel/tapestry_kernel_tests -ts=codec",
+  "exit_code": 1,
+  "target_test": "codec: every op and value type round-trips byte-identically",
+  "tests": 10,
+  "pass": 4,
+  "fail": 6,
+  "failing_tests": [
+   "codec: every op and value type round-trips byte-identically",
+   "codec: a NUL byte or invalid UTF-8 in the body is InvalidUtf8 at that line",
+   "codec: x- lines survive verbatim, unknown verbs stop the load, malformed lines are named",
+   "codec: seq gaps, chain breaks and any flipped body byte are refused",
+   "codec: the world validates every op and assigns ids only in prepare",
+   "codec: the world applies edges, cascading deletes, unset and advance with tombstoned ids"
+  ]
+ }
+}
