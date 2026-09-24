@@ -18,6 +18,7 @@ import FallbackNodeView from './FallbackNodeView'
 import ConnectionLine from './ConnectionLine'
 import KnotNode, { KNOT_TYPE, KNOT_TIE_LABEL } from './KnotNode'
 import FrameHeader from './FrameHeader'
+import ThreadCard, { THREAD_TYPE } from '../threads/ThreadCard'
 import type { ForestTree, NodeRef } from '../state/use-forest'
 import { nodeKey } from '../state/use-forest'
 import type { FrameRect } from '../layout/frames'
@@ -29,6 +30,10 @@ const KNOT_FALLBACK_HEIGHT = 44
 
 function isKnot(n: NodeInfo): boolean {
   return n.type === KNOT_TYPE
+}
+
+function isThread(n: NodeInfo): boolean {
+  return n.type === THREAD_TYPE
 }
 
 /** Everything a note inside a frame can ask the space to do. */
@@ -281,9 +286,30 @@ export default function TreeFrame({
           )
         })}
 
-        {/* Note cards — NoteCard for known types, FallbackNodeView otherwise */}
+        {/* Note cards — ThreadCard for threads, NoteCard for other known
+            types, FallbackNodeView otherwise */}
         {tree.nodes.filter((n) => !isKnot(n)).map((node) => {
           const key = keyFor(node.id)
+
+          if (isThread(node) && pluginNodeViews[node.type]) {
+            return (
+              <ThreadCard
+                key={node.id}
+                node={node}
+                isEditing={editingKey === key}
+                isHovered={hoveredKey === key}
+                isSelected={selectedKey === key}
+                zoom={zoom}
+                onStartEditing={() => handlers.onStartEditing(refFor(node.id))}
+                onBorderSelect={() => handlers.onBorderSelect(refFor(node.id))}
+                onSave={(nodeId, body, title) => handlers.onSave(refFor(nodeId), body, title)}
+                onMarkDirty={(nodeId) => handlers.onMarkDirty(refFor(nodeId))}
+                onMarkClean={(nodeId) => handlers.onMarkClean(refFor(nodeId))}
+                onHover={(hovered) => handlers.onHover(refFor(node.id), hovered)}
+                onRegisterDims={(nodeId, w, h) => handlers.onRegisterDims(refFor(nodeId), w, h)}
+              />
+            )
+          }
 
           if (pluginNodeViews[node.type]) {
             return (

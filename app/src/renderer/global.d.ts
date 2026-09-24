@@ -161,6 +161,38 @@ interface TapestryAgentsAPI {
   setEnabled(enabled: boolean): Promise<{ ok: boolean; error?: string }>
 }
 
+/**
+ * Thread editing (D-06, D-09): the collab push/pull surface for
+ * ThreadService, the single write authority in main. No actor argument on
+ * `push` -- the main process stamps it, like `kernel.submit`.
+ */
+interface TapestryThreadOpenResult {
+  /** The collab version to start the renderer's `collab()` plugin at. */
+  version: number
+  /** ProseMirror JSON, replayed from `thread.log` records alone. */
+  doc: unknown
+  /** The number of `thread.log` values found on open (never an estimate). */
+  totalChanges: number
+}
+
+type TapestryThreadPushResult =
+  | { confirmed: true; version: number }
+  | { confirmed: false; missing: { steps: unknown[]; fromVersion: number } }
+  | { confirmed: false; rejected: true; reason: string }
+
+interface TapestryThreadAPI {
+  open(treeId: string, nodeId: string): Promise<TapestryThreadOpenResult>
+  push(
+    treeId: string,
+    nodeId: string,
+    version: number,
+    steps: unknown[],
+    times: number[],
+    causes: (string | null)[],
+  ): Promise<TapestryThreadPushResult>
+  close(treeId: string, nodeId: string): Promise<{ ok: boolean }>
+}
+
 /** What an agent write into a rewound tree reports (UA-14). */
 interface TapestryRedoDiscarded {
   treeId: string
@@ -175,6 +207,7 @@ interface TapestryAPI {
   dialog: TapestryDialogAPI
   settings: TapestrySettingsAPI
   agents: TapestryAgentsAPI
+  thread: TapestryThreadAPI
   /** The set of open trees changed: one opened, one closed, or the space restored. */
   onTreesChanged(callback: () => void): () => void
   /** A commit landed in a tree from outside the renderer (an agent, a plugin). */
@@ -186,6 +219,10 @@ interface TapestryAPI {
   onPluginError(
     callback: (pluginName: string, displayName: string, message: string, canRestart: boolean) => void,
   ): () => void
+  /** A thread's pending batch was durably committed (D-06). */
+  onThreadConfirmed(callback: (treeId: string, nodeId: string, version: number) => void): () => void
+  /** A thread's flush was refused; the batch retries, but "Saved" would lie. */
+  onThreadFlushError(callback: (treeId: string, nodeId: string, reason: string) => void): () => void
 }
 
 interface Window {

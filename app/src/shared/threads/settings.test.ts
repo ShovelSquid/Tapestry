@@ -61,7 +61,9 @@ describe('parseThreadSettings', () => {
 
 describe('threadInitialProperties', () => {
   it('carries the D-10/D-13 defaults and an empty D-02 body/title', () => {
-    const props = threadInitialProperties(0, 0)
+    const props = threadInitialProperties(120, 340)
+    expect(props['position.x']).toEqual({ type: 'real', value: 120 })
+    expect(props['position.y']).toEqual({ type: 'real', value: 340 })
     expect(props['thread.timeout']).toEqual({ type: 'real', value: THREAD_DEFAULT_TIMEOUT_SECONDS })
     expect(props['thread.slowdown']).toEqual({ type: 'text', value: THREAD_DEFAULT_SLOWDOWN })
     expect(props['thread.format']).toEqual({ type: 'int', value: THREAD_DEFAULT_FORMAT })

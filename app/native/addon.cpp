@@ -16,6 +16,7 @@
 #include "kernel/History.hpp"
 #include "kernel/Ids.hpp"
 #include "kernel/Ops.hpp"
+#include "kernel/PropertyValues.hpp"
 #include "kernel/Value.hpp"
 #include "kernel/World.hpp"
 
@@ -352,6 +353,7 @@ public:
             InstanceMethod<&TapestryAddon::ReplayUpTo>("replayUpTo"),
             InstanceMethod<&TapestryAddon::GetLastSeq>("getLastSeq"),
             InstanceMethod<&TapestryAddon::GetHistoryIndex>("getHistoryIndex"),
+            InstanceMethod<&TapestryAddon::GetPropertyValues>("getPropertyValues"),
             InstanceMethod<&TapestryAddon::GetHeaderDigest>("getHeaderDigest"),
             InstanceMethod<&TapestryAddon::GetNextIds>("getNextIds"),
             InstanceMethod<&TapestryAddon::Close>("close"),
@@ -710,6 +712,64 @@ public:
         result.Set("nodes", nodes);
         result.Set("edges", edges);
         return result;
+    }
+
+    /**
+     * getPropertyValues(nodeId, key, fromSeq?) -> [{ seq, recorded, actor, value }]
+     *
+     * Every value `key` was ever set to on `nodeId`, in commit order
+     * (PropertyValues.hpp) -- a read-only scan over the journal that adds no
+     * verb and no value type. Every argument is validated before the kernel
+     * is touched, on the ReplayUpTo pattern above: a missing or non-string
+     * node id or key throws a TypeError, and a negative or non-integer
+     * fromSeq throws a RangeError, because Submit above records the bug
+     * where an unvalidated argument fell through and durably appended an
+     * empty commit -- this method never writes, but the discipline is the
+     * same.
+     */
+    Napi::Value GetPropertyValues(const Napi::CallbackInfo& info) {
+        Napi::Env env = info.Env();
+        if (!m_kernel) {
+            Napi::Error::New(env, "No kernel loaded").ThrowAsJavaScriptException();
+            return env.Null();
+        }
+        if (info.Length() < 2 || !info[0].IsString() || !info[1].IsString()) {
+            Napi::TypeError::New(env, "getPropertyValues(nodeId: string, key: string, fromSeq?: number)")
+                .ThrowAsJavaScriptException();
+            return env.Null();
+        }
+
+        const std::string nodeIdStr = info[0].As<Napi::String>().Utf8Value();
+        const auto nodeId = parseNodeId(nodeIdStr);
+        if (!nodeId) {
+            Napi::TypeError::New(env, "Invalid node id: " + nodeIdStr).ThrowAsJavaScriptException();
+            return env.Null();
+        }
+        const std::string key = info[1].As<Napi::String>().Utf8Value();
+
+        int64_t fromSeq = 0;
+        if (info.Length() >= 3 && !info[2].IsUndefined() && !info[2].IsNull()) {
+            if (!requireSafeInteger(env, info[2], "getPropertyValues fromSeq", fromSeq)) return env.Null();
+            if (fromSeq < 0) {
+                throwRangeError(env, "getPropertyValues fromSeq must be a non-negative integer");
+                return env.Null();
+            }
+        }
+
+        const auto entries =
+            getPropertyValues(m_kernel->journal(), *nodeId, key, static_cast<CommitSeq>(fromSeq));
+
+        auto arr = Napi::Array::New(env, entries.size());
+        for (size_t i = 0; i < entries.size(); i++) {
+            const auto& entry = entries[i];
+            auto obj = Napi::Object::New(env);
+            obj.Set("seq", Napi::Number::New(env, static_cast<double>(entry.seq)));
+            obj.Set("recorded", Napi::String::New(env, entry.recorded.rfc3339Z()));
+            obj.Set("actor", actorToJS(env, entry.actor));
+            obj.Set("value", valueToJS(env, entry.value));
+            arr.Set(static_cast<uint32_t>(i), obj);
+        }
+        return arr;
     }
 
     /**

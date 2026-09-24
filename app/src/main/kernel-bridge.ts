@@ -124,6 +124,20 @@ export interface HistoryIndex {
 }
 
 // ---------------------------------------------------------------------------
+// Property values: every value one key was ever set to (D-06)
+// ---------------------------------------------------------------------------
+
+/** One value a property was ever set to, and the commit that set it
+ * (tapestry/kernel/PropertyValues.hpp `PropertyValueEntry`). */
+export interface PropertyValueEntry {
+  seq: number
+  /** RFC 3339 UTC, whole seconds (the commit's own `recorded` stamp). */
+  recorded: string
+  actor: ActorRef
+  value: { type: string; value: string | number | boolean }
+}
+
+// ---------------------------------------------------------------------------
 // KernelBridge
 // ---------------------------------------------------------------------------
 
@@ -260,6 +274,16 @@ export class KernelBridge {
   getHistoryIndex(): HistoryIndex {
     this.ensureLoaded()
     return this.instance.getHistoryIndex(this.currentSeq)
+  }
+
+  /**
+   * Every value `key` was ever set to on `nodeId`, in commit order
+   * (D-06: a thread's `thread.log` blocks, read back on reopen). A read-only
+   * scan over the journal — adds no verb and no value type.
+   */
+  getPropertyValues(nodeId: string, key: string, fromSeq?: number): PropertyValueEntry[] {
+    this.ensureLoaded()
+    return this.instance.getPropertyValues(nodeId, key, fromSeq)
   }
 
   /**

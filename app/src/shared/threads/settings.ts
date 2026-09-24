@@ -136,14 +136,23 @@ export interface KernelPropValue {
 }
 
 /**
- * The full set of initial properties for a freshly created thread node: the
- * D-27 frame, the D-10/D-13 settings, and an empty D-02 note body/title —
+ * The full set of initial properties for a freshly created thread node: its
+ * ordinary 2D canvas position (D-01, the same key NoteCard reads), the D-27
+ * frame, the D-10/D-13 settings, and an empty D-02 note body/title —
  * everything `App.tsx`'s create-thread path needs for one `createNode` op.
+ *
+ * `position.x`/`position.y` and `thread.origin.x`/`thread.origin.y` start
+ * numerically equal (both default to the card's canvas position) but are
+ * two separate stored properties: the former places the card on the 2D
+ * canvas like any note, the latter is the D-27 live/side-view camera frame,
+ * which a later phase's anchor cursor can move independently of the card.
  */
 export function threadInitialProperties(cardX: number, cardY: number): Record<string, KernelPropValue> {
   const frame = defaultThreadFrame(cardX, cardY)
   const settings = defaultThreadSettings()
   return {
+    'position.x': { type: 'real', value: cardX },
+    'position.y': { type: 'real', value: cardY },
     'thread.origin.x': { type: 'real', value: frame.origin.x },
     'thread.origin.y': { type: 'real', value: frame.origin.y },
     'thread.origin.z': { type: 'real', value: frame.origin.z },

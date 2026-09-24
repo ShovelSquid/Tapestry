@@ -28,6 +28,8 @@ import { ConnectionCommands } from './commands/connections'
 import { runAgentTool, type AgentCommands } from './commands/agent-tools'
 import { AgentRegistry, agentSocketPath } from './agents/registry'
 import { AgentSocketServer } from './agents/socket-server'
+import { ThreadIpc } from './threads/thread-ipc'
+import { ThreadService } from './threads/thread-service'
 
 // ---------------------------------------------------------------------------
 // Window management
@@ -117,6 +119,7 @@ const registry = new TreeRegistry()
 
 let pluginHost: PluginHost
 let agentServer: AgentSocketServer | null = null
+let threadService: ThreadService | null = null
 
 /** A tree id is exactly what the registry mints: `sha256:` + 64 hex digits. */
 const TREE_ID_PATTERN = /^sha256:[0-9a-f]{64}$/
@@ -202,6 +205,24 @@ app.whenReady().then(async () => {
 
   // Register kernel IPC handlers. Every channel names its tree first (D-15).
   KernelBridge.registerHandlers(ipcMain, resolveTree, getHumanActor)
+
+  // Thread IPC (D-06): the single write authority for every open thread.
+  // notifyConfirmed reaches every window, not just the one that pushed the
+  // steps that triggered the flush -- the same broadcast shape as
+  // 'tree-changed' below.
+  threadService = new ThreadService()
+  ThreadIpc.registerHandlers(
+    ipcMain,
+    threadService,
+    resolveTree,
+    getHumanActor,
+    (treeId, nodeId, version) => {
+      mainWindow?.webContents.send('thread:confirmed', treeId, nodeId, version)
+    },
+    (treeId, nodeId, reason) => {
+      mainWindow?.webContents.send('thread:flush-error', treeId, nodeId, reason)
+    },
+  )
 
   // Discover and load plugins
   const pluginsDir = join(app.getAppPath(), '..', 'plugins')
@@ -590,6 +611,9 @@ app.on('window-all-closed', () => {
 // relaunched instance can reopen the same world immediately, and remove the
 // agent socket so a stale file does not outlive the app.
 app.on('will-quit', () => {
+  // Flush every open thread's pending batch and checkpoint before the
+  // journal locks are released below -- a clean quit should lose nothing.
+  threadService?.closeAll()
   if (agentServer) {
     void agentServer.close()
     agentServer = null
