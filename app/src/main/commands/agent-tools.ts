@@ -125,6 +125,10 @@ export function runAgentTool(
       if (!commands.files) return { ok: false, error: NO_WORKSPACE_MESSAGE }
       return commands.files.writeFile(actor, parsed.data as { workspace?: string; path: string; text: string })
 
+    case 'open_file':
+      if (!commands.files) return { ok: false, error: NO_WORKSPACE_MESSAGE }
+      return commands.files.openFile(parsed.data as { workspace?: string; path: string })
+
     case 'read_file':
       if (!commands.files) return { ok: false, error: NO_WORKSPACE_MESSAGE }
       return commands.files.readFile(

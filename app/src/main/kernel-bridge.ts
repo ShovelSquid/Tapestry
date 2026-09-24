@@ -393,11 +393,19 @@ export class KernelBridge {
    * `trees:open` and `trees:create` are deliberately NOT registered here.
    * index.ts owns them, because opening a world also validates the path and
    * updates the tree registry and settings.
+   *
+   * `guards` (02.7 D-03) lets index.ts refuse a submit or a replay for some
+   * trees (workspace trees): a returned string is thrown as the error, before
+   * the kernel sees anything. Without guards, behaviour is unchanged.
    */
   static registerHandlers(
     ipcMain: any,
     resolveTree: (treeId: unknown) => KernelBridge,
     getHumanActor: () => Actor,
+    guards?: {
+      beforeSubmit?(treeId: unknown, ops: OpObject[]): string | null
+      beforeReplay?(treeId: unknown): string | null
+    },
   ): void {
     // (treeId, message, ops). A call in the old two-argument shape fails here,
     // before the kernel sees it, rather than being reinterpreted — which would
@@ -408,7 +416,10 @@ export class KernelBridge {
         if (typeof message !== 'string' || !Array.isArray(ops)) {
           throw new Error('kernel:submit expects (treeId: string, message: string, ops: Op[])')
         }
-        return resolveTree(treeId).submitAs(getHumanActor(), message, ops as OpObject[])
+        const bridge = resolveTree(treeId)
+        const refusal = guards?.beforeSubmit?.(treeId, ops as OpObject[]) ?? null
+        if (refusal) throw new Error(refusal)
+        return bridge.submitAs(getHumanActor(), message, ops as OpObject[])
       },
     )
 
@@ -433,11 +444,17 @@ export class KernelBridge {
     })
 
     ipcMain.handle('kernel:undo', (_event: any, treeId: unknown) => {
-      return { ok: resolveTree(treeId).undo() }
+      const bridge = resolveTree(treeId)
+      const refusal = guards?.beforeReplay?.(treeId) ?? null
+      if (refusal) throw new Error(refusal)
+      return { ok: bridge.undo() }
     })
 
     ipcMain.handle('kernel:redo', (_event: any, treeId: unknown) => {
-      return { ok: resolveTree(treeId).redo() }
+      const bridge = resolveTree(treeId)
+      const refusal = guards?.beforeReplay?.(treeId) ?? null
+      if (refusal) throw new Error(refusal)
+      return { ok: bridge.redo() }
     })
   }
 

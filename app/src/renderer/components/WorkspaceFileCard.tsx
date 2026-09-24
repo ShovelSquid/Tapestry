@@ -44,7 +44,16 @@ interface WorkspaceFileCardProps {
   onRegisterDims: (id: string, width: number, height: number) => void
   onDragMove?: (nodeId: string, x: number, y: number) => void
   onDragEnd?: (nodeId: string) => void
+  /**
+   * A request to open this card's window (open_file, 02.7 SC2). Each new
+   * value opens it once, including on a card that mounts with it because a
+   * reveal just expanded its folder.
+   */
+  openNonce?: number
 }
+
+/** Open requests already acted on, so a remounted card does not reopen. */
+const consumedOpenNonces = new Set<number>()
 
 function propString(node: NodeInfo, key: string, fallback = ''): string {
   const prop = node.props[key]
@@ -129,6 +138,7 @@ export default function WorkspaceFileCard({
   onRegisterDims,
   onDragMove,
   onDragEnd,
+  openNonce,
 }: WorkspaceFileCardProps): React.ReactElement {
   const cardRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -289,6 +299,12 @@ export default function WorkspaceFileCard({
     setStatus('idle')
     setIsOpen(true)
   }, [isText, fileText, fileSha, endings])
+
+  useEffect(() => {
+    if (openNonce === undefined || consumedOpenNonces.has(openNonce)) return
+    consumedOpenNonces.add(openNonce)
+    openWindow()
+  }, [openNonce, openWindow])
 
   const closeWindow = useCallback(async () => {
     await flush()

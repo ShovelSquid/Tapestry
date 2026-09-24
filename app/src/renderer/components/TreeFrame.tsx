@@ -214,6 +214,8 @@ interface TreeFrameProps {
   handlers: TreeFrameHandlers
   /** Set for a workspace tree: its folders are drawn as nested frames. */
   subspaces?: TreeSubspaces
+  /** open_file's request to open one file window, keyed `<treeId>:<noteId>` (02.7 SC2). */
+  openRequest?: { key: string; nonce: number } | null
 }
 
 export default function TreeFrame({
@@ -237,6 +239,7 @@ export default function TreeFrame({
   onFrameHover,
   handlers,
   subspaces,
+  openRequest,
 }: TreeFrameProps): React.ReactElement {
   const announce = useAnnounce()
 
@@ -440,6 +443,7 @@ export default function TreeFrame({
       onRegisterDims={(nodeId, w, h) => handlers.onRegisterDims(refFor(nodeId), w, h)}
       onDragMove={(nodeId, x, y) => handlers.onDragMove(refFor(nodeId), x, y)}
       onDragEnd={(nodeId) => handlers.onDragEnd(refFor(nodeId))}
+      openNonce={openRequest?.key === `${tree.id}:${node.id}` ? openRequest.nonce : undefined}
     />
   )
 

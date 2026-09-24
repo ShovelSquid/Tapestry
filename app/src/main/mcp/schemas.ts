@@ -225,6 +225,13 @@ export const WriteFileArgs = z
   })
   .strict()
 
+export const OpenFileArgs = z
+  .object({
+    workspace: WorkspaceRef.optional(),
+    path: WorkspacePath,
+  })
+  .strict()
+
 // ---------------------------------------------------------------------------
 // Tool table
 // ---------------------------------------------------------------------------
@@ -344,5 +351,13 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = Object.freeze([
       "Creates a text file (and any missing folders) in a workspace folder open in Tapestry, or replaces a text file's whole text. The file is saved to disk at once and the workspace's tree records the change as yours. Paths follow the same rules as read_file. It is refused, with nothing written, for paths outside the workspace, symbolic links, .git, paths ignored by git and non-text files. Writing the text a file already has changes nothing. Refused, and nothing is written, when the file's text is locked against you; the error names the lock's owner.",
     schema: WriteFileArgs,
     annotations: { destructiveHint: true },
+  },
+  {
+    name: 'open_file',
+    title: 'Show a workspace file in its window',
+    description:
+      "Shows a workspace file in its window on the Tapestry canvas: the canvas pans to the file's note and opens it for reading and editing. Returns the note id. Paths follow the same rules as read_file.",
+    schema: OpenFileArgs,
+    annotations: { readOnlyHint: true },
   },
 ])

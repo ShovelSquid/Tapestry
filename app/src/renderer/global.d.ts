@@ -289,6 +289,8 @@ interface TapestryAPI {
   onVaultStatus(callback: (status: TapestryVaultStatus) => void): () => void
   /** The agent list or a connection status changed. */
   onAgentsChanged(callback: () => void): () => void
+  /** An agent asked to show a workspace file's note in its window (open_file). */
+  onRevealNote(callback: (payload: { treeId: string; noteId: string }) => void): () => void
   /** An agent write ended a rewound state, discarding redo (UA-14). */
   onRedoDiscarded(callback: (event: TapestryRedoDiscarded) => void): () => void
   onPluginError(

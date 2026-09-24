@@ -28,11 +28,13 @@ describe('workspace file tools over the MCP shim', () => {
   let server: AgentSocketServer
   let shim: ShimSession
   let tree: OpenTree
+  let service: WorkspaceService
+  const reveals: Array<[string, string]> = []
 
   beforeAll(async () => {
     ws = makeTempWorkspace()
     registry = new TreeRegistry()
-    const service = new WorkspaceService(registry, { treesDir: ws.treesDir })
+    service = new WorkspaceService(registry, { treesDir: ws.treesDir })
     tree = await service.addWorkspace(ws.root)
 
     const agents = new AgentRegistry(join(ws.dir, 'agents.json'))
@@ -41,7 +43,12 @@ describe('workspace file tools over the MCP shim', () => {
       notes: new NoteCommands(registry),
       connections: new ConnectionCommands(registry),
       spatial: new SpatialCommands(registry),
-      files: new WorkspaceFileCommands(service),
+      files: new WorkspaceFileCommands(service, {
+        onReveal: (treeId, noteId) => {
+          reveals.push([treeId, noteId])
+          return true
+        },
+      }),
     }
     server = new AgentSocketServer({
       socketPath: agentSocketPath(ws.dir),
@@ -72,7 +79,7 @@ describe('workspace file tools over the MCP shim', () => {
     const tools: Array<{ name: string; inputSchema?: { properties?: Record<string, unknown> } }> =
       listed.result.tools
     const byName = new Map(tools.map((t) => [t.name, t]))
-    for (const name of ['list_files', 'read_file', 'write_file', 'edit_file']) {
+    for (const name of ['list_files', 'read_file', 'write_file', 'edit_file', 'open_file']) {
       const tool = byName.get(name)
       expect(tool, name).toBeDefined()
       expect(Object.keys(tool!.inputSchema?.properties ?? {})).not.toContain('actor')
@@ -164,5 +171,14 @@ describe('workspace file tools over the MCP shim', () => {
     const made = listing.files.find((f: { path: string }) => f.path === 'src/new/made.ts')
     expect(made).toEqual({ path: 'src/new/made.ts', bytes: Buffer.byteLength(text), kind: 'text', note: value.note })
     expect(listing.files.every((f: { path: string }) => f.path.startsWith('src/'))).toBe(true)
+  }, 30000)
+
+  it('opens a file in its window with open_file', async () => {
+    const called = await shim.request('tools/call', { name: 'open_file', arguments: { path: 'src/hello.ts' } })
+    expect(called.result?.isError, JSON.stringify(called.result)).not.toBe(true)
+    const value = JSON.parse(called.result.content[0].text)
+    const note = service.noteForPath(tree, 'src/hello.ts')!.id
+    expect(value).toEqual({ workspace: tree.name, path: 'src/hello.ts', note, shown: true })
+    expect(reveals).toEqual([[tree.id, note]])
   }, 30000)
 })

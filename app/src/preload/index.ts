@@ -325,6 +325,18 @@ const tapestryAPI = {
   },
 
   /**
+   * An agent asked to show a workspace file (open_file, 02.7 SC2): pan to its
+   * note and open its window.
+   */
+  onRevealNote: (callback: (payload: { treeId: string; noteId: string }) => void): (() => void) => {
+    const handler = (_event: IpcRendererEvent, payload: { treeId: string; noteId: string }) => {
+      callback(payload)
+    }
+    ipcRenderer.on('reveal-note', handler)
+    return () => ipcRenderer.removeListener('reveal-note', handler)
+  },
+
+  /**
    * An agent's write returned a rewound tree to its latest state, so the redo
    * Kaelen could have used is gone (UA-14).
    */

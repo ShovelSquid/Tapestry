@@ -40,7 +40,7 @@ import {
   type PositionedRect,
 } from '../layout/frames'
 import { displayPositions, type DisplaySpot } from '../layout/placement'
-import { isWorkspaceNode, subspaceRects, type DimsOf, type Point } from '../layout/subspaces'
+import { absolutePositions, isWorkspaceNode, subspaceRects, type DimsOf, type Point } from '../layout/subspaces'
 import { useContextMenu } from './ContextMenu'
 import { ChatContext } from '../state/chat'
 
@@ -77,7 +77,16 @@ interface ViewTransform {
 export interface CanvasHandle {
   /** Center a tree's frame in the viewport at the current zoom. */
   panToFrame(treeId: string): void
+  /**
+   * Center one note in the viewport at the current zoom (open_file, 02.7
+   * SC2). A workspace note's position is folder-local, so its world centre is
+   * the frame origin plus its absolute position plus half its size.
+   */
+  panToNote(treeId: string, nodeId: string): void
 }
+
+/** The size a note is centred with before it has been measured. */
+const PAN_TO_NOTE_FALLBACK = Object.freeze({ width: 280, height: 200 })
 
 /** Where a double-click landed: inside a frame, or nowhere in particular. */
 export interface DoubleClickTarget {
@@ -144,6 +153,13 @@ interface CanvasProps {
   /** The selected frame, which is the space's focal point and undo target. */
   selectedTreeId: string | null
   onSelectTree: (treeId: string | null) => void
+  /**
+   * Workspace folders drawn open for this view only, per tree, whatever their
+   * stored `collapsed` says (open_file's reveal; never committed).
+   */
+  revealedFolders?: ReadonlyMap<string, ReadonlySet<string>>
+  /** open_file's request to open one file window (02.7 SC2). */
+  openRequest?: { key: string; nonce: number } | null
 }
 
 // ---------------------------------------------------------------------------
@@ -248,6 +264,8 @@ function Canvas({
   onFolderDrop,
   selectedTreeId,
   onSelectTree,
+  revealedFolders,
+  openRequest,
 }: CanvasProps, ref: React.ForwardedRef<CanvasHandle>): React.ReactElement {
   const viewportRef = useRef<HTMLDivElement>(null)
   const [view, setView] = useState<ViewTransform>({ panX: 0, panY: 0, zoom: 1 })
@@ -359,7 +377,7 @@ function Canvas({
 
     if (tree.kind === 'workspace') {
       const positions: ReadonlyMap<string, Point> = overrides
-      const layout = subspaceRects(tree.nodes, dimsOfTree(tree.id), undefined, positions)
+      const layout = subspaceRects(tree.nodes, dimsOfTree(tree.id), revealedFolders?.get(tree.id), positions)
       treeSubspaces.set(tree.id, {
         layout,
         positions,
@@ -427,7 +445,34 @@ function Canvas({
     }))
   }, [])
 
-  useImperativeHandle(ref, () => ({ panToFrame }), [panToFrame])
+  const treesRef = useRef(trees)
+  treesRef.current = trees
+
+  const panToNote = useCallback((treeId: string, nodeId: string) => {
+    const viewport = viewportRef.current
+    const tree = treesRef.current.find((t) => t.id === treeId)
+    if (!viewport || !tree) return
+    const node = tree.nodes.find((n) => n.id === nodeId)
+    if (!node) return
+
+    const local =
+      tree.kind === 'workspace'
+        ? absolutePositions(tree.nodes).get(nodeId)
+        : { x: Number(node.props['position.x']?.value ?? 0), y: Number(node.props['position.y']?.value ?? 0) }
+    if (!local) return
+    const dims = nodeDimsRef.current.get(nodeKey({ treeId, nodeId })) ?? PAN_TO_NOTE_FALLBACK
+    const cx = tree.frame.x + local.x + dims.width / 2
+    const cy = tree.frame.y + local.y + dims.height / 2
+
+    const { clientWidth, clientHeight } = viewport
+    setView((prev) => ({
+      ...prev,
+      panX: clientWidth / 2 - cx * prev.zoom,
+      panY: clientHeight / 2 - cy * prev.zoom,
+    }))
+  }, [])
+
+  useImperativeHandle(ref, () => ({ panToFrame, panToNote }), [panToFrame, panToNote])
 
   /** The tree whose frame contains a world point, if any. */
   const treeAt = useCallback(
@@ -984,6 +1029,7 @@ function Canvas({
               onFrameHover={(hovered) => setHoveredTreeId(hovered ? tree.id : null)}
               handlers={handlers}
               subspaces={treeSubspaces.get(tree.id)}
+              openRequest={openRequest}
             />
           )
         })}

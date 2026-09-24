@@ -29,7 +29,7 @@ import ChatPanel, { type ChatPanelState } from './components/ChatPanel'
 import { ContextMenuProvider } from './components/ContextMenu'
 import { useForest, type NodeRef } from './state/use-forest'
 import { ChatContext, chatWorkspaceFor, type ChatContextValue, type ChatTarget } from './state/chat'
-import { COLLAPSED_KEY, settleSubspace, type DimsOf, type Point } from './layout/subspaces'
+import { COLLAPSED_KEY, revealExpanded, settleSubspace, type DimsOf, type Point } from './layout/subspaces'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -54,6 +54,10 @@ function fileNameOf(filePath: string): string {
 // App
 // ---------------------------------------------------------------------------
 
+/** Main's WORKSPACE_REPLAY_REFUSAL, shown before asking (02.7 D-03). */
+const WORKSPACE_UNDO_NOTICE =
+  "Undo isn't available in a workspace window; the files are the record. Use git to undo a file change."
+
 export default function App(): React.ReactElement {
   const {
     trees,
@@ -77,6 +81,16 @@ export default function App(): React.ReactElement {
 
   /** A tree that has just been added and is waiting to be panned to. */
   const [pendingPanTreeId, setPendingPanTreeId] = useState<string | null>(null)
+
+  // open_file (02.7 SC2): the note an agent asked to show, its ancestor
+  // folders drawn open for this view only (never committed), and the one
+  // file window to open.
+  const [pendingReveal, setPendingReveal] = useState<{ treeId: string; noteId: string } | null>(null)
+  const [revealedFolders, setRevealedFolders] = useState<ReadonlyMap<string, ReadonlySet<string>>>(
+    () => new Map(),
+  )
+  const [openRequest, setOpenRequest] = useState<{ key: string; nonce: number } | null>(null)
+  const revealNonceRef = useRef(0)
 
   // The name every change is signed with (D-07). Null means "not chosen yet",
   // which is what makes the first-run prompt appear; nameLoaded keeps the
@@ -235,11 +249,42 @@ export default function App(): React.ReactElement {
       setNotice(`agent.${name} added a change to ${treeName}, so redo is no longer available.`)
     })
 
+    // An agent asked to show a workspace file (open_file). The note may have
+    // just been recorded, so the tree is refreshed first; the reveal itself
+    // waits for the refreshed tree to reach the canvas.
+    const removeRevealNote = window.tapestry.onRevealNote(({ treeId, noteId }) => {
+      void refreshTree(treeId).then(() => setPendingReveal({ treeId, noteId }))
+    })
+
     return () => {
       removeAgentsChanged()
       removeRedoDiscarded()
+      removeRevealNote()
     }
   }, [refreshAgents, refreshTree])
+
+  useEffect(() => {
+    if (!pendingReveal) return undefined
+    const tree = trees.find((t) => t.id === pendingReveal.treeId)
+    if (!tree || !tree.nodes.some((node) => node.id === pendingReveal.noteId)) return undefined
+
+    const { treeId, noteId } = pendingReveal
+    const ancestors = revealExpanded(tree.nodes, noteId)
+    if (ancestors.length > 0) {
+      setRevealedFolders((prev) => {
+        const next = new Map(prev)
+        next.set(treeId, new Set([...(prev.get(treeId) ?? []), ...ancestors]))
+        return next
+      })
+    }
+    revealNonceRef.current += 1
+    setOpenRequest({ key: `${treeId}:${noteId}`, nonce: revealNonceRef.current })
+    setPendingReveal(null)
+    const handle = requestAnimationFrame(() => {
+      canvasRef.current?.panToNote(treeId, noteId)
+    })
+    return () => cancelAnimationFrame(handle)
+  }, [pendingReveal, trees])
 
   // -----------------------------------------------------------------------
   // User name (D-07)
@@ -395,6 +440,14 @@ export default function App(): React.ReactElement {
 
   const createNote = useCallback(
     async (treeId: string, x: number, y: number) => {
+      // A workspace tree's notes are its files (02.7 D-03); main refuses the
+      // commit too, this only says why.
+      if (trees.find((tree) => tree.id === treeId)?.kind === 'workspace') {
+        setNotice(
+          "Workspace windows hold files. Create a file with an agent's write_file or in your editor.",
+        )
+        return
+      }
       try {
         const commitResult = await submitChange(treeId, 'Create note', [
           {
@@ -418,7 +471,7 @@ export default function App(): React.ReactElement {
         reportSaveError('Failed to create note', err)
       }
     },
-    [submitChange, refreshTree, reportSaveError],
+    [trees, submitChange, refreshTree, reportSaveError],
   )
 
   const handleCanvasDoubleClick = useCallback(
@@ -648,6 +701,14 @@ export default function App(): React.ReactElement {
       const tree = trees.find((t) => t.id === treeId)
       if (!tree) return
       const path = folderPathOf(treeId, folderId)
+      // Collapsing a folder open_file drew open ends that view-only reveal.
+      if (collapsed && revealedFolders.get(treeId)?.has(folderId)) {
+        setRevealedFolders((prev) => {
+          const next = new Map(prev)
+          next.delete(treeId)
+          return next
+        })
+      }
       const toggle = { op: 'setProperty', target: folderId, key: COLLAPSED_KEY, type: 'bool', value: collapsed }
       const ops = collapsed
         ? [toggle]
@@ -659,7 +720,7 @@ export default function App(): React.ReactElement {
         reportSaveError(`Failed to ${collapsed ? 'collapse' : 'expand'} folder`, err)
       }
     },
-    [trees, folderPathOf, submitChange, refreshTree, reportSaveError],
+    [trees, folderPathOf, revealedFolders, submitChange, refreshTree, reportSaveError],
   )
 
   /**
@@ -758,6 +819,11 @@ export default function App(): React.ReactElement {
 
   const handleUndo = useCallback(async () => {
     if (!undoTargetTreeId) return
+    // Main refuses replay on a workspace tree (02.7 D-03); say why up front.
+    if (trees.find((tree) => tree.id === undoTargetTreeId)?.kind === 'workspace') {
+      setNotice(WORKSPACE_UNDO_NOTICE)
+      return
+    }
     try {
       const result = await window.tapestry.kernel.undo(undoTargetTreeId)
       if (result.ok) {
@@ -768,10 +834,14 @@ export default function App(): React.ReactElement {
       console.error('Undo failed:', err)
       showAppError(`Undo failed: ${errorMessage(err)}`)
     }
-  }, [undoTargetTreeId, refreshTree, showAppError])
+  }, [trees, undoTargetTreeId, refreshTree, showAppError])
 
   const handleRedo = useCallback(async () => {
     if (!undoTargetTreeId) return
+    if (trees.find((tree) => tree.id === undoTargetTreeId)?.kind === 'workspace') {
+      setNotice(WORKSPACE_UNDO_NOTICE)
+      return
+    }
     try {
       const result = await window.tapestry.kernel.redo(undoTargetTreeId)
       if (result.ok) {
@@ -782,7 +852,7 @@ export default function App(): React.ReactElement {
       console.error('Redo failed:', err)
       showAppError(`Redo failed: ${errorMessage(err)}`)
     }
-  }, [undoTargetTreeId, refreshTree, showAppError])
+  }, [trees, undoTargetTreeId, refreshTree, showAppError])
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -900,6 +970,8 @@ export default function App(): React.ReactElement {
               onFrameMove={setFrameLocal}
               onToggleFolder={handleToggleFolder}
               onFolderDrop={handleFolderDrop}
+              revealedFolders={revealedFolders}
+              openRequest={openRequest}
             />
 
             {/* Claude beside the canvas, for one workspace (02.7 D-12) */}

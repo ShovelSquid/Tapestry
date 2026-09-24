@@ -30,6 +30,7 @@ import { SpatialCommands } from './commands/spatial'
 import { runAgentTool, type AgentCommands } from './commands/agent-tools'
 import { WorkspaceFileCommands } from './commands/file-tools'
 import { WorkspaceService } from './workspace/workspace-service'
+import { WORKSPACE_REPLAY_REFUSAL, workspaceSubmitRefusal } from './workspace/guards'
 import { AgentRegistry, agentSocketPath } from './agents/registry'
 import { AgentSocketServer } from './agents/socket-server'
 import { ChatService } from './chat/chat-service'
@@ -242,7 +243,14 @@ app.whenReady().then(async () => {
   }
 
   // Register kernel IPC handlers. Every channel names its tree first (D-15).
-  KernelBridge.registerHandlers(ipcMain, resolveTree, getHumanActor)
+  // Workspace trees (02.7 D-03): the window may move and resize cards and
+  // connect notes, never create or delete notes, set file.* keys or rewind.
+  const isWorkspaceTree = (treeId: unknown): boolean =>
+    typeof treeId === 'string' && registry.get(treeId)?.kind === 'workspace'
+  KernelBridge.registerHandlers(ipcMain, resolveTree, getHumanActor, {
+    beforeSubmit: (treeId, ops) => (isWorkspaceTree(treeId) ? workspaceSubmitRefusal(ops) : null),
+    beforeReplay: (treeId) => (isWorkspaceTree(treeId) ? WORKSPACE_REPLAY_REFUSAL : null),
+  })
 
   // Discover and load plugins
   const pluginsDir = join(app.getAppPath(), '..', 'plugins')
@@ -302,7 +310,15 @@ app.whenReady().then(async () => {
     notes: new NoteCommands(registry, commandHooks),
     connections: new ConnectionCommands(registry, commandHooks),
     spatial: new SpatialCommands(registry, commandHooks),
-    files: new WorkspaceFileCommands(workspaceService),
+    files: new WorkspaceFileCommands(workspaceService, {
+      // open_file (02.7 SC2): pan the canvas to the file's note and open its
+      // window. Returns whether there was a window to show it in.
+      onReveal: (treeId, noteId) => {
+        if (!mainWindow) return false
+        mainWindow.webContents.send('reveal-note', { treeId, noteId })
+        return true
+      },
+    }),
   }
 
   agentServer = new AgentSocketServer({

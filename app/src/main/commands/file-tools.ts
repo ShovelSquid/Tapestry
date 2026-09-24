@@ -1,6 +1,6 @@
 /**
- * Agent file commands (02.7 D-07): list_files, read_file, write_file,
- * edit_file.
+ * Agent file commands (02.7 D-07, SC2): list_files, read_file, write_file,
+ * edit_file and open_file.
  *
  * Every path goes through the workspace sandbox (D-08) before the disk is
  * touched, and every refusal returns before anything is written or committed.
@@ -197,11 +197,57 @@ function applyEdit(
   return { ok: true, value: { next, replacements: args.replace_all ? count : 1 } }
 }
 
+export interface OpenFileValue {
+  workspace: string
+  path: string
+  note: string
+  /** Whether a window was there to show it in. */
+  shown: boolean
+}
+
+export interface WorkspaceFileOptions {
+  /**
+   * Show a note in the window: pan to it and open its file window (open_file).
+   * Returns whether a window was there to show it in.
+   */
+  onReveal?(treeId: string, noteId: string): boolean
+}
+
 export class WorkspaceFileCommands {
   private readonly workspaces: WorkspaceService
+  private readonly options: WorkspaceFileOptions
 
-  constructor(workspaces: WorkspaceService) {
+  constructor(workspaces: WorkspaceService, options: WorkspaceFileOptions = {}) {
     this.workspaces = workspaces
+    this.options = options
+  }
+
+  /**
+   * Show a workspace file in its window (02.7 SC2). The path is resolved and
+   * observed first, so the note exists and says what the file says; then the
+   * window pans to it and opens it. Reading a file never needs a lock.
+   */
+  openFile(args: { workspace?: string; path: string }): CommandResult<OpenFileValue> {
+    try {
+      const resolved = resolveWorkspaceTarget(this.workspaces, args, 'read')
+      if (!resolved.ok) return resolved
+      const target = resolved.value
+      const ws = target.workspace
+      const state = this.workspaces.observePath(ws, target.rel)
+      if (state.kind === 'absent') return { ok: false, error: `${args.path} does not exist in ${ws.tree.name}` }
+      const note = this.workspaces.noteForPath(ws.tree, target.rel)
+      if (!note) return { ok: false, error: `${args.path} has no note in ${ws.tree.name}` }
+      let shown = false
+      try {
+        shown = this.options.onReveal?.(ws.tree.id, note.id) ?? false
+      } catch (err) {
+        console.error('[WorkspaceFileCommands] onReveal threw:', err)
+        shown = false
+      }
+      return { ok: true, value: { workspace: ws.tree.name, path: target.rel, note: note.id, shown } }
+    } catch (err) {
+      return { ok: false, error: errorText(err) }
+    }
   }
 
   /**
