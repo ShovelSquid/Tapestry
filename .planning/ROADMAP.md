@@ -20,7 +20,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [ ] **Phase 2.3: Time Threads** - Live z-axis writing threads: one note and its history, per-letter timing, side-view read-back (INSERTED)
 - [x] **Phase 2.4: Lock Model** - Allow unless locked: lock aspects replace the D-05 authorship gate for agent note commands (INSERTED) (completed 2026-09-16)
 - [ ] **Phase 2.5: Agent Spatial Verbs** - Task-space `look` and `place` for agents: relations in, relations out, refused by `lock.layout` (INSERTED; depends on 2.4)
-- [ ] **Phase 2.7: File Windows & Workspace Sandbox** - Open a workspace folder, edit its files in canvas windows, and give agents file tools confined to that folder; then dogfood Tapestry on its own repo (INSERTED; depends on 2.5)
+- [ ] **Phase 2.7: File Windows & Workspace Sandbox** - Open a workspace folder, edit its files in canvas windows, and give agents file tools confined to that folder, with an in-app Claude chat panel on the Claude Code CLI; then dogfood Tapestry on its own repo (INSERTED; depends on 2.5)
 - [ ] **Phase 3: Branching History & Deterministic Replay** - History navigation, fork-preserving branches, snapshots, and replay from recorded inputs
 - [ ] **Phase 4: Spatial Notebook** - Bundled note, drawing, property, and provenance-display plugins delivering the usable spatial workspace
 - [ ] **Phase 5: Deterministic Rule Engine** - Typed rule inputs/outputs, fixed-step simulation, forces, and explicit failure semantics
@@ -342,6 +342,9 @@ Plans:
   3. Every agent file path resolves inside the workspace root: `..`, absolute paths outside the root, and symlinks that escape the root are refused with a clear message, and a refusal writes nothing
   4. With no workspace open, agent file tools refuse rather than falling back to any default directory
   5. Dogfood: with the workspace set to this repo, Claude Code connected over MCP can open and edit a real source file in a Tapestry window, and the edit shows up in `git diff`
+  6. A chat panel inside Tapestry runs Claude through the user's own Claude Code CLI login, in the workspace folder. By default it has only the sandboxed workspace tools; its edits appear in the file windows as `agent.<name>`
+  7. A per-chat "Allow shell" switch, off by default and labelled not sandboxed, enables Claude Code's shell and built-in file tools in the workspace; edits made that way are recorded as observed changes
+  8. The panel talks to a `ChatEngine` interface, so a later API-key engine (Anthropic SDK over the same sandboxed tools) plugs in without changing the panel
 
 **Plans**: 3 plans
 
