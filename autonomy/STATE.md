@@ -31,8 +31,8 @@ Checkpoints in 01 and 03 were deferred to REVIEW.md. 07's blocking-human package
 
 ## Checkpoint
 
-(none pending) REVIEW.md holds item 1 (02.7-02/03 combined check) and item 2 (02.7-04 shell-switch
-hands-on check), both deferred. The next wave is wave 5 (02.7-05, full file tools, refusals, locks).
+(none pending) REVIEW.md holds items 1 (02.7-02/03 combined check), 2 (02.7-04 shell switch) and
+3 (02.7-05 open_file and the workspace guards), all deferred. The next wave is wave 6 (02.7-06, live watching and scale).
 Under PROTOCOL step 4, 07's package check gets parked in REVIEW.md, not approved.
 
 ## In progress
@@ -64,6 +64,9 @@ Under PROTOCOL step 4, 07's package check gets parked in REVIEW.md, not approved
 - 2026-09-24 15:20: wave 4 (02.7-04). One foreground executor, about 10 min and 177K tokens;
   2401525, 4603701, 8b1cc76. 28 files and 534 tests pass, typecheck clean. The backstop hands-on
   check is queued as REVIEW item 2. Wave 5 is next.
+- 2026-09-24 15:32: wave 5 (02.7-05). One foreground executor, about 18 min and 218K tokens;
+  ce2a5c2, 1b5d530, 8add94d, 55c20cc. 32 files and 652 tests pass, typecheck clean. Its on-screen
+  checks are queued as REVIEW item 3. Wave 6 is next.
 
 ## Learned
 
@@ -85,7 +88,7 @@ Under PROTOCOL step 4, 07's package check gets parked in REVIEW.md, not approved
   32 minutes in the foreground without tripping it either: subagent events
   reach the stream-json log, so foreground executors are safe.
 - After 02.7-02: 26 test files, 499 tests. After 02.7-03 Tasks 1 and 2: 28 files, 516.
-  After 02.7-04: 28 files, 534.
+  After 02.7-04: 28 files, 534. After 02.7-05: 32 files, 652.
 - Executors must not launch the app before a checkpoint. On the first open,
   the app writes commits (such as the subspace arrangement) into the real
   workspace tree, and the human verifies those commits.

@@ -86,3 +86,23 @@ Start Tapestry from a terminal (`npm --prefix app run dev` in ~/Tapestrees/windo
 If something's wrong, write it in RESPONSE. The next session will fix it with a 02.7 gap-closure plan.
 To undo the whole feature, `git revert 4603701 2401525`.
 Known limit: 02.7-07's API-key engine won't act on the switch, so that plan has to hide it or define what it does.
+
+### 3. 02.7-05: hands-on check of open_file and the workspace-window guards (open, deferred)
+
+Queued by the session at 2026-09-24 15:32. 02.7-05 is autonomous, with no checkpoint in its plan, but three of its behaviours
+are on screen and only the tests have checked them. The unattended session did not launch the app.
+The code is ce2a5c2, 1b5d530 and 8add94d, and the SUMMARY is 55c20cc. 32 test files and 652 tests pass, and typecheck is clean.
+
+Start Tapestry from a terminal (`npm --prefix app run dev` in ~/Tapestrees/windows), with Agents on and Claude Code connected.
+ 1. Ask Claude to "open app/src/main/index.ts with the tapestry open_file tool". The canvas pans to that card and its window opens.
+    If its folder was collapsed, it shows open, and history has no new "Expand folder" commit.
+ 2. Ask Claude to "use list_files on app/src/main/mcp". It lists files with their sizes and notes.
+ 3. Ask Claude to "use write_file to create scratch/review-3.txt containing hello". The file exists on disk
+    (`cat ~/Tapestrees/windows/scratch/review-3.txt`) and a card appears. Then ask it to read /etc/hosts. It refuses.
+ 4. Select the workspace frame and press Cmd+Z. A notice says undo isn't available in a workspace window, and nothing rewinds.
+ 5. Double-click empty space inside the workspace frame. No note is created, and the workspace-files notice appears.
+ 6. Clean up: `rm -r ~/Tapestrees/windows/scratch`
+
+If something's wrong, write it in RESPONSE. The next session will fix it with a 02.7 gap-closure plan.
+To undo the whole plan, `git revert 8add94d 1b5d530 ce2a5c2`.
+Known limit: agents can now `place` workspace files unless the note has a layout lock, and nothing in the app sets locks yet.
