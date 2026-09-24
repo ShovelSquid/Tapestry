@@ -17,7 +17,7 @@ actions, replay tool, and goldens built before the redirect are kept.
 | --- | --- |
 | 1 engine over the kernel | built and tested headlessly (`836a4da`); only the human GUI confirmation is open, see Blocked |
 | 2 expressions | done headlessly (`c5d134e`, `d6e9c0b`): golden `plot` hashes across processes and builds, `<f>.expr text` props bind through the runner so the bound value is committed as a kernel prop after a step (the inspector reads props, so it shows it; a human look is still open like phase 1's), and `diff.hpp` exists for phase 4 |
-| 3 force rules | not started |
+| 3 force rules | engine started (`22bc70c`): unary force rules, mass integrator, `RuleDims`, golden `gravity`; select, set rules, pair/global, plugin side, presets, RULE-07/08 open |
 | 4 constraints | not started |
 | 5 views | not started |
 | 6 metrics | not started |
@@ -30,44 +30,52 @@ viewer; it is theirs to edit.)
 
 ## Next
 
-1. **GUI confirmation of phase 1 (human, or a session that can drive
-   Electron).** `npm install` at the root (or symlink node_modules, see
-   Learned), `npm run build:native` in `app/` if
+1. **Phase 3, slice 2: `select` on unary rules (engine).** On a Rule
+   note a bound scalar `select` is evaluated per target before `force`;
+   nonzero selects, an evaluation error (a field the note lacks) is a
+   skip, an unbound `select` selects every non-Rule note of the space.
+   Bump `MS_STEP_VERSION` to 4, re-record the five goldens (`ms_replay
+   --write-golden`, then `npm run engine:wasm` + `npm test` in
+   `plugins/mathspace` so `engine.test.js` sees them), add a select to
+   the `gravity` generator (`golden_test.cpp`, `MS_WRITE_FIXTURES=1`) and
+   a `step_test.cpp` case. ~10 lines in `step.cpp`.
+2. **Phase 3, slice 3: plugin side.** `image.js` recognises kernel nodes
+   of type `mathspace/rule@1` (check `app/` for how a node type is named
+   in `NodeData`) as `NoteKind::Rule`, maps `scope text unary|pair|global`
+   to the scalar `scope` (0/1/2), `select.expr`/`force.expr`/`set.<f>.expr`
+   text props to bound fields via `Engine.compile` (which already picks
+   `RuleDims` for a Rule note in `ms_compile`); the runner's second pass
+   already binds `<f>.expr` props, so the rule's bound fields ride the
+   same path. A per-note skip is silent in the engine, so RULE-07's
+   `mathspace.error text` on the rule node comes from the plugin: compile
+   errors now; runtime skips need an engine-side report later (decide
+   how: a `ms_last_errors` buffer, or a count per rule in the snapshot).
+   RULE-08 `pinned`: `image.js` should drop `velocity`/`pos` writes for
+   pinned nodes, or the engine could read a `pinned` scalar; decide.
+3. **Phase 3, slice 4: `set.<f>` rules** after the integrator (assign
+   the target's field `f` from the program, in rule id order), then
+   `scope pair` (`other` bound, unordered pairs ascending id, force
+   applied to `self` and its negation to `other`? decide against the
+   design: it says "each unordered pair"; record) and `global`.
+4. Presets under `plugins/mathspace/presets/` and the roadmap examples;
+   then the GUI checklist (phase 1 item, phase 2 `y.expr`, and a gravity
+   rule) for a human.
+5. **GUI confirmation of phases 1 and 2 (human, or a session that can
+   drive Electron).** `npm install` at the root (or symlink node_modules,
+   see Learned), `npm run build:native` in `app/` if
    `app/native/build/Release/tapestry_addon.node` is missing, `npm run
    engine:wasm` in `plugins/mathspace`, then `npm run dev` in `app/`.
-   Create a note, set `velocity.x real 1` in the inspector, run the
-   command `mathspace.run`, watch it move, `mathspace.pause`, check the
-   `.tree`. If a session cannot drive the GUI, skip this: the headless
-   check in `plugins/mathspace/test/tree.test.js` already covers the
-   file-level condition. Either way, do not block phase 2 on it.
-2. **Phase 3, first slice: rule notes in the engine.** Read the plan's
-   phase 3 section and the rules part of `mathspace_design.md`, then
-   decide and record under Decisions: how a `NoteKind::Rule` note holds
-   `scope` (unary / pair / global), `select`, `force` and `set.<f>` as
-   bound fields whose bytecode is evaluated against each *target* note
-   (`self`) or pair (`self`, `other`) in the rule's space, not against
-   the rule note. The compile-time `DimResolver` for a rule expression
-   must not depend on one target note: resolve `self.pos`/`other.pos`
-   from the space dim and any other field from the first note in id
-   order that has it (or make dims part of the rule's declaration);
-   `vm.cpp` already errors per note on `DimChanged`, so a wrong guess is
-   a per-note skip, not a crash. Then implement the smallest engine
-   piece: a unary force rule (`scope unary`, `force.expr` of dim = space
-   dim) accumulating into a `force` field in rule id order, the
-   integrator reading `mass` (default 1) with `velocity += force / mass;
-   pos += velocity` replacing the bootstrap rule, `MS_STEP_VERSION` 3,
-   goldens `velocity`/`plot`/`two-notes` re-recorded, a new golden
-   `gravity`. Keep `world.hpp`'s walk in id/name order and the action
-   grammar additive (a rule's scope can be a `SetField` of a scalar
-   `scope` on the rule note, so no new action is needed; decide).
-   Plugin side (`image.js` recognising `mathspace/rule@1` nodes, presets,
-   `mathspace.error` on the node) is the slice after.
-3. Add the human GUI look for phase 2 to item 1's checklist: set
-   `y.expr text "self.position.x * 2"` on a note, Step, see `y real ...`
-   in the inspector.
+   Create a note, set `velocity.x real 1`, run `mathspace.run`, watch it
+   move, `mathspace.pause`, check the `.tree`; set `y.expr text
+   "self.position.x * 2"`, Step, see `y real ...` in the inspector.
 
 ## Done
 
+- `22bc70c` ms3 engine: `step.cpp` rewritten (force pass, mass
+  integrator, bound fields skip Rule notes), `expr::RuleDims`,
+  `ms_compile` picks it for Rule notes, goldens re-recorded under
+  `MS_STEP_VERSION` 3, golden `gravity` generated by `golden_test.cpp`
+  (`fixtureText`/`checkFixtureText` shared with `plot`).
 - `d6e9c0b` ms2 `diff.hpp`/`diff.cpp`/`expr_diff_test.cpp`: symbolic
   d/d(self.field.lane), shape-preserving, task-stack build, every rule
   checked against a finite difference in the VM.
@@ -99,6 +107,23 @@ viewer; it is theirs to edit.)
 
 ## Decisions
 
+- Rule notes in the engine (2026-09-24, `22bc70c`): a rule's law is its
+  bound fields (`force` now; `select`, `set.<f>` next) evaluated with
+  `self` = each target, never against the rule note, so the bound-field
+  pass skips Rule notes and a rule's own lanes stay as set. `scope` is a
+  scalar field on the rule (0 unary, 1 pair, 2 global, absent = unary),
+  so no new action kind. Targets are the non-Rule notes of the rule's
+  space with `pos`; Rule notes are laws, not bodies, and are never moved.
+  Forces live in a per-tick accumulator, not a field: a rule never
+  creates fields, so a note without `velocity` never moves under force
+  (the plugin or the user gives it one) and the `.tree` gets no `force`
+  props. `mass` is the scalar field of that name, 1 when absent or not
+  scalar, <= 0 drops the force. h = 1: `velocity += force / mass; pos +=
+  velocity`. A rule whose program dim is not the space dim is skipped
+  whole; a per-target eval error skips that target only, silently (the
+  RULE-07 report is a plugin/ABI question, see Next). `RuleDims` guesses
+  a target field's dim from the first non-Rule note in the space that
+  has it; the VM's `DimChanged` makes a wrong guess a per-note skip.
 - `diff.hpp` (2026-09-24, `d6e9c0b`): the derivative of a dim-d value
   is a dim-d value, so the rules reuse the compiler's broadcast shapes
   unchanged and a `DimResolver` (the same `WorldDims`) supplies ref dims
@@ -195,6 +220,12 @@ viewer; it is theirs to edit.)
   --write-golden <f>.sha256`, then Release and UBSan must agree.
 - Debug/Release/UBSan configure+build+ctest are each ~10-20 s; run all
   three every slice. `mathspace_tests` gets `MATHSPACE_GOLDEN_DIR`.
+- A bound `Field` compares unequal to a plain one with the same lanes
+  (`bound`/`bytecode` are in `operator==`): compare lanes in tests.
+  `World::notes` is a vector, so a `RuleDims`/`WorldDims` built before
+  `create_note` holds a dangling note reference; build it per query.
+- A new golden needs `cmake --build` (the fixture glob is
+  CONFIGURE_DEPENDS) before ctest lists its two-process test.
 - The kernel alone: `cmake -S tapestry -B build/tapestry-kernel
   -DTAPESTRY_BUILD_RENDER=OFF -DTAPESTRY_BUILD_APP=OFF`, 59 tests, ~2 s.
 - The app stores positions as `position.x`/`position.y` reals measured
