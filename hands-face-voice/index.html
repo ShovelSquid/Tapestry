@@ -77,6 +77,8 @@
   }
   #transcript .interim { color: #6b7280; font-style: italic; }
   .caveat { font-size: 11px; color: #78716c; margin: 6px 0 0; }
+  #scene3d { width: 400px; height: 480px; border-radius: 4px; overflow: hidden; }
+  #scene3d canvas { display: block; }
 </style>
 </head>
 <body>
@@ -101,6 +103,11 @@
       <canvas id="overlay"></canvas>
     </div>
     <div id="metrics">hands: 0    faces: 0    fps: 0</div>
+  </div>
+
+  <div class="panel">
+    <h2>3D Landmark Points</h2>
+    <div id="scene3d"></div>
   </div>
 
   <div class="panel">

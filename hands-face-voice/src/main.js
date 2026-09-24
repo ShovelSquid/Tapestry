@@ -1,6 +1,7 @@
 import { startHandsAndFace } from "./hands-face.js";
 import { startVoiceWaveform } from "./voice.js";
 import { startTranscription } from "./transcribe.js";
+import { createScene3D } from "./scene3d.js";
 
 const statusEl = document.getElementById("status");
 const errorBox = document.getElementById("errorBox");
@@ -16,10 +17,12 @@ startCameraBtn.addEventListener("click", async () => {
   startCameraBtn.disabled = true;
   statusEl.textContent = "loading hand/face models...";
   try {
+    const scene3D = createScene3D(document.getElementById("scene3d"));
     await startHandsAndFace({
       video: document.getElementById("video"),
       canvas: document.getElementById("overlay"),
       metricsEl: document.getElementById("metrics"),
+      onLandmarks: (landmarks) => scene3D.update(landmarks),
     });
     statusEl.textContent = "camera running";
   } catch (err) {

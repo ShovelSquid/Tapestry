@@ -13,7 +13,7 @@ const HAND_MODEL =
 const FACE_MODEL =
   "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task";
 
-export async function startHandsAndFace({ video, canvas, metricsEl, onError }) {
+export async function startHandsAndFace({ video, canvas, metricsEl, onLandmarks, onError }) {
   const ctx = canvas.getContext("2d");
   const drawingUtils = new DrawingUtils(ctx);
 
@@ -81,6 +81,11 @@ export async function startHandsAndFace({ video, canvas, metricsEl, onError }) {
     metricsEl.textContent = `hands: ${handResult.landmarks?.length ?? 0}    faces: ${
       faceResult.faceLandmarks?.length ?? 0
     }    fps: ${fps}`;
+
+    onLandmarks?.({
+      handsWorld: handResult.worldLandmarks ?? [],
+      faceLandmarksList: faceResult.faceLandmarks ?? [],
+    });
 
     requestAnimationFrame(frame);
   }
