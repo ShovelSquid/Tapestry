@@ -32,8 +32,25 @@ autonomy/WAITING when each is reached.
 
 ## Checkpoint
 
-(none. 02.7-01 and 02.7-02 are complete. Next is wave 3, plan 02.7-03, which
-ends in the combined human checkpoint for 02 and 03: write WAITING there.)
+02.7-03 Task 3, the combined `checkpoint:human-verify` for 02.7-02 and 02.7-03
+(gate=blocking). Tasks 1 and 2 are committed (b9b0a4a..6a79054). The steps
+are in autonomy/WAITING. To resume, continue 02.7-03 at Task 3 with the
+RESPONSE text as the user's answer. On `approved`, write 02.7-03-SUMMARY.md
+(it needs the executor's deviations, listed below) and update STATE and
+ROADMAP. If RESPONSE lists issues, fix them inside 02.7-03. The plan ledger
+base is 53773af.
+Executor deviations for the SUMMARY:
+- Card estimate is 280x280 and rowStep is 304, not 280x200 with 224px rows.
+- A folder's cards yield as one block.
+- Collapsed headers don't move.
+- subspaces.ts takes its node type from placement.ts.
+- The append test watches the disk instead of using editFile.
+- The folder drag lives in Canvas (Task 2).
+- Settling waits for the tree to refresh.
+- The two drop tests passed at RED; look and place carried the RED.
+Known limits:
+- Agents can't `place` workspace files, because the layout lock ties them to plugin workspace.watcher.
+- A sibling folder frame can cover an open file window.
 
 ## In progress
 
@@ -54,6 +71,10 @@ ends in the combined human checkpoint for 02 and 03: write WAITING there.)
   and 360K tokens; 10 commits b249c3d..b9d34b2. 26 files and 499 tests green,
   typecheck clean. The executor ran the real `claude` once (a "reply ok" call,
   allowed by the plan) to record a fixture. Next is wave 3.
+- 2026-09-24 13:08: wave 3 (02.7-03). One foreground executor, about 19 min
+  and 290K tokens. Tasks 1 and 2 are in 5 commits (b9b0a4a..6a79054). 28 files
+  and 516 tests pass, typecheck clean. Stopped at the combined Task 3
+  checkpoint and wrote WAITING.
 
 ## Learned
 
@@ -74,7 +95,10 @@ ends in the combined human checkpoint for 02 and 03: write WAITING there.)
   250K tokens, and the idle watchdog did not trip. The 02.7-02 executor ran
   32 minutes in the foreground without tripping it either: subagent events
   reach the stream-json log, so foreground executors are safe.
-- After 02.7-02: 26 test files, 499 tests.
+- After 02.7-02: 26 test files, 499 tests. After 02.7-03 Tasks 1 and 2: 28 files, 516.
+- Executors must not launch the app before a checkpoint. On the first open,
+  the app writes commits (such as the subspace arrangement) into the real
+  workspace tree, and the human verifies those commits.
 
 ## Blocked
 
