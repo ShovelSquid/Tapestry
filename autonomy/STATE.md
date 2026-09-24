@@ -16,7 +16,7 @@ actions, replay tool, and goldens built before the redirect are kept.
 | Phase | Status |
 | --- | --- |
 | 1 engine over the kernel | built and tested headlessly (`836a4da`); only the human GUI confirmation is open, see Blocked |
-| 2 expressions | in progress: `fxmath.hpp` done (`3ca1482`); ast/parser/bytecode/vm, action 37, golden `plot` remain |
+| 2 expressions | in progress: `fxmath.hpp` (`3ca1482`) and ast+parser (`1725143`) done; bytecode/vm/diff, action 37, golden `plot` remain |
 | 3 force rules | not started |
 | 4 constraints | not started |
 | 5 views | not started |
@@ -40,30 +40,43 @@ viewer; it is theirs to edit.)
    `.tree`. If a session cannot drive the GUI, skip this: the headless
    check in `plugins/mathspace/test/tree.test.js` already covers the
    file-level condition. Either way, do not block phase 2 on it.
-2. **Phase 2, next slice: `include/mathspace/expr/ast.hpp` and
-   `parser.hpp` (+ `src/mathspace/expr/parser.cpp`, test
-   `tests/mathspace/expr_parser_test.cpp`).** Text to AST for the plan's
-   grammar (`mathspace_plan.md` "Phase 2"): number literals on the Q32.32
-   grid (parse decimals exactly, reject inexact like `image.js` does),
-   vector literals `[a, b]`, `+ - * /`, unary minus, comparisons, `if c
-   then a else b` (pick a syntax, record it), calls `min max abs clamp sqrt
-   sin cos atan2 exp log pow dot norm curve`, component access `.x .y .n`,
-   references `self.f`, `other.f`, `node(n12).f`, `space.dim`,
-   `world.tick`. No evaluation yet: the AST is a `std::vector` of nodes
-   with child indices (no pointers, no recursion in the walker), parse
-   errors are an error code plus byte offset. Keep the gate green: the
-   parser must not touch `<cmath>` or floating types even for literals
-   (parse digits into an integer numerator and a power-of-ten denominator,
-   then `div_q32`; inexact means the remainder is non-zero).
-3. Then `bytecode.hpp` (a flat op list from the AST, fixed-size stack,
-   ops call `ddsim::fxmath`), `vm.hpp` (evaluates against a `World` and a
-   note, every op bounded), `diff.hpp`, action 37 `BindField`, walk pin
-   for the expression version, golden `plot`. Decide in-phase whether the
-   plugin compiles text via a `ms_compile` ABI call (the parser is C++, so
-   that is the plan's spirit: one parser, one grammar, hashed bytecode).
+2. **Phase 2, next slice: `include/mathspace/expr/bytecode.hpp` +
+   `src/mathspace/expr/bytecode.cpp`, test `tests/mathspace/expr_bytecode_test.cpp`.**
+   Compile an `Ast` (post-order, `include/mathspace/expr/ast.hpp`) to a
+   flat op list with a static shape check. Each op: opcode, dim (1..8),
+   optional immediate (raw fx64, lane, builtin, ref kind + node id + field
+   name). The checker assigns every node a dim: literals 1, `[..]` its
+   count (components must be dim 1, `[[1,2]]` is an error), `+ -` same dim
+   or scalar-with-vector broadcast (decide and record; suggestion: only
+   same-dim, plus scalar `*` `/` on a vector), comparisons and `if`
+   conditions dim 1, `if` branches same dim, `.lane` needs lane < dim,
+   `dot(v,v)` same dim to 1, `norm(v)` to 1, `curve(knots, t)` knots any
+   dim, scalar builtins dim 1 (or elementwise; record). A `Ref`'s dim is
+   unknown at compile time (the field's dim lives on the note), so either
+   compile against a `World` + note id (dims known, errors early) or emit
+   `LoadRef` with dim "runtime" and check in the VM. Recommendation: the
+   plugin compiles when the field is bound, so compile against the world
+   and store the dim in the op; a later dim change of a referenced field
+   is a runtime error on eval (phase 3's RULE-07 error path). Emit the
+   bytecode's canonical byte encoding (this is what action 37 carries and
+   what the hash walk writes for a bound field; `Field` already has a
+   bytecode slot, see `note.hpp`). Error codes with the offending node
+   index. Stack depth is bounded by MAX_DEPTH times MAX_DIM lanes.
+3. Then `vm.hpp` (evaluates an op list against a `World` and a note,
+   `other` optional, fixed stack, every op bounded, ops call
+   `ddsim::fxmath`), `diff.hpp` (symbolic d/d(self.f.lane) on the Ast, can
+   wait for phase 4 if the plan allows), action 37 `BindField`, walk pin
+   for the expression version, golden `plot`. Decide whether the plugin
+   compiles text via an `ms_compile` ABI call (the parser is C++, so that
+   is the plan's spirit: one parser, one grammar, hashed bytecode).
 
 ## Done
 
+- `1725143` ms2 ast+parser: `include/mathspace/expr/{ast,parser}.hpp`,
+  `src/mathspace/expr/{ast,parser}.cpp`, `tests/mathspace/expr_parser_test.cpp`
+  (247 assertions: exact literals, precedence, if, vectors, components,
+  refs, calls, every error code with offset, depth/node bounds,
+  post-order layout). `to_decimal`/`to_sexpr` for tests and diagnostics.
 - `3ca1482` ms2 fxmath: `include/ddsim/fxmath.hpp` (`sincos sin cos atan2
   exp log pow`, CORDIC Q3.60 x48, BKM Q5.58 x58, all constexpr, literal
   loop bounds), `tools/gen_fxmath/gen.py` (mpmath tables and oracle),
@@ -82,6 +95,18 @@ viewer; it is theirs to edit.)
 
 ## Decisions
 
+- Expression grammar choices the plan left open (2026-09-24, `1725143`):
+  `if c then a else b` with keywords, lowest precedence, else-branch runs
+  to the end (parenthesise to embed). Comparison is non-associative
+  (`a < b < c` is a parse error). Components are `.x .y .z .w` or `.0`
+  to `.7`; a component or ref name after `space.`/`world.` is any
+  identifier, the VM restricts to `dim`/`tick`. Number literals: integer
+  part below 2^31, at most 32 fraction digits, must be exactly k/2^32
+  (`0.1` is `InexactNumber`, matching image.js for `real` props).
+  No `^` operator and no `len` (the design doc's example uses them; the
+  plan's list is `pow`/`norm`, so the plan wins). Node ids in text are
+  `node(n12)`, the kernel's spelling. Bounds: `MAX_DEPTH` 64 nesting
+  levels (parens and unary minus count), `MAX_NODES` 4096.
 - fxmath rounding: CORDIC results (`sin cos atan2`) round to nearest at
   the final Q3.60 to Q32.32 shift (`to_grid`), because the working value
   errs both ways and a floor would give `sin(0) = -2^-32`. `exp` and `log`
@@ -118,29 +143,28 @@ viewer; it is theirs to edit.)
 - real↔fx64 conversion is exact and lives in JS at the plugin boundary,
   so no double enters the gated C++ tree.
 - Note ids are kernel ids. The structured id layout is dropped.
-- The engine never allocates ids (2026-09-24, session `0903619`).
-  `CreateSpace`/`CreateNote` carry the kernel's id in the payload; the
-  store rejects zero and duplicates (`Error::DuplicateId`) and does not
-  track deleted ids, because "never reused" is the kernel's promise, not
-  something the image can or should enforce. `World::apply` lost its
-  `created` out-param for the same reason.
-- `ms_serialize` uses ddsim's cap protocol (cap 0 returns the needed
-  length, short cap returns 0) rather than a handle-owned buffer, so the
-  plugin loader can be data-drawing's with the prefix changed. `ms_error`
-  values equal `mathspace::Error` by value, `static_assert`ed in
-  `ms_c.cpp`; `ms_version()` returns `MS_ABI_VERSION` (1), separate from
-  the walk's `FORMAT_VERSION`. (2026-09-24, session `8587ec9`.)
+- The engine never allocates ids: `CreateSpace`/`CreateNote` carry the
+  kernel's id; the store rejects zero and duplicates and does not
+  track deleted ids (`0903619`). `ms_serialize` uses ddsim's cap
+  protocol; `ms_error` values equal `mathspace::Error`; `ms_version()`
+  is `MS_ABI_VERSION` 1, separate from the walk's `FORMAT_VERSION`
+  (`8587ec9`).
 - Phase 1 ships one hardcoded bootstrap rule (`position += velocity`) so
   something moves; phase 3 deletes it.
 
 ## Learned
 
-- doctest `MESSAGE` ignores `std::hex`; print digests in decimal. A
-  `const char*` first token in `CHECK_MESSAGE(false, name << ...)` prints
-  as `1`; wrap it in `std::string`. The oracle `.inc` needs `INT64_MIN`
-  emitted as `(-9223372036854775807 - 1)`, a plain literal is unsigned
-  and fails narrowing. A "no `while`/`do`" source scan must strip `//`
-  comments first ("do not edit by hand").
+- The `Ast` is post-order with children as contiguous runs in `Ast::args`,
+  so `to_sexpr` is one index loop over a `vector<string>`; the bytecode
+  compiler can be the same loop. Variadic children must be collected in
+  a local vector and appended in one go, or runs interleave.
+- `(UINT64_MAX - 9) / 10` as a decimal overflow guard rejects
+  `18446744073709551615`; compare against `UINT64_MAX / 10` and the
+  last digit against `UINT64_MAX % 10`.
+- doctest: `MESSAGE` ignores `std::hex` (print decimal); a `const char*`
+  first token in `CHECK_MESSAGE` prints as `1` (wrap in `std::string`);
+  a helper named `apply` collides with `std::apply` via ADL. `INT64_MIN`
+  in a generated `.inc` must be `(-9223372036854775807 - 1)`.
 - The 2 pi reduction must not use the Q32.32 constant alone: floor(x /
   TWO_PI_32) times the truncated constant loses half an ulp per period,
   which showed as 3-7 ulps at |x| ~ 1000 and millions at 2^31. Three
@@ -173,19 +197,14 @@ viewer; it is theirs to edit.)
   velocity on the first try; the Wasm hashes equal the native goldens.
   `mathspace.wasm` is 36 KB. `_ms_create` takes a BigInt seed and
   `_ms_tick` returns one (WASM_BIGINT is on by default).
-- In a doctest file with `using namespace mathspace`, a free helper
-  named `apply` collides with `std::apply` (ADL on `std::vector` args)
-  and gives a baffling `tuple_size` error. Name helpers `applyTo`.
 - `tests/golden/ms/*.actions` are globbed by `CMakeLists.txt`, so a new
   fixture gets its two-process test at configure time with no edit.
   Write fixture hex with a few lines of Python from the grammar in
   `action.hpp` rather than by hand (a by-hand attempt was off by a byte).
 - Re-recording goldens: `build/native-debug/ms_replay <f>.actions
   --write-golden <f>.sha256`, then Release and UBSan must agree.
-
-- Full Debug configure+build+ctest of the root tree is ~10 s; Release
-  the same. Run both every slice, it is cheap.
-- `mathspace_tests` gets `MATHSPACE_GOLDEN_DIR` = `tests/golden/ms`.
+- Debug/Release/UBSan configure+build+ctest are each ~10-20 s; run all
+  three every slice. `mathspace_tests` gets `MATHSPACE_GOLDEN_DIR`.
 - The tapestry kernel builds alone with
   `cmake -S tapestry -B build/tapestry-kernel -DTAPESTRY_BUILD_RENDER=OFF
   -DTAPESTRY_BUILD_APP=OFF` and its 59 tests pass in ~2 s. Render ON
