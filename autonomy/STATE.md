@@ -15,7 +15,7 @@ actions, replay tool, and goldens built before the redirect are kept.
 
 | Phase | Status |
 | --- | --- |
-| 1 engine over the kernel | in progress (store/hash/actions/replay/ids/snapshot/ABI done; wasm, plugin remain) |
+| 1 engine over the kernel | in progress (store/hash/actions/replay/ids/snapshot/ABI/wasm done; plugin remains) |
 | 2 expressions | not started |
 | 3 force rules | not started |
 | 4 constraints | not started |
@@ -30,37 +30,28 @@ viewer; it is theirs to edit.)
 
 ## Next
 
-1. **Wasm target.** `wasm/mathspace_wasm.cpp` (a one-line include of
-   `mathspace_c.h`, like `wasm/ddsim_wasm.cpp`) and a `mathspace_wasm`
-   executable in the `EMSCRIPTEN` block of `CMakeLists.txt` (line ~208),
-   copying `ddsim_wasm`'s link options with `EXPORT_NAME=createMathspace`,
-   the eleven `_ms_*` symbols from `mathspace_c.h` plus `_malloc,_free`,
-   output `mathspace.mjs`. emsdk is installed at `~/emsdk` (`$EMSDK` is
-   unset in the driver's shell): `source ~/emsdk/emsdk_env.sh`, check
-   `emcc --version` is 6.0.10, then `cmake --preset wasm-release` and build.
-   Verify with a small Node script (like `tools/wasm-hash-check.mjs`) that
-   creates a world, applies the `velocity` fixture's actions, steps, and
-   prints a hash equal to the native golden. Record the outcome under
-   Learned.
-2. **Plugin skeleton.** `plugins/mathspace/`: `tapestry.plugin.json`
+1. **Plugin skeleton.** `plugins/mathspace/`: `tapestry.plugin.json`
    (api "1", commands `mathspace.run`, `mathspace.pause`,
    `mathspace.step`), `package.json` (workspace member, vitest),
    `scripts/build-wasm.sh` mirroring data-drawing's but building the root
-   project's `wasm-release` preset and copying `mathspace.mjs/.wasm`
-   into `plugins/mathspace/wasm/` (gitignored), `engine.js` loading it.
-3. **`image.js`.** Kernel `NodeData` → engine actions: exact real↔raw
+   project's `wasm-release` preset (`source ~/emsdk/emsdk_env.sh` first)
+   and copying `mathspace.mjs/.wasm` into `plugins/mathspace/wasm/`
+   (gitignored), `engine.js` loading it. A vitest that loads the module
+   and replays `tests/golden/ms/velocity` (reuse `parseActions`/`replay`
+   from `tools/wasm-hash-check.mjs`) proves the plugin sees the engine.
+2. **`image.js`.** Kernel `NodeData` → engine actions: exact real↔raw
    int64 conversion (reject reals that are not `k / 2^32` with `|k| <
    2^53`), key conventions (`f.x f.y f.z f.w`, `f.0..` above dim 4,
    `space ref`, implicit space per tree frame), and `diff(before,
    after)` → `set` ops. Vitest tests for all three.
-4. **Run loop and commits.** In `index.js`: on `mathspace.run`, build the
+3. **Run loop and commits.** In `index.js`: on `mathspace.run`, build the
    image from `getNodes()`, step at 60 Hz with `setInterval`, every 60
    ticks or on pause read the snapshot, diff, `kernel.submit('plugin',
    'mathspace', 'advance', [...sets, {op:'advance', ticks:k}])`. Before
    each commit compare `status().lastGoodSeq` with the seq of our last
    commit; if others committed, rebuild the image first. Checkpoint
    fixture `plugins/mathspace/test/fixtures/velocity.json`.
-5. **Phase 1 done check.** Build the app (`npm install` at the root,
+4. **Phase 1 done check.** Build the app (`npm install` at the root,
    `npm run build:native` in `app/`, then the app's dev script; see
    `app/package.json`), create a note, set `velocity.x real 1` via the
    inspector or a `set` commit, Run, Pause, confirm the `.tree` has the
@@ -73,6 +64,8 @@ its oracle tests.
 
 ## Done
 
+- `f7013b3` ms1 wasm target: `wasm/mathspace_wasm.cpp`, `mathspace_wasm`
+  in `CMakeLists.txt`, `tools/wasm-hash-check.mjs` takes either module.
 - `8587ec9` ms1 C ABI: `include/mathspace/mathspace_c.h`,
   `src/mathspace/ms_c.cpp`, `tests/mathspace/c_abi_test.cpp`.
 - `dc75224` ms1 lazy notes snapshot: `World::notes_bytes()` in
@@ -116,6 +109,14 @@ its oracle tests.
 
 ## Learned
 
+- Wasm build: `source ~/emsdk/emsdk_env.sh` (prints 6.0.10), then
+  `cmake --preset wasm-release && cmake --build build/wasm-release`.
+  Configure+build is ~15 s. `node tools/wasm-hash-check.mjs
+  build/wasm-release/mathspace.mjs tests/golden/ms/<f>.actions
+  tests/golden/ms/<f>.sha256` printed `OK` for empty, two-notes and
+  velocity on the first try; the Wasm hashes equal the native goldens.
+  `mathspace.wasm` is 36 KB. `_ms_create` takes a BigInt seed and
+  `_ms_tick` returns one (WASM_BIGINT is on by default).
 - In a doctest file with `using namespace mathspace`, a free helper
   named `apply` collides with `std::apply` (ADL on `std::vector` args)
   and gives a baffling `tuple_size` error. Name helpers `applyTo`.
