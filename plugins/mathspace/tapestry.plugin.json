@@ -14,6 +14,7 @@
       "mathspace.pause",
       "mathspace.step",
       "mathspace.preset.anger",
+      "mathspace.preset.contact",
       "mathspace.preset.drag",
       "mathspace.preset.gold",
       "mathspace.preset.gravity-field",

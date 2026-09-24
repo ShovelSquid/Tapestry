@@ -81,11 +81,11 @@ const byId = Object.fromEntries(presets.map((p) => [p.id, p]))
 
 describe('presets', () => {
   it('ships the plan\'s presets and the three roadmap examples, one command each, listed in the manifest', () => {
-    expect(presets.map((p) => p.id)).toEqual(['anger', 'drag', 'gold', 'gravity-field', 'nbody', 'push', 'spring-to-anchor'])
+    expect(presets.map((p) => p.id)).toEqual(['anger', 'contact', 'drag', 'gold', 'gravity-field', 'nbody', 'push', 'spring-to-anchor'])
     const manifest = require('../tapestry.plugin.json')
     for (const p of presets) {
       expect(manifest.contributions.commands).toContain(COMMAND_PREFIX + p.id)
-      expect(p.nodes.filter((n) => n.type === RULE)).toHaveLength(1)
+      expect(p.nodes.filter((n) => n.type === RULE).length).toBeGreaterThanOrEqual(1)
       expect(p.description).not.toBe('')
       for (const op of presetOps(p)) expect(op).toMatchObject({ op: 'createNode', type: expect.any(String) })
     }
@@ -130,6 +130,22 @@ describe('presets', () => {
     expect(prop(after, 'Cart', 'position.x')).toBeGreaterThan(prop(before, 'Cart', 'position.x') + 100)
     expect(prop(after, 'Cart', 'position.y')).toBe(prop(before, 'Cart', 'position.y'))
     expect(prop(after, 'Rock', 'position.x')).toBe(prop(before, 'Rock', 'position.x'))
+  })
+
+  it('contact: the ball rests on the floor and never enters the bumper', async () => {
+    const { after, prop } = await runPreset(byId.contact, 120)
+    const x = prop(after, 'Ball', 'position.x')
+    const y = prop(after, 'Ball', 'position.y')
+    expect(y).toBeGreaterThan(199)
+    expect(y).toBeLessThanOrEqual(200)
+    expect(Math.hypot(x - 0, y - 100)).toBeGreaterThanOrEqual(60)
+    // Slid off the bumper to the side it started on.
+    expect(x).toBeGreaterThan(10)
+    const early = await runPreset(byId.contact, 12)
+    const ex = early.prop(early.after, 'Ball', 'position.x')
+    const ey = early.prop(early.after, 'Ball', 'position.y')
+    expect(Math.hypot(ex, ey - 100)).toBeGreaterThanOrEqual(59.9)
+    expect(ey).toBeLessThan(100)
   })
 
   it('gravity-field, drag, spring-to-anchor, nbody: bodies move as described', async () => {
