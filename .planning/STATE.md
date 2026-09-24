@@ -31,7 +31,7 @@ Phase: 02.2 (Obsidian Bridge) — EXECUTING
 Plan: 8 of 16 (02.2-01 to 02.2-07 complete; 02.2-08 code committed, no summary yet)
 Status: Executing
 Phase 02.4 (Lock Model): COMPLETE — verified 25/25, 2026-09-16; rebased onto the main line 2026-09-23
-Last activity: 2026-09-23 — Phase 02.4 rebased onto phase-2-implementation-v1
+Last activity: 2026-09-24 - Completed quick task 260924-2a5: Add voice command recognition on top of Whisper transcription in hands-face-voice/
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -152,6 +152,7 @@ None yet.
 | 3 | Move development scope constraint to the primary checkout (PROJECT.md, CLAUDE.md) | 2026-09-15 | 0bb6638 | — |
 | 260915-v62 | Fix connect-agent command argument order so `claude mcp add` parses the server name | 2026-09-15 | 27b3869 | [260915-v62-fix-connect-agent-command-argument-order](./quick/260915-v62-fix-connect-agent-command-argument-order/) |
 | 260915-v51 | Fix the kernel copy-per-commit quadratic: Kernel::replayUpTo and Kernel::submit copied the entire World once per commit, making reopen O(n^2) in commit count | 2026-09-15 | 7fed53f | [260915-v51-fix-the-kernel-copy-per-commit-quadratic](./quick/260915-v51-fix-the-kernel-copy-per-commit-quadratic/) |
+| 260924-2a5 | Add voice command recognition on top of Whisper transcription in hands-face-voice/: swap transcribe.js to on-device Whisper ASR, add an on-device embedding-similarity command classifier over a 5-command set with confidence-gated dispatch/clarification | 2026-09-24 | 071f3a4 | [260924-2a5-add-voice-command-recognition-on-top-of-](./quick/260924-2a5-add-voice-command-recognition-on-top-of-/) |
 
 ### Roadmap Evolution
 
