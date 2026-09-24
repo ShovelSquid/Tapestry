@@ -301,7 +301,7 @@ Plans:
   5. No new kernel verb or value type is added; placements remain node properties (`position.x/y`), and nothing starts the frozen migration onto placement edges (spec §6, §7)
   6. `facing` is **not** in this phase; D-27's `direction` stays unwritten by agents until the anchor-cursor phase (#12)
 
-**Plans:** 3/5 plans complete (waves 1–3); waves 4–5 unblocked: Phase 2.4 with `lock.layout` merged 2026-09-24
+**Plans:** 5/5 plans complete (waves 1–5; Phase 2.4 with `lock.layout` merged 2026-09-24)
 
 Plans:
 
@@ -323,7 +323,7 @@ Plans:
 
 **Wave 5** *(blocked on Wave 4)*
 
-- [ ] 02.5-05-PLAN.md — `create_note` optional `where` beside the unchanged default path; phase gate (SC2, SC5, SC6)
+- [x] 02.5-05-PLAN.md — `create_note` optional `where` beside the unchanged default path; phase gate (SC2, SC5, SC6)
 
 **UI hint**: no
 
