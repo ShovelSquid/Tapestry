@@ -137,3 +137,28 @@ Start Tapestry from a terminal (`npm --prefix app run dev` in ~/Tapestrees/windo
 
 If something's wrong, write it in RESPONSE. The next session will fix it with a 02.7 gap-closure plan.
 To undo the whole plan, run `git revert 10bf222 a2c5b52 339b2c9 b63d4a9`.
+
+### 5. 02.7-07 Task 1: approve @anthropic-ai/sdk@0.128.0 and where to install it (open, PARKED)
+
+Queued by the session at 2026-09-24 16:18. This is a blocking-human package-legitimacy gate, which PROTOCOL
+step 4 says must never be auto-approved. **All of 02.7-07 is parked**: Task 2 (the API engine) needs the
+installed SDK, and Task 3 (the key store and panel UI) builds on Task 2's engine file. Nothing was installed
+and no code was written.
+
+The machine part of the check ran at 16:18 and matches the plan's recorded facts:
+`npm view @anthropic-ai/sdk@0.128.0 name version repository.url scripts.preinstall scripts.install scripts.postinstall peerDependencies dependencies`
+printed name `@anthropic-ai/sdk`, version `0.128.0`, repository
+`git+https://github.com/anthropics/anthropic-sdk-typescript.git`, dependencies standardwebhooks ^1.0.0 and
+json-schema-to-ts ^3.1.1, peer zod ^3.25.0 || ^4.0.0, and **no** preinstall, install or postinstall script.
+
+To check:
+ 1. Open https://www.npmjs.com/package/@anthropic-ai/sdk and confirm it is Anthropic's official TypeScript SDK
+    and that 0.128.0 is listed.
+ 2. Choose where it goes. This worktree's `node_modules` and `app/node_modules` are symlinks into ~/Tapestry.
+    - **own** (recommended): this worktree gets its own install (`npm ci` at the root, which rebuilds the native
+      addon), then the SDK. Other worktrees are untouched.
+    - **shared**: install into ~/Tapestry's node_modules; npm reconciles the shared tree against ws/windows's
+      lockfile and may change packages ~/Tapestry and other worktrees use.
+
+Answer in `autonomy/RESPONSE` with `item 5: approved-own`, `item 5: approved-shared`, or `item 5: rejected <reason>`.
+The next session then runs 02.7-07 Tasks 2 and 3 (wave 7). There is nothing to undo if the answer is no.
