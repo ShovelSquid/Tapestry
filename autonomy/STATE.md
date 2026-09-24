@@ -52,7 +52,8 @@ strictly in order: 01, 02, 03, 04, 05, then 06.
   approves `human-verify` checkpoints and picks the first option of
   decisions. Kaelen wants this on. Only `blocking-human` gates stop.
 - The baseline after the merge (`256fae7`): 21 test files, 443 tests
-  passing, typecheck clean.
+  passing, typecheck clean. After quick 260924-glr (`e66b3a8`): 22 files,
+  486 tests.
 
 ## Blocked
 
