@@ -17,7 +17,14 @@
  * Frame-local coordinates are world coordinates minus the frame's origin.
  */
 
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import React, {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from 'react'
 import ConnectionLine from './ConnectionLine'
 import TreeFrame, { type TreeFrameHandlers } from './TreeFrame'
 import type { ForestTree, NodeRef } from '../state/use-forest'
@@ -31,6 +38,8 @@ import {
   type FrameRect,
   type PositionedRect,
 } from '../layout/frames'
+import { displayPositions, type DisplaySpot } from '../layout/placement'
+import { clampZoom, isZoomPinchDelta, normalizeWheelDelta, panDelta, zoomFactor } from '../layout/wheel'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -54,6 +63,17 @@ interface ViewTransform {
   panX: number
   panY: number
   zoom: number
+}
+
+/**
+ * What the space can be asked to do from outside it.
+ *
+ * Canvas owns the view transform, so panning is its to perform: App knows
+ * which tree it just added, not where that tree's frame ended up.
+ */
+export interface CanvasHandle {
+  /** Center a tree's frame in the viewport at the current zoom. */
+  panToFrame(treeId: string): void
 }
 
 /** Where a double-click landed: inside a frame, or nowhere in particular. */
@@ -81,6 +101,12 @@ interface CanvasProps {
   onMarkDirty: (ref: NodeRef) => void
   onMarkClean: (ref: NodeRef) => void
   onPositionChange: (ref: NodeRef, x: number, y: number) => void
+  /**
+   * Called when a person drops, or left/top-resizes, a note that follows its
+   * parent (D-03, D-16). Must persist position.x, position.y AND pinned=true
+   * in a single commit, so the note stops following.
+   */
+  onTakeOverPosition: (ref: NodeRef, x: number, y: number) => void
   onWidthChange: (ref: NodeRef, width: number) => void
   onHeightChange: (ref: NodeRef, height: number) => void
   /**
@@ -100,6 +126,9 @@ interface CanvasProps {
   ) => void
   /** Move a frame in renderer state only; the canvas persists the final spot. */
   onFrameMove: (treeId: string, x: number, y: number) => void
+  /** The selected frame, which is the space's focal point and undo target. */
+  selectedTreeId: string | null
+  onSelectTree: (treeId: string | null) => void
 }
 
 // ---------------------------------------------------------------------------
@@ -140,10 +169,23 @@ export function worldToScreen(
 
 const MIN_ZOOM = 0.1
 const MAX_ZOOM = 5
-const ZOOM_SPEED = 0.001
 
 const DEFAULT_NODE_WIDTH = 240
 const DEFAULT_NODE_HEIGHT = 80
+
+/** The drawn-spot map for a tree that has none yet (D-05). */
+const NO_DISPLAY_SPOTS: ReadonlyMap<string, DisplaySpot> = new Map()
+
+/**
+ * The empty space (UI-SPEC "Empty state body").
+ *
+ * One string rather than wrapped JSX text, so the approved copy stays one
+ * greppable line: it names the way in to a vault, which is the whole point of
+ * saying anything here at all.
+ */
+const EMPTY_BODY =
+  'Create notes, connect ideas, and build your world of thought. ' +
+  'To bring in an Obsidian vault, choose Add tree, then Add Obsidian Vault.'
 
 /** Backgrounds a pan, a deselect or a create may start from. */
 const BACKGROUND_CLASSES = [
@@ -165,7 +207,7 @@ function containsPoint(rect: FrameRect, x: number, y: number): boolean {
 // Canvas
 // ---------------------------------------------------------------------------
 
-export default function Canvas({
+function Canvas({
   trees,
   editingRef,
   pluginNodeViews,
@@ -178,6 +220,7 @@ export default function Canvas({
   onMarkDirty,
   onMarkClean,
   onPositionChange,
+  onTakeOverPosition,
   onWidthChange,
   onHeightChange,
   onPinnedPositionChange,
@@ -185,7 +228,9 @@ export default function Canvas({
   onDeleteNote,
   onPropertyEdit,
   onFrameMove,
-}: CanvasProps): React.ReactElement {
+  selectedTreeId,
+  onSelectTree,
+}: CanvasProps, ref: React.ForwardedRef<CanvasHandle>): React.ReactElement {
   const viewportRef = useRef<HTMLDivElement>(null)
   const [view, setView] = useState<ViewTransform>({ panX: 0, panY: 0, zoom: 1 })
 
@@ -211,7 +256,6 @@ export default function Canvas({
   // Frame-level state (D-15). A frame is dragged by its header, selected by a
   // click on it, and never deleted by the Delete key.
   const [draggingTreeId, setDraggingTreeId] = useState<string | null>(null)
-  const [selectedTreeId, setSelectedTreeId] = useState<string | null>(null)
   const [hoveredTreeId, setHoveredTreeId] = useState<string | null>(null)
   const frameDragRef = useRef({ startX: 0, startY: 0, originX: 0, originY: 0, moved: false })
 
@@ -256,20 +300,62 @@ export default function Canvas({
   // -----------------------------------------------------------------------
 
   const frameRects = new Map<string, FrameRect>()
+  // D-05: where every note is drawn, computed once per tree so frame bounds,
+  // edges, knot midpoints and cards all agree on a following note's spot.
+  const treeSpots = new Map<string, ReadonlyMap<string, DisplaySpot>>()
   for (const tree of trees) {
+    const overrides = new Map<string, { x: number; y: number }>()
+    for (const node of tree.nodes) {
+      const drag = dragPositions[nodeKey({ treeId: tree.id, nodeId: node.id })]
+      if (drag) overrides.set(node.id, drag)
+    }
+    const spots = displayPositions(tree.nodes, tree.edges, overrides)
+    treeSpots.set(tree.id, spots)
     const boxes: ContentBox[] = tree.nodes.map((node) => {
       const key = nodeKey({ treeId: tree.id, nodeId: node.id })
       const drag = dragPositions[key]
+      const spot = spots.get(node.id)
       const dims = nodeDimsRef.current.get(key)
       return {
-        x: drag ? drag.x : Number(node.props['position.x']?.value ?? 0),
-        y: drag ? drag.y : Number(node.props['position.y']?.value ?? 0),
+        x: spot ? spot.x : drag ? drag.x : Number(node.props['position.x']?.value ?? 0),
+        y: spot ? spot.y : drag ? drag.y : Number(node.props['position.y']?.value ?? 0),
         width: dims?.width ?? DEFAULT_NODE_WIDTH,
         height: dims?.height ?? DEFAULT_NODE_HEIGHT,
       }
     })
     frameRects.set(tree.id, computeFrameBounds(tree.frame, boxes))
   }
+
+  /**
+   * The rects this render computed, readable by an imperative caller later.
+   *
+   * panToFrame is called after a frame has been added and possibly nudged
+   * clear of its neighbours, so it must read the rects as they are at that
+   * moment rather than the ones its own closure was created with.
+   */
+  const frameRectsRef = useRef(frameRects)
+  frameRectsRef.current = frameRects
+
+  /**
+   * Center a frame in the viewport, keeping the current zoom.
+   *
+   * worldToScreen is `world * zoom + pan`, so centering the frame's midpoint
+   * means solving `mid * zoom + pan = viewport / 2` for pan.
+   */
+  const panToFrame = useCallback((treeId: string) => {
+    const viewport = viewportRef.current
+    const rect = frameRectsRef.current.get(treeId)
+    if (!viewport || !rect) return
+
+    const { clientWidth, clientHeight } = viewport
+    setView((prev) => ({
+      ...prev,
+      panX: clientWidth / 2 - (rect.x + rect.width / 2) * prev.zoom,
+      panY: clientHeight / 2 - (rect.y + rect.height / 2) * prev.zoom,
+    }))
+  }, [])
+
+  useImperativeHandle(ref, () => ({ panToFrame }), [panToFrame])
 
   /** The tree whose frame contains a world point, if any. */
   const treeAt = useCallback(
@@ -462,7 +548,7 @@ export default function Canvas({
             settleFrames(draggingTreeId)
           } else {
             // Pressing the header without moving it selects the frame.
-            setSelectedTreeId(draggingTreeId)
+            onSelectTree(draggingTreeId)
           }
         }
         setDraggingTreeId(null)
@@ -499,10 +585,14 @@ export default function Canvas({
         const rect = viewport.getBoundingClientRect()
         const pointerX = e.clientX - rect.left
         const pointerY = e.clientY - rect.top
+        const normalizedDeltaY = normalizeWheelDelta(e.deltaY, e.deltaMode)
 
         setView((prev) => {
-          const delta = -e.deltaY * ZOOM_SPEED
-          const newZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, prev.zoom * (1 + delta)))
+          const newZoom = clampZoom(
+            prev.zoom * zoomFactor(normalizedDeltaY, isZoomPinchDelta(normalizedDeltaY)),
+            MIN_ZOOM,
+            MAX_ZOOM
+          )
           const ratio = newZoom / prev.zoom
           return {
             panX: pointerX - ratio * (pointerX - prev.panX),
@@ -513,8 +603,8 @@ export default function Canvas({
       } else {
         setView((prev) => ({
           ...prev,
-          panX: prev.panX - e.deltaX,
-          panY: prev.panY - e.deltaY,
+          panX: prev.panX - panDelta(e.deltaX, e.deltaMode),
+          panY: prev.panY - panDelta(e.deltaY, e.deltaMode),
         }))
       }
     }
@@ -532,9 +622,9 @@ export default function Canvas({
       if (!isBackground(e.target as HTMLElement, viewportRef.current)) return
       onStopEditing()
       selectNote(null)
-      setSelectedTreeId(null)
+      onSelectTree(null)
     },
-    [onStopEditing, selectNote],
+    [onStopEditing, selectNote, onSelectTree],
   )
 
   const handleDoubleClick = useCallback(
@@ -647,6 +737,10 @@ export default function Canvas({
       onPositionChange(ref, x, y)
       settleFrames(ref.treeId)
     },
+    onTakeOverPosition: (ref, x, y) => {
+      onTakeOverPosition(ref, x, y)
+      settleFrames(ref.treeId)
+    },
     onWidthChange: (ref, width) => {
       onWidthChange(ref, width)
       settleFrames(ref.treeId)
@@ -676,9 +770,10 @@ export default function Canvas({
     if (tree && node) {
       const key = nodeKey(connectingFrom)
       const drag = dragPositions[key]
+      const spot = treeSpots.get(tree.id)?.get(node.id)
       const dims = nodeDimsRef.current.get(key)
-      const localX = drag ? drag.x : Number(node.props['position.x']?.value ?? 0)
-      const localY = drag ? drag.y : Number(node.props['position.y']?.value ?? 0)
+      const localX = spot ? spot.x : drag ? drag.x : Number(node.props['position.x']?.value ?? 0)
+      const localY = spot ? spot.y : drag ? drag.y : Number(node.props['position.y']?.value ?? 0)
       tempConnectionLine = {
         x1: tree.frame.x + localX + (dims?.width ?? DEFAULT_NODE_WIDTH) / 2,
         y1: tree.frame.y + localY + (dims?.height ?? DEFAULT_NODE_HEIGHT) / 2,
@@ -702,9 +797,7 @@ export default function Canvas({
       {trees.length === 0 && (
         <div className="tapestry-empty-state">
           <h2 className="tapestry-empty-heading">Double-click anywhere to start</h2>
-          <p className="tapestry-empty-body">
-            Create notes, connect ideas, and build your world of thought.
-          </p>
+          <p className="tapestry-empty-body">{EMPTY_BODY}</p>
         </div>
       )}
 
@@ -727,6 +820,7 @@ export default function Canvas({
               pluginNodeViews={pluginNodeViews}
               currentUserActorId={currentUserActorId}
               dragPositions={dragPositions}
+              displayPositions={treeSpots.get(tree.id) ?? NO_DISPLAY_SPOTS}
               getDims={getDims}
               isSelected={selectedTreeId === tree.id}
               isHovered={hoveredTreeId === tree.id}
@@ -765,3 +859,5 @@ export default function Canvas({
     </div>
   )
 }
+
+export default forwardRef(Canvas)

@@ -82,6 +82,14 @@ const tapestryAPI = {
     close: (treeId: string): Promise<{ ok: boolean; error?: string }> =>
       ipcRenderer.invoke('trees:close', treeId),
 
+    /** Show the tree's `.tree` file in Finder. Main resolves the path. */
+    reveal: (treeId: string): Promise<{ ok: boolean; error?: string }> =>
+      ipcRenderer.invoke('trees:reveal', treeId),
+
+    /** Try a damaged, locked or missing tree again, once its cause is gone. */
+    reopen: (treeId: string): Promise<{ ok: boolean; treeId?: string; error?: string }> =>
+      ipcRenderer.invoke('trees:reopen', treeId),
+
     setFrame: (
       treeId: string,
       x: number,
@@ -121,6 +129,21 @@ const tapestryAPI = {
     /** Pick an existing world to add to the space. */
     showOpenTree: (): Promise<{ canceled: boolean; filePath?: string }> =>
       ipcRenderer.invoke('dialog:showOpenTree'),
+
+    /** Pick an Obsidian vault folder to mirror as a tree (D-10, D-13). */
+    showOpenVaultFolder: (): Promise<{ canceled: boolean; folderPath?: string }> =>
+      ipcRenderer.invoke('dialog:showOpenVaultFolder'),
+  },
+
+  /**
+   * Mirroring an Obsidian vault (D-10, D-13).
+   *
+   * The renderer names a folder the user just picked in the dialog; main
+   * refuses any other root, creates `<vault>/<name>.tree` and catches up.
+   */
+  vault: {
+    add: (root: string): Promise<{ ok: boolean; treeId?: string; error?: string }> =>
+      ipcRenderer.invoke('vault:add', root),
   },
 
   settings: {
@@ -187,6 +210,35 @@ const tapestryAPI = {
     }
     ipcRenderer.on('tree-changed', handler)
     return () => ipcRenderer.removeListener('tree-changed', handler)
+  },
+
+  /**
+   * Progress while a vault is being read or caught up (D-20).
+   *
+   * Reading a vault takes long enough to need saying so, and "up-to-date" is
+   * the only honest way to end the sentence it starts.
+   */
+  onVaultStatus: (
+    callback: (status: {
+      treeId: string
+      kind: 'reading' | 'catching-up' | 'up-to-date'
+      done: number
+      total: number
+    }) => void,
+  ): (() => void) => {
+    const handler = (
+      _event: IpcRendererEvent,
+      payload: {
+        treeId: string
+        kind: 'reading' | 'catching-up' | 'up-to-date'
+        done: number
+        total: number
+      },
+    ) => {
+      callback(payload)
+    }
+    ipcRenderer.on('vault-status', handler)
+    return () => ipcRenderer.removeListener('vault-status', handler)
   },
 
   /**

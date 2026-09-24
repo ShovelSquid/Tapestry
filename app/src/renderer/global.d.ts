@@ -75,6 +75,9 @@ interface TapestryKernelAPI {
   redo(treeId: string): Promise<{ ok: boolean }>
 }
 
+/** Whether a tree can be read and written, or why it cannot. */
+type TapestryTreeStatus = 'ok' | 'damaged' | 'locked' | 'missing'
+
 /** One tree in the space, as `trees:list` reports it. */
 interface TapestryTreeSummary {
   id: string
@@ -84,6 +87,9 @@ interface TapestryTreeSummary {
   vaultRoot?: string
   /** Where the tree's frame origin sits in world space (D-18). */
   frame: { x: number; y: number }
+  /** A tree that would not open stays in the space with its reason. */
+  status: TapestryTreeStatus
+  reason?: string
 }
 
 interface TapestryTreesAPI {
@@ -94,6 +100,10 @@ interface TapestryTreesAPI {
     worldName: string,
   ): Promise<{ ok: boolean; treeId?: string; error?: string }>
   close(treeId: string): Promise<{ ok: boolean; error?: string }>
+  /** Show the tree's file in Finder. The renderer names an id, never a path. */
+  reveal(treeId: string): Promise<{ ok: boolean; error?: string }>
+  /** Try a damaged, locked or missing tree again (UI-SPEC "Reopen tree"). */
+  reopen(treeId: string): Promise<{ ok: boolean; treeId?: string; error?: string }>
   setFrame(treeId: string, x: number, y: number): Promise<{ ok: boolean; error?: string }>
 }
 
@@ -117,6 +127,16 @@ interface TapestryPluginsAPI {
     commands: Record<string, { id: string; displayName: string; pluginName: string }>
     propertyPanels: Record<string, Array<{ nodeType: string; displayName: string; component: string; pluginName: string }>>
     inspectors: Record<string, { id: string; displayName: string; component: string; pluginName: string }>
+    /**
+     * Registered plugin surfaces (CANV-04), keyed by surface id. `pluginName`
+     * is the plugin directory id; the renderer builds
+     * `tapestry-plugin://<pluginName>/<entry>` from these two host-validated
+     * values and nothing else.
+     */
+    surfaces: Record<
+      string,
+      { id: string; displayName: string; entry: string; placement: 'stage'; pluginName: string }
+    >
   }>
   reload(name: string): Promise<{ status: string; reason?: string }>
   enable(name: string): Promise<{ status: string; reason?: string }>
@@ -128,10 +148,55 @@ interface TapestryPluginsAPI {
   ): Promise<{ ok: boolean; error?: string; crashed?: boolean }>
 }
 
+// ---------------------------------------------------------------------------
+// Plugin surface types (CANV-04)
+//
+// Mirrored from sdk/src/contributions.ts (SurfaceHost, SurfaceHandle,
+// SurfaceModule) because tsconfig.web.json's rootDir is src/renderer and
+// cannot import ../../../sdk/src. Keep member names in lockstep with the SDK.
+// ---------------------------------------------------------------------------
+
+/** Mirror of SDK `SurfaceHost`: what the host hands a surface at mount time. */
+interface TapestrySurfaceHost {
+  /** Host-owned, absolutely sized element; the plugin owns its children only. */
+  readonly container: HTMLElement
+  /** Identity of the tree the surface was opened for. */
+  readonly treeId: string
+  /** Subscribe to container size (CSS px width, height, DPR); returns unsubscribe. */
+  onResize(cb: (width: number, height: number, dpr: number) => void): () => void
+  /** Ask the host to unmount the surface (the host then calls dispose). */
+  close(): void
+}
+
+/** Mirror of SDK `SurfaceHandle`: `dispose` must be idempotent. */
+interface TapestrySurfaceHandle {
+  dispose(): void
+}
+
+/** Mirror of SDK `SurfaceModule`: the surface entry module's default export. */
+interface TapestrySurfaceModule {
+  mount(host: TapestrySurfaceHost): Promise<TapestrySurfaceHandle> | TapestrySurfaceHandle
+}
+
 interface TapestryDialogAPI {
   showSave(): Promise<{ canceled: boolean; filePath?: string }>
   /** Pick an existing world to add to the space. */
   showOpenTree(): Promise<{ canceled: boolean; filePath?: string }>
+  /** Pick an Obsidian vault folder to mirror as a tree (D-10, D-13). */
+  showOpenVaultFolder(): Promise<{ canceled: boolean; folderPath?: string }>
+}
+
+/** Where a vault import has got to (D-20). */
+interface TapestryVaultStatus {
+  treeId: string
+  kind: 'reading' | 'catching-up' | 'up-to-date'
+  done: number
+  total: number
+}
+
+interface TapestryVaultAPI {
+  /** Mirror the vault folder as its own tree. Main refuses an unpicked root. */
+  add(root: string): Promise<{ ok: boolean; treeId?: string; error?: string }>
 }
 
 interface TapestrySettingsAPI {
@@ -171,6 +236,7 @@ interface TapestryRedoDiscarded {
 interface TapestryAPI {
   kernel: TapestryKernelAPI
   trees: TapestryTreesAPI
+  vault: TapestryVaultAPI
   plugins: TapestryPluginsAPI
   dialog: TapestryDialogAPI
   settings: TapestrySettingsAPI
@@ -179,6 +245,8 @@ interface TapestryAPI {
   onTreesChanged(callback: () => void): () => void
   /** A commit landed in a tree from outside the renderer (an agent, a plugin). */
   onTreeChanged(callback: (treeId: string) => void): () => void
+  /** A vault is being read, is catching up, or is up to date (D-20). */
+  onVaultStatus(callback: (status: TapestryVaultStatus) => void): () => void
   /** The agent list or a connection status changed. */
   onAgentsChanged(callback: () => void): () => void
   /** An agent write ended a rewound state, discarding redo (UA-14). */

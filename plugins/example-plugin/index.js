@@ -4,6 +4,8 @@
  * Demonstrates how to build a plugin using only the public SDK:
  * - Registers a command "example.inspect" that logs selected node properties
  * - Registers a PropertyPanelContribution for all node types ("*" wildcard)
+ * - Registers a SurfaceContribution: a plain ES module under surface/ that the
+ *   host imports over the tapestry-plugin scheme (CANV-04), with no build step
  *
  * Plugins are plain CommonJS JavaScript so the host can `require()` them
  * directly without a build step (D-29/D-30 development loop). Types come
@@ -20,6 +22,7 @@
 /** @typedef {import('@tapestry/sdk').PluginContext} PluginContext */
 /** @typedef {import('@tapestry/sdk').CommandContribution} CommandContribution */
 /** @typedef {import('@tapestry/sdk').PropertyPanelContribution} PropertyPanelContribution */
+/** @typedef {import('@tapestry/sdk').SurfaceContribution} SurfaceContribution */
 
 // ---------------------------------------------------------------------------
 // Command: example.inspect
@@ -73,6 +76,25 @@ const propertyPanel = {
 }
 
 // ---------------------------------------------------------------------------
+// Surface contribution
+// ---------------------------------------------------------------------------
+
+/**
+ * A full-window stage surface. The entry is a plain ES module inside this
+ * plugin directory; the host serves it (and the module Worker and .wasm it
+ * references) over tapestry-plugin://example-plugin/ and calls its default
+ * export's mount(host). No bundler, no host edits.
+ *
+ * @type {SurfaceContribution}
+ */
+const exampleSurface = {
+  id: 'example.surface',
+  displayName: 'Example Surface',
+  entry: 'surface/surface.js',
+  placement: 'stage',
+}
+
+// ---------------------------------------------------------------------------
 // Plugin entry point
 // ---------------------------------------------------------------------------
 
@@ -88,6 +110,9 @@ const examplePlugin = {
 
     // Register the property panel for all node types
     context.registerPropertyPanel(propertyPanel)
+
+    // Register the stage surface (CANV-04)
+    context.registerSurface(exampleSurface)
   },
 
   deactivate() {

@@ -1,0 +1,1 @@
+{"content":"SharedArrayBuffer requires crossOriginIsolated (COOP same-origin + COEP require-corp); file:// loadFile cannot set headers (electron#31789), so either serve via a custom protocol/HTTP with headers or avoid SAB by transferring ArrayBuffers.","source":"web","provider":"websearch","confidence":"MEDIUM","fetched_at":"2026-09-22T17:12:07.459Z","ttl":86400000,"kind":"web"}

@@ -3,17 +3,17 @@ gsd_state_version: "1.0"
 milestone: v1.0
 current_phase: "2.6"
 current_phase_name: Placement Edges & Forest Tree
-status: Context gathered — plan next
-stopped_at: Phase 2.6 context gathered
-last_updated: "2026-09-16T18:51:43.517Z"
-last_activity: 2026-09-16
-last_activity_desc: Phase 2.6 inserted
-state_head: 0a05ce56445b22107b58c4e1e09582e61b35d35c
+status: Planned — ready to execute (merge of phase-2-implementation-v1 done)
+stopped_at: Phase 2.6 planned (6 plans, 6 waves); main merged 2026-09-24
+last_updated: "2026-09-24T19:00:00.000Z"
+last_activity: 2026-09-24
+last_activity_desc: Merged phase-2-implementation-v1 into ws/spatial-canvas (Decision Register Pending #15 answered by Kaelen)
+state_head: c3f4f3d6c993f90c55415c6117705b124bb9667a
 progress:
-  total_phases: 11
-  completed_phases: 0
-  total_plans: 38
-  completed_plans: 17
+  total_phases: 12
+  completed_phases: 1
+  total_plans: 46
+  completed_plans: 22
 ---
 
 # Project State
@@ -23,14 +23,15 @@ progress:
 See: .planning/PROJECT.md (updated 2026-09-08)
 
 **Core value:** Your world of thoughts must remain readable and under your control — in its spatial interface, its editable relationships and behavior, and its files and branching history.
-**Current focus:** Phase 02.2 — Obsidian Bridge
+**Current focus:** Phase 02.2 — Obsidian Bridge (executing). Phase 02.4 — Lock Model is complete and on the main line; open for Kaelen: WR-02 redo decision, WR-01 owner-matching confirmation, #19 lock naming
 
 ## Current Position
 
-Phase: 2.6 (Placement Edges & Forest Tree)
-Plan: 0 of TBD
-Status: Context gathered — plan next
-Last activity: 2026-09-16 — Phase 2.6 inserted
+Phase: 2.6 (Placement Edges & Forest Tree) — on ws/spatial-canvas
+Plan: 0 of 6 (planned; execute is next, starting at 02.6-01)
+Status: Ready to execute
+Main line (phase-2-implementation-v1) at merge: 02.2 executing (8 of 16), 02.4 complete, 02.5 5/5
+Last activity: 2026-09-24 — Merged phase-2-implementation-v1 into ws/spatial-canvas
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -38,7 +39,7 @@ Progress: [░░░░░░░░░░] 0%
 
 **Velocity:**
 
-- Total plans completed: 5
+- Total plans completed: 7
 - Average duration: -
 - Total execution time: 0 hours
 
@@ -47,6 +48,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 1 | 5 | - | - |
+| 02.4 | 2 | - | - |
 
 **Recent Trend:**
 
@@ -67,6 +69,11 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 02.2 P02 | 9 min | 2 tasks | 14 files |
 | Phase 02.2 P03 | 19 min | 3 tasks | 18 files |
 | Phase 02.2 P04 | 25 min | 3 tasks | 21 files |
+| Phase 02.2 P05 | 25 min | 2 tasks | 19 files |
+| Phase 02.2 P06 | 40 min | 3 tasks | 13 files |
+| Phase 02.2 P07 | 35 min | 1 tasks | 26 files |
+| Phase 02.4 P01 | 14 min | 2 tasks | 4 files |
+| Phase 02.4 P02 | 8 min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -111,10 +118,28 @@ Recent decisions affecting current work:
 - [Phase 02.2]: [Phase 02.2]: An agent write into a rewound tree reconciles (discardRedo) and announces the lost redo rather than being refused (UA-14), replacing Plan 03's rewound refusal
 - [Phase 02.2]: [Phase 02.2]: connect_notes refuses cross-tree endpoints rather than writing one end, because D-16 requires both trees to record a cross-tree link (Plan 15)
 - [Phase 02.2]: [Phase 02.2]: Every value interpolated into the claude mcp add command is single-quoted by shellQuote, and markConnected is throttled to one agents.json write per agent per minute
+- [Phase 02.2]: Every kernel IPC channel names its tree first; an unknown or malformed treeId is refused rather than falling back to the primary tree
+- [Phase 02.2]: The open trees and their frame positions live in settings.json, not a forest file (D-18); last-opened.json migrates once at frame (0,0)
+- [Phase 02.2]: pushApart never moves the dropped frame, re-queues displaced frames so chains settle, and is capped at 200 steps in deterministic id order
+- [Phase 02.2]: A tree that will not open stays in the space as an unavailable entry with the kernel's reason (damaged/locked/missing); a non-Ok journal is closed again immediately so nothing can append to it, and nothing is ever repaired automatically
+- [Phase 02.2]: TreeRegistry.list() stays bridge-bearing and unavailable trees surface through summary(), because the agent command layer iterates list() and reads .bridge
+- [Phase 02.2]: Locked trees are detected by the kernel's real phrase 'another process holds the journal lock' — the word 'locked' never appears in that message, so the plan's stated heuristic would have mislabelled every locked tree as damaged
+- [Phase 02.2]: Vault trees record what the files contain: every key starting md. is the file's, every other key is Tapestry's (02.2-07, D-10/D-14)
+- [Phase 02.2]: The vault test fixture is synthetic and authored in-repo; no House Party content enters git history, and .gitattributes pins its bytes so normalisation cannot rewrite the shapes under test (02.2-07)
+- [Phase 02.2]: A plugin's registered node-view name now selects a component through NODE_VIEW_COMPONENTS; an unmapped name falls back to the readable card instead of rendering as a NoteCard (02.2-07)
+- [Phase 02.2]: The Obsidian mirror refuses bytes it would have to change in order to store them, rather than transcoding them (02.2-07, D-12)
+- [Phase 02.4]: 02.4-01: update/rename check the note's text aspect, delete checks delete, all via writeToNote -> assertMayWrite -> checkLock; 02.2 D-05 authorship gate removed
+- [Phase 02.4]: 02.4-01: malformed lock values fail closed; only exact 'open' unlocks; blank owner shown as (unknown); allow list read in Plan 02
+- [Phase 02.4]: 02.4-02: lock.<aspect>.allow is read for explicit and derived locks; only a text value counts, whitespace-split, exact match
+- [Phase 02.4]: 02.4-02: agent tool text states the lock rule and that refusals name the owner, without publishing lock.* key names
 
 ### Pending Todos
 
-None yet.
+3 pending in `.planning/todos/pending/` (captured 2026-09-24):
+
+- Make pan and zoom far more sensitive (minor, quick task)
+- Trees as folders: notes anywhere, drag in and out (major, phase-sized; overlaps Phase 2.6)
+- Run Claude in the app with an ask and respond channel (major, new inserted phase; slice before Phase 6)
 
 ### Blockers/Concerns
 
@@ -130,12 +155,16 @@ None yet.
 | 260909-u0o | Add Phase 2 COVERAGE.md declaring that Tapestry's plugin API and SDK are internal, not an external service integration | 2026-09-09 | cb0fe28 | [260909-u0o-add-phase-2-coverage-md-declaring-that-t](./quick/260909-u0o-add-phase-2-coverage-md-declaring-that-t/) |
 | 3 | Move development scope constraint to the primary checkout (PROJECT.md, CLAUDE.md) | 2026-09-15 | 0bb6638 | — |
 | 260915-v62 | Fix connect-agent command argument order so `claude mcp add` parses the server name | 2026-09-15 | 27b3869 | [260915-v62-fix-connect-agent-command-argument-order](./quick/260915-v62-fix-connect-agent-command-argument-order/) |
+| 260915-v51 | Fix the kernel copy-per-commit quadratic: Kernel::replayUpTo and Kernel::submit copied the entire World once per commit, making reopen O(n^2) in commit count | 2026-09-15 | 7fed53f | [260915-v51-fix-the-kernel-copy-per-commit-quadratic](./quick/260915-v51-fix-the-kernel-copy-per-commit-quadratic/) |
+| 260924-0ii | Add layout as a third lock aspect (lock.layout), text-aspect defaults, not yet gating any command | 2026-09-24 | 4d78287 | [260924-0ii-add-layout-as-a-third-lock-aspect-lock-l](./quick/260924-0ii-add-layout-as-a-third-lock-aspect-lock-l/) |
+| 260924-dwq | Make pan and zoom far more sensitive: exponential zoom with pinch/wheel rate split, 1.6x pan multiplier, deltaMode normalization | 2026-09-24 | a146b7f | [260924-dwq-make-pan-and-zoom-far-more-sensitive-in-](./quick/260924-dwq-make-pan-and-zoom-far-more-sensitive-in-/) |
 
 ### Roadmap Evolution
 
 - Phase 02.2 inserted after Phase 2: Obsidian Bridge: two-way connection between an Obsidian Markdown vault and a Tapestry world (Kaelen, 2026-09-15; discuss with Kaelen, not skipped) (URGENT)
 - Phase 2.3 inserted after Phase 2.2: Time Threads: live z-axis writing threads split out of the 2.2 discussion (Kaelen, 2026-09-15); discuss with Kaelen before planning
 - Phase 2.2 edited: goal reworded to cover the agent MCP bridge plus the Obsidian bridge (02.2-CONTEXT D-01)
+- Phase 2.4 inserted after Phase 2.3: Lock Model: allow unless locked; lock aspects replace the D-05 authorship gate (Kaelen, 2026-09-16)
 - Phase 2.6 inserted after Phase 2.3: Placement Edges & Forest Tree — Tapestry tree, forest tree with placement edges, digest identity (Decision Register #2 C, #4, #5 A, #6, #7, #13 B; one-way doors #17/#18 gated at a blocking checkpoint). Numbered 2.6 by the orchestrator; note-position migration excluded (later phase after 2.3).
 
 ## Deferred Items
@@ -156,6 +185,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-16T18:51:42.899Z
-Stopped at: Phase 2.6 context gathered
-Resume file: .planning/phases/02.6-placement-edges-forest-tree/02.6-CONTEXT.md
+Last session: 2026-09-24T19:00:00.000Z
+Stopped at: Phase 2.6 planned; main merged
+Resume file: .planning/phases/02.6-placement-edges-forest-tree/02.6-01-PLAN.md

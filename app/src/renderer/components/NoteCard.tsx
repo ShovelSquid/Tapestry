@@ -43,6 +43,11 @@ interface NodeInfo {
 
 interface NoteCardProps {
   node: NodeInfo
+  /**
+   * Where a following note is drawn, beside its grew-from parent (D-05). Set
+   * only for a following note; every other note keeps its stored position.
+   */
+  displayPosition?: { x: number; y: number }
   isEditing: boolean
   isHovered: boolean
   isSelected: boolean
@@ -104,6 +109,7 @@ const MIN_HEIGHT = 60
 
 export default function NoteCard({
   node,
+  displayPosition,
   isEditing,
   isHovered,
   isSelected,
@@ -132,8 +138,8 @@ export default function NoteCard({
 }: NoteCardProps): React.ReactElement {
   const cardRef = useRef<HTMLDivElement>(null)
 
-  const x = Number(getNodeProp(node, 'position.x', 100))
-  const y = Number(getNodeProp(node, 'position.y', 100))
+  const x = displayPosition ? displayPosition.x : Number(getNodeProp(node, 'position.x', 100))
+  const y = displayPosition ? displayPosition.y : Number(getNodeProp(node, 'position.y', 100))
   const body = String(getNodeProp(node, 'body', ''))
   const title = String(getNodeProp(node, 'title', ''))
 

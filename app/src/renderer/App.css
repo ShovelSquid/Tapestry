@@ -189,6 +189,62 @@ html, body, #root {
   color: #E5484D;
 }
 
+/* A tree that would not open: dashed and unfilled, so it reads as a place
+   held open rather than as a working frame (UI-SPEC "Unavailable"). */
+.tapestry-tree-frame--unavailable {
+  background: #F7F5F0;
+  border: 1px dashed #B0ADA6;
+}
+
+/* Fills what is left of the frame under the 64px header band. */
+.tapestry-frame-unavailable-body {
+  position: absolute;
+  top: 64px;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  /* md between the copy and its actions, lg/2xl inset from the frame edge. */
+  gap: 16px;
+  padding: 24px 48px;
+  text-align: center;
+}
+
+/* Body role: 16/400/1.5 */
+.tapestry-frame-unavailable-text {
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.5;
+  color: #2C2C2C;
+  max-width: 384px;
+}
+
+.tapestry-frame-unavailable-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/*
+ * Present to a screen reader, absent to the eye. Not display:none and not
+ * hidden: either would take the live regions out of the accessibility tree,
+ * which is the one thing they exist to be in.
+ */
+.tapestry-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
 /* Note card -- secondary color #FFFFFF */
 .tapestry-note-card {
   position: absolute;
@@ -988,6 +1044,87 @@ html, body, #root {
 
 .tapestry-forest-button:hover {
   border-color: #B0ADA6;
+}
+
+/* ------------------------------------------------------------------------ */
+/* Small popover menus -- the PassageChooser surface, shared by the forest    */
+/* bar's Add tree menu and each frame's Tree options menu                     */
+/* ------------------------------------------------------------------------ */
+
+.tapestry-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 200px;
+  background: #FFFFFF;
+  border: 1px solid #E0DDD7;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  padding: 4px;
+  z-index: 210;
+}
+
+/* Under a right-aligned button (the frame's Tree options), the menu hangs
+   from the same edge rather than off the side of the frame. */
+.tapestry-menu--right {
+  left: auto;
+  right: 0;
+}
+
+/* 0 12px inset: menu items and buttons indent their labels identically. */
+.tapestry-menu-item {
+  display: block;
+  width: 100%;
+  padding: 6px 12px;
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  font-family: inherit;
+  /* Label role: 13/400/1.4 */
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: #2C2C2C;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.tapestry-menu-item:hover {
+  background: #F0EDE8;
+}
+
+/* 32px icon-only control, carried from the 02.1 toolbar hit target. */
+.tapestry-icon-button {
+  width: 32px;
+  height: 32px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: #6B6B6B;
+  cursor: pointer;
+}
+
+/* The frame surface is already #F0EDE8, so the hover needs its own step. */
+.tapestry-icon-button:hover {
+  background: #E7E3DC;
+}
+
+.tapestry-menu-item:focus-visible,
+.tapestry-icon-button:focus-visible {
+  outline: 2px solid #4A7CFF;
+  outline-offset: 2px;
+}
+
+/* Anchors the Tree options menu to its button inside the header row. */
+.tapestry-frame-menu-wrap {
+  position: relative;
+  flex: none;
+  display: inline-flex;
 }
 
 /* ------------------------------------------------------------------------ */

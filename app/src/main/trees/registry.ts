@@ -16,6 +16,7 @@
  * registry returns the existing entry instead.
  */
 
+import { existsSync } from 'fs'
 import { basename, resolve } from 'path'
 import { KernelBridge } from '../kernel-bridge'
 import type { CommitResult, EdgeData, JournalStatus, NodeData, OpObject } from '../kernel-bridge'
@@ -56,6 +57,46 @@ export interface OpenTree {
   readonly bridge: KernelBridge
 }
 
+/** Why a tree is in the space but cannot be read or written. */
+export type UnavailableStatus = 'damaged' | 'locked' | 'missing'
+
+/**
+ * A tree that would not open, kept in the space with its reason (T-02.2-32).
+ *
+ * It holds no bridge, which is the whole point: there is no handle through
+ * which anything could write to it. It is still a member of the space, because
+ * a frame that silently vanished when a file was moved or damaged would be
+ * indistinguishable from a world that had been lost.
+ */
+export interface UnavailableTree {
+  /**
+   * `path:<resolved path>` — a tree that would not open has no header digest
+   * to be named by, so it is named by the only thing known about it.
+   */
+  readonly id: string
+  readonly path: string
+  readonly kind: TreeKind
+  readonly name: string
+  readonly vaultRoot?: string
+  readonly status: UnavailableStatus
+  /** The kernel's own words, so the frame can say what is actually wrong. */
+  readonly reason: string
+}
+
+/** Either kind of member of the space. */
+export type TreeEntry = OpenTree | UnavailableTree
+
+/** One tree as the renderer sees it: no bridge, but always a status. */
+export interface TreeSummary {
+  id: string
+  name: string
+  kind: TreeKind
+  path: string
+  vaultRoot?: string
+  status: 'ok' | UnavailableStatus
+  reason?: string
+}
+
 export interface OpenTreeOptions {
   kind?: TreeKind
   vaultRoot?: string
@@ -67,9 +108,53 @@ function defaultName(path: string): string {
   return basename(path).replace(/\.tree$/i, '')
 }
 
+/** The id an unopenable tree is known by. */
+function unavailableId(resolvedPath: string): string {
+  return `path:${resolvedPath}`
+}
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
+}
+
+/**
+ * Which kind of failure an open error describes.
+ *
+ * The kernel reports a second writer as "another process holds the journal
+ * lock" (journal/Journal.cpp), so the word "locked" never actually reaches
+ * this string: the lock is matched by that phrase rather than by the word.
+ * Anything else that opened badly is treated as damage, which is the
+ * conservative answer — a damaged tree is never written to.
+ */
+function classifyOpenFailure(detail: string): 'locked' | 'damaged' {
+  return /journal lock|\blocked\b/i.test(detail) ? 'locked' : 'damaged'
+}
+
+/** Release a bridge without letting the release itself throw. */
+function closeQuietly(bridge: KernelBridge): void {
+  try {
+    bridge.close()
+  } catch (err) {
+    console.error('[TreeRegistry] close() failed:', err)
+  }
+}
+
+/**
+ * What each refusal says. Every one names the same consequence, because that
+ * is the part a caller has to act on; the cause is what explains it.
+ */
+const refusalCause: Record<UnavailableStatus, string> = {
+  damaged: 'This tree is damaged',
+  locked: 'This tree is open in another Tapestry window',
+  missing: "This tree's file cannot be found",
+}
+
 export class TreeRegistry {
   /** Keyed by tree id. Map preserves insertion order, which is open order. */
   private readonly trees = new Map<string, OpenTree>()
+
+  /** Trees in the space that would not open, keyed by their `path:` id. */
+  private readonly unavailable = new Map<string, UnavailableTree>()
 
   /** The tree the single-tree UI acts on until Plan 05 opens the frame view. */
   private primaryId: string | null = null
@@ -105,6 +190,107 @@ export class TreeRegistry {
     const bridge = new KernelBridge()
     bridge.create(path, worldName)
     return this.adopt(bridge, target, opts)
+  }
+
+  /**
+   * Open a tree, or keep it in the space with the reason it would not open.
+   *
+   * This is the launch and Add-tree path: a world that has been moved, damaged
+   * or left open in another Tapestry must not cost the user the rest of their
+   * space, and must not disappear from it either.
+   *
+   * A tree whose journal opened but did not verify is closed again straight
+   * away, so nothing holds a handle that could append to it. Nothing here ever
+   * repairs a file: repair is an explicit act, elsewhere (Phase 1 PD-04).
+   *
+   * An identity clash still throws, because it is a fact about the space
+   * rather than about the file — the same world is already open from another
+   * path, and recording a permanent "damaged" frame for it would be untrue.
+   */
+  tryOpen(path: string, opts: OpenTreeOptions = {}): OpenTree | UnavailableTree {
+    const target = resolve(path)
+
+    const existing = this.findByPath(target)
+    if (existing) return existing
+
+    // Checked here rather than left to the kernel: its "missing" detail is the
+    // path again, which says nothing a reader did not already know.
+    if (!existsSync(target)) {
+      return this.recordUnavailable(target, opts, 'missing', `No file at ${target}`)
+    }
+
+    const bridge = new KernelBridge()
+    try {
+      bridge.open(target)
+    } catch (err) {
+      const detail = errorMessage(err)
+      return this.recordUnavailable(target, opts, classifyOpenFailure(detail), detail)
+    }
+
+    let status
+    try {
+      status = bridge.status()
+    } catch (err) {
+      closeQuietly(bridge)
+      return this.recordUnavailable(target, opts, 'damaged', errorMessage(err))
+    }
+
+    if (status.kind !== 'Ok') {
+      // Torn or corrupt: hold nothing open on it, and say why.
+      closeQuietly(bridge)
+      return this.recordUnavailable(
+        target,
+        opts,
+        'damaged',
+        status.reason || `the journal is ${status.kind}`,
+      )
+    }
+
+    const tree = this.adopt(bridge, target, opts)
+    // It opened, so any earlier record of it failing to is no longer true.
+    this.unavailable.delete(unavailableId(target))
+    return tree
+  }
+
+  /**
+   * Try an unavailable tree again, once its cause is gone (UI-SPEC "Reopen
+   * tree"). Returns null when the id names nothing unavailable.
+   *
+   * The old entry is dropped first, so a retry that fails records a fresh
+   * reason rather than leaving a stale one beside it.
+   */
+  reopen(treeId: string): OpenTree | UnavailableTree | null {
+    const entry = this.unavailable.get(treeId)
+    if (!entry) return null
+
+    this.unavailable.delete(treeId)
+    return this.tryOpen(entry.path, {
+      kind: entry.kind,
+      name: entry.name,
+      ...(entry.vaultRoot !== undefined ? { vaultRoot: entry.vaultRoot } : {}),
+    })
+  }
+
+  /** Record a tree as present in the space but unopenable. */
+  private recordUnavailable(
+    target: string,
+    opts: OpenTreeOptions,
+    status: UnavailableStatus,
+    reason: string,
+  ): UnavailableTree {
+    const entry: UnavailableTree = {
+      id: unavailableId(target),
+      path: target,
+      kind: opts.kind ?? 'native',
+      name: opts.name ?? defaultName(target),
+      ...(opts.vaultRoot !== undefined ? { vaultRoot: opts.vaultRoot } : {}),
+      status,
+      reason,
+    }
+
+    this.unavailable.set(entry.id, entry)
+    this.emit()
+    return entry
   }
 
   /**
@@ -155,6 +341,13 @@ export class TreeRegistry {
    * what makes the file openable again in the same process.
    */
   close(treeId: string): void {
+    // An unavailable tree holds no bridge and no lock: closing it is simply
+    // taking it out of the space, which is what Close tree means for it too.
+    if (this.unavailable.delete(treeId)) {
+      this.emit()
+      return
+    }
+
     const tree = this.trees.get(treeId)
     if (!tree) return
     try {
@@ -177,6 +370,7 @@ export class TreeRegistry {
       }
       this.trees.delete(id)
     }
+    this.unavailable.clear()
     this.primaryId = null
     this.emit()
   }
@@ -187,6 +381,35 @@ export class TreeRegistry {
 
   get(treeId: string): OpenTree | null {
     return this.trees.get(treeId) ?? null
+  }
+
+  /** The trees in the space that would not open, in the order they failed. */
+  unavailableList(): UnavailableTree[] {
+    return [...this.unavailable.values()]
+  }
+
+  /**
+   * Any member of the space by id, open or not.
+   *
+   * Close tree and Show in Finder act on both kinds, and both only ever need
+   * the path — which is exactly why the renderer may name an id and never a
+   * path of its own (T-02.2-30).
+   */
+  entry(treeId: string): TreeEntry | null {
+    return this.trees.get(treeId) ?? this.unavailable.get(treeId) ?? null
+  }
+
+  /**
+   * Why this tree cannot be written to, or null when it can be.
+   *
+   * This is the one place a write is refused for being *about* an unavailable
+   * tree, so a damaged journal cannot be appended to through any path that
+   * names a tree by id.
+   */
+  refusalFor(treeId: string): string | null {
+    const entry = this.unavailable.get(treeId)
+    if (!entry) return null
+    return `${refusalCause[entry.status]}; Tapestry will not write to it`
   }
 
   /** Open trees, in the order they were opened. */
@@ -217,14 +440,29 @@ export class TreeRegistry {
    * about the space, while this table is about which worlds are loaded. The
    * caller joins the two (see `trees:list`).
    */
-  summary(): Array<{ id: string; name: string; kind: TreeKind; path: string; vaultRoot?: string }> {
-    return this.list().map((tree) => ({
+  summary(): TreeSummary[] {
+    const open: TreeSummary[] = this.list().map((tree) => ({
       id: tree.id,
       name: tree.name,
       kind: tree.kind,
       path: tree.path,
       ...(tree.vaultRoot !== undefined ? { vaultRoot: tree.vaultRoot } : {}),
+      status: 'ok' as const,
     }))
+
+    // Unavailable trees are listed too, with why: dropping them here is how a
+    // tree would silently disappear from the space (T-02.2-32).
+    const unavailable: TreeSummary[] = this.unavailableList().map((tree) => ({
+      id: tree.id,
+      name: tree.name,
+      kind: tree.kind,
+      path: tree.path,
+      ...(tree.vaultRoot !== undefined ? { vaultRoot: tree.vaultRoot } : {}),
+      status: tree.status,
+      reason: tree.reason,
+    }))
+
+    return [...open, ...unavailable]
   }
 
   /**

@@ -1,17 +1,21 @@
 /**
- * D-05: an agent may read anything and connect anything, but may change only
- * what it created.
+ * The lock rule (02.4): an agent may read, grow from and connect anything, and
+ * may change a note unless the note's aspect is locked against it. Update and
+ * rename check the `text` aspect; delete checks `delete`. This supersedes the
+ * authorship rule of 02.2 D-05, under which an agent could change only what it
+ * created (02.4 D-01). The rule itself lives in locks.ts.
  *
- * The rule rests on the journal, not on a field: authorship comes from the
- * `actor` line of the commit that created the node (Plan 02's history index).
- * There is no created-by property for a writer to set about itself, so a
- * refusal here cannot be talked around by a model that ignores instructions,
- * and an agent cannot grant itself ownership by claiming it.
+ * Authorship still rests on the journal, not on a field: it comes from the
+ * `actor` line of the commit that created the node (Plan 02's history index),
+ * and it is now the note's default lock owner (02.4 D-04). There is no
+ * created-by property for a writer to set about itself, so a refusal here
+ * cannot be talked around by a model that ignores instructions, and an agent
+ * cannot make itself a note's owner by claiming it.
  *
  * Every refusal is asserted twice: that it returns `{ ok: false }`, and that
  * **nothing was written** — the file's size and the note's stored text are
- * unchanged. A refusal that still appended a commit would be a change that
- * D-05 exists to prevent.
+ * unchanged. A refusal that still appended a commit would be exactly the change
+ * a lock exists to prevent (02.4 D-11).
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -21,6 +25,7 @@ import { makeTempDir } from '../../../test/helpers/temp-tree'
 import { TreeRegistry, type OpenTree } from '../trees/registry'
 import { agentActor, humanActor, type Actor } from './actor'
 import { ConnectionCommands } from './connections'
+import { AGENT_NOTES_OPEN_TO_AGENTS, NON_AGENT_NOTES_DELETE_LOCKED } from './locks'
 import { NoteCommands, docJsonToPlainText, plainTextToDocJson } from './notes'
 
 const CLAUDE = agentActor('claude')
@@ -108,7 +113,7 @@ function titleOf(noteId: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// An agent changing its own notes (D-05, allowed)
+// An agent changing its own notes (open or owned, allowed)
 // ---------------------------------------------------------------------------
 
 describe('an agent changing a note it created', () => {
@@ -149,7 +154,7 @@ describe('an agent changing a note it created', () => {
 })
 
 // ---------------------------------------------------------------------------
-// An agent changing somebody else's note (D-05, refused)
+// An agent changing somebody else's note (locked by default, refused; 02.4 D-04)
 // ---------------------------------------------------------------------------
 
 describe("an agent changing a note it did not create", () => {
@@ -163,9 +168,7 @@ describe("an agent changing a note it did not create", () => {
     })
 
     expect(result.ok).toBe(false)
-    expect(result.ok === false && result.error).toBe(
-      'agent.claude may only change notes it created; n1 was created by user.kaelen',
-    )
+    expect(result.ok === false && result.error).toBe('n1 text is locked by user.kaelen')
     // Nothing was appended, and the note still says what Kaelen wrote.
     expect(worldFingerprint()).toEqual(before)
     expect(bodyTextOf('n1')).toBe('Written by Kaelen')
@@ -177,31 +180,34 @@ describe("an agent changing a note it did not create", () => {
     const result = notes.renameNote(CLAUDE, { tree: 'policy', note: 'n1', title: 'Claimed' })
 
     expect(result.ok).toBe(false)
-    expect(result.ok === false && result.error).toBe(
-      'agent.claude may only change notes it created; n1 was created by user.kaelen',
-    )
+    expect(result.ok === false && result.error).toBe('n1 text is locked by user.kaelen')
     expect(worldFingerprint()).toEqual(before)
     expect(titleOf('n1')).toBe('Seed')
   })
 
-  it('refuses to delete a note created by user.kaelen, and writes nothing', () => {
+  it('deletes a note created by user.kaelen only if its delete is open (NON_AGENT_NOTES_DELETE_LOCKED)', () => {
     const before = worldFingerprint()
 
     const result = notes.deleteNote(CLAUDE, { tree: 'policy', note: 'n1' })
 
-    expect(result.ok).toBe(false)
-    expect(result.ok === false && result.error).toBe(
-      'agent.claude may only change notes it created; n1 was created by user.kaelen',
-    )
-    expect(worldFingerprint()).toEqual(before)
-    expect(tree.bridge.getNode('n1')).not.toBeNull()
+    if (NON_AGENT_NOTES_DELETE_LOCKED) {
+      expect(result.ok).toBe(false)
+      expect(result.ok === false && result.error).toBe('n1 delete is locked by user.kaelen')
+      expect(worldFingerprint()).toEqual(before)
+      expect(tree.bridge.getNode('n1')).not.toBeNull()
+    } else {
+      expect(result.ok).toBe(true)
+      expect(tree.bridge.getNode('n1')).toBeNull()
+    }
   })
 
   /**
-   * D-06: agents are distinguishable from each other, so "only notes it
-   * created" is per agent, not "any agent may change any agent's note".
+   * 02.2 D-06 still makes agents distinguishable from each other. 02.4 D-06
+   * makes a note an agent created open to every agent by default, so whether
+   * another agent may change it follows AGENT_NOTES_OPEN_TO_AGENTS. When the
+   * constant is false, the note is locked to the agent that created it.
    */
-  it('refuses one agent changing another agent\'s note', () => {
+  it("lets one agent update another agent's note unless it is locked (AGENT_NOTES_OPEN_TO_AGENTS)", () => {
     const before = worldFingerprint()
 
     const result = notes.updateNote(CHATGPT, {
@@ -210,12 +216,18 @@ describe("an agent changing a note it did not create", () => {
       text: 'ChatGPT was here',
     })
 
-    expect(result.ok).toBe(false)
-    expect(result.ok === false && result.error).toBe(
-      `agent.chatgpt may only change notes it created; ${claudeNote} was created by agent.claude`,
-    )
-    expect(worldFingerprint()).toEqual(before)
-    expect(bodyTextOf(claudeNote)).toBe('Grown by Claude')
+    if (AGENT_NOTES_OPEN_TO_AGENTS) {
+      expect(result.ok).toBe(true)
+      expect(bodyTextOf(claudeNote)).toBe('ChatGPT was here')
+      expect(lastCommitBlock()).toContain('actor plugin agent.chatgpt')
+    } else {
+      expect(result.ok).toBe(false)
+      expect(result.ok === false && result.error).toBe(
+        `${claudeNote} text is locked by agent.claude`,
+      )
+      expect(worldFingerprint()).toEqual(before)
+      expect(bodyTextOf(claudeNote)).toBe('Grown by Claude')
+    }
   })
 
   it('refuses a note that is not live at all', () => {
@@ -228,7 +240,7 @@ describe("an agent changing a note it did not create", () => {
     expect(worldFingerprint()).toEqual(before)
   })
 
-  /** A person is not restricted: D-05 limits agents, not the human. */
+  /** A person is not restricted: locks check agents, not the human (02.4 D-10). */
   it('lets user.kaelen change a note an agent created', () => {
     const result = notes.updateNote(KAELEN, {
       tree: 'policy',
@@ -242,7 +254,7 @@ describe("an agent changing a note it did not create", () => {
 })
 
 // ---------------------------------------------------------------------------
-// Connections (D-05: any agent may connect any notes)
+// Connections (any agent may connect any notes; 02.4 D-01)
 // ---------------------------------------------------------------------------
 
 describe('connect_notes', () => {
@@ -332,7 +344,7 @@ describe('connect_notes', () => {
 })
 
 // ---------------------------------------------------------------------------
-// search_notes (read-only: D-05 lets an agent read anything)
+// search_notes (read-only: locks never gate reading; 02.4 D-01)
 // ---------------------------------------------------------------------------
 
 describe('search_notes', () => {

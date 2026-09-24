@@ -13,21 +13,33 @@
  * trees by name through the shared command layer (D-01).
  */
 
-import { app, BrowserWindow, ipcMain, dialog } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, net, protocol, shell } from 'electron'
 import { isAbsolute, join, relative, resolve, sep } from 'path'
 import { execFileSync } from 'child_process'
 import { userInfo } from 'os'
 import { KernelBridge } from './kernel-bridge'
 import { PluginHost } from './plugin-host'
+import { PLUGIN_SCHEME, SCHEME_PRIVILEGES, makePluginSchemeHandler } from './plugin-scheme'
 import { SettingsStore, suggestUserName, type TreeFrameSetting } from './settings'
 import { agentActor, humanActor, isValidActorName, type Actor } from './commands/actor'
 import { buildConnectCommand } from './agents/connect-command'
 import { TreeRegistry } from './trees/registry'
+import { VaultService } from './obsidian/vault-service'
 import { NoteCommands, type CommandHooks } from './commands/notes'
 import { ConnectionCommands } from './commands/connections'
+import { SpatialCommands } from './commands/spatial'
 import { runAgentTool, type AgentCommands } from './commands/agent-tools'
 import { AgentRegistry, agentSocketPath } from './agents/registry'
 import { AgentSocketServer } from './agents/socket-server'
+
+// ---------------------------------------------------------------------------
+// Plugin surface scheme (CANV-04)
+// ---------------------------------------------------------------------------
+
+// Must run before app 'ready': Electron refuses privileged-scheme
+// registration afterwards. The handler itself is attached inside whenReady,
+// once the plugins directory is known.
+protocol.registerSchemesAsPrivileged([{ scheme: PLUGIN_SCHEME, privileges: SCHEME_PRIVILEGES }])
 
 // ---------------------------------------------------------------------------
 // Window management
@@ -108,6 +120,22 @@ function validateTreePath(filePath: string): boolean {
   )
 }
 
+/**
+ * Vault folders the user chose through the native folder dialog this session.
+ *
+ * A vault root is a door into a whole directory tree, so unlike a `.tree` path
+ * there is no "anywhere under home" fallback: the only roots `vault:add` will
+ * accept are the ones a person picked in a dialog (T-02.2-37).
+ */
+const approvedVaultRoots = new Set<string>()
+
+/** Absolute, non-empty, no `..` segment. The shape check before the dialog check. */
+function isWellFormedVaultRoot(folderPath: unknown): folderPath is string {
+  if (!folderPath || typeof folderPath !== 'string') return false
+  if (!isAbsolute(folderPath)) return false
+  return !folderPath.split(/[\\/]/).includes('..')
+}
+
 // ---------------------------------------------------------------------------
 // App lifecycle
 // ---------------------------------------------------------------------------
@@ -134,6 +162,14 @@ function errorMessage(err: unknown): string {
  * is not a name the window can invent.
  */
 function resolveTree(treeId: unknown): KernelBridge {
+  // A tree that would not open is refused with the reason, not as unknown: it
+  // is in the space and on screen, so "unknown tree" would be a worse answer
+  // than "this tree is damaged" (T-02.2-29).
+  if (typeof treeId === 'string') {
+    const refusal = registry.refusalFor(treeId)
+    if (refusal) throw new Error(refusal)
+  }
+
   if (typeof treeId !== 'string' || !TREE_ID_PATTERN.test(treeId)) {
     throw new Error(`Unknown tree ${String(treeId)}`)
   }
@@ -213,6 +249,14 @@ app.whenReady().then(async () => {
   // Register plugin IPC handlers
   PluginHost.registerHandlers(ipcMain, pluginHost)
 
+  // Serve plugin surface modules, their Workers and .wasm from the same
+  // plugins directory PluginHost loads from (CANV-04). The handler only ever
+  // serves what resolvePluginFile returns; everything else is a 404.
+  protocol.handle(
+    PLUGIN_SCHEME,
+    makePluginSchemeHandler(pluginsDir, { fetchFile: (fileUrl) => net.fetch(fileUrl) }),
+  )
+
   // Wire plugin error notifications to the renderer (D-34)
   pluginHost.onPluginError = (
     pluginName: string,
@@ -253,6 +297,7 @@ app.whenReady().then(async () => {
   const agentCommands: AgentCommands = {
     notes: new NoteCommands(registry, commandHooks),
     connections: new ConnectionCommands(registry, commandHooks),
+    spatial: new SpatialCommands(registry, commandHooks),
   }
 
   agentServer = new AgentSocketServer({
@@ -437,7 +482,10 @@ app.whenReady().then(async () => {
       return { ok: false, error: 'Invalid .tree file path' }
     }
     try {
-      const tree = registry.open(path, { kind: 'native' })
+      // A world that will not open still joins the space, as a frame carrying
+      // its reason: silently refusing it would leave Kaelen with a file picker
+      // that appeared to do nothing.
+      const tree = registry.tryOpen(path, { kind: 'native' })
       rememberTree(tree.path)
       notifyTreesChanged()
       return { ok: true, treeId: tree.id }
@@ -469,7 +517,7 @@ app.whenReady().then(async () => {
    */
   ipcMain.handle('trees:close', (_event, treeId: unknown) => {
     if (typeof treeId !== 'string') return { ok: false, error: 'Unknown tree' }
-    const tree = registry.get(treeId)
+    const tree = registry.entry(treeId)
     if (!tree) return { ok: false, error: `Unknown tree ${treeId}` }
 
     const treePath = tree.path
@@ -477,6 +525,45 @@ app.whenReady().then(async () => {
     settings.removeTree(treePath)
     notifyTreesChanged()
     return { ok: true }
+  })
+
+  /**
+   * Show a tree's file in Finder (UI-SPEC "Tree options > Show in Finder").
+   *
+   * The renderer names a tree by id and never by path: the path is read from
+   * the registry, so this cannot be aimed at an arbitrary file on disk
+   * (T-02.2-30). An id that names nothing in the space is refused.
+   */
+  ipcMain.handle('trees:reveal', (_event, treeId: unknown) => {
+    if (typeof treeId !== 'string') return { ok: false, error: 'Unknown tree' }
+    const tree = registry.entry(treeId)
+    if (!tree) return { ok: false, error: `Unknown tree ${treeId}` }
+
+    shell.showItemInFolder(tree.path)
+    return { ok: true }
+  })
+
+  /**
+   * Try a tree that would not open again (UI-SPEC "Reopen tree").
+   *
+   * Kaelen's action rather than a retry loop: the cause — another Tapestry
+   * holding the lock, a file being put back — is outside this process, so
+   * polling for it would only burn cycles being wrong (T-02.2-31).
+   */
+  ipcMain.handle('trees:reopen', (_event, treeId: unknown) => {
+    if (typeof treeId !== 'string') return { ok: false, error: 'Unknown tree' }
+
+    try {
+      const tree = registry.reopen(treeId)
+      if (!tree) return { ok: false, error: `Unknown tree ${treeId}` }
+      notifyTreesChanged()
+      return { ok: true, treeId: tree.id }
+    } catch (err) {
+      // The retry itself failed in a way that is about the space (the same
+      // world is already open elsewhere): the list still changed.
+      notifyTreesChanged()
+      return { ok: false, error: errorMessage(err) }
+    }
   })
 
   /**
@@ -496,6 +583,67 @@ app.whenReady().then(async () => {
 
     settings.setTreeFrame(tree.path, { x: x as number, y: y as number })
     return { ok: true }
+  })
+
+  // -------------------------------------------------------------------------
+  // Obsidian vault IPC (D-10, D-13): a vault folder becomes its own tree
+  // -------------------------------------------------------------------------
+
+  /**
+   * The bridge runs here, in main, rather than as a plugin: it needs the
+   * filesystem and the reserved `obsidian.bridge` actor a plugin may not claim.
+   */
+  const vaultService = new VaultService(registry, {
+    onStatus: (treeId, status) => {
+      mainWindow?.webContents.send('vault-status', { treeId, ...status })
+    },
+    // Its commits did not come from the renderer, so the canvas is told the
+    // same way an agent's commits tell it.
+    onCommitted: (treeId) => {
+      mainWindow?.webContents.send('tree-changed', treeId)
+    },
+  })
+
+  ipcMain.handle('dialog:showOpenVaultFolder', async () => {
+    if (!mainWindow) return { canceled: true, folderPath: undefined }
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Choose an Obsidian vault folder',
+      properties: ['openDirectory'],
+    })
+    if (result.canceled || result.filePaths.length === 0) {
+      return { canceled: true, folderPath: undefined }
+    }
+    const folderPath = resolve(result.filePaths[0])
+    approvedVaultRoots.add(folderPath)
+    return { canceled: false, folderPath }
+  })
+
+  /**
+   * Mirror a vault as a tree (D-10). The confirmation dialog the UI-SPEC
+   * describes, and restoring vault trees at launch, are Plan 08.
+   */
+  ipcMain.handle('vault:add', async (_event, root: unknown) => {
+    if (!isWellFormedVaultRoot(root)) {
+      return { ok: false, error: 'Invalid vault folder path' }
+    }
+    const target = resolve(root)
+    if (!approvedVaultRoots.has(target)) {
+      return { ok: false, error: 'Choose the vault folder with Add Obsidian Vault... first.' }
+    }
+
+    try {
+      const tree = await vaultService.addVault(target)
+      settings.addTree({
+        path: tree.path,
+        kind: 'vault',
+        vaultRoot: target,
+        frame: placeNewFrameFromSettings(),
+      })
+      notifyTreesChanged()
+      return { ok: true, treeId: tree.id }
+    } catch (err) {
+      return { ok: false, error: errorMessage(err) }
+    }
   })
 
   // Save dialog for creating new .tree files
@@ -552,10 +700,11 @@ app.whenReady().then(async () => {
     // These paths were chosen by the user in an earlier session.
     approvedPaths.add(resolve(tree.path))
     try {
-      registry.open(tree.path, { kind: 'native' })
-    } catch (err) {
       // A tree that has been moved, deleted or damaged must not cost the user
-      // the rest of their space, so each reopen fails on its own.
+      // the rest of their space: it comes back as an unavailable frame holding
+      // the reason, rather than vanishing from the space it was part of.
+      registry.tryOpen(tree.path, { kind: 'native' })
+    } catch (err) {
       console.error('[Main] could not reopen tree:', err)
     }
   }

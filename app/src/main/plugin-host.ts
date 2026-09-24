@@ -22,6 +22,7 @@ import type {
   CommandContribution,
   PropertyPanelContribution,
   InspectorContribution,
+  SurfaceContribution,
 } from '../../../sdk/src/contributions'
 import type { KernelBridge } from './kernel-bridge'
 import { assertPluginSubmitKind, pluginActor, SYSTEM_ACTOR, type Actor } from './commands/actor'
@@ -93,6 +94,7 @@ interface PluginManifest {
   contributions: {
     nodeTypes: string[]
     commands?: string[]
+    surfaces?: string[]
   }
 }
 
@@ -158,6 +160,7 @@ interface ContributionRegistry {
   commands: Map<string, CommandContribution>
   propertyPanels: Map<string, PropertyPanelContribution[]>
   inspectors: Map<string, InspectorContribution>
+  surfaces: Map<string, SurfaceContribution>
 }
 
 interface LoadedPlugin {
@@ -362,7 +365,7 @@ export class PluginHost {
       // owner; the first registrant (deterministic: discovery is sorted by
       // directory name) keeps the contribution.
       const findOwner = (
-        kind: 'nodeViews' | 'commands' | 'inspectors',
+        kind: 'nodeViews' | 'commands' | 'inspectors' | 'surfaces',
         key: string,
       ): string | null => {
         for (const [otherId, other] of this.plugins) {
@@ -405,6 +408,32 @@ export class PluginHost {
             throw new Error(`Inspector ${contribution.id} is already registered by plugin ${owner}`)
           }
           contributions.inspectors.set(contribution.id, contribution)
+        },
+        registerSurface: (contribution: SurfaceContribution) => {
+          const owner = findOwner('surfaces', contribution.id)
+          if (owner) {
+            throw new Error(`Surface ${contribution.id} is already registered by plugin ${owner}`)
+          }
+          // The entry is joined into a filesystem path and served over
+          // tapestry-plugin://, so it gets the same containment as
+          // manifest.main (T-02-04).
+          const entry = String(contribution.entry)
+          const surfacePath = resolve(pluginDir, entry)
+          const relativeSurfacePath = relative(pluginDir, surfacePath)
+          if (relativeSurfacePath.startsWith('..') || isAbsolute(relativeSurfacePath)) {
+            throw new Error('Surface entry path escapes plugin directory')
+          }
+          // The renderer import()s the entry as an ES module; a source file
+          // would fail there with a much less useful error.
+          if (!/\.m?js$/.test(surfacePath)) {
+            throw new Error(
+              `Surface entry must be a .js/.mjs ES module (got ${entry}); build the plugin first`,
+            )
+          }
+          if (contribution.placement !== 'stage') {
+            throw new Error("Surface placement must be 'stage'")
+          }
+          contributions.surfaces.set(contribution.id, contribution)
         },
       }
 
@@ -460,6 +489,7 @@ export class PluginHost {
     loaded.contributions.commands.clear()
     loaded.contributions.propertyPanels.clear()
     loaded.contributions.inspectors.clear()
+    loaded.contributions.surfaces.clear()
 
     // Clear the require cache so a reload gets fresh code. Evict every
     // module under the plugin directory, not just the entry: helpers the
@@ -635,17 +665,31 @@ export class PluginHost {
     commands: Record<string, { id: string; displayName: string; pluginName: string }>
     propertyPanels: Record<string, Array<PropertyPanelContribution & { pluginName: string }>>
     inspectors: Record<string, { id: string; displayName: string; component: string; pluginName: string }>
+    /**
+     * Keyed by surface id. `pluginName` is the directory id — the renderer
+     * builds `tapestry-plugin://<pluginName>/<entry>` from it, never from
+     * the manifest name.
+     */
+    surfaces: Record<
+      string,
+      { id: string; displayName: string; entry: string; placement: 'stage'; pluginName: string }
+    >
   } {
     const result: {
       nodeViews: Record<string, NodeViewContribution>
       commands: Record<string, { id: string; displayName: string; pluginName: string }>
       propertyPanels: Record<string, Array<PropertyPanelContribution & { pluginName: string }>>
       inspectors: Record<string, { id: string; displayName: string; component: string; pluginName: string }>
+      surfaces: Record<
+        string,
+        { id: string; displayName: string; entry: string; placement: 'stage'; pluginName: string }
+      >
     } = {
       nodeViews: {},
       commands: {},
       propertyPanels: {},
       inspectors: {},
+      surfaces: {},
     }
 
     for (const [pluginName, loaded] of this.plugins) {
@@ -675,6 +719,10 @@ export class PluginHost {
       for (const [id, contrib] of loaded.contributions.inspectors) {
         result.inspectors[id] = { ...contrib, pluginName }
       }
+
+      for (const [id, contrib] of loaded.contributions.surfaces) {
+        result.surfaces[id] = { ...contrib, pluginName }
+      }
     }
 
     return result
@@ -694,6 +742,8 @@ export class PluginHost {
     reason?: string
     nodeTypes: string[]
     nodeViews: Record<string, string>
+    /** Surface ids this plugin registered (empty unless loaded). */
+    surfaces: string[]
   }> {
     const result: Array<{
       id: string
@@ -704,6 +754,7 @@ export class PluginHost {
       reason?: string
       nodeTypes: string[]
       nodeViews: Record<string, string>
+      surfaces: string[]
     }> = []
 
     for (const [id, loaded] of this.plugins) {
@@ -720,6 +771,7 @@ export class PluginHost {
         reason: loaded.reason,
         nodeTypes: loaded.manifest.contributions?.nodeTypes || [],
         nodeViews: views,
+        surfaces: [...loaded.contributions.surfaces.keys()],
       })
     }
 
@@ -925,6 +977,7 @@ export class PluginHost {
       commands: new Map(),
       propertyPanels: new Map(),
       inspectors: new Map(),
+      surfaces: new Map(),
     }
   }
 }

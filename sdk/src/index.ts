@@ -18,6 +18,10 @@ export type {
   CommandContext,
   PropertyPanelContribution,
   InspectorContribution,
+  SurfaceContribution,
+  SurfaceHost,
+  SurfaceHandle,
+  SurfaceModule,
 } from './contributions'
 
 // ---------------------------------------------------------------------------
@@ -207,6 +211,14 @@ export interface PluginContext {
    * Register a general inspector panel not tied to a specific node type.
    */
   registerInspector(contribution: import('./contributions').InspectorContribution): void;
+
+  /**
+   * Register a renderer-side surface: an ES module inside the plugin
+   * directory that the host loads into a full-window stage layer (CANV-04).
+   * The entry must be a built `.js`/`.mjs` file that stays inside the plugin
+   * directory; the host serves it over `tapestry-plugin://<plugin-id>/`.
+   */
+  registerSurface(contribution: import('./contributions').SurfaceContribution): void;
 }
 
 // ---------------------------------------------------------------------------
@@ -283,5 +295,7 @@ export interface PluginManifest {
     nodeTypes: string[];
     /** Command identifiers this plugin registers. */
     commands: string[];
+    /** Surface ids this plugin registers (API 1 addition; optional for backward compatibility). */
+    surfaces?: string[];
   };
 }

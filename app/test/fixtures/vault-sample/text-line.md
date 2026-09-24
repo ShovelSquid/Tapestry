@@ -1,0 +1,3 @@
+before
+TEXT
+after

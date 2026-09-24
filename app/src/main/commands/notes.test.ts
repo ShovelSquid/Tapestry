@@ -14,6 +14,8 @@ import { makeTempDir } from '../../../test/helpers/temp-tree'
 import { TreeRegistry, type OpenTree } from '../trees/registry'
 import { agentActor, humanActor } from './actor'
 import { NoteCommands, docJsonToPlainText, plainTextToDocJson } from './notes'
+import { CreateNoteArgs } from '../mcp/schemas'
+import { displayPositions } from '../../renderer/layout/placement'
 
 const CLAUDE = agentActor('claude')
 const KAELEN = humanActor('kaelen')
@@ -228,6 +230,279 @@ describe('createFrom', () => {
     // parent x 10 + width 300 + gap 80
     expect(Number(child.props['position.x'].value)).toBe(390)
     expect(Number(child.props['position.y'].value)).toBe(20)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// create_note's optional where (02.5 Plan 05, SC2, D-01, D-02, D-06, D-12)
+// ---------------------------------------------------------------------------
+
+/** Seed notes signed by Kaelen in one commit; returns the ids the kernel issued. */
+function seedNotes(
+  seeds: Array<{ x?: number; y?: number; width?: number; height?: number }>,
+  into: OpenTree = tree,
+): string[] {
+  const ops = seeds.map((s) => {
+    const props: Record<string, { type: string; value: string | number | boolean }> = {
+      title: { type: 'text', value: 'Other' },
+      body: { type: 'text', value: '' },
+    }
+    if (s.x !== undefined) props['position.x'] = { type: 'real', value: s.x }
+    if (s.y !== undefined) props['position.y'] = { type: 'real', value: s.y }
+    if (s.width !== undefined) props['width'] = { type: 'real', value: s.width }
+    if (s.height !== undefined) props['height'] = { type: 'real', value: s.height }
+    return { op: 'createNode' as const, type: 'tapestry.notes/note@1', props }
+  })
+  return into.bridge.submitAs(KAELEN, 'Seed notes', ops).nodeIds
+}
+
+/** How many commits the file holds. */
+function commitRecords(): number {
+  return (readFileSync(treePath, 'utf-8').match(/^@commit /gm) ?? []).length
+}
+
+/** The fingerprint a where refusal must leave alone, with the commit count. */
+function whereFingerprint() {
+  return { ...worldFingerprint(), commits: commitRecords() }
+}
+
+type WhereCall = { near: string } | { beyond: string; from: string }
+
+/** create_note with where, expecting a refusal that writes nothing. */
+function createWhereError(where: WhereCall, grewFrom = 'n1'): string {
+  const before = whereFingerprint()
+  const result = commands.createFrom(CLAUDE, { tree: 'notes', grewFrom, title: 'Luna', text: 'hi', where })
+  expect(result.ok).toBe(false)
+  expect(whereFingerprint()).toEqual(before)
+  return result.ok ? '' : result.error
+}
+
+describe('createFrom without where (D-02: unchanged)', () => {
+  it('without where writes no pinned, no placed text, four set lines, and returns only tree, note, edge and seq', () => {
+    const result = commands.createFrom(CLAUDE, { tree: 'notes', grewFrom: 'n1', title: 'Luna', text: 'hi' })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    expect(Object.keys(result.value).sort()).toEqual(['edge', 'note', 'seq', 'tree'])
+    expect(tree.bridge.getNode('n2')!.props['pinned']).toBeUndefined()
+
+    const block = lastCommitBlock()
+    expect(block).not.toContain('pinned')
+    expect(block).not.toContain('placed')
+    expect(block).toContain('message "grow note \\"Luna\\" from n1"\n')
+    const setLines = block.split('\n').filter((line) => line.trimStart().startsWith('set n2 '))
+    expect(setLines).toHaveLength(4)
+    expect(setLines.some((line) => line.includes('position.x'))).toBe(true)
+    expect(setLines.some((line) => line.includes('position.y'))).toBe(true)
+    expect(setLines.some((line) => line.includes(' body '))).toBe(true)
+    expect(setLines.some((line) => line.includes(' title '))).toBe(true)
+    expect(block).toContain('create-node n2 tapestry.notes/note@1')
+    expect(block).toMatch(/create-edge e\d+ n2 n1 grew-from/)
+  })
+
+  it('without where still overlaps a note already at the parent right (no collision step)', () => {
+    seedNotes([{ x: 390, y: 20 }])
+    const result = commands.createFrom(CLAUDE, { tree: 'notes', grewFrom: 'n1', title: 'Luna', text: 'hi' })
+    expect(result.ok).toBe(true)
+
+    const child = tree.bridge.getNode('n3')!
+    expect(child.props['position.x'].value).toBe(390)
+    expect(child.props['position.y'].value).toBe(20)
+    expect(child.props['pinned']).toBeUndefined()
+  })
+})
+
+describe('createFrom with where', () => {
+  it('near its own grewFrom follows: pinned bool false at the drawn spot, and the message says where', () => {
+    const result = commands.createFrom(CLAUDE, {
+      tree: 'notes',
+      grewFrom: 'n1',
+      title: 'Luna',
+      text: 'hi',
+      where: { near: 'n1' },
+    })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    expect(result.value).toEqual({
+      tree: tree.id,
+      note: 'n2',
+      edge: 'e1',
+      seq: expect.any(Number),
+      follows: true,
+    })
+    const child = tree.bridge.getNode('n2')!
+    expect(child.props['position.x'].value).toBe(390)
+    expect(child.props['position.y'].value).toBe(20)
+    expect(child.props['pinned']).toEqual({ type: 'bool', value: false })
+
+    // PROV-03 / TREE-01: one commit, signed by the agent, node and edge together.
+    const block = lastCommitBlock()
+    expect(block).toContain('actor plugin agent.claude')
+    expect(block).toContain('create-node n2 tapestry.notes/note@1')
+    expect(block).toMatch(/create-edge e\d+ n2 n1 grew-from/)
+    expect(block).toContain('message "grow note \\"Luna\\" from n1, placed near n1"\n')
+    expect(block).toMatch(/set n2 pinned bool false/)
+  })
+
+  it('follows past a note already beside the parent, and is drawn exactly at its stored spot (D-06)', () => {
+    seedNotes([{ x: 390, y: 20 }])
+    const result = commands.createFrom(CLAUDE, {
+      tree: 'notes',
+      grewFrom: 'n1',
+      title: 'Luna',
+      text: 'hi',
+      where: { near: 'n1' },
+    })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.value.note).toBe('n3')
+
+    const child = tree.bridge.getNode('n3')!
+    // 20 + default height 120 + gutter 24
+    expect(child.props['position.x'].value).toBe(390)
+    expect(child.props['position.y'].value).toBe(164)
+
+    const drawn = displayPositions(tree.bridge.getNodes(), tree.bridge.getEdges(), new Map()).get('n3')
+    expect(drawn?.following).toBe(true)
+    expect(drawn?.x).toBe(390)
+    expect(drawn?.y).toBe(164)
+  })
+
+  it('near another note is fixed: no pinned key and follows false', () => {
+    seedNotes([{ x: 1000, y: 1000 }])
+    const result = commands.createFrom(CLAUDE, {
+      tree: 'notes',
+      grewFrom: 'n1',
+      title: 'Luna',
+      text: 'hi',
+      where: { near: 'n2' },
+    })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.value.follows).toBe(false)
+
+    const child = tree.bridge.getNode('n3')!
+    // n2 at 1000 + default width 280 + gap 80
+    expect(child.props['position.x'].value).toBe(1360)
+    expect(child.props['position.y'].value).toBe(1000)
+    expect(child.props['pinned']).toBeUndefined()
+    expect(lastCommitBlock()).toContain('message "grow note \\"Luna\\" from n1, placed near n2"\n')
+    expect(lastCommitBlock()).not.toContain('pinned')
+  })
+
+  it('beyond one note from another is fixed: no pinned key and follows false', () => {
+    seedNotes([{ x: 1000, y: 20 }])
+    const result = commands.createFrom(CLAUDE, {
+      tree: 'notes',
+      grewFrom: 'n1',
+      title: 'Luna',
+      text: 'hi',
+      where: { beyond: 'n2', from: 'n1' },
+    })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.value.follows).toBe(false)
+
+    const child = tree.bridge.getNode('n3')!
+    expect(Number(child.props['position.x'].value)).toBeGreaterThan(1000)
+    expect(Number.isFinite(Number(child.props['position.y'].value))).toBe(true)
+    expect(child.props['pinned']).toBeUndefined()
+    expect(lastCommitBlock()).toContain('message "grow note \\"Luna\\" from n1, placed beyond n2 from n1"\n')
+    expect(lastCommitBlock()).not.toContain('pinned')
+  })
+
+  it('beyond its own grewFrom is still fixed (only near the parent follows, D-01)', () => {
+    seedNotes([{ x: -1000, y: 20 }])
+    const result = commands.createFrom(CLAUDE, {
+      tree: 'notes',
+      grewFrom: 'n1',
+      title: 'Luna',
+      text: 'hi',
+      where: { beyond: 'n1', from: 'n2' },
+    })
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.value.follows).toBe(false)
+    expect(tree.bridge.getNode('n3')!.props['pinned']).toBeUndefined()
+  })
+})
+
+describe('createFrom where refusals write nothing (SC4, D-12)', () => {
+  it('refuses an anchor that is not live or malformed', () => {
+    expect(createWhereError({ near: 'n99' })).toBe('near n99 is not a live note in notes')
+    expect(createWhereError({ near: 'bogus' })).toBe('near bogus is not a live note in notes')
+    expect(createWhereError({ beyond: 'n1', from: 'n98' })).toBe('from n98 is not a live note in notes')
+    expect(createWhereError({ beyond: 'n98', from: 'n1' })).toBe('beyond n98 is not a live note in notes')
+  })
+
+  it('refuses beyond and from naming the same note', () => {
+    expect(createWhereError({ beyond: 'n1', from: 'n1' })).toBe('beyond n1 from n1 names the same note twice')
+  })
+
+  it('refuses near an unplaced note', () => {
+    seedNotes([{}])
+    expect(createWhereError({ near: 'n2' })).toBe('near n2 is not placed in notes')
+  })
+
+  it('refuses a fully blocked column', () => {
+    seedNotes([{ x: 390, y: -100, height: 20000 }])
+    expect(createWhereError({ near: 'n1' })).toBe('no clear spot near n1 in notes')
+  })
+
+  it('refuses two anchors with the same centre (no line)', () => {
+    seedNotes([{ x: 10, y: 20, width: 300 }])
+    expect(createWhereError({ beyond: 'n1', from: 'n2' })).toBe('beyond n1 from n2 has no line to extend in notes')
+  })
+
+  it('refuses an anchor live only in another open tree (D-12)', () => {
+    const other = registry.create(join(dir, 'other.tree'), 'other')
+    seedNotes(
+      Array.from({ length: 5 }, (_, i) => ({ x: i * 400, y: 0 })),
+      other,
+    )
+    expect(tree.bridge.getNode('n5')).toBeNull()
+    expect(createWhereError({ near: 'n5' })).toBe('near n5 is not a live note in notes')
+  })
+
+  it('refuses near the id the new note would receive', () => {
+    expect(tree.bridge.getNextIds().node).toBe('n2')
+    expect(createWhereError({ near: 'n2' })).toBe('near n2 is not a live note in notes')
+  })
+
+  it('does not report a refused where to onCommitted', () => {
+    let committed = 0
+    const hooked = new NoteCommands(registry, { onCommitted: () => void committed++ })
+    const refused = hooked.createFrom(CLAUDE, {
+      tree: 'notes',
+      grewFrom: 'n1',
+      title: 'Luna',
+      text: 'hi',
+      where: { near: 'n99' },
+    })
+    expect(refused.ok).toBe(false)
+    expect(committed).toBe(0)
+  })
+})
+
+describe('CreateNoteArgs.where (D-11)', () => {
+  const base = { tree: 'notes', grewFrom: 'n1', title: 'Luna', text: 'hi' }
+  const ok = (where: unknown) => CreateNoteArgs.safeParse({ ...base, where }).success
+
+  it('accepts where absent, near, and beyond-from', () => {
+    expect(CreateNoteArgs.safeParse(base).success).toBe(true)
+    expect(ok({ near: 'n1' })).toBe(true)
+    expect(ok({ beyond: 'n1', from: 'n3' })).toBe(true)
+  })
+
+  it('refuses the space form, the orientation form, a lone beyond, mixed forms and extra keys', () => {
+    expect(ok({ on: 'space-1' })).toBe(false)
+    expect(ok({ near: 'n1', facing: 'north' })).toBe(false)
+    expect(ok({ beyond: 'n1' })).toBe(false)
+    expect(ok({ near: 'n1', beyond: 'n3' })).toBe(false)
+    expect(ok({ near: 'n1', extra: true })).toBe(false)
+    expect(ok({ near: 'n1', actor: 'human' })).toBe(false)
+    expect(CreateNoteArgs.safeParse({ ...base, where: { near: 'n1' }, actor: 'human' }).success).toBe(false)
   })
 })
 
