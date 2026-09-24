@@ -16,7 +16,7 @@ actions, replay tool, and goldens built before the redirect are kept.
 | Phase | Status |
 | --- | --- |
 | 1 engine over the kernel | built and tested headlessly (`836a4da`); only the human GUI confirmation is open, see Blocked |
-| 2 expressions | engine side done: fxmath (`3ca1482`), ast+parser (`1725143`), bytecode (`30fc1a6`), vm (`3b25475`), action 37 + step eval + golden `plot` (`1abc9d4`); `ms_compile` in the C ABI and `Engine.compile` (`a159268`, `c44393d`). Open: `image.js` turning `<f>.expr` props into BindField, then `diff.hpp` |
+| 2 expressions | done condition met headlessly (`c5d134e`): golden `plot` hashes across processes and builds, and `<f>.expr text` props bind through the runner so the bound value is committed as a kernel prop after a step (the inspector reads props, so it shows it; a human look is still open like phase 1's). Remaining from the plan's file list: `diff.hpp` |
 | 3 force rules | not started |
 | 4 constraints | not started |
 | 5 views | not started |
@@ -40,30 +40,32 @@ viewer; it is theirs to edit.)
    `.tree`. If a session cannot drive the GUI, skip this: the headless
    check in `plugins/mathspace/test/tree.test.js` already covers the
    file-level condition. Either way, do not block phase 2 on it.
-2. **Phase 2, next slice: `<f>.expr` props in `image.js`.** (a) is
-   done: `Engine.compile(noteId, text)` returns `{code}` or `{error:
-   'parse:InexactNumber', where}`, and `image.js` exports
-   `encodeBindField(note, name, code)`. (b) `buildImage` cannot compile
-   (it has no engine and refs need every note present), so: `buildImage`
-   collects `<f>.expr text "<source>"` props into a new `bindings` list
-   (`{id, name, text}`; the prop's base name must pass `validFieldName`,
-   else `problems`), and `runner.js`'s rebuild, after applying
-   `actions`, runs a second pass that calls `engine.compile` for each
-   binding in id then name order and applies `encodeBindField`; a
-   compile failure goes to `problems` with `reason` = the error string and
-   offset. Check how `runner.js` applies the image today (`rebuild`, the
-   snapshot before await) and keep the second pass synchronous. (c)
-   `snapshot`/`diff` already carry a bound field's lanes, so a vitest in
-   `test/runner.test.js` (or a new `expr.test.js`) with a node holding
-   `x real 1` and `y.expr text "self.x * 2"` should see `y` in the diff
-   after one step. Then phase 2's done condition is met except the human
-   GUI look; say so in STATE and README.
-3. `diff.hpp` (symbolic d/d(self.f.lane) on the Ast, then compile the
-   derivative) is needed by phase 4's XPBD gradients; it can be the last
-   phase 2 slice or the first phase 4 slice.
+2. **`include/mathspace/expr/diff.hpp` + `src/mathspace/expr/diff.cpp`
+   + `tests/mathspace/expr_diff_test.cpp`.** Symbolic
+   `Ast differentiate(const Ast&, std::string_view field, uint8_t lane,
+   DiffError&)` for d/d(self.field.lane): numbers, non-self refs,
+   comparisons and `space.dim`/`world.tick` give 0; `self.field` gives
+   the unit vector at `lane` (dim from the ref's use: the Ast has no dims,
+   so emit `[0, .., 1, .., 0]` only when the ref is followed by
+   `.component`, else a scalar 1/0 and let the compiler's shape check
+   catch vector fields; record the choice); linear rules for `+ - neg
+   vector component if`, product/quotient rules, chain rules for `sqrt
+   sin cos exp log pow atan2 abs min max clamp dot norm`; `curve` is
+   `DiffError::Unsupported`. Test by compiling f and f' and comparing f'
+   to a finite difference of f in the VM at a few points (tolerance a few
+   ulps times the step), plus node-count bounds (`MAX_NODES` must hold
+   for the derivative too). Phase 4's XPBD gradients consume it. Also
+   add the human GUI look for phase 2 to item 1's checklist: set
+   `y.expr text "self.position.x * 2"` on a note, Step, see `y real ...`.
+3. Phase 3 (force rules) per `mathspace_plan.md`; the bootstrap
+   `pos += velocity` rule is replaced there.
 
 ## Done
 
+- `c5d134e` ms2 `<f>.expr` props: `buildImage(...).bindings`,
+  `Runner.rebuild` second pass compiles and binds them, `engineSource`
+  rewrites `.position` to `.pos` in expression text with offsets mapped
+  back; runner vitests see `y real 6` and `v.x`/`v.y` committed.
 - `c44393d` ms2 plugin compile: `Engine.compile` in `engine.js`,
   `encodeBindField` in `image.js`, vitests bind through Wasm and read the
   value from the snapshot.
@@ -108,6 +110,17 @@ viewer; it is theirs to edit.)
 
 ## Decisions
 
+- Expression text spelling (2026-09-24, `c5d134e`): the `.tree` says
+  `self.position` (the app's key, and the design doc's example) while
+  the engine grammar sees the store's `pos`; the plugin rewrites the one
+  renamed field after a ref head before `ms_compile` and maps error
+  offsets back. The engine stays ignorant of app names. A bound field
+  takes its program's dim (`bind_field` zeroes the lanes on a shape
+  change), so a scalar expression on a vector-valued prop commits `w
+  real 0` and leaves the stale `w.x`/`w.y` props in the tree; a bind or
+  compile failure is a per-node problem in the log, not a rebuild
+  failure. Compiling happens in the runner, not `buildImage`, because refs
+  need every note present.
 - `ms_compile` errors (2026-09-24, `a159268`): a negative return packs
   `-(stage << 8 | code)`, stage 0 an `ms_error` (no such note, null
   argument), 1 a `ParseError` with the byte offset in `*where`, 2 a

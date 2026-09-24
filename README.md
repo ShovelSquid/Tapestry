@@ -84,7 +84,13 @@ tested headlessly: the `mathspace` library (`include/mathspace`,
 `tests/golden/ms`, and the plugin (`engine.js`, `image.js`, `runner.js`)
 whose tests run the real kernel and the real Wasm and check the `.tree`.
 The one remaining phase 1 item is a human confirming the note moves in the
-Electron app under the Run command. Phases 2 to 7 are not started.
+Electron app under the Run command. Plan phase 2 (expressions) is built
+the same way: `include/mathspace/expr` (parser, bytecode, VM over
+`include/ddsim/fxmath.hpp`), action 37 `BindField`, `ms_compile` in the C
+ABI, and `<f>.expr text` props that the plugin compiles and binds so the
+bound value is committed after a step; golden `plot` covers it. Its
+`diff.hpp` (symbolic derivatives for phase 4) is next. Phases 3 to 7 are
+not started.
 
 ## Build
 
