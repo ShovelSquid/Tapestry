@@ -23,53 +23,38 @@ Nothing. (`autonomy/watch.py` is the operator's log viewer, committed in
 ## Next
 
 The Tapestry Space page (phase 1 done condition) is split into three
-slices; do them in order, one per session unless the first is quick.
+slices; 2a is done, 2b and 2c remain, one per session unless quick.
 
-1. **2a Space page model + `.tapestry` round trip, headless.** Build the
-   tapestry tree first to confirm the environment
-   (`cmake -S tapestry -B build/tapestry && cmake --build build/tapestry -j`;
-   first configure needs network for glad). Then:
-   - CMake bridge: in `tapestry/CMakeLists.txt` before `tapestry_core`,
-     `add_subdirectory(${PROJECT_SOURCE_DIR}/.. ${CMAKE_BINARY_DIR}/physics-engine)`
-     (the root CMakeLists already forces `DDSIM_BUILD_TESTS OFF` when it is
-     not the top-level project, line ~30; verify) and link `mathspace` into
-     `tapestry_core` PUBLIC. Record the choice under Decisions. Tapestry is
-     not under the forbidden-token gate (gate covers include/, src/, wasm/
-     only), so its doubles are fine; only mathspace bytes are hashed.
-   - `PageKind::Space` appended AFTER `Settings` in `tapestry/core/Page.hpp`
-     so the numeric kinds already in saved files do not shift.
-   - `tapestry/core/Space.hpp`: `struct SpacePage { mathspace::World world;
-     std::vector<std::vector<std::uint8_t>> log; std::size_t saved = 0; }`,
-     one per Space page, kept in the tapestry `World` in a vector sorted by
-     page id (find the page container in `tapestry/core/World.hpp`). `apply`
-     helper: `world.apply(bytes)`; on Ok push to `log`. The World's seed is
-     the page id. mathspace has no journal, so the page keeps the full log;
-     the snapshot writes all of it, a delta writes `log[saved..]`.
-   - Document (`tapestry/core/Document.cpp`): new body line
-     `mspace <page-id> <base64 action bytes>`, one per action, in log order;
-     base64 encoder/decoder local to Document.cpp (std only). On load,
-     apply each line to that page's world in file order; a rejected action
-     fails the load like any other malformed line. After a successful save
-     set `saved = log.size()`.
-   - Test in `tapestry/tests/DocumentTest.cpp`: make a Space page, apply
-     CreateSpace(2), CreateNote, SetField pos; save; reload into fresh
-     state; `mathspace::hash` equal before and after; save again, then a
-     second SetField, save (delta), reload, hash equal again.
-2. **2b render.** Notes drawn as labelled dots in `tapestry/render/Pages.cpp`
-   for `PageKind::Space` pages: iterate the page world's notes in id order,
-   skip the Space note, take `pos` lanes 0 and 1 (a 3-space draws x,y and
-   ignores z for now), label i-th note from the i-th line of the page body.
-3. **2c input.** In `tapestry/app/main.cpp`: a "new 2D space" / "new 3D
+1. **2b render.** In `tapestry/render/Pages.cpp`, for `PageKind::Space`
+   pages draw the page's notes as labelled dots: `world.space(page.id)`
+   (nullptr until the first action; draw nothing then), iterate
+   `space->world.notes` in id order, skip `NoteKind::Space`, read the
+   `pos` field (`find_field(note, POS_FIELD)`) lanes 0 and 1 as fx64 and
+   convert with `raw / 2^32` to a double only at the draw call (a 3-space
+   draws x,y and ignores z for now); map page-local units to the body
+   rect with the body's top-left as origin and 1 unit = 1 world unit.
+   Label the i-th note (id order) with the i-th line of `page.body`.
+   Check `render/Pages.cpp`'s draw entry point takes the tapestry `World`
+   or only a `Page`; if only a Page, thread the `SpaceState*` through.
+   Headless smoke: `build/tapestry/tapestry --headless --frames 3`.
+2. **2c input.** In `tapestry/app/main.cpp`: a "new 2D space" / "new 3D
    space" command creating a Space page and applying CreateSpace(dim);
-   click in the body creates a note (CreateNote + SetField pos); dragging a
-   dot issues SetField pos on release (one action per drag, not per
-   frame). `--headless --frames N` must still run. Then check phase 1's
-   done condition and mark it in Phases and README.md.
+   click in the body creates a note (CreateNote + SetField pos); dragging
+   a dot issues SetField pos on release (one action per drag, not per
+   frame). Then check phase 1's done condition (2D and 3D spaces created,
+   notes placed and dragged, saved, reopened, hash equal) and mark it in
+   Phases and README.md.
 
 Then phase 2, per the plan, starting with `include/ddsim/fxmath.hpp` and
 its oracle tests.
 
 ## Done
+
+- `bdf03eb` ms1 step 7 (Space page 2a): tapestry CMake bridge to root
+  `mathspace`, `PageKind::Space`, `core/Space.hpp` SpaceState (World +
+  log), `World::applySpaceAction/space/adoptSpace`, `.tapestry` `mspace`
+  and `mreset` lines, DocumentTest hash-equal round trip via baseline and
+  delta. Headless run still clean.
 
 - `a9297de` ms1 step 6: `tools/ms_replay/main.cpp` (ddsim_replay CLI twin over
   `World`), `tests/mathspace/fixture.hpp` (parser copy, identical grammar),
@@ -147,8 +132,28 @@ its oracle tests.
 - Encoders do not validate; they exist so tests and tools never hand-pack
   bytes. Validation happens once, in `apply`.
 
+- **Tapestry links mathspace by `add_subdirectory(${PROJECT_SOURCE_DIR}/..
+  ${CMAKE_BINARY_DIR}/physics-engine)`** with `DDSIM_BUILD_TESTS` forced
+  OFF first (the root only forces it off under Emscripten). Chosen over a
+  duplicate library definition so there is one source list; the root's
+  forbidden-token gate still runs at tapestry configure.
+- **A Space page keeps its whole action log** (`SpaceState::log`), because
+  mathspace has no journal; the baseline writes it all, a delta writes the
+  tail past the file's copy, and `mreset <page>` precedes a full rewrite
+  when the file's log is not a prefix (hand-edited file). `mspace` lines
+  are applied as they are parsed, so a rejected action is a corrupt block.
+- A Space page's mathspace `World` is seeded with the page id.
+  `applySpaceAction` on a missing or non-Space page returns
+  `mathspace::Error::NoSuchSpace` rather than adding a tapestry error type.
+- `PageKind::Space` is appended after `Settings`; the format writes kinds
+  by name ("space") so the numeric position only matters in memory.
+
 ## Learned
 
+- Tapestry configure works on this machine (glad fetched, SDL2 present);
+  full tapestry build ~1 min, its three test binaries run in under a
+  second. Only warnings are pre-existing macOS deprecations in
+  `FileDialog_mac.mm`.
 - Full Debug configure+build+ctest is ~10 s; Release the same. Run both
   every slice, it is cheap.
 - The token gate scans comments too: writing the name of the forbidden
