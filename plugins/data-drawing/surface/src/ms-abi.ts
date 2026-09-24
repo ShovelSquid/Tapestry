@@ -264,7 +264,12 @@ export function encodeBindField(note: bigint, name: string, code: Uint8Array): U
 /** Note id -> field name -> raw fx64 lanes, in the engine's id and name order. */
 export type MsSnapshot = Map<bigint, Map<string, bigint[]>>
 
-export function decodeSnapshot(bytes: Uint8Array): MsSnapshot {
+/**
+ * Decodes the snapshot; with `only`, decodes just those note ids and skips
+ * the others by their byte lengths (the per-tick body read of a world
+ * holding thousands of emitted nodes must not build a BigInt per lane).
+ */
+export function decodeSnapshot(bytes: Uint8Array, only?: ReadonlySet<bigint>): MsSnapshot {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
   const decoder = new TextDecoder()
   const out: MsSnapshot = new Map()
@@ -272,16 +277,19 @@ export function decodeSnapshot(bytes: Uint8Array): MsSnapshot {
   while (p < bytes.length) {
     const id = view.getBigUint64(p, true); p += 8
     const count = bytes[p++]!
+    const wanted = only === undefined || only.has(id)
     const fields = new Map<string, bigint[]>()
     for (let i = 0; i < count; i++) {
       const len = bytes[p++]!
-      const name = decoder.decode(bytes.subarray(p, p + len)); p += len
+      const name = wanted ? decoder.decode(bytes.subarray(p, p + len)) : ''
+      p += len
       const dim = bytes[p++]!
+      if (!wanted) { p += 8 * dim; continue }
       const lanes: bigint[] = []
       for (let l = 0; l < dim; l++) { lanes.push(view.getBigInt64(p, true)); p += 8 }
       fields.set(name, lanes)
     }
-    out.set(id, fields)
+    if (wanted) out.set(id, fields)
   }
   if (p !== bytes.length) throw new Error('notes snapshot truncated')
   return out

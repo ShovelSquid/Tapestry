@@ -1,28 +1,34 @@
 /**
- * The Wasm module must reproduce the native goldens byte for byte, and the
- * TypeScript action encoder must produce the same bytes as the C++ one.
- * These run against the real ddsim.mjs/ddsim.wasm (surface/wasm/, from
- * `npm run sim:wasm`); a mocked module would prove nothing here.
+ * The bridged engine must reproduce the committed golden hashes byte for
+ * byte (surface/test/golden/*.sha256, ms_hash of the world the bridge
+ * builds from each .actions fixture), and the TypeScript action encoder
+ * must produce the same bytes as the recorded ones. These run against the
+ * real mathspace.mjs/mathspace.wasm (surface/wasm/, from `npm run
+ * sim:wasm`); a mocked module would prove nothing here. To re-record after
+ * a deliberate hash change: `MS_WRITE_FIXTURES=1 npm test`.
  */
-import { readdirSync, readFileSync } from 'node:fs'
+import { readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
-import createDdsim from '../wasm/ddsim.mjs'
-import { INK_BRUSH, encodeDefineBrush, hexOf, type DdsimModule } from '../src/ddsim-abi'
-import { parseActions, parseSha256, replay } from './fixture-replay'
+import createMathspace from '../wasm/mathspace.mjs'
+import { INK_BRUSH, encodeDefineBrush, hexOf } from '../src/ddsim-abi'
+import type { MathspaceModule } from '../src/ms-abi'
+import { MsSim } from '../src/ms-sim'
+import { formatSha256, parseActions, parseSha256, replay } from './fixture-replay'
 
-const GOLDEN_DIR = fileURLToPath(new URL('../../../../data-drawing/sim/tests/golden/', import.meta.url))
+export const GOLDEN_DIR = fileURLToPath(new URL('./golden/', import.meta.url))
+const WRITE = process.env['MS_WRITE_FIXTURES'] === '1'
 
 const fixtureNames = readdirSync(GOLDEN_DIR)
   .filter((f) => f.endsWith('.actions'))
   .map((f) => f.replace(/\.actions$/, ''))
   .sort()
 
-let modulePromise: Promise<DdsimModule> | null = null
-function loadModule(): Promise<DdsimModule> {
-  const p = modulePromise ?? createDdsim()
+let modulePromise: Promise<MathspaceModule> | null = null
+function loadModule(): Promise<MathspaceModule> {
+  const p = modulePromise ?? createMathspace()
   modulePromise = p
   return p
 }
@@ -34,12 +40,13 @@ describe('wasm golden replay', () => {
   })
 
   for (const name of fixtureNames) {
-    it(`${name}: the Wasm module reproduces every committed checkpoint hash`, async () => {
+    it(`${name}: the bridged engine reproduces every committed checkpoint hash`, async () => {
       const mod = await loadModule()
       const fixture = parseActions(readFileSync(join(GOLDEN_DIR, `${name}.actions`), 'utf8'))
+      const got = replay(mod, fixture)
+      if (WRITE) writeFileSync(join(GOLDEN_DIR, `${name}.sha256`), formatSha256(got))
       const golden = parseSha256(readFileSync(join(GOLDEN_DIR, `${name}.sha256`), 'utf8'))
       expect(golden.length).toBeGreaterThan(0)
-      const got = replay(mod, fixture)
       expect(got).toEqual(golden)
     })
   }
@@ -51,32 +58,16 @@ describe('wasm golden replay', () => {
     expect(hexOf(encodeDefineBrush(INK_BRUSH, 1))).toBe(hexOf(action0!.bytes))
   })
 
-  it('a rejected action leaves the Wasm hash unchanged', async () => {
+  it('a rejected action leaves the hash unchanged', async () => {
     const mod = await loadModule()
-    const sim = mod._dd_create(42n)
+    const sim = new MsSim(mod, 42n)
     try {
-      const hashOf = (): string => {
-        const hp = mod._malloc(32)
-        try {
-          mod._dd_hash(sim, hp)
-          return hexOf(mod.HEAPU8.slice(hp, hp + 32))
-        } finally {
-          mod._free(hp)
-        }
-      }
-      const before = hashOf()
-      const wrongId = encodeDefineBrush(INK_BRUSH, 2)
-      const ptr = mod._malloc(wrongId.length)
-      try {
-        mod.HEAPU8.set(wrongId, ptr)
-        expect(mod._dd_apply(sim, ptr, wrongId.length)).toBe(5) // DD_ERR_BRUSH_ID
-      } finally {
-        mod._free(ptr)
-      }
-      expect(hashOf()).toBe(before)
-      expect(Number(mod._dd_tick(sim))).toBe(0)
+      const before = hexOf(sim.hash())
+      expect(sim.apply(encodeDefineBrush(INK_BRUSH, 2))).toBe(5) // DD_ERR_BRUSH_ID
+      expect(hexOf(sim.hash())).toBe(before)
+      expect(sim.tick()).toBe(0)
     } finally {
-      mod._dd_destroy(sim)
+      sim.destroy()
     }
   })
 })

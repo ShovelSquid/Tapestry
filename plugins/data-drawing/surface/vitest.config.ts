@@ -4,7 +4,7 @@ import { defineConfig } from 'vitest/config'
 /**
  * Vitest configuration for the Data Drawing surface.
  *
- * The golden test loads the real ddsim Wasm module (surface/wasm/ddsim.mjs,
+ * The golden test loads the real mathspace Wasm module (surface/wasm/mathspace.mjs,
  * produced by `npm run sim:wasm`) in the Node environment. No pool: 'forks'
  * — that setting exists in the app only for the native addon's per-process
  * journal lock, and no addon is involved here.

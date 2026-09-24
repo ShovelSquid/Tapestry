@@ -7,7 +7,7 @@ import { defineConfig, type Plugin, type Rollup } from 'vite'
  * The surface is a self-contained Vite project: `index.html` + dev-host.ts is
  * the plugin's own dev loop (no native app build needed to try it), and
  * `vite build` in library mode emits dist/surface.js, the module-worker
- * chunk and ddsim.wasm as files with import.meta.url-relative references —
+ * chunk and mathspace.wasm as files with import.meta.url-relative references —
  * the shape the host later imports over its plugin scheme.
  */
 const root = fileURLToPath(new URL('.', import.meta.url))
@@ -16,7 +16,7 @@ const root = fileURLToPath(new URL('.', import.meta.url))
  * Library mode inlines every asset as a data URL no matter what
  * `assetsInlineLimit` says (Vite 5 asset plugin: `if (config.build.lib)
  * return true`). The .wasm must stay a file next to the worker chunk, so
- * this build-only plugin takes over `ddsim.wasm?url`: it emits the bytes as
+ * this build-only plugin takes over `<name>.wasm?url`: it emits the bytes as
  * an asset and hands back a URL resolved against the importing chunk.
  * In dev the `?url` import is served as a file by Vite itself.
  */
@@ -24,7 +24,7 @@ const WASM_FILE_QUERY = '?dd-wasm-file'
 
 function wasmAsFile(): Plugin {
   // One emitted asset per .wasm path, shared by the `?url` import and the
-  // Emscripten glue's own `new URL("ddsim.wasm", import.meta.url)` fallback
+  // Emscripten glue's own `new URL("<name>.wasm", import.meta.url)` fallback
   // (which Vite would otherwise inline as a second, dead, base64 copy).
   const refs = new Map<string, string>()
   const emit = (ctx: Rollup.PluginContext, file: string): string => {
@@ -50,9 +50,9 @@ function wasmAsFile(): Plugin {
       return `export default import.meta.ROLLUP_FILE_URL_${emit(this, file)}`
     },
     transform(code, id) {
-      if (!id.endsWith('/ddsim.mjs')) return null
+      if (!/\/wasm\/[a-z]+\.mjs$/.test(id)) return null
       const wasm = id.slice(0, -'.mjs'.length) + '.wasm'
-      const pattern = /new URL\(\s*["']ddsim\.wasm["']\s*,\s*import\.meta\.url\s*\)\.href/g
+      const pattern = new RegExp(`new URL\\(\\s*["']${basename(wasm)}["']\\s*,\\s*import\\.meta\\.url\\s*\\)\\.href`, 'g')
       if (!pattern.test(code)) return null
       const ref = emit(this, wasm)
       return { code: code.replace(pattern, `import.meta.ROLLUP_FILE_URL_${ref}`), map: null }

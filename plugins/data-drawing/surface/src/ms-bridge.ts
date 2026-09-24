@@ -174,6 +174,21 @@ export interface ActiveStroke {
   ending: boolean
 }
 
+/** One emitted node as ddsim's Node held it (raw Q32.32 lanes), for the surface's node table. */
+export interface EmittedNode {
+  id: bigint
+  x: bigint
+  y: bigint
+  z: bigint
+  weight: bigint
+  dirX: bigint
+  dirY: bigint
+  vx: bigint
+  vy: bigint
+  tick: number
+  brush: number
+}
+
 export interface Translation {
   /** A BridgeError code; 0 with the mathspace actions to apply, in order. */
   code: number
@@ -241,6 +256,8 @@ export class MsBridge {
   nodeCount = 0
   /** Stroke ids that have emitted a node: ddsim's stroke_in_use found them in the node table. */
   readonly usedStrokes = new Set<bigint>()
+  /** The nodes the last `afterStep` emitted, in emission order (ids ascend within a stroke). */
+  emitted: EmittedNode[] = []
 
   /**
    * Prepares a fresh world for the bridge: the body space, the rule with
@@ -455,6 +472,7 @@ export class MsBridge {
    */
   afterStep(notes: MsSnapshot, tick: number): Uint8Array[] {
     const actions: Uint8Array[] = []
+    this.emitted = []
     const ids = [...this.strokes.keys()].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
     for (const id of ids) {
       const st = this.strokes.get(id)!
@@ -539,9 +557,11 @@ export class MsBridge {
     const x = fxWrap(fxWrap(pl[0]! + fxMul(u, pl[3]!)) + fxMul(v, pl[6]!))
     const y = fxWrap(fxWrap(pl[1]! + fxMul(u, pl[4]!)) + fxMul(v, pl[7]!))
     const z = fxWrap(fxWrap(pl[2]! + fxMul(u, pl[5]!)) + fxMul(v, pl[8]!))
+    const weight = curveWeight(brush.curve, st.lastPressure)
+    this.emitted.push({ id, x, y, z, weight, dirX: st.dir[0], dirY: st.dir[1], vx: vel[0], vy: vel[1], tick, brush: st.brushId })
     out.push(encodeCreateNote(id, NODE_SPACE_ID, MsNoteKind.Note))
     out.push(encodeSetField(id, fieldVec3('pos', x, y, z)))
-    out.push(encodeSetField(id, fieldScalar('weight', curveWeight(brush.curve, st.lastPressure))))
+    out.push(encodeSetField(id, fieldScalar('weight', weight)))
     out.push(encodeSetField(id, fieldVec2('dir', st.dir[0], st.dir[1])))
     out.push(encodeSetField(id, fieldVec2('velocity', vel[0], vel[1])))
     out.push(encodeSetField(id, fieldScalar('tick', fxFromInt(tick))))

@@ -25,15 +25,14 @@
  * first tick whose hash differs. A DIFF is reported, never reconciled: the
  * live state is not touched by the comparison (prohibition in 01-08-PLAN).
  *
- * The sim is reached only through the flat C ABI (_dd_*); HEAPU8 appears
- * here only for the action-byte copy-in and for slice() reads.
+ * The sim is an MsSim (ms-sim.ts): the mathspace engine behind the bridge,
+ * presenting ddsim's apply / step / hash / tables. The driver never touches
+ * the Wasm heap itself. Result codes are still the DD_ERR codes: the bridge
+ * reproduces every rejection ddsim made.
  */
 import {
   ActionKind,
-  BODY_STRIDE,
   DD_OK,
-  HASH_BYTES,
-  NODE_STRIDE,
   TICK_HZ,
   encodeDefineBrush,
   encodeStrokeBegin,
@@ -43,10 +42,11 @@ import {
   stampSamples,
   strokeIdOf,
   type BrushVersionSpec,
-  type DdsimModule,
   type SampleFields,
   type StampState,
 } from './ddsim-abi'
+import type { MathspaceModule } from './ms-abi'
+import { MsSim } from './ms-sim'
 
 /** Phase 1 records on branch 0 only. */
 export const BRANCH = 0
@@ -118,8 +118,8 @@ function strokeOrdinalOf(bytes: Uint8Array): number {
 export class SimDriver {
   readonly seed: bigint
 
-  private readonly m: DdsimModule
-  private sim: number
+  private readonly m: MathspaceModule
+  private readonly sim: MsSim
   private brushCount = 0
   private paused = false
   private acc = 0
@@ -130,25 +130,25 @@ export class SimDriver {
   private readonly ring: RingEntry[] = []
   private destroyed = false
 
-  constructor(m: DdsimModule, seed: bigint) {
+  constructor(m: MathspaceModule, seed: bigint) {
     this.m = m
     this.seed = seed
-    this.sim = m._dd_create(seed)
-    if (this.sim === 0) throw new Error('dd_create returned null')
+    this.sim = new MsSim(m, seed)
   }
 
   // ---- read-only views ----------------------------------------------------
 
+  /** MS_ABI_VERSION of the loaded engine. */
   version(): number {
-    return this.m._dd_version()
+    return this.m._ms_version()
   }
 
   tick(): number {
-    return Number(this.m._dd_tick(this.sim))
+    return this.sim.tick()
   }
 
   nodeCount(): number {
-    return this.m._dd_node_count(this.sim)
+    return this.sim.nodeCount()
   }
 
   isPaused(): boolean {
@@ -157,19 +157,14 @@ export class SimDriver {
 
   /** 32 bytes; a copy. */
   hash(): Uint8Array {
-    return this.hashOf(this.sim)
+    return this.sim.hash()
   }
 
-  /** Copies of the node and body tables (HEAPU8.slice), never views of the heap. */
+  /** Fresh copies of the node and body tables in ddsim's layouts, never views of anything live. */
   snapshot(): Snapshot {
-    const m = this.m
-    const nodeCount = m._dd_node_count(this.sim)
-    const nodePtr = m._dd_nodes_ptr(this.sim)
-    const nodes = m.HEAPU8.slice(nodePtr, nodePtr + nodeCount * NODE_STRIDE)
-    const bodyCount = m._dd_body_count(this.sim)
-    const bodyPtr = m._dd_body_ptr(this.sim)
-    const bodies = m.HEAPU8.slice(bodyPtr, bodyPtr + bodyCount * BODY_STRIDE)
-    return { tick: this.tick(), nodeCount, nodes: nodes.buffer, bodyCount, bodies: bodies.buffer }
+    const nodes = this.sim.nodeTable()
+    const bodies = this.sim.bodyTable()
+    return { tick: this.tick(), nodeCount: this.sim.nodeCount(), nodes: nodes.buffer, bodyCount: this.sim.bodyCount(), bodies: bodies.buffer }
   }
 
   /** Every accepted action in record order (ticks non-decreasing), as copies. */
@@ -220,7 +215,7 @@ export class SimDriver {
   }
 
   private stepOne(): void {
-    this.m._dd_step(this.sim)
+    this.sim.step()
     const t = this.tick()
     if (t % HASH_RING_EVERY === 0) {
       this.ring.push({ tick: t, hash: this.hash() })
@@ -234,7 +229,7 @@ export class SimDriver {
   defineBrush(spec: BrushVersionSpec): Outcome {
     const bytes = encodeDefineBrush(spec, this.brushCount + 1)
     const tick = this.tick()
-    const rc = this.applyTo(this.sim, bytes)
+    const rc = this.sim.apply(bytes)
     if (rc !== DD_OK) return { ok: false, tick, actionKind: ActionKind.DefineBrush, code: rc, name: errorName(rc) }
     this.brushCount += 1
     this.entries.push({ tick, bytes })
@@ -274,7 +269,7 @@ export class SimDriver {
 
   private applyStroke(ordinal: number, actionKind: number, bytes: Uint8Array, tick: number, samples: number): Outcome {
     void ordinal
-    const rc = this.applyTo(this.sim, bytes)
+    const rc = this.sim.apply(bytes)
     if (rc !== DD_OK) return { ok: false, tick, actionKind, code: rc, name: errorName(rc) }
     this.entries.push({ tick, bytes })
     return { ok: true, tick, actionKind, samples, result: 0 }
@@ -297,7 +292,7 @@ export class SimDriver {
     let rejected = 0
     for (let t = 0; t <= point.tick; t++) {
       for (const e of byTick.get(t) ?? []) {
-        const rc = this.applyTo(this.sim, e.bytes)
+        const rc = this.sim.apply(e.bytes)
         if (rc !== DD_OK) rejected += 1
       }
       if (t < point.tick) this.stepOne()
@@ -334,7 +329,6 @@ export class SimDriver {
    * destroyed before returning; the live instance is only read.
    */
   replayFromZero(entries: readonly LogEntry[] = this.entries): ReplayReport {
-    const m = this.m
     const liveTick = this.tick()
     const liveHash = this.hash()
     const nodeCount = this.nodeCount()
@@ -342,25 +336,24 @@ export class SimDriver {
     for (const r of this.ring) ringByTick.set(r.tick, r.hash)
     const byTick = groupByTick(entries)
 
-    const sim2 = m._dd_create(this.seed)
-    if (sim2 === 0) throw new Error('dd_create returned null for the replay instance')
+    const sim2 = new MsSim(this.m, this.seed)
     try {
       let firstDiffTick: number | null = null
       for (let t = 0; t <= liveTick; t++) {
         const expected = ringByTick.get(t)
-        if (expected !== undefined && firstDiffTick === null && !hashesEqual(this.hashOf(sim2), expected)) firstDiffTick = t
+        if (expected !== undefined && firstDiffTick === null && !hashesEqual(sim2.hash(), expected)) firstDiffTick = t
         for (const e of byTick.get(t) ?? []) {
-          const rc = this.applyTo(sim2, e.bytes)
+          const rc = sim2.apply(e.bytes)
           if (rc !== DD_OK && firstDiffTick === null) firstDiffTick = t
         }
-        if (t < liveTick) m._dd_step(sim2)
+        if (t < liveTick) sim2.step()
       }
-      const replayHash = this.hashOf(sim2)
-      const replayNodeCount = m._dd_node_count(sim2)
+      const replayHash = sim2.hash()
+      const replayNodeCount = sim2.nodeCount()
       if (firstDiffTick === null && (!hashesEqual(liveHash, replayHash) || replayNodeCount !== nodeCount)) firstDiffTick = liveTick
       return { liveHash, replayHash, liveTick, nodeCount, replayNodeCount, firstDiffTick }
     } finally {
-      m._dd_destroy(sim2)
+      sim2.destroy()
     }
   }
 
@@ -369,32 +362,7 @@ export class SimDriver {
   destroy(): void {
     if (this.destroyed) return
     this.destroyed = true
-    this.m._dd_destroy(this.sim)
-    this.sim = 0
-  }
-
-  // ---- ABI helpers ---------------------------------------------------------------
-
-  private applyTo(sim: number, bytes: Uint8Array): number {
-    const m = this.m
-    const ptr = m._malloc(bytes.length)
-    try {
-      m.HEAPU8.set(bytes, ptr)
-      return m._dd_apply(sim, ptr, bytes.length)
-    } finally {
-      m._free(ptr)
-    }
-  }
-
-  private hashOf(sim: number): Uint8Array {
-    const m = this.m
-    const ptr = m._malloc(HASH_BYTES)
-    try {
-      m._dd_hash(sim, ptr)
-      return m.HEAPU8.slice(ptr, ptr + HASH_BYTES)
-    } finally {
-      m._free(ptr)
-    }
+    this.sim.destroy()
   }
 }
 

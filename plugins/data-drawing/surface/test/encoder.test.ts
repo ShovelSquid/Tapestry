@@ -3,7 +3,7 @@
  * (sim/tests/action_writer.hpp): the PRESETS table encodes to the exact
  * `presets.actions` bytes, a one-stroke log built in TS from the synthetic
  * curve equals `one-stroke.actions` line by line, and replaying that
- * TS-built log through the real Wasm module reproduces `one-stroke.sha256`.
+ * TS-built log through the bridged engine reproduces `one-stroke.sha256`.
  * The Worker's stamping is a pure function, tested here without a Worker.
  */
 import { readFileSync } from 'node:fs'
@@ -11,7 +11,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
-import createDdsim from '../wasm/ddsim.mjs'
+import createMathspace from '../wasm/mathspace.mjs'
 import { PRESETS } from '../src/brushes'
 import {
   MAX_SAMPLES_PER_TICK,
@@ -27,10 +27,11 @@ import {
   type SampleFields,
   type StampState,
 } from '../src/ddsim-abi'
+import { MsSim } from '../src/ms-sim'
 import { DEFAULT_PLANE, frameToQ16 } from '../src/plane'
 import { parseActions, parseSha256, replay, type Fixture, type FixtureAction } from './fixture-replay'
 
-const GOLDEN_DIR = fileURLToPath(new URL('../../../../data-drawing/sim/tests/golden/', import.meta.url))
+const GOLDEN_DIR = fileURLToPath(new URL('./golden/', import.meta.url))
 
 function fixture(name: string): Fixture {
   return parseActions(readFileSync(join(GOLDEN_DIR, `${name}.actions`), 'utf8'))
@@ -98,8 +99,8 @@ describe('TS encoder vs the C++ goldens', () => {
     expect(built[built.length - 1]!.bytes).toHaveLength(8 + 12)
   })
 
-  it('(3) replaying the TS-built log through the Wasm module reproduces one-stroke.sha256 at 10, 70, 130, 600', async () => {
-    const mod = await createDdsim()
+  it('(3) replaying the TS-built log through the bridged engine reproduces one-stroke.sha256 at 10, 70, 130, 600', async () => {
+    const mod = await createMathspace()
     const golden = parseSha256(readFileSync(join(GOLDEN_DIR, 'one-stroke.sha256'), 'utf8'))
     expect(golden.map((g) => g.tick)).toEqual([10, 70, 130, 600])
     const got = replay(mod, { seed: 42n, actions: buildOneStroke(), checkpoints: [10, 70, 130, 600] })
@@ -138,21 +139,13 @@ describe('TS encoder vs the C++ goldens', () => {
     expect(MAX_SAMPLES_PER_TICK).toBe(64)
   })
 
-  it('(4c) a stamped stroke applied through the Wasm module is accepted (index rule matches the sim)', async () => {
-    const mod = await createDdsim()
-    const sim = mod._dd_create(42n)
-    const applyAt = (bytes: Uint8Array): number => {
-      const ptr = mod._malloc(bytes.length)
-      try {
-        mod.HEAPU8.set(bytes, ptr)
-        return mod._dd_apply(sim, ptr, bytes.length)
-      } finally {
-        mod._free(ptr)
-      }
-    }
+  it('(4c) a stamped stroke applied through the bridged engine is accepted (index rule matches the sim)', async () => {
+    const mod = await createMathspace()
+    const sim = new MsSim(mod, 42n)
+    const applyAt = (bytes: Uint8Array): number => sim.apply(bytes)
     try {
       expect(applyAt(encodeDefineBrush(PRESETS[3]!, 1))).toBe(0)
-      mod._dd_step(sim)
+      sim.step()
       const id = strokeIdOf(0, 1)
       expect(applyAt(encodeStrokeBegin(id, 1, 1, 1, frameToQ16(DEFAULT_PLANE)))).toBe(0)
       let state: StampState = { tick: 1, nextIndex: 0 }
@@ -162,16 +155,19 @@ describe('TS encoder vs the C++ goldens', () => {
         expect(applyAt(encodeStrokeSamples(id, r.samples))).toBe(0)
         state = r.state
       }
-      mod._dd_step(sim)
+      sim.step()
       const r = stampSamples(state, 2, [{ ...syntheticSample(4), flags: 4 }])
       expect(r.samples[0]!.index).toBe(0)
       expect(applyAt(encodeStrokeSamples(id, r.samples))).toBe(0)
       // End on the same tick as that tick's samples: accepted (01-05 flush).
       expect(applyAt(encodeStrokeEnd(id, 2))).toBe(0)
-      expect(mod._dd_body_count(sim)).toBe(0)
-      expect(mod._dd_node_count(sim)).toBeGreaterThan(0)
+      expect(sim.bodyCount()).toBe(0)
+      // The end tick's samples are integrated and emitted by that tick's step, as ddsim did inside the StrokeEnd.
+      sim.step()
+      expect(sim.nodeCount()).toBeGreaterThan(0)
+      expect(sim.bodyCount()).toBe(0)
     } finally {
-      mod._dd_destroy(sim)
+      sim.destroy()
     }
   })
 

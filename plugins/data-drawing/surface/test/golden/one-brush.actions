@@ -1,0 +1,8 @@
+# ddsim golden fixture: one DefineBrush (id 1, "ink", mass 1.0, radius 0.75, spacing 0.5, identity curve) at tick 0
+# seed <u64> | action <tick> <hex> | checkpoint <tick>
+seed 42
+action 0 01010000450000000100000003000000696e6b0000000001000000000000c0000000000000008000000000000000100020003000400050006000700080009000a000b000c000d000e000f0ffff
+checkpoint 0
+checkpoint 1
+checkpoint 60
+checkpoint 600

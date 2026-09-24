@@ -41,7 +41,7 @@ import {
 } from '../src/ms-bridge'
 import { parseActions, type Fixture } from './fixture-replay'
 
-const GOLDEN_DIR = fileURLToPath(new URL('../../../../data-drawing/sim/tests/golden/', import.meta.url))
+const GOLDEN_DIR = fileURLToPath(new URL('./golden/', import.meta.url))
 const ONE_SAMPLE_FIXTURES = ['one-stroke', 'two-strokes', 'gap', 'two-strokes-inserted', 'brush-edit'] as const
 
 let ddsimPromise: Promise<DdsimModule> | null = null

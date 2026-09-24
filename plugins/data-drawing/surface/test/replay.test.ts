@@ -11,9 +11,10 @@
  */
 import { describe, expect, it } from 'vitest'
 
-import createDdsim from '../wasm/ddsim.mjs'
+import createMathspace from '../wasm/mathspace.mjs'
 import { PRESETS } from '../src/brushes'
-import { ActionKind, hexOf, type DdsimModule, type SampleFields } from '../src/ddsim-abi'
+import { ActionKind, hexOf, type SampleFields } from '../src/ddsim-abi'
+import type { MathspaceModule } from '../src/ms-abi'
 import { DEFAULT_PLANE, frameToQ16 } from '../src/plane'
 import { formatReplayLine, verdictOf } from '../src/replay'
 import { HASH_RING_EVERY, SimDriver, hashesEqual, type LogEntry } from '../src/sim-driver'
@@ -46,7 +47,7 @@ const LIVE_TICK = 300
  * tick 0, step to 10, open stroke 1, one sample per tick for 40 ticks
  * (10..49), end at 50, then idle to tick 300.
  */
-function liveSession(mod: DdsimModule): SimDriver {
+function liveSession(mod: MathspaceModule): SimDriver {
   const live = new SimDriver(mod, SEED)
   expect(live.defineBrush(PRESETS[0]!).ok).toBe(true)
   live.stepTicks(STROKE_START)
@@ -63,7 +64,7 @@ function liveSession(mod: DdsimModule): SimDriver {
 
 describe('replay from zero (SimDriver.replayFromZero)', () => {
   it('MATCH: the session log replayed from zero reproduces the live hash and node count at tick 300 and at every multiple of 60', async () => {
-    const mod = await createDdsim()
+    const mod = await createMathspace()
     const live = liveSession(mod)
     try {
       const liveHash = live.hash()
@@ -96,7 +97,7 @@ describe('replay from zero (SimDriver.replayFromZero)', () => {
   })
 
   it('DIFF: one mutated recorded byte is reported with a firstDiffTick at most 60 ticks after the mutated action', async () => {
-    const mod = await createDdsim()
+    const mod = await createMathspace()
     const live = liveSession(mod)
     try {
       const liveHash = live.hash()
@@ -128,7 +129,7 @@ describe('replay from zero (SimDriver.replayFromZero)', () => {
   })
 
   it('DIFF: an action the replay rejects is reported at its own tick', async () => {
-    const mod = await createDdsim()
+    const mod = await createMathspace()
     const live = liveSession(mod)
     try {
       const entries = live.log()
@@ -145,7 +146,7 @@ describe('replay from zero (SimDriver.replayFromZero)', () => {
   })
 
   it('restore (the transport switch): a fresh driver restored from the log and tick hashes identically, keeps the log, and its own replay matches', async () => {
-    const mod = await createDdsim()
+    const mod = await createMathspace()
     const live = liveSession(mod)
     const replica = new SimDriver(mod, SEED)
     try {
@@ -168,7 +169,7 @@ describe('replay from zero (SimDriver.replayFromZero)', () => {
   })
 
   it('restore mid-stroke rebuilds the stamping state so the next samples are numbered as the sim expects', async () => {
-    const mod = await createDdsim()
+    const mod = await createMathspace()
     const live = new SimDriver(mod, SEED)
     const replica = new SimDriver(mod, SEED)
     try {
@@ -193,7 +194,7 @@ describe('replay from zero (SimDriver.replayFromZero)', () => {
   })
 
   it('advance(now) steps whole ticks only and clamps a stall to MAX_FRAME_MS', async () => {
-    const mod = await createDdsim()
+    const mod = await createMathspace()
     const d = new SimDriver(mod, SEED)
     try {
       d.resetClock(1000)
