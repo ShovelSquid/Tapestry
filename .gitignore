@@ -9,6 +9,11 @@ app/forge-out/
 sdk/dist/
 tapestry/build-kernel/
 
+# Thread stage bench screenshots (regenerable via `npm --prefix app run
+# bench -- --shots`); the benchmark JSON itself is committed as evidence
+# (02.3-04-PLAN.md), but per-run screenshots are not.
+app/test/bench/results/shots/
+
 # OS files
 .DS_Store
 Thumbs.db

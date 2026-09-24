@@ -10,6 +10,27 @@
   --tap-destructive-text: #B4232A;
   /* UI-SPEC "Secondary (30%)": the surface ThreadNotice's card sits on. */
   --tap-surface: #FFFFFF;
+  /* UI-SPEC "Non-text contrast audit" (TA-19): 3.16:1 on --tap-paper --
+     passes the 3:1 graphics floor, unlike 02.1's --tap-line (2.06:1), which
+     stays for borders and dashed rules where the 02.2 non-text exemption
+     still holds. The thread line, strands and pause stretches read this
+     token; stage/tokens.ts reads it into a shader uniform. */
+  --tap-thread-line: #8E8A80;
+  /* Read by stage/tokens.ts for stage glyphs, dots and the live camera's
+     near-white text. #2C2C2C matches the app's existing ink colour
+     (App.css body rule below), named here so the stage never repeats the
+     literal. */
+  --tap-ink: #2C2C2C;
+  /* Read by stage/tokens.ts for Label-role, catch-up and stage-build status
+     text. #6B6B6B matches the app's existing muted colour (used throughout
+     this file for Label-role text). */
+  --tap-muted: #6B6B6B;
+  /* UI-SPEC "Dominant (60%)": the canvas background and the thread overlay
+     surface -- read by stage/tokens.ts for the stage's paper background. */
+  --tap-paper: #F7F5F0;
+  /* UI-SPEC "Accent (10%)": the now-head cap and its stage uses. Matches
+     the accent colour already used throughout this file. */
+  --tap-accent: #4A7CFF;
 }
 
 /* Reset */

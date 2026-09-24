@@ -1,0 +1,33 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Tapestry thread stage bench</title>
+    <style>
+      /* The exact token values stage/tokens.ts reads at start-up
+         (App.css's :root block) -- kept in sync by hand, the same way a
+         spike's page owns its own minimal styling. */
+      :root {
+        --tap-paper: #f7f5f0;
+        --tap-ink: #2c2c2c;
+        --tap-muted: #6b6b6b;
+        --tap-thread-line: #8e8a80;
+        --tap-accent: #4a7cff;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: var(--tap-paper);
+      }
+      #stage {
+        width: 100vw;
+        height: 100vh;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="stage"></div>
+    <script type="module" src="./bench-entry.ts"></script>
+  </body>
+</html>
