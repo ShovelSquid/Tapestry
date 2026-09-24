@@ -29,6 +29,19 @@ const char* version();
 //   7: pair and global scope. A pair rule visits every ordered pair of
 //      distinct targets with `other` bound (select included), writing
 //      `self`; a global rule visits the rule note once. Unary unchanged.
-inline constexpr std::uint32_t MS_STEP_VERSION = 7u;
+//   8: constraints. After the integrator, MS_CONSTRAINT_ITERATIONS passes
+//      over every rule with a bound scalar `constraint` (id order, its
+//      scope's visits in step order) move `self.pos` by the XPBD
+//      projection along the symbolic gradient; then `velocity = pos -
+//      prev` for every note the integrator moves; then set rules as in 6.
+inline constexpr std::uint32_t MS_STEP_VERSION = 8u;
+
+// The constraint solver's fixed pass count (ddsim's
+// DD_CONSTRAINT_ITERATIONS, never a convergence check) and the guard
+// below which a projection's denominator is treated as zero and the
+// visit skipped (ddsim's DD_CONSTRAINT_EPS, 2^-16): both are behaviour
+// pinned by MS_STEP_VERSION, not state.
+inline constexpr std::uint32_t MS_CONSTRAINT_ITERATIONS = 4u;
+inline constexpr std::int64_t MS_CONSTRAINT_EPS_RAW = std::int64_t{1} << 16;
 
 } // namespace mathspace

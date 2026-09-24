@@ -61,6 +61,7 @@ enum class Skip : std::uint8_t {
     BadSelect,      // a bound `select` that is not a scalar program
     WrongDim,       // the force program does not yield the space dim
     NoTargetField,  // set.<f>: the target lacks `f`, or holds it at another dim
+    BadGradient,    // constraint: its program does not lift, differentiate or compile per pos lane
 };
 const char* skip_name(std::uint8_t reason);
 
@@ -112,9 +113,10 @@ struct World {
     Error apply(const std::uint8_t* bytes, std::size_t len);
     Error apply(const std::vector<std::uint8_t>& bytes) { return apply(bytes.data(), bytes.size()); }
 
-    // One tick (step.cpp): force rules, the integrator, then every bound
-    // field of every non-Rule note evaluated in id then name order, then
-    // ++tick.
+    // One tick (step.cpp): force rules, the integrator, the constraint
+    // passes, velocity from the position change, set rules, then every
+    // bound field of every non-Rule note evaluated in id then name
+    // order, then ++tick.
     void step();
     // The last step()'s skips, per Rule note that skipped anything, in id
     // order; empty after a step that skipped nothing, a restore, or before
@@ -162,6 +164,11 @@ inline constexpr std::string_view SCOPE_FIELD = "scope";
 // the field name after the prefix is the target's field, kept dotted on
 // the rule because field names allow dots.
 inline constexpr std::string_view SET_PREFIX = "set.";
+// A bound scalar `constraint` on a Rule note is C(self, other) solved to
+// zero by the XPBD passes (step.cpp, version.hpp MS_CONSTRAINT_*); the
+// rule's scalar `compliance` (0 when absent) is XPBD's alpha, h = 1.
+inline constexpr std::string_view CONSTRAINT_FIELD = "constraint";
+inline constexpr std::string_view COMPLIANCE_FIELD = "compliance";
 
 // Bumped whenever the canonical walk (hash.cpp) changes shape. Pinned in
 // the walk itself so old bytes are rejected instead of misread.

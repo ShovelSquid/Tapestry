@@ -391,6 +391,42 @@ describe('Runner with rule nodes', () => {
     runner.dispose()
   })
 
+  it('a constraint.expr rod pulls a bob to its length; compliance softens it', async () => {
+    const bodies = () => [
+      { id: 'n2', type: 'tapestry.notes/note@1', props: at(0, 0, { 'velocity.x': { type: 'real', value: 0 }, 'velocity.y': { type: 'real', value: 0 }, pinned: { type: 'bool', value: true } }) },
+      { id: 'n3', type: 'tapestry.notes/note@1', props: at(15, 0, { 'velocity.x': { type: 'real', value: 0 }, 'velocity.y': { type: 'real', value: 0 } }) },
+    ]
+    const rigid = fakeKernel([
+      ...bodies(),
+      { id: 'n4', type: RULE, props: at(50, 50, { scope: text('pair'), 'constraint.expr': text('norm(other.position - self.position) - 10') }) },
+    ])
+    const { runner } = makeRunner()
+    await runner.stepOnce(rigid)
+    expect(runner.image.problems).toEqual([])
+    // The anchor is pinned, so the bob takes the whole correction in one pass.
+    expect(rigid.state.commits[0].ops).toEqual([
+      { op: 'setProperty', target: 'n3', key: 'position.x', type: 'real', value: 10 },
+      { op: 'setProperty', target: 'n3', key: 'velocity.x', type: 'real', value: -5 },
+      { op: 'advance', ticks: 1 },
+    ])
+    expect(rigid.state.nodes.find((n) => n.id === 'n4').props['mathspace.error']).toBeUndefined()
+    runner.dispose()
+
+    const soft = fakeKernel([
+      ...bodies(),
+      { id: 'n4', type: RULE, props: at(50, 50, { scope: text('pair'), compliance: { type: 'real', value: 1 }, 'constraint.expr': text('norm(other.position - self.position) - 10') }) },
+    ])
+    const { runner: runner2 } = makeRunner()
+    await runner2.stepOnce(soft)
+    // Half the remaining error per pass over four passes: 15 -> 10.3125.
+    expect(soft.state.commits[0].ops).toEqual([
+      { op: 'setProperty', target: 'n3', key: 'position.x', type: 'real', value: 10.3125 },
+      { op: 'setProperty', target: 'n3', key: 'velocity.x', type: 'real', value: -4.6875 },
+      { op: 'advance', ticks: 1 },
+    ])
+    runner2.dispose()
+  })
+
   it('a pinned note is held still under velocity and force (RULE-08)', async () => {
     const kernel = fakeKernel([
       { id: 'n2', type: 'tapestry.notes/note@1', props: at(0, 0, { 'velocity.x': { type: 'real', value: 1 }, 'velocity.y': { type: 'real', value: 0 }, pinned: { type: 'bool', value: true } }) },

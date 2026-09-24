@@ -31,6 +31,46 @@
 // neither its velocity nor its pos changes. Space notes are not
 // excluded (nothing forbids a space from drifting).
 //
+// Then the constraints (phase 4, XPBD as in ddsim/rules/constraints.hpp
+// with the constraint function and its gradient looked up instead of
+// inlined). A Rule note with a bound scalar `constraint` C is solved
+// toward C = 0: before the passes, C's bytecode is lifted back to an Ast
+// (expr/lift.hpp), differentiated with respect to each lane of
+// `self.pos` (expr/diff.hpp) and compiled against the rule's dims, once
+// per rule per step (a rebound field needs no cache to invalidate; a
+// profile can ask for one). A `constraint` that is not scalar is
+// WrongDim; one whose gradient does not lift, differentiate (`curve` of
+// pos) or compile is BadGradient; both skip the rule whole. Then
+// MS_CONSTRAINT_ITERATIONS Gauss-Seidel passes, each over the constraint
+// rules in id order and each rule's scope visits in step order (the same
+// for_each_target as forces, `select` included, unary/pair/global): a
+// visit evaluates C and the gradient g on (self, other) and moves
+// `self.pos` by
+//   dpos = w_self * dlambda * g,  dlambda = -C / ((w_self + w_other) |g|^2 + compliance)
+// where w is the inverse `mass` (1 when absent, 0 when mass <= 0 or the
+// note is pinned), w_other is 0 with no `other`, `compliance` is the
+// rule's scalar field (0 when absent, XPBD's alpha with h = 1), and a
+// denominator below MS_CONSTRAINT_EPS_RAW (a flat gradient with no
+// compliance) skips the visit silently as ddsim's len2 guard does. Only
+// `self` moves, per visit: a pair rule visits both orders, so the other
+// end takes its own share on its own visit, and the (w_self + w_other)
+// split is ddsim's wa / (wa + wb) exactly for a rod (the gradient with
+// respect to the other end is minus this one for any C of the
+// difference `other.pos - self.pos`; for a C that does not depend on
+// `other` the split merely under-relaxes and the fixed passes still
+// converge geometrically). A pinned self is skipped without a report
+// (RULE-08). Notes without `velocity` are moved too: the projection is
+// a position write, and `pinned` is the one hold. An evaluation error
+// on a visit is a per-visit skip, reported. No lambda persists between
+// passes or ticks: nothing new enters the state or the walk.
+//
+// Then `velocity = pos - prev` (prev being the pos before the
+// integrator) for every note the integrator moves (pos and velocity at
+// one dim, not pinned): without constraints this is exactly the
+// velocity the integrator wrote (the wrapping add and subtract cancel),
+// with them it is the corrected motion, so the constraint acts on the
+// velocity without a multiplier stored anywhere.
+//
 // Then the set rules: for each Rule note in id order, each of its bound
 // fields named `set.<f>` in name order (SET_PREFIX, world.hpp) is
 // evaluated on each visit of the rule's scope, and the lanes are written
@@ -60,7 +100,10 @@
 // cache can come when a profile asks for one.
 #include "mathspace/world.hpp"
 
+#include "mathspace/expr/diff.hpp"
+#include "mathspace/expr/lift.hpp"
 #include "mathspace/expr/vm.hpp"
+#include "mathspace/version.hpp"
 
 namespace mathspace {
 
@@ -218,6 +261,63 @@ bool for_each_target(const World& w, const Note& rule, Reporter& report, Fn&& fn
     return true;
 }
 
+// The solver's weight of a note: 1 / mass, 0 when it cannot move (pinned,
+// or mass <= 0 which the integrator treats as immovable by force too).
+fx64 inv_mass_of(const Note& n) {
+    if (is_pinned(n)) {
+        return fx64{};
+    }
+    const fx64 m = mass_of(n);
+    return m > fx64{} ? fx64::from_int(1) / m : fx64{};
+}
+
+// A constraint rule prepared for the passes: C and d C / d self.pos.lane
+// per lane of the space, and the rule's compliance.
+struct ConstraintRule {
+    std::size_t index = 0; // into World::notes
+    std::uint8_t dim = 0;
+    expr::Program c;
+    std::vector<expr::Program> grad;
+    fx64 alpha{};
+    bool alive = true; // false once for_each_target skipped it whole
+};
+
+// Lifts, differentiates and compiles the gradient of `f` (the rule's
+// bound `constraint`) per pos lane; false with the reason reported.
+bool prepare_constraint(const World& w, const Note& rule, const Field& f, Reporter& report, ConstraintRule& out) {
+    out.dim = w.space_dim(rule.space);
+    if (out.dim == 0) {
+        report.skip(rule.id, Skip::NoSpace);
+        return false;
+    }
+    if (!program_of(f, 1, out.c)) {
+        report.skip(rule.id, Skip::WrongDim);
+        return false;
+    }
+    const expr::LiftResult lifted = expr::lift(out.c);
+    if (!lifted.ok()) {
+        report.skip(rule.id, Skip::BadGradient);
+        return false;
+    }
+    const expr::RuleDims dims{w, rule};
+    for (std::uint8_t lane = 0; lane < out.dim; ++lane) {
+        const expr::DiffResult d = expr::differentiate(lifted.ast, POS_FIELD, lane, dims);
+        if (!d.ok()) {
+            report.skip(rule.id, Skip::BadGradient);
+            return false;
+        }
+        expr::CompileResult c = expr::compile(d.ast, dims);
+        if (!c.ok() || c.program.dim != 1) {
+            report.skip(rule.id, Skip::BadGradient);
+            return false;
+        }
+        out.grad.push_back(std::move(c.program));
+    }
+    const Field* alpha = find_field(rule, COMPLIANCE_FIELD);
+    out.alpha = (alpha != nullptr && alpha->dim == 1 && !alpha->bound) ? alpha->value[0] : fx64{};
+    return true;
+}
+
 } // namespace
 
 const char* skip_name(std::uint8_t reason) {
@@ -230,6 +330,7 @@ const char* skip_name(std::uint8_t reason) {
     case Skip::BadSelect: return "BadSelect";
     case Skip::WrongDim: return "WrongDim";
     case Skip::NoTargetField: return "NoTargetField";
+    case Skip::BadGradient: return "BadGradient";
     default: return "?";
     }
 }
@@ -269,6 +370,14 @@ void World::step() {
             }
         });
     }
+    // pos before the integrator, indexed like `notes`, for the velocity
+    // derivation after the constraint passes.
+    std::vector<expr::Lanes> prev(notes.size());
+    for (std::size_t i = 0; i < notes.size(); ++i) {
+        if (const Field* pos = find_field(notes[i], POS_FIELD)) {
+            prev[i] = pos->value;
+        }
+    }
     for (std::size_t i = 0; i < notes.size(); ++i) {
         Note& n = notes[i];
         Field* pos = find_field(n, POS_FIELD);
@@ -287,6 +396,78 @@ void World::step() {
         }
         for (std::uint8_t lane = 0; lane < pos->dim; ++lane) {
             pos->value[lane] += vel->value[lane];
+        }
+    }
+    std::vector<ConstraintRule> constraints;
+    for (std::size_t r = 0; r < notes.size(); ++r) {
+        const Note& rule = notes[r];
+        if (rule.kind != NoteKind::Rule) {
+            continue;
+        }
+        const Field* f = find_field(rule, CONSTRAINT_FIELD);
+        if (f == nullptr || !f->bound) {
+            continue;
+        }
+        ConstraintRule cr;
+        cr.index = r;
+        if (prepare_constraint(*this, rule, *f, report, cr)) {
+            constraints.push_back(std::move(cr));
+        }
+    }
+    for (std::uint32_t pass = 0; pass < MS_CONSTRAINT_ITERATIONS && !constraints.empty(); ++pass) {
+        for (ConstraintRule& cr : constraints) {
+            if (!cr.alive) {
+                continue;
+            }
+            const Note& rule = notes[cr.index];
+            cr.alive = for_each_target(*this, rule, report, [&](std::size_t i, const Note& self, const Note* other) {
+                const fx64 w_self = inv_mass_of(self);
+                if (w_self.raw == 0) {
+                    return; // pinned (RULE-08) or massless: nothing to move
+                }
+                expr::Lanes c{};
+                expr::VmError err = expr::eval(cr.c, *this, self, other, c);
+                if (err != expr::VmError::Ok) {
+                    report.skip(rule.id, err);
+                    return;
+                }
+                expr::Lanes g{};
+                fx64 g2{};
+                for (std::uint8_t lane = 0; lane < cr.dim; ++lane) {
+                    expr::Lanes out{};
+                    err = expr::eval(cr.grad[lane], *this, self, other, out);
+                    if (err != expr::VmError::Ok) {
+                        report.skip(rule.id, err);
+                        return;
+                    }
+                    g[lane] = out[0];
+                    g2 += out[0] * out[0];
+                }
+                const fx64 w_other = other != nullptr ? inv_mass_of(*other) : fx64{};
+                const fx64 denom = (w_self + w_other) * g2 + cr.alpha;
+                if (denom.raw < MS_CONSTRAINT_EPS_RAW) {
+                    return;
+                }
+                const fx64 dlambda = -c[0] / denom;
+                Field* pos = find_field(notes[i], POS_FIELD);
+                for (std::uint8_t lane = 0; lane < cr.dim; ++lane) {
+                    pos->value[lane] += w_self * dlambda * g[lane];
+                }
+            });
+        }
+    }
+    for (std::size_t i = 0; i < notes.size(); ++i) {
+        Note& n = notes[i];
+        Field* pos = find_field(n, POS_FIELD);
+        if (pos == nullptr || is_pinned(n)) {
+            continue;
+        }
+        Field* vel = find_field(n, VELOCITY_FIELD);
+        if (vel == nullptr || vel->dim != pos->dim) {
+            continue;
+        }
+        for (std::uint8_t lane = 0; lane < pos->dim; ++lane) {
+            vel->value[lane] = pos->value[lane] - prev[i][lane];
         }
     }
     for (std::size_t r = 0; r < notes.size(); ++r) {

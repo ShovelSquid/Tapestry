@@ -459,11 +459,11 @@ TEST_CASE("a pair rule visits every ordered pair with other bound; global visits
 }
 
 TEST_CASE("the step version is pinned in the walk") {
-    CHECK(MS_STEP_VERSION == 7u);
+    CHECK(MS_STEP_VERSION == 8u);
     const World w;
     const auto bytes = serialize(w);
     // magic 4 | FORMAT_VERSION 4 | DD_FX_FORMAT_ID 4 | rule version 4
-    CHECK(bytes[12] == 7);
+    CHECK(bytes[12] == 8);
     CHECK(bytes[13] == 0);
     CHECK(bytes[14] == 0);
     CHECK(bytes[15] == 0);
@@ -518,5 +518,119 @@ TEST_CASE("an evaluation error leaves the field's lanes alone") {
     w.step();
     CHECK(field(w, A, "r").value[0] == fx64::from_int(8));
     CHECK(field(w, A, "r").bound);
+    CHECK(w.well_formed());
+}
+
+// Phase 4: constraints. A rod between a pinned anchor and a free end, the
+// XPBD split by inverse mass, compliance, a unary manifold constraint,
+// and the whole-rule skips.
+namespace {
+
+// Space S dim 2; A at (ax, ay), B at (bx, by), both with velocity 0 and
+// the default mass; rule R with `scope` and a bound `constraint`.
+void rod_world(World& w, std::int32_t ax, std::int32_t ay, std::int32_t bx, std::int32_t by, std::int32_t scope,
+               const char* constraint) {
+    REQUIRE(w.create_space(S, 2) == Error::Ok);
+    REQUIRE(w.create_note(A, space_of(S), NoteKind::Note) == Error::Ok);
+    REQUIRE(w.set_field(A, vec("pos", 2, ax, ay)) == Error::Ok);
+    REQUIRE(w.set_field(A, vec("velocity", 2, 0, 0)) == Error::Ok);
+    REQUIRE(w.create_note(B, space_of(S), NoteKind::Note) == Error::Ok);
+    REQUIRE(w.set_field(B, vec("pos", 2, bx, by)) == Error::Ok);
+    REQUIRE(w.set_field(B, vec("velocity", 2, 0, 0)) == Error::Ok);
+    REQUIRE(w.create_note(R, space_of(S), NoteKind::Rule) == Error::Ok);
+    REQUIRE(w.set_field(R, vec("scope", 1, scope)) == Error::Ok);
+    REQUIRE(w.bind_field(R, "constraint", rule_code(w, R, constraint)) == Error::Ok);
+}
+
+} // namespace
+
+TEST_CASE("a rod to a pinned anchor is met in one pass and the velocity is the correction") {
+    World w(1);
+    rod_world(w, 0, 0, 15, 0, 1, "norm(other.pos - self.pos) - 10");
+    REQUIRE(w.set_field(A, vec("pinned", 1, 1)) == Error::Ok);
+    w.step();
+    // A is pinned: skipped silently (RULE-08), so w_other = 0 on B's visit and
+    // B takes the whole correction, C = 5 along the unit gradient.
+    CHECK(field(w, A, "pos").value[0] == fx64{});
+    CHECK(field(w, B, "pos").value[0] == fx64::from_int(10));
+    CHECK(field(w, B, "pos").value[1] == fx64{});
+    CHECK(field(w, B, "velocity").value[0] == fx64::from_int(-5));
+    CHECK(field(w, A, "velocity").value[0] == fx64{});
+    CHECK(w.reports.empty());
+    // At rest on the rod, nothing changes but the velocity, which is zero again.
+    w.step();
+    CHECK(field(w, B, "pos").value[0] == fx64::from_int(10));
+    CHECK(field(w, B, "velocity").value[0] == fx64{});
+    CHECK(w.well_formed());
+}
+
+TEST_CASE("compliance softens the rod: half the correction per pass at alpha 1") {
+    World w(1);
+    rod_world(w, 0, 0, 15, 0, 1, "norm(other.pos - self.pos) - 10");
+    REQUIRE(w.set_field(A, vec("pinned", 1, 1)) == Error::Ok);
+    REQUIRE(w.set_field(R, vec("compliance", 1, 1)) == Error::Ok);
+    w.step();
+    // dlambda = -C / (1 * 1 + 1): 15 -> 12.5 -> 11.25 -> 10.625 -> 10.3125.
+    CHECK(MS_CONSTRAINT_ITERATIONS == 4u);
+    CHECK(field(w, B, "pos").value[0].raw == 10 * fx64::ONE + (fx64::ONE * 5 / 16));
+    CHECK(field(w, B, "velocity").value[0].raw == -(4 * fx64::ONE + (fx64::ONE * 11 / 16)));
+}
+
+TEST_CASE("a free rod pulled apart returns toward its length, both ends moving") {
+    World w(1);
+    rod_world(w, 0, 0, 10, 0, 1, "norm(other.pos - self.pos) - 10");
+    // A force away from the midpoint x = 5 stretches the rod to 20 before the passes.
+    REQUIRE(w.create_note(R2, space_of(S), NoteKind::Rule) == Error::Ok);
+    REQUIRE(w.bind_field(R2, "force", rule_code(w, R2, "self.pos - [5, 0]")) == Error::Ok);
+    w.step();
+    const fx64 ax = field(w, A, "pos").value[0];
+    const fx64 bx = field(w, B, "pos").value[0];
+    const fx64 len = bx - ax;
+    // Each visit moves its end by half of C along the rod, the other end's
+    // visit sees the remainder: the residual quarters every pass, 10 * 2^-8 after four.
+    CHECK(len.raw == 10 * fx64::ONE + 10 * fx64::ONE / 256);
+    CHECK(ax > fx64::from_int(-5));
+    CHECK(bx < fx64::from_int(15));
+    CHECK(field(w, A, "velocity").value[0] == ax);
+    CHECK(field(w, B, "velocity").value[0] == bx - fx64::from_int(10));
+    CHECK(w.reports.empty());
+}
+
+TEST_CASE("a unary constraint holds a note on a manifold") {
+    World w(1);
+    rod_world(w, 10, 0, 0, 5, 0, "norm(self.pos) - 5");
+    w.step();
+    // A: C = 5, gradient (1, 0), no other: moved to the circle in one pass.
+    CHECK(field(w, A, "pos").value[0] == fx64::from_int(5));
+    CHECK(field(w, A, "velocity").value[0] == fx64::from_int(-5));
+    // B is already on it.
+    CHECK(field(w, B, "pos").value[1] == fx64::from_int(5));
+    CHECK(field(w, B, "velocity").value[1] == fx64{});
+}
+
+TEST_CASE("a constraint that is not scalar, or has no gradient, skips the rule whole") {
+    World w(1);
+    rod_world(w, 0, 0, 15, 0, 1, "other.pos - self.pos");
+    w.step();
+    REQUIRE(w.reports.size() == 1);
+    CHECK(w.reports[0].rule == R);
+    CHECK(w.reports[0].skipped == 1);
+    CHECK(w.reports[0].reason == static_cast<std::uint8_t>(Skip::WrongDim));
+    CHECK(field(w, B, "pos").value[0] == fx64::from_int(15));
+
+    REQUIRE(w.set_field(A, vec("t", 1, 0)) == Error::Ok);
+    REQUIRE(w.bind_field(R, "constraint", rule_code(w, R, "curve(self.pos, self.t)")) == Error::Ok);
+    w.step();
+    REQUIRE(w.reports.size() == 1);
+    CHECK(w.reports[0].skipped == 1);
+    CHECK(std::string(skip_name(w.reports[0].reason)) == "BadGradient");
+    CHECK(field(w, B, "pos").value[0] == fx64::from_int(15));
+
+    // A flat gradient with no compliance is a silent per-visit skip: C = 3
+    // with d C / d pos = 0 leaves everything alone and reports nothing.
+    REQUIRE(w.bind_field(R, "constraint", rule_code(w, R, "3")) == Error::Ok);
+    w.step();
+    CHECK(w.reports.empty());
+    CHECK(field(w, B, "pos").value[0] == fx64::from_int(15));
     CHECK(w.well_formed());
 }
