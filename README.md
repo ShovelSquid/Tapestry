@@ -96,7 +96,15 @@ runtime failures written to the rule node as `mathspace.error`, goldens
 `gravity` and `pair`, and `plugins/mathspace/presets/` whose seven
 presets (the plan's four plus the roadmap's `anger`, `gold` and `push`)
 are `mathspace.preset.<id>` commands checked on one engine build.
-Phases 4 to 7 are not started.
+Plan phase 4 (constraints) is built and tested headlessly: a rule's
+`constraint.expr` with `compliance` is solved by fixed-count XPBD passes
+over symbolic gradients (`expr/lift.hpp` turns stored bytecode back into
+the tree `expr/diff.hpp` differentiates), goldens `rod` and `contact`,
+the `contact` preset (a bumper and a floor as `max(0, shape(pos))`), and
+`tests/mathspace/rope_chain_test.cpp` comparing the solver with ddsim's
+on ddsim's own `pendulum` and `rope-chain` goldens (equal to rounding for
+the pendulum; the double pendulum diverges, see `autonomy/STATE.md`).
+Phases 5 to 7 are not started.
 
 ## Build
 
