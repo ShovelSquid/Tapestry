@@ -90,35 +90,13 @@ viewer; it is theirs to edit.)
   `buildImage` returns `notes` and `views` id lists, `projection.js`
   `projectAll(engine, image)` (a view's own failures found by probing it
   with itself; per-note failures are `null`), `test/projection.test.js`.
-- `61ef64f` ms5 views, engine side: `NoteKind::View` was already in
-  `note.hpp`; `PROJECT_FIELD`/`PROJECT_DIM` in `world.hpp`; step() skips
-  Views in the bound-field pass and targets Note-kind notes only
-  (`MS_STEP_VERSION` 9, all goldens re-recorded); `RuleDims` guesses
-  dims from Note-kind notes only and is used by `ms_compile` for Views;
-  `ms_project` (`MS_ABI_VERSION` 3, `MS_STAGE_EVAL` 3 named
-  `eval:<VmError>` by `ms_compile_error_name`); `image.js` maps
-  `mathspace/view@1` (in the manifest's nodeTypes) and puts views in
-  `rules` so diff() never writes them and their problems reach
-  `mathspace.error`; `Engine.project`; doctests, a c_abi case, an image
-  test and a runner test with a 3D space and a perspective view.
-- `064966d` ms4 contact: `presets/contact.json` (gravity, bumper and
-  floor rules plus a ball; the bumper rule sits at its shape's centre),
-  golden `contact` (120 ticks, never inside either shape), the preset
-  test now allows more than one rule per preset.
-- `60cd37e` ms4 comparison: `tests/mathspace/rope_chain_test.cpp` replays
-  ddsim's `pendulum` and `rope-chain` goldens through `ddsim::Sim`
-  (hashes checked) and as mathspace notes with a pair rod rule
-  (`select abs(other.k - self.k) == 1`) and a gravity rule reading its
-  own `g` field; per-checkpoint position tolerances, worst deviation
-  printed.
-- `60c8346` ms4 rod: `expr/lift.hpp` (bytecode back to an Ast, round-trip
-  tested over every op shape), `constraint` + `compliance` on a Rule note
-  solved after the integrator by `MS_CONSTRAINT_ITERATIONS` XPBD passes
-  with the gradient from `diff.hpp`, `velocity = pos - prev` after the
-  passes, `Skip::BadGradient`, `MS_STEP_VERSION` 8 (all goldens
-  re-recorded), golden `rod` (pendulum, 60 ticks), doctests for the pinned
-  anchor, compliance, free rod, unary manifold and whole-rule skips, one
-  runner test with `constraint.expr` and `compliance` (no plugin change).
+- `61ef64f` ms5 views, engine side: View notes skipped by step(), `RuleDims`
+  over Note-kind notes, `ms_project` (`MS_ABI_VERSION` 3), `Engine.project`,
+  `image.js` maps `mathspace/view@1` into `rules`; `MS_STEP_VERSION` 9.
+- Phase 4 (ms4), one line each: `064966d` contact preset + golden
+  `contact`; `60cd37e` `rope_chain_test.cpp` against ddsim; `60c8346`
+  `lift.hpp`, `constraint`/`compliance` XPBD passes, golden `rod`,
+  `MS_STEP_VERSION` 8.
 - Phase 3 (ms3), one line each: `e1e30a5` presets (`presets/<id>.json`,
   `presets.js`, `mathspace.preset.<id>` commands, `presets.test.js`);
   `9b28407` RULE-07 runtime skips
@@ -164,33 +142,16 @@ viewer; it is theirs to edit.)
   packs failures like `ms_compile` so one name table serves both.
   Plugin side, views share the rule map (`image.rules`) rather than a
   new set: same skip in diff(), same error channel.
-- Contact (`064966d`) needs no engine change: `max(0, shape(pos))` as a
-  unary `constraint` is zero with a flat gradient outside the shape,
-  which the solver skips silently, and pushes out along `grad(shape)`
-  inside; a `.tree` preset cannot name node ids, so the bumper's centre
-  is a literal vector in the expression. Presets may hold several rule
-  nodes (the phase 3 one-rule check was a convention, not a rule).
-- Constraints (`60c8346`): gradient by lifting bytecode to an Ast
-  (`lift.hpp`) and `diff.hpp`, per rule per step, no cache. Only
-  `self.pos` moves per visit with ddsim's `wa/(wa+wb)` split (exact for a
-  pinned-other rod; a free-free rod keeps 2^-8 of its stretch after the
-  4 passes). Denominator below 2^-16 and a pinned self are silent visit
-  skips; notes without `velocity` still move; `compliance` must be an
-  unbound scalar. Details in `step.cpp`, `version.hpp`, `world.hpp`.
-- Presets (`e1e30a5`) are self-consistent worlds (every note carries
-  every field its rule reads; `y` grows down the screen; both `velocity`
-  lanes and `mass` present).
-- RULE-07 runtime channel (`9b28407`): one-byte reasons, below 16 a
-  `VmError` per visit, 16+ a whole-rule `Skip`; reports live on `World`
-  outside `==`, the walk and the snapshot. Two rules writing one field
-  is not detected.
-- Scope (`e0b6942`): pair visits ordered pairs, `self` receives; global
-  visits the rule note itself. `set.<f>` (`919c06e`) runs after the
-  integrator, last rule in id order wins. Plugin side (`204ced5`): rule
-  numeric props are fields, rule bound fields are never committed back,
-  `mathspace.error` is `key: reason` joined by `; `. Rule notes
-  (`22bc70c`): `scope` scalar 0/1/2, `mass` 1 when absent, h = 1; every
-  `step()` change bumps `MS_STEP_VERSION`.
+- Contact (`064966d`): `max(0, shape(pos))` as a unary constraint, no
+  engine change; presets may hold several rule nodes. Constraints
+  (`60c8346`): gradient by `lift.hpp` + `diff.hpp` per rule per step;
+  only `self.pos` moves per visit with ddsim's `wa/(wa+wb)` split;
+  `compliance` an unbound scalar. Details in `step.cpp`, `world.hpp`.
+- Presets (`e1e30a5`) are self-consistent worlds. RULE-07 channel
+  (`9b28407`): one-byte reasons, reports outside `==` and the hash. Scope
+  (`e0b6942`): pair visits ordered pairs, `self` receives; `set.<f>` runs
+  after the integrator, last rule in id order wins; rule bound fields are
+  never committed back; every `step()` change bumps `MS_STEP_VERSION`.
 - Phase 2 plugin/ABI: the `.tree` spells `self.position`, the plugin
   rewrites it to `pos` before `ms_compile` (in the runner, not
   `buildImage`) and maps error offsets back; `ms_compile` failures pack
@@ -213,26 +174,19 @@ viewer; it is theirs to edit.)
   browser.mjs <url> --script f.mjs --screenshot p.png`) loads the dev
   page headlessly and can read the canvas and the status line; a page
   load there takes 15 to 45 s.
-- ddsim comparison numbers (ms4): the single pendulum agrees to 4 raw at
-  tick 1 and at most 3152 raw (2^-20.4 units) over 600 ticks, so the
-  lifted-gradient XPBD is ddsim's rod solver up to fx64 rounding. The
-  double pendulum (`rope-chain`, rods of 2) deviates 6811 raw at tick 1,
-  0.45 at 60, 0.97 at 300, 1.44 at 600: a chaotic system amplifying the
-  free-free rod's 2^-8 residual (mathspace corrects one end per ordered
-  visit, ddsim both ends per constraint). Phase 7 must either accept
-  that data-drawing's ropes do not replay bit-for-bit under mathspace or
-  let a pair constraint visit write `other` too (a semantic change to
-  "a rule writes self"; not taken at ms4).
+- ddsim comparison (ms4): single pendulum agrees to 3152 raw over 600
+  ticks; the double pendulum (`rope-chain`) deviates 1.44 units by tick
+  600 because a free-free rod keeps 2^-8 of its stretch (mathspace
+  corrects one end per visit, ddsim both). Phase 7 must accept that or
+  let a pair constraint write `other` too.
 - New golden: `touch tests/golden/ms/<f>.actions <f>.sha256`, build (the
   glob), `MS_WRITE_FIXTURES=1 mathspace_tests -tc="*golden <f>*"` (fails
   once on the empty `.sha256`), `ms_replay --write-golden` fills it. Then
   `source ~/emsdk/emsdk_env.sh; npm run engine:wasm` in `plugins/mathspace`
   (~15 s, untracked output) or `engine.test.js` fails on old hashes.
 - macOS has no `timeout`. The grammar has no `and`: multiply predicates.
-- doctest: `MESSAGE` ignores `std::hex`; wrap a `const char*` first
-  token of `CHECK_MESSAGE` in `std::string`; `CHECK(a && b)` does not
-  compile, bind the conjunction to a `bool`; a helper named `apply`
-  collides with `std::apply` via ADL.
+  doctest: wrap a `const char*` first token of `CHECK_MESSAGE` in
+  `std::string`; bind `a && b` to a `bool` before `CHECK`.
 - Toolchain: `app/native/build/Release/tapestry_addon.node` and
   `node_modules` (vitest 2.1.9) are gitignored copies/symlinks from the
   primary checkout `/Users/kaelencook/Tapestry`. Plugin files are
