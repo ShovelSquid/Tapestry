@@ -304,6 +304,10 @@ function engineSource(text) {
  *   node id (in the image or not) to the `mathspace.error` text it
  *   carries now, null when none, so the runner can write only changes.
  *
+ * The app's `pinned bool true` is the engine's scalar `pinned` 1, which
+ * holds the note still (step.cpp, RULE-08); false or absent sends
+ * nothing, so an unpinned note's actions are unchanged.
+ *
  * A rule node joins the image like any note (a `space` ref, else its
  * position puts it in the implicit space) as NoteKind::Rule, which the
  * engine never moves or targets. Its `scope text` becomes the scalar
@@ -361,6 +365,10 @@ function buildImage(nodes) {
     if (pos && pos.dim !== dim) {
       problems.push({ id: node.id, key: 'position', reason: `position has ${pos.dim} lanes, space has ${dim}` })
       fields.delete('pos')
+    }
+    const pinned = node.props['pinned']
+    if (pinned && pinned.type === 'bool' && pinned.value === true) {
+      fields.set('pinned', { dim: 1, lanes: [BigInt(FX_ONE)], types: ['real'] })
     }
     if (isRule) {
       const scopeProp = node.props['scope']

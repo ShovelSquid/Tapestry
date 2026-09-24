@@ -320,4 +320,21 @@ describe('Runner with rule nodes', () => {
     expect(ops.some((o) => o.target === 'n3')).toBe(false)
     runner.dispose()
   })
+
+  it('a pinned note is held still under velocity and force (RULE-08)', async () => {
+    const kernel = fakeKernel([
+      { id: 'n2', type: 'tapestry.notes/note@1', props: at(0, 0, { 'velocity.x': { type: 'real', value: 1 }, 'velocity.y': { type: 'real', value: 0 }, pinned: { type: 'bool', value: true } }) },
+      { id: 'n3', type: 'tapestry.notes/note@1', props: at(0, 0, { 'velocity.x': { type: 'real', value: 1 }, 'velocity.y': { type: 'real', value: 0 }, pinned: { type: 'bool', value: false } }) },
+      { id: 'n4', type: RULE, props: at(50, 50, { 'force.expr': text('[0, 1]') }) },
+    ])
+    const { runner } = makeRunner()
+    await runner.stepOnce(kernel)
+    expect(kernel.state.commits[0].ops).toEqual([
+      { op: 'setProperty', target: 'n3', key: 'position.x', type: 'real', value: 1 },
+      { op: 'setProperty', target: 'n3', key: 'position.y', type: 'real', value: 1 },
+      { op: 'setProperty', target: 'n3', key: 'velocity.y', type: 'real', value: 1 },
+      { op: 'advance', ticks: 1 },
+    ])
+    runner.dispose()
+  })
 })

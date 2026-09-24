@@ -21,6 +21,8 @@ const char* version();
 //      then the bound fields of non-Rule notes as in 2.
 //   4: a rule's bound scalar `select` gates each target: nonzero selects,
 //      an evaluation error skips the target, absent selects all.
-inline constexpr std::uint32_t MS_STEP_VERSION = 4u;
+//   5: the integrator skips a note whose scalar `pinned` is nonzero
+//      (RULE-08): neither its velocity nor its pos changes.
+inline constexpr std::uint32_t MS_STEP_VERSION = 5u;
 
 } // namespace mathspace

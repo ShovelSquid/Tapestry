@@ -23,7 +23,10 @@
 // drops the force), then `pos += velocity`, both lane by lane with
 // fx64's wrapping arithmetic and h = 1. A note without `velocity` never
 // moves, however much force it collects; the rule never creates fields.
-// Space notes are not excluded (nothing forbids a space from drifting).
+// A note whose scalar `pinned` is nonzero is held still (RULE-08): it
+// still collects force (a later pair rule may read it as `other`), but
+// neither its velocity nor its pos changes. Space notes are not
+// excluded (nothing forbids a space from drifting).
 //
 // Then every bound field of every non-Rule note (phase 2) is evaluated:
 // notes in id order, fields in name order, each against the world as it
@@ -60,6 +63,12 @@ bool is_unary(const Note& rule) {
 fx64 mass_of(const Note& n) {
     const Field* m = find_field(n, MASS_FIELD);
     return (m == nullptr || m->dim != 1) ? fx64::from_int(1) : m->value[0];
+}
+
+// RULE-08: a nonzero scalar `pinned` holds the note still.
+bool is_pinned(const Note& n) {
+    const Field* p = find_field(n, PINNED_FIELD);
+    return p != nullptr && p->dim == 1 && p->value[0].raw != 0;
 }
 
 } // namespace
@@ -107,7 +116,7 @@ void World::step() {
     for (std::size_t i = 0; i < notes.size(); ++i) {
         Note& n = notes[i];
         Field* pos = find_field(n, POS_FIELD);
-        if (pos == nullptr) {
+        if (pos == nullptr || is_pinned(n)) {
             continue;
         }
         Field* vel = find_field(n, VELOCITY_FIELD);

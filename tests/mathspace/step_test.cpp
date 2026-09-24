@@ -296,12 +296,37 @@ TEST_CASE("RuleDims resolves pos from the space and other fields from the first 
     CHECK(dim(expr::RefKind::Self, 0, "nope") == 0);
 }
 
+TEST_CASE("a pinned note keeps its pos and velocity whatever the forces (RULE-08)") {
+    World w(1);
+    REQUIRE(w.create_space(S, 2) == Error::Ok);
+    REQUIRE(w.create_note(A, space_of(S), NoteKind::Note) == Error::Ok);
+    REQUIRE(w.create_note(B, space_of(S), NoteKind::Note) == Error::Ok);
+    REQUIRE(w.create_note(R, space_of(S), NoteKind::Rule) == Error::Ok);
+    REQUIRE(w.set_field(A, vec("pos", 2, 0, 0)) == Error::Ok);
+    REQUIRE(w.set_field(A, vec("velocity", 2, 1, 0)) == Error::Ok);
+    REQUIRE(w.set_field(A, vec("pinned", 1, 1)) == Error::Ok);
+    REQUIRE(w.set_field(B, vec("pos", 2, 0, 0)) == Error::Ok);
+    REQUIRE(w.set_field(B, vec("velocity", 2, 1, 0)) == Error::Ok);
+    REQUIRE(w.set_field(B, vec("pinned", 1, 0)) == Error::Ok); // zero is not pinned
+    REQUIRE(w.bind_field(R, "force", rule_code(w, R, "[0, 2]")) == Error::Ok);
+    w.step();
+    CHECK(field(w, A, "pos") == vec("pos", 2, 0, 0));
+    CHECK(field(w, A, "velocity") == vec("velocity", 2, 1, 0));
+    CHECK(field(w, B, "pos") == vec("pos", 2, 1, 2));
+    CHECK(field(w, B, "velocity") == vec("velocity", 2, 1, 2));
+    // A vector `pinned` is not a pin; unpinning lets the note go on from where it was held.
+    REQUIRE(w.set_field(A, vec("pinned", 2, 1, 1)) == Error::Ok);
+    w.step();
+    CHECK(field(w, A, "pos") == vec("pos", 2, 1, 2));
+    CHECK(w.well_formed());
+}
+
 TEST_CASE("the step version is pinned in the walk") {
-    CHECK(MS_STEP_VERSION == 4u);
+    CHECK(MS_STEP_VERSION == 5u);
     const World w;
     const auto bytes = serialize(w);
     // magic 4 | FORMAT_VERSION 4 | DD_FX_FORMAT_ID 4 | rule version 4
-    CHECK(bytes[12] == 4);
+    CHECK(bytes[12] == 5);
     CHECK(bytes[13] == 0);
     CHECK(bytes[14] == 0);
     CHECK(bytes[15] == 0);

@@ -159,6 +159,14 @@ describe('buildImage', () => {
     expect(img.bindings.map((b) => `${b.node} ${b.name}`)).toEqual(['n3 force', 'n3 set.k'])
     expect(img.rules).toEqual(new Map([['n3', null], ['n4', 'old'], ['n5', null]]))
   })
+  it('maps pinned bool true to the scalar pinned 1 and sends nothing for false', () => {
+    const img = buildImage([
+      { id: 'n1', type: 'tapestry.notes/note@1', props: { 'position.x': real(0), 'position.y': real(0), pinned: { type: 'bool', value: true } } },
+      { id: 'n2', type: 'tapestry.notes/note@1', props: { 'position.x': real(0), 'position.y': real(0), pinned: { type: 'bool', value: false } } },
+    ])
+    expect(img.fields.get(1n).get('pinned')).toEqual([ONE])
+    expect(img.fields.get(2n).has('pinned')).toBe(false)
+  })
 })
 
 describe('parseSnapshot and diff', () => {

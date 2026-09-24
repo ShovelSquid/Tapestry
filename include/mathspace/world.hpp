@@ -120,6 +120,9 @@ inline constexpr std::string_view POS_FIELD = "pos";
 // version.hpp). They are conventions of step(), not of the store.
 inline constexpr std::string_view VELOCITY_FIELD = "velocity";
 inline constexpr std::string_view MASS_FIELD = "mass";
+// A nonzero scalar `pinned` holds a note still: the integrator skips it
+// (RULE-08; the plugin maps the app's `pinned bool true` to 1).
+inline constexpr std::string_view PINNED_FIELD = "pinned";
 // On a Rule note: `force` is the bound contribution, `select` the bound
 // scalar predicate over a target (absent selects all), `scope` a scalar
 // 0 unary (the default when absent), 1 pair, 2 global.
