@@ -32,7 +32,8 @@ autonomy/WAITING when each is reached.
 
 ## Checkpoint
 
-(none; 02.7-01's dogfood gate was approved 2026-09-24. Next is wave 2, plan 02.7-02.)
+(none. 02.7-01 and 02.7-02 are complete. Next is wave 3, plan 02.7-03, which
+ends in the combined human checkpoint for 02 and 03: write WAITING there.)
 
 ## In progress
 
@@ -49,6 +50,10 @@ autonomy/WAITING when each is reached.
   An executor wrote the SUMMARY and updated STATE/ROADMAP (a5de9ba); 449
   tests green, typecheck clean. 02.7-01 is complete. Wave 2 was left for the
   next session.
+- 2026-09-24 12:34: wave 2 (02.7-02). One foreground executor, about 32 min
+  and 360K tokens; 10 commits b249c3d..b9d34b2. 26 files and 499 tests green,
+  typecheck clean. The executor ran the real `claude` once (a "reply ok" call,
+  allowed by the plan) to record a fixture. Next is wave 3.
 
 ## Learned
 
@@ -66,7 +71,10 @@ autonomy/WAITING when each is reached.
   (it wrote "9 of 16"). Check .planning/STATE.md's Current Position by hand
   after each plan.
 - A foreground gsd-executor for 02.7-01 Tasks 1-3 took about 15 minutes and
-  250K tokens, and the idle watchdog did not trip.
+  250K tokens, and the idle watchdog did not trip. The 02.7-02 executor ran
+  32 minutes in the foreground without tripping it either: subagent events
+  reach the stream-json log, so foreground executors are safe.
+- After 02.7-02: 26 test files, 499 tests.
 
 ## Blocked
 
