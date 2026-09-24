@@ -189,6 +189,45 @@ describe('settleSubspace', () => {
   })
 })
 
+describe('dropping a folder (settleSubspace with the drop as an override)', () => {
+  it('keeps the drop, moves an overlapped sibling clear, and names no descendant', () => {
+    // src dropped onto scripts' spot.
+    const nodes = workspace()
+    const drop = { x: 24, y: 560 }
+    const ops = settleSubspace(nodes, noDims, 'n2', { positions: new Map([['n2', drop]]) })
+
+    const x = ops.find((op) => op.target === 'n2' && op.key === 'position.x')
+    const y = ops.find((op) => op.target === 'n2' && op.key === 'position.y')
+    expect(x?.value).toBe(drop.x)
+    expect(y?.value).toBe(drop.y)
+    for (const op of ops) {
+      expect(['position.x', 'position.y']).toContain(op.key)
+      expect(['n3', 'n4', 'n5', 'n7']).not.toContain(op.target)
+    }
+
+    const rects = subspaceRects(apply(nodes, ops), noDims).folderRects
+    expect(gapBetween(rects.get('n2')!, rects.get('n6')!)).toBeGreaterThanOrEqual(FRAME_GAP)
+  })
+
+  it('cascades: a drop that grows the parent into its sibling moves that sibling too', () => {
+    // src is open; src/nested is dropped far below hello.ts, so src grows down over scripts.
+    const nodes = workspace({ srcOpen: true }).map((node) =>
+      node.id === 'n6' ? folder('n6', 'scripts', 24, 1100) : node,
+    )
+    const before = subspaceRects(nodes, noDims).folderRects
+    expect(gapBetween(before.get('n2')!, before.get('n6')!)).toBeGreaterThanOrEqual(FRAME_GAP)
+
+    const drop = { x: 24, y: 900 }
+    const ops = settleSubspace(nodes, noDims, 'n4', { positions: new Map([['n4', drop]]) })
+    expect(ops.some((op) => op.target === 'n6')).toBe(true)
+    for (const op of ops) expect(['position.x', 'position.y']).toContain(op.key)
+    for (const id of ['n3', 'n5', 'n7']) expect(ops.some((op) => op.target === id)).toBe(false)
+
+    const after = subspaceRects(apply(nodes, ops), noDims).folderRects
+    expect(gapBetween(after.get('n2')!, after.get('n6')!)).toBeGreaterThanOrEqual(FRAME_GAP)
+  })
+})
+
 describe('revealExpanded', () => {
   it('returns the ancestor folders, outermost first', () => {
     expect(revealExpanded(workspace(), 'n5')).toEqual(['n2', 'n4'])

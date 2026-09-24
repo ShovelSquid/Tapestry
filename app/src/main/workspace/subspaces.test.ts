@@ -20,11 +20,24 @@ import {
   workspaceTreeFiles,
 } from './shapes'
 import type { NodeData } from '../kernel-bridge'
-import { WORKSPACE_WATCHER_ACTOR } from '../commands/actor'
+import { WORKSPACE_WATCHER_ACTOR, humanActor } from '../commands/actor'
+import { SpatialCommands } from '../commands/spatial'
+import {
+  classifyRelation,
+  noteSize,
+  rectAt,
+  resolveWhere,
+  type PlacementNode,
+} from '../../renderer/layout/placement'
 import { entriesFromPaths, listGitFiles } from '../mirror/fs'
 import { buildMirrorModel, planMirror, planSubspaceMigration, type MirrorShape } from '../mirror/plan'
 import { FRAME_GAP, type FrameRect } from '../../renderer/layout/frames'
-import { CARD_ESTIMATE, folderHierarchy, subspaceRects } from '../../renderer/layout/subspaces'
+import {
+  CARD_ESTIMATE,
+  absolutePositions,
+  folderHierarchy,
+  subspaceRects,
+} from '../../renderer/layout/subspaces'
 import { makeTempWorkspace, type TempWorkspace } from '../../../test/helpers/temp-workspace'
 
 const cleanups: Array<() => void> = []
@@ -220,5 +233,84 @@ describe('appends', () => {
     const hierarchy = folderHierarchy(tree.bridge.getNodes())
     expect(hierarchy.parentOf.get(fresh.id)).toBe(nodes.get('src')!.id)
     assertNoSiblingOverlaps(tree.bridge.getNodes())
+  })
+})
+
+/** The nodes as look and place should see them: every position absolute. */
+function absoluteNodes(nodes: NodeData[]): NodeData[] {
+  const abs = absolutePositions(nodes)
+  return nodes.map((node) => {
+    const at = abs.get(node.id)!
+    return {
+      ...node,
+      props: {
+        ...node.props,
+        'position.x': { type: 'real', value: at.x },
+        'position.y': { type: 'real', value: at.y },
+      },
+    }
+  })
+}
+
+function rectOfNode(node: PlacementNode, at: { x: number; y: number }) {
+  return rectAt(at, noteSize(node))
+}
+
+describe('look and place across folders', () => {
+  it('look reports the relation between notes in two folders from absolute positions', async () => {
+    const { ws, registry, service } = setup()
+    const tree = await service.addWorkspace(ws.root)
+    const spatial = new SpatialCommands(registry)
+    const nodes = tree.bridge.getNodes()
+    const paths = byPath(tree)
+    const hello = paths.get('src/hello.ts')!
+    const run = paths.get('scripts/run.sh')!
+
+    // Read as local, both files sit at their folder's (0, 0): the same spot.
+    expect(position(hello)).toEqual(position(run))
+    const asLocal = classifyRelation(rectOfNode(hello, position(hello)), rectOfNode(run, position(run)))
+
+    const abs = absolutePositions(nodes)
+    const expected = classifyRelation(
+      rectOfNode(hello, abs.get(hello.id)!),
+      rectOfNode(run, abs.get(run.id)!),
+    )
+    expect(expected).not.toBe(asLocal)
+
+    const looked = spatial.look({ tree: tree.id, from: hello.id, limit: 100 })
+    expect(looked.ok, JSON.stringify(looked)).toBe(true)
+    if (!looked.ok) return
+    const seen = looked.value.neighbours.find((n) => n.note === run.id)
+    expect(seen?.relation).toBe(expected)
+  })
+
+  it('place resolves in workspace coordinates and writes the folder-local position', async () => {
+    const { ws, registry, service } = setup()
+    const tree = await service.addWorkspace(ws.root)
+    const spatial = new SpatialCommands(registry)
+    const paths = byPath(tree)
+    const hello = paths.get('src/hello.ts')!
+    const readme = paths.get('README.md')!
+    const before = gitStatus(ws.root)
+
+    const absNodes = absoluteNodes(tree.bridge.getNodes())
+    const expected = resolveWhere(
+      { nodes: absNodes, edges: tree.bridge.getEdges() },
+      absNodes.find((node) => node.id === hello.id)!,
+      { near: readme.id },
+    )
+    expect(expected.ok).toBe(true)
+    if (!expected.ok) return
+
+    const placed = spatial.place(humanActor('kaelen'), { tree: tree.id, note: hello.id, where: { near: readme.id } })
+    expect(placed.ok, JSON.stringify(placed)).toBe(true)
+
+    const after = tree.bridge.getNodes()
+    const stored = position(after.find((node) => node.id === hello.id)!)
+    const src = position(byPath(tree).get('src')!)
+    // Stored local to src, so it differs from the absolute spot by src's origin.
+    expect(stored).toEqual({ x: expected.x - src.x, y: expected.y - src.y })
+    expect(absolutePositions(after).get(hello.id)).toEqual({ x: expected.x, y: expected.y })
+    expect(gitStatus(ws.root)).toBe(before)
   })
 })
