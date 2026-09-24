@@ -35,7 +35,9 @@ are recorded in app/src/main/space/shapes.ts and 02.6-02-SUMMARY.
 
 ## In progress
 
-(nothing)
+2026-09-24 16:10 session: wave 6 (02.6-06) executor dispatched on this tree.
+If this is still here and 02.6-06-SUMMARY.md is missing, check git log for
+`(02.6-06)` commits and resume from the first unfinished task.
 
 ## Log
 
