@@ -18,7 +18,7 @@ replay tool and goldens are kept.
 | 3 force rules | done headlessly (`e1e30a5`): force and `set.<f>` rules under unary, pair and global scope with `select`, mass integrator, `pinned`, RULE-07 skips on the rule node, goldens `gravity` and `pair`, and `plugins/mathspace/presets/` with the plan's four presets plus the roadmap's `anger`, `gold`, `push`, each a `mathspace.preset.<id>` command; `presets.test.js` runs all seven on one engine build with no skip and the promised field change. The "in the app" clause joins the GUI checklist in Blocked |
 | 4 constraints | done headlessly (`60c8346`, `60cd37e`, `064966d`): `constraint.expr` + `compliance` by fixed XPBD passes over lifted symbolic gradients, goldens `rod` and `contact`, the `contact` preset, the `pendulum`/`rope-chain` comparison against ddsim (numbers under Learned). The "in the app" look joins the GUI checklist in Blocked |
 | 5 views | **done condition met headlessly** (`b27808a`): engine side (`61ef64f`), stage surface (`24f1dbb`, `4acdaab`), default views as presets `view-2d`/`view-3d`/`view-4d`, and one 4-space projected through `[x, y]` and `[z, w]` at once in `projection.test.js` and `presets.test.js`. Shapes and rule regions in the surface are optional polish (Next 2); the in-app look joins the GUI checklist in Blocked |
-| 6 metrics | not started |
+| 6 metrics | engine side started (`02481a2`): diagonal `metric` on the Space note, geodesic integrator, golden `poincare`; open: plugin binding of `metric.expr` on space nodes and error text on the space, `identify`, `embed`, presets `poincare` and `sphere` |
 | 7 fold ddsim | not started |
 
 ## In progress
@@ -28,50 +28,68 @@ viewer; it is theirs to edit.)
 
 ## Next
 
-1. **Phase 6 first slice: `metric.expr` on the Space node, engine side.**
-   Read the plan's phase 6 paragraph and `mathspace_design.md`'s metric
-   section first; the plan lists `metric.expr` on `mathspace/space@1`,
-   Christoffel symbols by symbolic differentiation (`expr/diff.hpp` over
-   `expr/lift.hpp`, as the constraint solver does), a geodesic step,
-   `identify`, `embed`, and Poincaré and sphere presets. Smallest first
-   step: a `Space` carries an optional compiled metric (a dim×dim matrix
-   expression of `pos`, bound through a new action like 37 `BindField`,
-   under a new action kind with a golden), evaluated and hashed but not
-   yet used by the integrator; `MS_STEP_VERSION` bump only when step()
-   changes. Decide and record: how a matrix-valued expression is spelled
-   in the grammar (nested vector literal `[[a, b], [c, d]]` or dim²
-   flat vector), and whether `identify`/`embed` are Space props or
-   separate nodes. Then: geodesic integrator step reading the metric
-   (Christoffel from `diff`), golden `poincare`, presets. Plugin side:
-   `image.js` maps `metric.expr` on a space node like `<f>.expr` on a
-   note.
-2. Phase 5 optional polish, only if cheap and only after phase 6 has
-   started: shapes by sampled level sets and rule regions faintly in the
-   surface; three.js only if a 3D panel needs it. The surface refreshes
-   only on `onTreeChanged`, which the app fires for commits from outside
-   the renderer (the runner's, an agent's), not for the human's own
-   drags; a `getNodes` poll while open, or a host change, would close
-   that gap.
-3. **GUI confirmation of phases 1 to 5 (human, or a session that can
+1. **Phase 6 second slice: the metric through the plugin.** `image.js`
+   skips `SPACE_TYPE` nodes when gathering bindings (line ~362), so a
+   `metric.expr text "..."` prop on a `mathspace/space@1` node is never
+   compiled; and `runner.errorOps` writes `mathspace.error` only to ids
+   in `image.rules`, so the engine's BadMetric/VmError report on the
+   space id (a `RuleReport` whose `rule` is the space) is dropped. Do:
+   (a) in `buildImage`, collect `bindingsOf(space node)` for space nodes
+   (only `metric` is meaningful; `ms_compile` already picks `WorldDims`
+   for a non-Rule/View note and the space's own `pos` has the space dim,
+   so `self.pos` compiles) and add the space id to `image.rules` (rename
+   is not needed; the map is "nodes that carry mathspace.error");
+   (b) `image.test.js`/`runner.test.js` cases: a space with
+   `metric.expr "[1, 1]"` steps a moving note as before, a bad metric
+   (`"self.position.x"`) puts `step: skipped 1 visit (BadMetric)` on the
+   space node; (c) `presets/poincare.json`: a 2-space (needs the `$0`
+   ref, so the space is one commit and its notes the next) with the
+   golden's metric `4 / pow(1 - dot(self.position, self.position) /
+   10000, 2) * [1, 1]` and two notes with velocity, checked in
+   `presets.test.js` that both stay inside radius 100 and their radius
+   grows. Note the plugin rewrites `self.position` to `pos` before
+   `ms_compile` (runner, not `buildImage`); confirm that path runs for a
+   space node's binding too.
+2. Phase 6 third slice: `sphere` preset (chart (theta, phi), metric
+   `[1, pow(sin(self.position.x), 2)]`, a note circling near the equator
+   and one near a pole); `embed` (a bound dim-3 map on the Space note,
+   evaluated like `project` by the surface, never by step) and a View
+   over it; `identify` (wrap lanes at ±L: the smallest form is a bound
+   `identify` dim-N field of half-widths, 0 meaning no wrap, applied to
+   `pos` after the constraint passes; an `MS_STEP_VERSION` bump). Then
+   phase 6's done condition per the plan (re-read it: "Unchanged:
+   metric.expr on the Space node, Christoffel symbols by symbolic
+   differentiation, geodesic step, identify, embed, and the Poincaré and
+   sphere presets").
+3. Phase 5 optional polish, only if cheap: shapes by sampled level sets
+   and rule regions faintly in the surface; three.js only if a 3D panel
+   needs it. The surface refreshes only on `onTreeChanged` (fired for
+   commits from outside the renderer, not the human's own drags); a
+   `getNodes` poll while open, or a host change, would close that gap.
+4. **GUI confirmation of phases 1 to 5 (human, or a session that can
    drive Electron).** `npm install` at the root (or symlink node_modules,
-   see Learned), `npm run build:native` in `app/` if
-   `app/native/build/Release/tapestry_addon.node` is missing, `npm run
-   engine:wasm` and `npm run build` in `plugins/mathspace`, then `npm run
-   dev` in `app/`. Create a note, set `velocity.x real 1`, run
-   `mathspace.run`, watch it move, `mathspace.pause`, check the `.tree`;
-   set `y.expr text "self.position.x * 2"`, Step, see `y real ...` in the
-   inspector; run `mathspace.preset.anger`, `mathspace.preset.gold`,
-   `mathspace.preset.push` on a fresh tree, Run, watch Sam's `anger`
-   rise, gold grow, the cart move; a rule node with `scope text pair`,
-   `constraint.expr text "norm(other.position - self.position) - 100"`
-   between a pinned note and a free one with `velocity.*`, Run, see it
-   swing; run `mathspace.preset.view-4d`, click "Open Mathspace" and see
-   two panels, then Run and watch only the `zw` panel move. Without the
-   app: `npm run dev` in `plugins/mathspace` serves
-   the surface over a stub `window.tapestry` at localhost:5174.
+   see Learned), `npm run build:native` in `app/` if the addon is
+   missing, `npm run engine:wasm` and `npm run build` in
+   `plugins/mathspace`, then `npm run dev` in `app/`. Checklist: a note
+   with `velocity.x real 1` moves under `mathspace.run` and the `.tree`
+   records it; `y.expr text "self.position.x * 2"` shows `y real` after
+   Step; `mathspace.preset.anger`/`gold`/`push` run as described; a pair
+   `constraint.expr` rod swings; `mathspace.preset.view-4d` then "Open
+   Mathspace" shows two panels and only `zw` moves under Run. Without
+   the app: `npm run dev` in `plugins/mathspace` serves the surface over
+   a stub `window.tapestry` at localhost:5174.
 
 ## Done
 
+- `02481a2` ms6 engine side: `METRIC_FIELD` on a Space note (bound, dim N,
+  the diagonal g_kk in `self.pos`), `prepare_metric` (lift, diff per pos
+  lane, compile under `WorldDims` on the space note) and
+  `geodesic_correction` in `step.cpp`, `Skip::BadMetric`,
+  `MS_METRIC_EPS_RAW`, `MS_STEP_VERSION` 10, all goldens re-recorded,
+  golden `poincare` (radius-100 disk, 240 ticks), four step tests
+  (Euclidean metric bit-identical to none; polar geodesics straight to
+  2 percent; bad metric reported on the space; degenerate point silent).
+  Debug, Release, UBSan and the plugin (wasm rebuilt) all green.
 - `b27808a` ms5 default views as presets and the done condition:
   `presets/view-2d.json` (identity over the implicit space),
   `view-3d.json` (one 3-space, perspective `[x, y] * 400 / (z + 400)` and
@@ -106,6 +124,19 @@ viewer; it is theirs to edit.)
 
 ## Decisions
 
+- Metric (`02481a2`): diagonal only, as one dim-N bound field `metric`
+  on the Space note, because a `Field` holds at most `MAX_DIM` (8) lanes
+  so an N×N tensor cannot be one field, and the plan's two charts
+  (Poincaré, sphere) are diagonal; a full tensor would be `metric.<row>`
+  fields later. Forces are taken as chart vectors as written (no index
+  raised through g); the correction is semi-implicit (uses the velocity
+  after the force, before `pos += velocity`), h = 1. A g_kk below 2^-16
+  skips the correction for that note silently (like the constraint
+  pass's flat-gradient guard); a metric of the wrong dim or without a
+  symbolic gradient is `BadMetric` on the space; per-note evaluation
+  errors are VmError reports on the space id (RuleReport's `rule` may
+  now be a Space). The space's own `metric` lanes are never written by
+  the bound-field pass.
 - View presets (`b27808a`): a `ref` must name a live node at commit time
   and the kernel assigns ids, so a preset cannot point at a node of its
   own commit. `presets.js` accepts `{ type: 'ref', value: '$k' }` (k a
@@ -212,8 +243,6 @@ judgement, recorded here so a human can revisit)
   Next item 1 once and tick this off. (2026-09-24)
 
 - Dragged notes may hold positions that are not `k/2^32` (a drag at a
-  fractional zoom divides by the zoom). The plan says such reals are
-  rejected, so `buildImage` drops that note's `pos` and it does not move.
-  If the phase 1 app check shows this bites, the run loop could round
-  and commit the rounded position first; that is a plan change, so it is
-  left for a human. (2026-09-24)
+  fractional zoom); the plan rejects such reals, so `buildImage` drops
+  that note's `pos`. If the app check shows this bites, rounding and
+  committing first is a plan change for a human. (2026-09-24)
