@@ -15,7 +15,7 @@ replay tool and goldens are kept.
 | --- | --- |
 | 1 engine over the kernel | built and tested headlessly (`836a4da`); only the human GUI confirmation is open, see Blocked |
 | 2 expressions | done headlessly (`c5d134e`, `d6e9c0b`): golden `plot` hashes across processes and builds, `<f>.expr text` props bind through the runner so the bound value is committed as a kernel prop after a step (the inspector reads props, so it shows it; a human look is still open like phase 1's), and `diff.hpp` exists for phase 4 |
-| 3 force rules | engine started (`22bc70c`, `f90b3c7`): unary force rules with `select`, mass integrator, `RuleDims`, golden `gravity`; set rules, pair/global, plugin side, presets, RULE-07/08 open |
+| 3 force rules | engine (`22bc70c`, `f90b3c7`, `872831b`): unary force rules with `select`, mass integrator, `pinned`, `RuleDims`, golden `gravity`; plugin side (`204ced5`): rule nodes, `mathspace.error` for compile-time failures; open: `set.<f>` rules, pair/global, runtime-skip reporting, presets |
 | 4 constraints | not started |
 | 5 views | not started |
 | 6 metrics | not started |
@@ -28,32 +28,44 @@ viewer; it is theirs to edit.)
 
 ## Next
 
-1. **Phase 3, slice 3: plugin side.** `image.js` recognises kernel nodes
-   of type `mathspace/rule@1` (check `app/` for how a node type is named
-   in `NodeData`) as `NoteKind::Rule`, maps `scope text unary|pair|global`
-   to the scalar `scope` (0/1/2), `select.expr`/`force.expr`/`set.<f>.expr`
-   text props to bound fields via `Engine.compile` (which already picks
-   `RuleDims` for a Rule note in `ms_compile`); the runner's second pass
-   already binds `<f>.expr` props, so the rule's bound fields ride the
-   same path. A per-note skip is silent in the engine, so RULE-07's
-   `mathspace.error text` on the rule node comes from the plugin: compile
-   errors now; runtime skips need an engine-side report later (decide
-   how: a `ms_last_errors` buffer, or a count per rule in the snapshot).
-   RULE-08 `pinned`: `image.js` should drop `velocity`/`pos` writes for
-   pinned nodes, or the engine could read a `pinned` scalar; decide.
-   Vitest: a rule node in a `NodeData` array moves a note with velocity
-   through the runner (like `runner.test.js`'s `y real 6`).
-2. **Phase 3, slice 4: `set.<f>` rules** after the integrator (assign
-   the target's field `f` from the program, in rule id order), then
-   `scope pair` (`other` bound, unordered pairs ascending id, force
-   applied to `self` and its negation to `other`? decide against the
-   design: it says "each unordered pair"; record) and `global`. Each is
-   a `MS_STEP_VERSION` bump and a golden re-record (five files, then
-   `npm run engine:wasm` + `npm test` in `plugins/mathspace`).
-3. Presets under `plugins/mathspace/presets/` and the roadmap examples;
+1. **Phase 3, slice 4: `set.<f>` rules.** In `step.cpp`, after the
+   integrator and before the phase 2 bound-field pass: for each Rule
+   note in id order (unary scope, `select` gating as for `force`), for
+   each bound field named `set.<f>` (the plugin already binds
+   `set.<f>.expr` under that dotted name, `204ced5`; add a
+   `SET_PREFIX = "set."` constant in `world.hpp`), evaluate against each
+   target and write the lanes into the target's existing field `f` when
+   the dims match (a missing or reshaped `f` is a per-target skip; the
+   rule never creates fields, same as force). Pinned targets are
+   skipped (RULE-08 says "every rule's writes"). Two rules writing one
+   field is RULE-07's error; for now last rule wins in id order and the
+   report waits for the runtime-error channel (item 3). `RuleDims` must
+   resolve `self.<f>` for the target's own field; check that
+   `ms_compile` on a Rule note gives a `set.k` program the dim of `k`
+   on the first note that has it (it should, nothing is name-special).
+   Bump `MS_STEP_VERSION` to 6, add a set rule to golden `gravity`'s
+   generator (`golden_test.cpp` `gravityLog`, then `MS_WRITE_FIXTURES=1`
+   and re-record the five `.sha256`), doctest in `step_test.cpp`, and a
+   runner test (`set.heat.expr text "self.position.x"` on a rule node
+   commits `heat` on the body). Then `npm run engine:wasm` + `npm test`.
+2. **Phase 3, slice 5: `scope pair` and `global`.** `other` bound,
+   unordered pairs ascending id; decide whether a pair force applies to
+   `self` only or to both with negation (design says "each unordered
+   pair"; the gravity example writes `self.position - other.position`,
+   which reads as a force on `self` with the pair visited both ways, so
+   ordered pairs (a,b) and (b,a) with `self` receiving is the likely
+   reading; record the choice). `global` runs once per tick with `self`
+   = the rule note? Decide and record. Version bump + goldens as above.
+3. **RULE-07 runtime errors.** The engine skips silently at runtime;
+   the plugin writes only compile-time problems. Add a per-rule skip
+   count or a last-error code to the snapshot or a new `ms_errors` ABI
+   call (not in the hash), and have `runner.js` fold it into
+   `mathspace.error` (its `errorOps` already diffs against what the
+   kernel holds, so only the text source changes).
+4. Presets under `plugins/mathspace/presets/` and the roadmap examples;
    then the GUI checklist (phase 1 item, phase 2 `y.expr`, and a gravity
    rule) for a human.
-4. **GUI confirmation of phases 1 and 2 (human, or a session that can
+5. **GUI confirmation of phases 1 and 2 (human, or a session that can
    drive Electron).** `npm install` at the root (or symlink node_modules,
    see Learned), `npm run build:native` in `app/` if
    `app/native/build/Release/tapestry_addon.node` is missing, `npm run
@@ -64,6 +76,13 @@ viewer; it is theirs to edit.)
 
 ## Done
 
+- `872831b` ms3 `pinned`: the integrator skips a nonzero scalar `pinned`
+  (`MS_STEP_VERSION` 5); `image.js` maps `pinned bool true` to it.
+- `204ced5` ms3 plugin side: `mathspace/rule@1` nodes enter the image as
+  `NoteKind::Rule`, `scope text` → scalar, `set.<f>.expr` allowed on
+  rules, rule fields never committed back, `mathspace.error text`
+  written/unset on rule nodes from compile-time problems; manifest
+  declares the two node types.
 - `f90b3c7` ms3 `select`: a bound scalar `select` on a rule gates each
   target (`MS_STEP_VERSION` 4); golden `gravity` gains a lift rule.
 - `22bc70c` ms3 engine: `step.cpp` rewritten (force pass, mass
@@ -93,28 +112,37 @@ viewer; it is theirs to edit.)
 
 ## Decisions
 
-- Rule notes in the engine (2026-09-24, `22bc70c`): a rule's law is its
-  bound fields (`force` now; `select`, `set.<f>` next) evaluated with
-  `self` = each target, never against the rule note, so the bound-field
-  pass skips Rule notes and a rule's own lanes stay as set. `scope` is a
-  scalar field on the rule (0 unary, 1 pair, 2 global, absent = unary),
-  so no new action kind. Targets are the non-Rule notes of the rule's
-  space with `pos`; Rule notes are laws, not bodies, and are never moved.
-  Forces live in a per-tick accumulator, not a field: a rule never
-  creates fields, so a note without `velocity` never moves under force
-  (the plugin or the user gives it one) and the `.tree` gets no `force`
-  props. `mass` is the scalar field of that name, 1 when absent or not
-  scalar, <= 0 drops the force. h = 1: `velocity += force / mass; pos +=
-  velocity`. A rule whose program dim is not the space dim is skipped
-  whole; a per-target eval error skips that target only, silently (the
-  RULE-07 report is a plugin/ABI question, see Next). `RuleDims` guesses
-  a target field's dim from the first non-Rule note in the space that
-  has it; the VM's `DimChanged` makes a wrong guess a per-note skip.
-  `select` (`f90b3c7`) is a bound scalar on the rule, evaluated per
-  target before `force`; absent or unbound selects all, an error or
-  zero skips the target, a bound non-scalar skips the rule. Every
-  change to `step()` bumps the pin even mid-phase; re-recording five
-  goldens is one command line.
+- Plugin side of rules (`204ced5`): a rule node's membership is like a
+  note's (a `space` ref, else its `position` puts it in the implicit
+  space; the app gives every node a position). Its numeric props go in
+  as fields too (harmless: it is never a target and has no velocity).
+  An unknown `scope` text keeps the rule out of the image rather than
+  run it under a scope the user did not write. A rule's bound fields
+  are never committed back (`diff()` takes a skip set of rule ids):
+  its `force` is per target, so the store's value for it means nothing
+  and would be `.tree` noise. `mathspace.error` is the rule's problems
+  as `key: reason` lines in key order joined by `; `; the runner diffs
+  against what the kernel holds (`image.rules`) so an unchanged error
+  is not re-sent, and unsets it when the problems are gone. Error ops
+  ride the next commit, so they appear after the first tick, not on
+  rebuild alone. The `set.<f>.expr` binding name in the engine is the
+  dotted `set.<f>` (field names allow dots); slice 4 reads that prefix.
+- `pinned` (`872831b`) is engine-side, not a plugin-side write filter:
+  filtering the diff would let the engine's copy drift from the kernel's
+  and other rules would see the drifted body. The plugin sends `pinned`
+  1 only when the app's bool is true, so an unpinned note's action bytes
+  are unchanged. A pinned note still collects force (nothing reads the
+  accumulator for it yet).
+- Rule notes in the engine (`22bc70c`, `f90b3c7`): the law is the
+  rule's bound fields evaluated with `self` = each target, never the
+  rule itself; `scope` is a scalar field (0/1/2, absent = unary);
+  targets are the non-Rule notes of the rule's space with `pos`; force
+  is a per-tick accumulator, never a field; `mass` scalar, 1 when
+  absent, <= 0 drops the force; h = 1; a program at the wrong dim
+  skips the rule, a per-target error skips the target silently; `select`
+  is a bound scalar per target. Details in `step.cpp`'s header. Every
+  change to `step()` bumps `MS_STEP_VERSION`; re-recording five goldens
+  is one command line.
 - `diff.hpp` (`d6e9c0b`): a derivative keeps its value's dim, so it
   reuses the compiler's shapes with a `DimResolver`; `abs min max clamp`
   differentiate as the fx64 branch goes, `curve` is `Unsupported`,
@@ -146,24 +174,17 @@ viewer; it is theirs to edit.)
   the Ast's contiguous post-order runs (`ast.hpp`, `diff.cpp`), the
   decimal overflow guard (`parser.cpp`), the three-part 2 pi reduction
   (`fxmath.hpp`).
-- Golden fixtures whose actions carry bytecode cannot be written by
-  hand: `golden_test.cpp` generates `plot.actions` from a list of
-  expressions compiled against the world as it is built, and rewrites
-  the file under `MS_WRITE_FIXTURES=1`; `.sha256` is still recorded with
-  `ms_replay --write-golden`. macOS has no `timeout`; rely on the tool's
-  own limit.
-- doctest: `MESSAGE` ignores `std::hex` (print decimal); a `const char*`
-  first token in `CHECK_MESSAGE` prints as `1` (wrap in `std::string`);
-  a helper named `apply` collides with `std::apply` via ADL. `INT64_MIN`
-  in a generated `.inc` must be `(-9223372036854775807 - 1)`.
+- Goldens with bytecode (`plot`, `gravity`) are generated by
+  `golden_test.cpp` and rewritten under `MS_WRITE_FIXTURES=1`; `.sha256`
+  via `ms_replay --write-golden`. macOS has no `timeout`.
+- doctest: `MESSAGE` ignores `std::hex`; wrap a `const char*` first
+  token of `CHECK_MESSAGE` in `std::string`; a helper named `apply`
+  collides with `std::apply` via ADL.
 - `app/native/build/Release/tapestry_addon.node` is copied from the
   primary checkout (`/Users/kaelencook/Tapestry/app/native/build/Release/`,
   identical sources; `build:native` needs Electron headers), gitignored.
   The plugin's vitest imports `app/test/helpers/temp-tree.ts` and
   `app/src/main/plugin-host.ts`, which load in plain Node.
-- Kernel `real` values print as shortest round-trip decimals
-  (`set n1 position.x real 60`), so the `.tree` assertions can match
-  whole lines.
 - `node_modules` is a gitignored symlink to the primary checkout's
   (vitest 2.1.9). Plugin files are CommonJS, so the vitest config is
   `.mjs` and tests reach `engine.js` via `createRequire`. Wasm:
@@ -172,20 +193,18 @@ viewer; it is theirs to edit.)
   untracked), then `npm test` there; `engine.test.js` replays every
   golden through the Wasm module, so re-recorded goldens need a rebuild.
   `_ms_create` takes a BigInt seed and `_ms_tick` returns one.
-- `tests/golden/ms/*.actions` are globbed by `CMakeLists.txt`, so a new
-  fixture gets its two-process test at configure time with no edit.
-  Write fixture hex with a few lines of Python from the grammar in
-  `action.hpp` rather than by hand (a by-hand attempt was off by a byte).
-- Re-recording goldens: `build/native-debug/ms_replay <f>.actions
-  --write-golden <f>.sha256`, then Release and UBSan must agree.
-- Debug/Release/UBSan configure+build+ctest are each ~10-20 s; run all
-  three every slice. `mathspace_tests` gets `MATHSPACE_GOLDEN_DIR`.
+- The ESM test shims (`test/image-cjs.js`, `test/engine-cjs.js`) list
+  the exports by name: a new export from `image.js` is `undefined` in
+  the tests until it is added there (it cost a puzzled minute).
+- `tests/golden/ms/*.actions` are globbed at configure time
+  (CONFIGURE_DEPENDS), so a new fixture needs `cmake --build` before
+  ctest lists its two-process test. Re-record: `build/native-debug/
+  ms_replay <f>.actions --write-golden <f>.sha256` for the five files,
+  then Release and UBSan must agree (each preset ~10-20 s).
 - A bound `Field` compares unequal to a plain one with the same lanes
   (`bound`/`bytecode` are in `operator==`): compare lanes in tests.
   `World::notes` is a vector, so a `RuleDims`/`WorldDims` built before
   `create_note` holds a dangling note reference; build it per query.
-- A new golden needs `cmake --build` (the fixture glob is
-  CONFIGURE_DEPENDS) before ctest lists its two-process test.
 - The kernel alone: `cmake -S tapestry -B build/tapestry-kernel
   -DTAPESTRY_BUILD_RENDER=OFF -DTAPESTRY_BUILD_APP=OFF`, 59 tests, ~2 s.
 - The app stores positions as `position.x`/`position.y` reals measured
