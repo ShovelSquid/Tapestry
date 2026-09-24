@@ -15,7 +15,7 @@ actions, replay tool, and goldens built before the redirect are kept.
 
 | Phase | Status |
 | --- | --- |
-| 1 engine over the kernel | in progress (store/hash/actions/replay/ids/snapshot/ABI/wasm done; plugin remains) |
+| 1 engine over the kernel | in progress (store/hash/actions/replay/ids/snapshot/ABI/wasm/plugin skeleton done; image, run loop, app check remain) |
 | 2 expressions | not started |
 | 3 force rules | not started |
 | 4 constraints | not started |
@@ -30,28 +30,19 @@ viewer; it is theirs to edit.)
 
 ## Next
 
-1. **Plugin skeleton.** `plugins/mathspace/`: `tapestry.plugin.json`
-   (api "1", commands `mathspace.run`, `mathspace.pause`,
-   `mathspace.step`), `package.json` (workspace member, vitest),
-   `scripts/build-wasm.sh` mirroring data-drawing's but building the root
-   project's `wasm-release` preset (`source ~/emsdk/emsdk_env.sh` first)
-   and copying `mathspace.mjs/.wasm` into `plugins/mathspace/wasm/`
-   (gitignored), `engine.js` loading it. A vitest that loads the module
-   and replays `tests/golden/ms/velocity` (reuse `parseActions`/`replay`
-   from `tools/wasm-hash-check.mjs`) proves the plugin sees the engine.
-2. **`image.js`.** Kernel `NodeData` → engine actions: exact real↔raw
+1. **`image.js`.** Kernel `NodeData` → engine actions: exact real↔raw
    int64 conversion (reject reals that are not `k / 2^32` with `|k| <
    2^53`), key conventions (`f.x f.y f.z f.w`, `f.0..` above dim 4,
    `space ref`, implicit space per tree frame), and `diff(before,
    after)` → `set` ops. Vitest tests for all three.
-3. **Run loop and commits.** In `index.js`: on `mathspace.run`, build the
+2. **Run loop and commits.** In `index.js`: on `mathspace.run`, build the
    image from `getNodes()`, step at 60 Hz with `setInterval`, every 60
    ticks or on pause read the snapshot, diff, `kernel.submit('plugin',
    'mathspace', 'advance', [...sets, {op:'advance', ticks:k}])`. Before
    each commit compare `status().lastGoodSeq` with the seq of our last
    commit; if others committed, rebuild the image first. Checkpoint
    fixture `plugins/mathspace/test/fixtures/velocity.json`.
-4. **Phase 1 done check.** Build the app (`npm install` at the root,
+3. **Phase 1 done check.** Build the app (`npm install` at the root,
    `npm run build:native` in `app/`, then the app's dev script; see
    `app/package.json`), create a note, set `velocity.x real 1` via the
    inspector or a `set` commit, Run, Pause, confirm the `.tree` has the
@@ -64,6 +55,9 @@ its oracle tests.
 
 ## Done
 
+- `feab148` ms1 plugin skeleton: `plugins/mathspace/` manifest, package,
+  `scripts/build-wasm.sh`, `engine.js` (Engine over ms_*), `index.js`
+  with stub commands, vitest golden replay (8 tests).
 - `f7013b3` ms1 wasm target: `wasm/mathspace_wasm.cpp`, `mathspace_wasm`
   in `CMakeLists.txt`, `tools/wasm-hash-check.mjs` takes either module.
 - `8587ec9` ms1 C ABI: `include/mathspace/mathspace_c.h`,
@@ -109,6 +103,14 @@ its oracle tests.
 
 ## Learned
 
+- This worktree has no `node_modules`; the pattern is a symlink to the
+  primary checkout's: `ln -s /Users/kaelencook/Tapestry/node_modules
+  node_modules` (gitignored). vitest 2.1.9 lives there. Plugin tests:
+  `npm test` in `plugins/mathspace` after `npm run engine:wasm`.
+- Plugin files are CommonJS (`require`d by the host), so the vitest config
+  is `vitest.config.mjs` and tests reach `engine.js` through
+  `createRequire` (`test/engine-cjs.js`); `"type": "module"` in
+  package.json would break the host's require.
 - Wasm build: `source ~/emsdk/emsdk_env.sh` (prints 6.0.10), then
   `cmake --preset wasm-release && cmake --build build/wasm-release`.
   Configure+build is ~15 s. `node tools/wasm-hash-check.mjs
