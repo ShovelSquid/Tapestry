@@ -31,4 +31,4 @@ foreach(f IN LISTS DDSIM_GATE_SOURCES)
     endif()
 endforeach()
 
-message(STATUS "ddsim_forbidden_tokens: ${DDSIM_GATE_COUNT} sim sources are clean")
+message(STATUS "ddsim_forbidden_tokens: ${DDSIM_GATE_COUNT} engine sources are clean")

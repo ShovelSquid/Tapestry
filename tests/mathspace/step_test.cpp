@@ -462,7 +462,7 @@ TEST_CASE("the step version is pinned in the walk") {
     CHECK(MS_STEP_VERSION == 11u);
     const World w;
     const auto bytes = serialize(w);
-    // magic 4 | FORMAT_VERSION 4 | DD_FX_FORMAT_ID 4 | rule version 4
+    // magic 4 | FORMAT_VERSION 4 | MS_FX_FORMAT_ID 4 | rule version 4
     CHECK(bytes[12] == 11);
     CHECK(bytes[13] == 0);
     CHECK(bytes[14] == 0);

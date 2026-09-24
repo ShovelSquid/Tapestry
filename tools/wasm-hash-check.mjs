@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 // wasm-hash-check.mjs — replay a golden fixture through the Wasm module in
 // Node and compare every checkpoint hash with the committed .sha256 file.
-// Works for both modules: ddsim.mjs (dd_* symbols) and mathspace.mjs
+// Works for mathspace.mjs (ms_* symbols; it once took ddsim.mjs too)
 // (ms_* symbols); the prefix is read off the loaded module.
 //
-//   node tools/wasm-hash-check.mjs <ddsim.mjs|mathspace.mjs> <fixture.actions> <fixture.sha256>
+//   node tools/wasm-hash-check.mjs <mathspace.mjs> <fixture.actions> <fixture.sha256>
 //
 // Prints "OK <name> <n checkpoints>" and exits 0, or "MISMATCH ..." for the
 // first differing tick and exits 1. Same replay rule as golden_support.hpp.
@@ -14,7 +14,7 @@ import { pathToFileURL } from 'node:url'
 
 const [glueArg, actionsArg, shaArg] = process.argv.slice(2)
 if (!glueArg || !actionsArg || !shaArg) {
-  console.error('usage: wasm-hash-check.mjs <ddsim.mjs|mathspace.mjs> <fixture.actions> <fixture.sha256>')
+  console.error('usage: wasm-hash-check.mjs <mathspace.mjs> <fixture.actions> <fixture.sha256>')
   process.exit(2)
 }
 

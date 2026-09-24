@@ -1,16 +1,15 @@
 #!/usr/bin/env bash
-# build-wasm.sh — build the ddsim Wasm module with the pinned Emscripten and
-# copy ddsim.mjs + ddsim.wasm into surface/wasm/ (gitignored) for the worker,
-# the dev page and the Vitest golden test. Also builds the mathspace engine
-# (the root project's wasm-release preset) and copies mathspace.mjs +
-# mathspace.wasm beside them: the bridge test (ms-bridge.test.ts) replays
-# the fixtures through both, and 7e's worker loads mathspace instead.
+# build-wasm.sh — build the mathspace Wasm module (the root project's
+# wasm-release preset) with the pinned Emscripten and copy mathspace.mjs +
+# mathspace.wasm into surface/wasm/ (gitignored) for the worker, the dev
+# page and the Vitest golden and bridge tests. The same module
+# plugins/mathspace builds for itself; data-drawing keeps its own copy so
+# each plugin's wasm/ is complete on its own.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SURFACE="$(cd "$HERE/.." && pwd)"
 REPO="$(cd "$SURFACE/../../.." && pwd)"
-SIM="$REPO/data-drawing/sim"
 
 EMSDK_DIR="${EMSDK:-$HOME/emsdk}"
 if [ ! -f "$EMSDK_DIR/emsdk_env.sh" ]; then
@@ -25,11 +24,8 @@ if ! command -v emcc >/dev/null 2>&1; then
 fi
 echo "using $(emcc --version | head -1)"
 
-(cd "$SIM" && cmake --preset wasm-release && cmake --build --preset wasm-release)
-
 (cd "$REPO" && cmake --preset wasm-release && cmake --build --preset wasm-release --target mathspace_wasm)
 
 mkdir -p "$SURFACE/wasm"
-cp "$SIM/build/wasm-release/ddsim.mjs" "$SIM/build/wasm-release/ddsim.wasm" "$SURFACE/wasm/"
 cp "$REPO/build/wasm-release/mathspace.mjs" "$REPO/build/wasm-release/mathspace.wasm" "$SURFACE/wasm/"
-echo "copied ddsim.mjs, ddsim.wasm, mathspace.mjs and mathspace.wasm to $SURFACE/wasm/"
+echo "copied mathspace.mjs and mathspace.wasm to $SURFACE/wasm/"

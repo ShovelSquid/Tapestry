@@ -28,7 +28,7 @@
 /**
  * The painting surface: a full-window stage layer. The entry is the Vite
  * library build of surface/src/main.ts (`npm --prefix plugins/data-drawing
- * run build`); the module Worker chunk and ddsim.wasm it references sit
+ * run build`); the module Worker chunk and mathspace.wasm it references sit
  * next to it under surface/dist/assets/ and load over the same origin.
  *
  * @type {SurfaceContribution}

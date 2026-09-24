@@ -6,7 +6,7 @@
 #include <doctest.h>
 
 #include "fixture.hpp"
-#include "ddsim/rules/brush_body.hpp"
+#include "brush_reference.hpp"
 #include "mathspace/action.hpp"
 #include "mathspace/world.hpp"
 #include "mathspace/expr/parser.hpp"
@@ -786,11 +786,8 @@ TEST_CASE("golden brush: fixture equals the generator, the body follows ddsim's 
     }
     CHECK(f.checkpoints == std::vector<std::uint64_t>{0, 1, 5, 10, 20, 40});
 
-    ddsim::BrushVersion brush;
-    brush.mass = fx64::from_int(64);
-    const ddsim::BodyParams params = ddsim::derive_params(brush);
-    ddsim::ActiveStroke st;
-    st.has_target = 1;
+    const mathspace_test::ReferenceParams params = mathspace_test::reference_params(fx64::from_int(64));
+    mathspace_test::ReferenceBody st;
     fx64 tu{}, tv{};
     std::uint64_t dd_tick = 0;
     const NoteId body{2};
@@ -803,14 +800,14 @@ TEST_CASE("golden brush: fixture equals the generator, the body follows ddsim's 
                     tv = fx64::from_int(BRUSH_SAMPLES[i][1]);
                 }
             }
-            ddsim::body_substep(st, params, tu, tv, fx64::from_int(1));
+            mathspace_test::reference_substep(st, params, tu, tv);
         }
         const Field& pos = *find_field(*at.find(body), POS_FIELD);
         const Field& vel = *find_field(*at.find(body), VELOCITY_FIELD);
-        CHECK_MESSAGE(pos.value[0].raw == st.body.x.raw, "tick " << tick);
-        CHECK_MESSAGE(pos.value[1].raw == st.body.y.raw, "tick " << tick);
-        CHECK_MESSAGE(vel.value[0].raw == st.body.vx.raw, "tick " << tick);
-        CHECK_MESSAGE(vel.value[1].raw == st.body.vy.raw, "tick " << tick);
+        CHECK_MESSAGE(pos.value[0].raw == st.x.raw, "tick " << tick);
+        CHECK_MESSAGE(pos.value[1].raw == st.y.raw, "tick " << tick);
+        CHECK_MESSAGE(vel.value[0].raw == st.vx.raw, "tick " << tick);
+        CHECK_MESSAGE(vel.value[1].raw == st.vy.raw, "tick " << tick);
         if (tick == 40) {
             // The pen has been at the origin since tick 20; the heavy body is still on its way back.
             const bool still_moving = vel.value[0].raw != 0 || vel.value[1].raw != 0;

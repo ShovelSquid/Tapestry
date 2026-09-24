@@ -1,5 +1,5 @@
 # two_process.cmake — the SIM-02 two-process golden check, run by CTest as
-#   cmake -DREPLAY=<ddsim_replay> -DACTIONS=<fixture.actions>
+#   cmake -DREPLAY=<ms_replay> -DACTIONS=<fixture.actions>
 #         -DEXPECTED=<fixture.sha256> -DWORK=<dir> -P two_process.cmake
 #
 # Runs the replay CLI twice as separate processes (fresh ASLR, fresh
@@ -16,7 +16,7 @@ endforeach()
 if(NOT EXISTS "${EXPECTED}")
     message(FATAL_ERROR
         "two_process.cmake: missing golden ${EXPECTED}; produce it deliberately with "
-        "`ddsim_replay ${ACTIONS} --write-golden ${EXPECTED}` from the native-release build and commit it")
+        "`ms_replay ${ACTIONS} --write-golden ${EXPECTED}` from the native-release build and commit it")
 endif()
 
 get_filename_component(NAME "${ACTIONS}" NAME_WE)
@@ -27,7 +27,7 @@ execute_process(COMMAND "${REPLAY}" "${ACTIONS}"
 execute_process(COMMAND "${REPLAY}" "${ACTIONS}"
     OUTPUT_FILE "${WORK}/${NAME}.b" RESULT_VARIABLE rc_b)
 if(NOT rc_a EQUAL 0 OR NOT rc_b EQUAL 0)
-    message(FATAL_ERROR "two_process.cmake: ${NAME}: ddsim_replay exited ${rc_a} / ${rc_b}")
+    message(FATAL_ERROR "two_process.cmake: ${NAME}: the replay CLI exited ${rc_a} / ${rc_b}")
 endif()
 
 file(READ "${WORK}/${NAME}.a" a)

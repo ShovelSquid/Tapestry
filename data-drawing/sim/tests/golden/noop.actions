@@ -1,7 +1,0 @@
-# ddsim golden fixture: no actions; the tick and the seeded rng are the whole state
-# seed <u64> | action <tick> <hex> | checkpoint <tick>
-seed 42
-checkpoint 0
-checkpoint 1
-checkpoint 60
-checkpoint 600

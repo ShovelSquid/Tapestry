@@ -1,8 +1,8 @@
 // brush_body_test.cpp — plan phase 7 (7b): the data-drawing brush body as a
 // mathspace force rule, bit-equal to ddsim's.
 //
-// ddsim's body (include/ddsim/rules/brush_body.hpp, kept until 7f deletes
-// it) is one semi-implicit Euler substep per sample,
+// ddsim's body (transcribed in brush_reference.hpp since 7f deleted the
+// original) is one semi-implicit Euler substep per sample,
 //     a = k_t (target - x) - c_t v;  v += a h;  x += v h
 // with k_t = 1 / mass and c_t = 2 zeta sqrt(k_t) = sqrt(k_t) (zeta = 0.5).
 // A body note carrying `k` = k_t, `target`, `pos` and `velocity`, no
@@ -18,7 +18,7 @@
 // (STATE.md, Decisions).
 #include <doctest.h>
 
-#include "ddsim/rules/brush_body.hpp"
+#include "brush_reference.hpp"
 #include "mathspace/action.hpp"
 #include "mathspace/expr/parser.hpp"
 #include "mathspace/expr/vm.hpp"
@@ -68,9 +68,7 @@ std::vector<std::uint8_t> rule_code(const World& w, NoteId rule, const char* tex
 }
 
 void check_parity(std::int32_t brush_mass, std::uint32_t ticks) {
-    ddsim::BrushVersion brush;
-    brush.mass = fx64::from_int(brush_mass);
-    const ddsim::BodyParams params = ddsim::derive_params(brush);
+    const mathspace_test::ReferenceParams params = mathspace_test::reference_params(fx64::from_int(brush_mass));
 
     const NoteId space{1};
     const NoteId body{2};
@@ -88,12 +86,9 @@ void check_parity(std::int32_t brush_mass, std::uint32_t ticks) {
     REQUIRE(w.apply(encode_create_note(rule, space_of(space), NoteKind::Rule)) == Error::Ok);
     REQUIRE(w.apply(encode_bind_field(rule, FORCE_FIELD, rule_code(w, rule, BRUSH_FORCE))) == Error::Ok);
 
-    ddsim::ActiveStroke st;
-    st.body.x = tu;
-    st.body.y = tv;
-    st.body.vx = fx64{};
-    st.body.vy = fx64{};
-    st.has_target = 1;
+    mathspace_test::ReferenceBody st;
+    st.x = tu;
+    st.y = tv;
 
     bool moved = false;
     for (std::uint32_t t = 0; t < ticks; ++t) {
@@ -101,15 +96,15 @@ void check_parity(std::int32_t brush_mass, std::uint32_t ticks) {
         if (t > 0) {
             REQUIRE(w.apply(encode_set_field(body, vec2("target", tu, tv))) == Error::Ok);
         }
-        ddsim::body_substep(st, params, tu, tv, fx64::from_int(1));
+        mathspace_test::reference_substep(st, params, tu, tv);
         w.step();
         const Note& n = *w.find(body);
         const Field& pos = *find_field(n, POS_FIELD);
         const Field& vel = *find_field(n, VELOCITY_FIELD);
-        CHECK_MESSAGE(pos.value[0].raw == st.body.x.raw, "mass " << brush_mass << " tick " << t << " x");
-        CHECK_MESSAGE(pos.value[1].raw == st.body.y.raw, "mass " << brush_mass << " tick " << t << " y");
-        CHECK_MESSAGE(vel.value[0].raw == st.body.vx.raw, "mass " << brush_mass << " tick " << t << " vx");
-        CHECK_MESSAGE(vel.value[1].raw == st.body.vy.raw, "mass " << brush_mass << " tick " << t << " vy");
+        CHECK_MESSAGE(pos.value[0].raw == st.x.raw, "mass " << brush_mass << " tick " << t << " x");
+        CHECK_MESSAGE(pos.value[1].raw == st.y.raw, "mass " << brush_mass << " tick " << t << " y");
+        CHECK_MESSAGE(vel.value[0].raw == st.vx.raw, "mass " << brush_mass << " tick " << t << " vx");
+        CHECK_MESSAGE(vel.value[1].raw == st.vy.raw, "mass " << brush_mass << " tick " << t << " vy");
         moved = moved || pos.value[0].raw != 0;
     }
     CHECK(moved);
@@ -127,9 +122,7 @@ TEST_CASE("brush body: the force rule reproduces ddsim's body_substep bit for bi
 }
 
 TEST_CASE("brush body: derive_params is 1 / mass and sqrt of it, what the rule computes") {
-    ddsim::BrushVersion brush;
-    brush.mass = fx64::from_int(64);
-    const ddsim::BodyParams p = ddsim::derive_params(brush);
+    const mathspace_test::ReferenceParams p = mathspace_test::reference_params(fx64::from_int(64));
     CHECK(p.k_t.raw == fx64::ONE / 64);
     CHECK(p.c_t.raw == ddsim::sqrt(p.k_t).raw);
     CHECK(p.c_t.raw == fx64::ONE / 8);

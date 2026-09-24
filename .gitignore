@@ -9,7 +9,7 @@ app/out/
 app/forge-out/
 sdk/dist/
 tapestry/build-kernel/
-data-drawing/sim/build/
+
 plugins/data-drawing/surface/wasm/
 plugins/data-drawing/surface/dist/
 plugins/mathspace/wasm/

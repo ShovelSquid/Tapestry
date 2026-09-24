@@ -1,5 +1,7 @@
 /**
- * ddsim-abi.ts — the TypeScript mirror of data-drawing/sim/include/ddsim/ddsim_c.h.
+ * ddsim-abi.ts — the surface's wire format: the TypeScript mirror of ddsim_c.h,
+ * the action grammar and snapshot layouts the bridge (ms-bridge.ts) keeps
+ * after plan phase 7 folded ddsim into mathspace.
  *
  * Strides, error names, the DefineBrush encoder (byte-identical to the C++
  * test encoder in sim/tests/golden_support.hpp), and the snapshot decoders.
@@ -50,35 +52,6 @@ export const DD_ERR: Readonly<Record<number, string>> = {
 export function errorName(code: number): string {
   return DD_ERR[code] ?? `DD_ERR_UNKNOWN_${code}`
 }
-
-/** The shape of the Emscripten module (createDdsim() result) the plugin uses. */
-export interface DdsimModule {
-  /** Re-read from the module object at every use: it is replaced on memory growth. */
-  readonly HEAPU8: Uint8Array
-  _malloc(bytes: number): number
-  _free(ptr: number): void
-  _dd_version(): number
-  _dd_create(seed: bigint): number
-  _dd_destroy(sim: number): void
-  _dd_apply(sim: number, action: number, len: number): number
-  _dd_step(sim: number): void
-  _dd_tick(sim: number): bigint
-  _dd_hash(sim: number, out: number): void
-  _dd_serialize(sim: number, out: number, cap: number): number
-  _dd_restore(sim: number, input: number, len: number): number
-  _dd_nodes_ptr(sim: number): number
-  _dd_node_count(sim: number): number
-  _dd_node_stride(): number
-  _dd_body_ptr(sim: number): number
-  _dd_body_count(sim: number): number
-  _dd_body_stride(): number
-}
-
-export interface DdsimModuleOptions {
-  locateFile?: (path: string, prefix: string) => string
-}
-
-export type CreateDdsim = (options?: DdsimModuleOptions) => Promise<DdsimModule>
 
 // ---------------------------------------------------------------------------
 // Brush spec and the DefineBrush encoder

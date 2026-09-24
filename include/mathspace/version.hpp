@@ -8,6 +8,11 @@ namespace mathspace {
 
 const char* version();
 
+// The number format of every lane, written into the hash walk after
+// FORMAT_VERSION: Q32.32 as (int bits << 16 | frac bits), ddsim's
+// DD_FX_FORMAT_ID kept byte for byte.
+inline constexpr std::uint32_t MS_FX_FORMAT_ID = 0x00200020u;
+
 // What step() does (step.cpp) is behaviour the bytes of a world do not
 // describe, so its version is written into the hash walk (hash.cpp) and
 // any change to step() must bump it.
@@ -61,10 +66,9 @@ const char* version();
 //      its `metric`: ms_project evaluates it per note, outside the hash.
 inline constexpr std::uint32_t MS_STEP_VERSION = 11u;
 
-// The constraint solver's fixed pass count (ddsim's
-// DD_CONSTRAINT_ITERATIONS, never a convergence check) and the guard
-// below which a projection's denominator is treated as zero and the
-// visit skipped (ddsim's DD_CONSTRAINT_EPS, 2^-16): both are behaviour
+// The constraint solver's fixed pass count (ddsim's, never a convergence
+// check) and the guard below which a projection's denominator is treated
+// as zero and the visit skipped (ddsim's 2^-16): both are behaviour
 // pinned by MS_STEP_VERSION, not state.
 inline constexpr std::uint32_t MS_CONSTRAINT_ITERATIONS = 4u;
 inline constexpr std::int64_t MS_CONSTRAINT_EPS_RAW = std::int64_t{1} << 16;

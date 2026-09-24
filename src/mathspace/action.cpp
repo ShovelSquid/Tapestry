@@ -1,8 +1,8 @@
 // mathspace/action.cpp — action encoders and World::apply, the decoder.
 //
-// apply is the only reader of action bytes. The header goes through
-// ddsim::decode_header so the two grammars can never disagree on the
-// first eight bytes; payload_len must equal the bytes that follow, and
+// apply is the only reader of action bytes. The header is wire.hpp's
+// read_header (ddsim's eight bytes, kept so the two logs could share a
+// file); payload_len must equal the bytes that follow, and
 // each kind's decoder must consume exactly the payload. Everything is
 // read into locals first and the mutator is called last, so the world is
 // untouched on any failure. Bytes that decode but name something the
@@ -10,8 +10,6 @@
 // not BadAction: the action log reports what a direct call would.
 #include "mathspace/action.hpp"
 
-#include "ddsim/action.hpp"
-#include "ddsim/ddsim_c.h"
 #include "mathspace/world.hpp"
 #include "wire.hpp"
 
@@ -37,7 +35,7 @@ Bytes with_header(ActionKind kind, Bytes payload) {
     return out;
 }
 
-bool read_name(ddsim::ByteReader& r, std::string& out) {
+bool read_name(wire::ByteReader& r, std::string& out) {
     std::uint8_t len = 0;
     if (!r.read_u8(len) || r.remaining() < len) {
         return false;
@@ -99,9 +97,9 @@ Error World::apply(const std::uint8_t* bytes, std::size_t len) {
     if (bytes == nullptr || len < ACTION_HEADER_BYTES) {
         return Error::BadAction;
     }
-    ddsim::ByteReader r(bytes, len);
-    ddsim::ActionHeader h;
-    if (ddsim::decode_header(r, h) != DD_OK || h.payload_len != len - ACTION_HEADER_BYTES) {
+    wire::ByteReader r(bytes, len);
+    wire::ActionHeader h;
+    if (!wire::read_header(r, h) || h.payload_len != len - ACTION_HEADER_BYTES) {
         return Error::BadAction;
     }
     switch (static_cast<ActionKind>(h.kind)) {

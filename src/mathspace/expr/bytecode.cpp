@@ -1,7 +1,6 @@
 // expr/bytecode.cpp — shape check and emission, verify, encode/decode.
 #include "mathspace/expr/bytecode.hpp"
 
-#include "ddsim/action.hpp"
 #include "../wire.hpp"
 
 namespace mathspace::expr {
@@ -467,7 +466,7 @@ std::vector<std::uint8_t> encode(const Program& program) {
 CompileError decode(const std::uint8_t* data, std::size_t size, Program& program, std::uint32_t& where) {
     program = Program{};
     where = 0;
-    ddsim::ByteReader r(data, size);
+    wire::ByteReader r(data, size);
     std::uint8_t version = 0;
     std::uint8_t dim = 0;
     std::uint32_t count = 0;
