@@ -4,16 +4,16 @@ milestone: v1.0
 current_phase: "02.6"
 current_phase_name: Placement Edges & Forest Tree
 status: executing
-stopped_at: Completed 02.6-04-PLAN.md
-last_updated: "2026-09-24T22:54:20.679Z"
+stopped_at: Completed 02.6-05-PLAN.md
+last_updated: "2026-09-24T23:06:53.525Z"
 last_activity: 2026-09-24
 last_activity_desc: Phase 02.6 execution started
-state_head: 9508b91ffdb6cb1ddb6020351bbbf43fc2ae800c
+state_head: 0800c8bc688a5e4ab07e04a1c4cf13e8b6af1277
 progress:
   total_phases: 13
   completed_phases: 0
   total_plans: 51
-  completed_plans: 31
+  completed_plans: 32
 ---
 
 # Project State
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-09-08)
 ## Current Position
 
 Phase: 02.6 (Placement Edges & Forest Tree) — EXECUTING
-Plan: 5 of 6
+Plan: 6 of 6
 Status: Ready to execute
 Main line (phase-2-implementation-v1) at merge: 02.2 executing (8 of 16), 02.4 complete, 02.5 5/5
 Last activity: 2026-09-24 — Phase 02.6 execution started
@@ -78,6 +78,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 02.6 P02 | 9min | 1 tasks | 8 files |
 | Phase 02.6 P03 | 6min | 2 tasks | 5 files |
 | Phase 02.6 P04 | 12min | 2 tasks | 8 files |
+| Phase 02.6 P05 | 8min | 2 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -144,6 +145,8 @@ Recent decisions affecting current work:
 - [Phase 02.6]: 02.6-03: Forest identity is its header (name + creation second); two forests made in the same second cannot be told apart by the case H digest check
 - [Phase 02.6]: 02.6-04: vault:locate absent on this branch; relocateMember built and tested with no caller until 2.2 Plan 08
 - [Phase 02.6]: 02.6-04: setReserved runs before member restore; restoreVault requests carry expect; relocate and re-identify use the approved add message
+- [Phase 02.6]: 02.6-05: FRAME_UNDO_REACH stays 'run'; frame undo/redo are compensating forest commits read from the forest, never a rewind
+- [Phase 02.6]: 02.6-05: fitFrame is system-signed, once per member per session, spent even when nothing moves, never after the person moved the frame; trees:setFrame removed
 
 ### Pending Todos
 
@@ -198,6 +201,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-24T22:54:20.609Z
-Stopped at: Completed 02.6-04-PLAN.md
+Last session: 2026-09-24T23:06:53.464Z
+Stopped at: Completed 02.6-05-PLAN.md
 Resume file: None

@@ -345,7 +345,7 @@ Plans:
   6. Note positions are untouched: `position.x/y` stay node properties and D-27's thread frame is not moved — that migration is a later phase after 2.3 (#4)
   7. No code writes the Tapestry-tree or forest-tree record shape, or migrates `settings.json`, until Kaelen has approved the exact type strings, keys and labels and the migration at a blocking checkpoint (#17, #18)
 
-**Plans:** 4/6 plans executed
+**Plans:** 5/6 plans executed
 
 Plans:
 **Wave 1**
@@ -366,7 +366,7 @@ Plans:
 
 **Wave 5** *(blocked on Wave 4)*
 
-- [ ] 02.6-05-PLAN.md — Ctrl+Z after a drag as a compensating commit (tracer), and system-signed automatic fit; `trees:setFrame` removed (D-08, D-09, D-11, D-12)
+- [x] 02.6-05-PLAN.md — Ctrl+Z after a drag as a compensating commit (tracer), and system-signed automatic fit; `trees:setFrame` removed (D-08, D-09, D-11, D-12)
 
 **Wave 6** *(blocked on Wave 5)*
 
