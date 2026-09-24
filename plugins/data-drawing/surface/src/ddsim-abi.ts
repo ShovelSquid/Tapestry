@@ -131,8 +131,11 @@ class ByteWriter {
   }
 
   u8(v: number): void { this.ensure(1); this.view.setUint8(this.len, v); this.len += 1 }
+  i8(v: number): void { this.ensure(1); this.view.setInt8(this.len, v); this.len += 1 }
   u16(v: number): void { this.ensure(2); this.view.setUint16(this.len, v, true); this.len += 2 }
   u32(v: number): void { this.ensure(4); this.view.setUint32(this.len, v, true); this.len += 4 }
+  i32(v: number): void { this.ensure(4); this.view.setInt32(this.len, v, true); this.len += 4 }
+  u64(v: bigint): void { this.ensure(8); this.view.setBigUint64(this.len, v, true); this.len += 8 }
   i64(v: bigint): void { this.ensure(8); this.view.setBigInt64(this.len, v, true); this.len += 8 }
   bytes(b: Uint8Array): void { this.ensure(b.length); this.buf.set(b, this.len); this.len += b.length }
 
@@ -174,6 +177,137 @@ export function encodeDefineBrush(spec: BrushVersionSpec, versionId: number): Ui
     w.u16(knot)
   }
   return header(ActionKind.DefineBrush, w.finish())
+}
+
+// ---------------------------------------------------------------------------
+// Stroke ids and the stroke encoders (kinds 2, 3, 4). Byte-identical to
+// write_stroke_begin / write_stroke_samples / write_stroke_end in
+// sim/tests/action_writer.hpp (proven by encoder.test.ts against the goldens).
+// ---------------------------------------------------------------------------
+
+export const STROKE_BEGIN_BYTES = 56
+export const SAMPLE_BYTES = 24
+export const STROKE_END_BYTES = 12
+/** Mirrors DD_MAX_SAMPLES_PER_ACTION / DD_MAX_SAMPLES_PER_TICK (state.hpp). */
+export const MAX_SAMPLES_PER_ACTION = 1024
+export const MAX_SAMPLES_PER_TICK = 64
+const U32_MAX = 0xffffffff
+
+/** stroke_id = branch (bits 39..32) | ordinal (bits 31..0); ids are bigint, never number. */
+export function strokeIdOf(branch: number, ordinal: number): bigint {
+  if (!Number.isInteger(branch) || branch < 0 || branch > 255) throw new RangeError(`branch out of range: ${branch}`)
+  if (!Number.isInteger(ordinal) || ordinal < 1 || ordinal > U32_MAX) throw new RangeError(`ordinal out of range: ${ordinal}`)
+  return (BigInt(branch) << 32n) | BigInt(ordinal)
+}
+
+export function ordinalOf(id: bigint): number {
+  return Number(id & 0xffffffffn)
+}
+
+export function branchOf(id: bigint): number {
+  return Number((id >> 32n) & 0xffn)
+}
+
+/** The seven integer fields of a sample as the fence produces them (RawSample in input.ts). */
+export interface SampleFields {
+  u: number
+  v: number
+  pressure: number
+  tiltX: number
+  tiltY: number
+  twist: number
+  flags: number
+}
+
+/** A sample the worker has stamped with the tick it was applied at and its index within that tick. */
+export type StampedSample = SampleFields & { tick: number; index: number }
+
+/**
+ * StrokeBegin (56-byte payload): u64 stroke_id | u32 brush_version_id
+ * | u32 start_tick | u8 pressure_source | u8 pad[3] | 9 x i32 plane (Q16.16).
+ */
+export function encodeStrokeBegin(
+  strokeId: bigint,
+  brushVersionId: number,
+  startTick: number,
+  pressureSource: 0 | 1,
+  frameQ16: ArrayLike<number>,
+): Uint8Array {
+  if (frameQ16.length !== 9) throw new RangeError(`plane frame must have 9 Q16.16 components, got ${frameQ16.length}`)
+  if (pressureSource !== 0 && pressureSource !== 1) throw new RangeError(`pressure source must be 0 or 1`)
+  const w = new ByteWriter()
+  w.u64(strokeId)
+  w.u32(brushVersionId >>> 0)
+  w.u32(startTick >>> 0)
+  w.u8(pressureSource)
+  w.u8(0)
+  w.u8(0)
+  w.u8(0)
+  for (let i = 0; i < 9; i++) w.i32(frameQ16[i] as number)
+  return header(ActionKind.StrokeBegin, w.finish())
+}
+
+function writeSample(w: ByteWriter, s: StampedSample): void {
+  w.u32(s.tick >>> 0)
+  w.u16(s.index)
+  w.u16(s.pressure)
+  w.i32(s.u)
+  w.i32(s.v)
+  w.i8(s.tiltX)
+  w.i8(s.tiltY)
+  w.u16(s.twist)
+  w.u8(s.flags)
+  w.u8(0)
+  w.u8(0)
+  w.u8(0)
+}
+
+/** StrokeSamples payload: u64 stroke_id | u32 count | count x 24-byte sample. */
+export function encodeStrokeSamples(strokeId: bigint, stamped: readonly StampedSample[]): Uint8Array {
+  if (stamped.length < 1 || stamped.length > MAX_SAMPLES_PER_ACTION) {
+    throw new RangeError(`StrokeSamples must carry 1..${MAX_SAMPLES_PER_ACTION} samples, got ${stamped.length}`)
+  }
+  const w = new ByteWriter()
+  w.u64(strokeId)
+  w.u32(stamped.length)
+  for (const s of stamped) writeSample(w, s)
+  return header(ActionKind.StrokeSamples, w.finish())
+}
+
+/** StrokeEnd (12-byte payload): u64 stroke_id | u32 end_tick. */
+export function encodeStrokeEnd(strokeId: bigint, endTick: number): Uint8Array {
+  const w = new ByteWriter()
+  w.u64(strokeId)
+  w.u32(endTick >>> 0)
+  return header(ActionKind.StrokeEnd, w.finish())
+}
+
+/**
+ * The recorder's per-stroke stamping state: the tick the last stamped
+ * sample carried and the index the next sample on that tick gets.
+ */
+export interface StampState {
+  tick: number
+  nextIndex: number
+}
+
+/**
+ * Stamps samples for `tick` — pure: returns the stamped samples and the
+ * state that results if they are applied. Indices continue from
+ * state.nextIndex while the tick is unchanged and restart at 0 when the
+ * tick moved on, which is exactly the sim's DD_ERR_SAMPLE_ORDER rule
+ * (first index of a tick is 0, then +1 each). The worker commits the
+ * returned state only when the sim answered DD_OK, so a rejected batch
+ * leaves the indices where the sim's own pending list left them.
+ */
+export function stampSamples(state: StampState, tick: number, samples: readonly SampleFields[]): { samples: StampedSample[]; state: StampState } {
+  let index = state.tick === tick ? state.nextIndex : 0
+  const out: StampedSample[] = []
+  for (const s of samples) {
+    out.push({ u: s.u, v: s.v, pressure: s.pressure, tiltX: s.tiltX, tiltY: s.tiltY, twist: s.twist, flags: s.flags, tick, index })
+    index += 1
+  }
+  return { samples: out, state: { tick, nextIndex: index } }
 }
 
 // ---------------------------------------------------------------------------

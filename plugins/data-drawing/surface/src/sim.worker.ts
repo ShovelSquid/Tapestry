@@ -7,12 +7,20 @@
  * fractional step. Messages are handled between iterations, so every apply,
  * hash and log happens at a tick boundary.
  *
- * This worker IS the recorder: a DefineBrush is applied on arrival while
+ * This worker IS the recorder: every action is applied on arrival while
  * dd_tick() equals the tick it records in the log ("apply at the start of
  * the stamped tick", because the worker only ever stamps with its current
- * tick). Snapshots are HEAPU8.slice() copies posted in a transfer list;
- * HEAPU8 is re-read from the module object at every use (memory growth
- * replaces it) and the heap itself is never exposed.
+ * tick). Stroke samples arrive unstamped from the fence and are stamped
+ * here — tick = dd_tick() at arrival, index = the per-stroke counter that
+ * restarts at 0 when the tick moved on (stampSamples, pure) — then
+ * encoded, applied and, only on DD_OK, appended to the session log with
+ * the stamping state committed. StrokeBegin / StrokeEnd stamp start_tick /
+ * end_tick with the same current tick (the sim integrates the end tick's
+ * pending samples before the stroke leaves the active list). A rejection
+ * is posted with the ordinal and records nothing. Snapshots are
+ * HEAPU8.slice() copies posted in a transfer list; HEAPU8 is re-read from
+ * the module object at every use (memory growth replaces it) and the heap
+ * itself is never exposed.
  */
 import createDdsim from '../wasm/ddsim.mjs'
 import wasmUrl from '../wasm/ddsim.wasm?url'
@@ -35,10 +43,19 @@ import {
   NODE_STRIDE,
   TICK_HZ,
   encodeDefineBrush,
+  encodeStrokeBegin,
+  encodeStrokeEnd,
+  encodeStrokeSamples,
   errorName,
+  stampSamples,
+  strokeIdOf,
   type DdsimModule,
+  type StampState,
 } from './ddsim-abi'
 import type { LogEntry, WorkerInbound, WorkerOutbound } from './sim-host'
+
+/** Phase 1 records on branch 0 only. */
+const BRANCH = 0
 
 interface WorkerScope {
   postMessage(message: WorkerOutbound, transfer?: Transferable[]): void
@@ -60,6 +77,23 @@ let last = 0
 let lastPosted = -1
 let timer: ReturnType<typeof setTimeout> | null = null
 const log: LogEntry[] = []
+/** Per open stroke (by ordinal): the stamping state committed by the last accepted samples. */
+const stamps = new Map<number, StampState>()
+
+/**
+ * Applies a stroke action at the current tick: records it on DD_OK, posts
+ * the rejection (with the ordinal) otherwise. Returns whether it was applied.
+ */
+function applyStrokeAction(m: DdsimModule, ordinal: number, actionKind: number, bytes: Uint8Array, tick: number, samples: number): boolean {
+  const rc = apply(m, bytes)
+  if (rc !== DD_OK) {
+    post({ kind: 'rejected', ordinal, code: rc, name: errorName(rc), actionKind })
+    return false
+  }
+  log.push({ tick, bytes })
+  post({ kind: 'strokeApplied', ordinal, actionKind, tick, samples })
+  return true
+}
 
 function post(msg: WorkerOutbound): void {
   scope.postMessage(msg)
@@ -168,6 +202,47 @@ scope.onmessage = (ev: MessageEvent<WorkerInbound>) => {
       brushCount += 1
       log.push({ tick, bytes })
       post({ kind: 'applied', id: msg.id, tick, result: brushCount })
+      return
+    }
+    case 'beginStroke': {
+      const tick = currentTick(m)
+      let bytes: Uint8Array
+      try {
+        bytes = encodeStrokeBegin(strokeIdOf(BRANCH, msg.ordinal), msg.brushVersionId, tick, msg.pressureSource, msg.frameQ16)
+      } catch (err: unknown) {
+        post({ kind: 'error', message: err instanceof Error ? err.message : String(err) })
+        return
+      }
+      if (applyStrokeAction(m, msg.ordinal, ActionKind.StrokeBegin, bytes, tick, 0)) {
+        stamps.set(msg.ordinal, { tick, nextIndex: 0 })
+      }
+      return
+    }
+    case 'samples': {
+      if (msg.samples.length === 0) return
+      const tick = currentTick(m)
+      // A stroke whose begin was rejected has no state; stamping from zero
+      // lets the sim answer DD_ERR_STROKE_STATE so nothing is silently lost.
+      const state = stamps.get(msg.ordinal) ?? { tick: -1, nextIndex: 0 }
+      const stamped = stampSamples(state, tick, msg.samples)
+      let bytes: Uint8Array
+      try {
+        bytes = encodeStrokeSamples(strokeIdOf(BRANCH, msg.ordinal), stamped.samples)
+      } catch (err: unknown) {
+        post({ kind: 'error', message: err instanceof Error ? err.message : String(err) })
+        return
+      }
+      if (applyStrokeAction(m, msg.ordinal, ActionKind.StrokeSamples, bytes, tick, stamped.samples.length)) {
+        stamps.set(msg.ordinal, stamped.state)
+      }
+      return
+    }
+    case 'endStroke': {
+      const tick = currentTick(m)
+      const bytes = encodeStrokeEnd(strokeIdOf(BRANCH, msg.ordinal), tick)
+      if (applyStrokeAction(m, msg.ordinal, ActionKind.StrokeEnd, bytes, tick, 0)) {
+        stamps.delete(msg.ordinal)
+      }
       return
     }
     case 'hash': {

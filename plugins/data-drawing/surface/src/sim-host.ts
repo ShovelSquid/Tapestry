@@ -5,12 +5,25 @@
  * HEAPU8.slice() the worker transferred, never a view of the Wasm heap. The
  * main thread changes the sim only through recorded actions submitted here.
  *
- * beginStroke / pushSamples / endStroke / replayFromZero are added in 01-07
- * and 01-08; MainThreadTransport (same module, no worker) in 01-08.
+ * Strokes (01-07): beginStroke / pushSamples / endStroke are fire-and-forget
+ * posts keyed by the stroke ordinal; the Worker is the recorder and stamps
+ * every sample with the tick it is applied at. Rejections come back through
+ * onRejected with the ordinal. replayFromZero and MainThreadTransport (same
+ * module, no worker) arrive in 01-08.
  */
 import type { BrushVersionSpec } from './ddsim-abi'
+import type { RawSample } from './input'
 import simWorkerUrl from './sim.worker?worker&url'
 import { spawnSameOriginModuleWorker } from './worker-spawn'
+
+export interface StrokeBeginSpec {
+  /** Session-unique, >= 1; the stroke id is (branch 0, ordinal). */
+  ordinal: number
+  brushVersionId: number
+  /** The plane frame captured once at pen-down, as StrokeBegin records it (plane.ts frameToQ16). */
+  frameQ16: Int32Array
+  pressureSource: 0 | 1
+}
 
 export interface Snapshot {
   tick: number
@@ -31,6 +44,8 @@ export interface DdError {
   code: number
   name: string
   kind: number
+  /** The stroke the rejected action belonged to, when it was a stroke action. */
+  ordinal?: number
 }
 
 export interface SimHost {
@@ -39,6 +54,12 @@ export interface SimHost {
   currentTick(): number
   /** Resolves to the assigned brush version id; rejects with a DdError. */
   defineBrush(spec: BrushVersionSpec): Promise<number>
+  /** Opens a stroke at the Worker's current tick (start_tick stamped there). Fire-and-forget. */
+  beginStroke(spec: StrokeBeginSpec): void
+  /** Records coalesced samples; the Worker stamps (tick, index) at arrival. Fire-and-forget. */
+  pushSamples(ordinal: number, samples: RawSample[]): void
+  /** Ends a stroke at the Worker's current tick. Fire-and-forget. */
+  endStroke(ordinal: number): void
   pause(paused: boolean): void
   onSnapshot(cb: (s: Snapshot) => void): () => void
   onRejected(cb: (e: DdError) => void): () => void
@@ -56,6 +77,9 @@ export interface SimHost {
 export type WorkerInbound =
   | { kind: 'init'; seed: bigint }
   | { kind: 'defineBrush'; id: number; spec: BrushVersionSpec }
+  | { kind: 'beginStroke'; ordinal: number; brushVersionId: number; frameQ16: Int32Array; pressureSource: 0 | 1 }
+  | { kind: 'samples'; ordinal: number; samples: RawSample[] }
+  | { kind: 'endStroke'; ordinal: number }
   | { kind: 'pause'; paused: boolean }
   | { kind: 'hash'; id: number }
   | { kind: 'log'; id: number }
@@ -65,7 +89,10 @@ export type WorkerOutbound =
   | { kind: 'ready'; version: number; tickHz: number }
   | ({ kind: 'snapshot' } & Snapshot)
   | { kind: 'applied'; id: number; tick: number; result: number }
-  | { kind: 'rejected'; id: number; code: number; name: string; actionKind: number }
+  /** A stroke action was applied and recorded at `tick` (no request id: stroke posts are fire-and-forget). */
+  | { kind: 'strokeApplied'; ordinal: number; actionKind: number; tick: number; samples: number }
+  /** `id` for a request, `ordinal` for a stroke action; never both. */
+  | { kind: 'rejected'; id?: number; ordinal?: number; code: number; name: string; actionKind: number }
   | { kind: 'hash'; id: number; bytes: Uint8Array }
   | { kind: 'log'; id: number; entries: LogEntry[] }
   | { kind: 'error'; id?: number; message: string }
@@ -73,11 +100,13 @@ export type WorkerOutbound =
 export class DdRejected extends Error implements DdError {
   readonly code: number
   readonly kind: number
+  readonly ordinal: number | undefined
   constructor(e: DdError) {
-    super(`${e.name} (code ${e.code}, action kind ${e.kind})`)
+    super(`${e.name} (code ${e.code}, action kind ${e.kind}${e.ordinal === undefined ? '' : `, stroke ${e.ordinal}`})`)
     this.name = e.name
     this.code = e.code
     this.kind = e.kind
+    this.ordinal = e.ordinal
   }
 }
 
@@ -133,6 +162,31 @@ export class WorkerTransport implements SimHost {
 
   defineBrush(spec: BrushVersionSpec): Promise<number> {
     return this.request<number>((id) => ({ kind: 'defineBrush', id, spec }))
+  }
+
+  beginStroke(spec: StrokeBeginSpec): void {
+    this.post({
+      kind: 'beginStroke',
+      ordinal: spec.ordinal,
+      brushVersionId: spec.brushVersionId,
+      frameQ16: spec.frameQ16,
+      pressureSource: spec.pressureSource,
+    })
+  }
+
+  /**
+   * The RawSample[] is posted as-is: a coalesced batch is a handful of
+   * seven-integer objects, and structured-cloning it measured well under a
+   * millisecond in the dev page (01-07 SUMMARY), so a packed typed layout
+   * would buy nothing yet.
+   */
+  pushSamples(ordinal: number, samples: RawSample[]): void {
+    if (samples.length === 0) return
+    this.post({ kind: 'samples', ordinal, samples })
+  }
+
+  endStroke(ordinal: number): void {
+    this.post({ kind: 'endStroke', ordinal })
   }
 
   pause(paused: boolean): void {
@@ -213,10 +267,13 @@ export class WorkerTransport implements SimHost {
         return
       case 'rejected': {
         const e: DdError = { code: msg.code, name: msg.name, kind: msg.actionKind }
-        this.take(msg.id)?.reject(new DdRejected(e))
+        if (msg.ordinal !== undefined) e.ordinal = msg.ordinal
+        if (msg.id !== undefined) this.take(msg.id)?.reject(new DdRejected(e))
         for (const cb of this.rejectedSubs) cb(e)
         return
       }
+      case 'strokeApplied':
+        return
       case 'hash':
         this.take(msg.id)?.resolve(msg.bytes as never)
         return
