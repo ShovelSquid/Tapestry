@@ -30,20 +30,22 @@ viewer; it is theirs to edit.)
 
 ## Next
 
-1. **Kernel ids.** Rewrite `include/mathspace/ids.hpp`: `NoteId` is a
-   plain sequential `u64` (kernel `NodeId`), drop the branch/group/index
-   layout, masks, `make_note_id`, and their tests in
-   `tests/mathspace/ids_test.cpp`. Keep `SpaceId` as a distinct type over
-   the same value. Fix every caller (`world.cpp`, `action.cpp`, fixtures
-   in `tests/golden/ms/*.actions` if they encode structured ids — check
-   `tools/ms_replay` and `tests/mathspace/fixture.hpp`). Re-record the
-   two goldens if the walk changed; say so in the commit.
-2. **Bootstrap integrate rule.** `src/mathspace/step.cpp`: in
-   `World::step`, for each note in id order that has both `position` and
-   `velocity` fields of equal dim, `position += velocity`. Pin
-   `MS_RULE_INTEGRATE_VERSION = 1` in `version.hpp` and write it into the
-   hash walk. Golden `tests/golden/ms/velocity.actions` + `.sha256`.
-3. **Snapshot bytes.** `World::notes_bytes()` refreshed by `apply` and
+1. **Bootstrap integrate rule.** New `src/mathspace/step.cpp` (add it to
+   the `mathspace` library in `CMakeLists.txt`, move `World::step` out of
+   `world.cpp`): for each note in id order that has both `pos` and
+   `velocity` fields of equal dim, `pos += velocity` lane by lane with
+   `fx64` wrapping add. Note the store's position field is `POS_FIELD`
+   (`pos`), not `position`; `image.js` maps the app's `position.x` keys
+   onto it. Pin `MS_RULE_INTEGRATE_VERSION = 1` in `version.hpp` and
+   write it into the hash walk after `DD_FX_FORMAT_ID` (bump
+   `FORMAT_VERSION` to 2; re-record `empty` and `two-notes`). Golden
+   `tests/golden/ms/velocity.actions` + `.sha256`: one 2-space, one note
+   with pos (0,0) and velocity (1,2), checkpoints at 0, 1, 10, 60; add
+   it to the two-process list in `CMakeLists.txt` (grep
+   `ms_golden_two_process`). Tests in `tests/mathspace/step_test.cpp`:
+   moves, dim mismatch is skipped, a note without velocity is untouched,
+   a Space note with velocity moves too (nothing forbids it).
+2. **Snapshot bytes.** `World::notes_bytes()` refreshed by `apply` and
    `step`: per note in id order `u64 id | u8 field_count | per field in
    name order: u8 name_len | name | u8 dim | dim x i64`. Test: bytes match
    a hand-built expectation; stable across serialize/restore.
@@ -89,6 +91,8 @@ its oracle tests.
 
 ## Done
 
+- `0903619` ms1 kernel ids: `NoteId` plain u64, create actions carry the
+  id, `next_group` gone from World and the walk, goldens re-recorded.
 - `3cd79d9` ms1 step 1: build scaffolding (`mathspace` lib, tests, ids).
 - `1d6f2f1` autonomy: driver bash 3.2 guard.
 - ms1 note store, world, hash walk, actions 32..36, replay tool, goldens
@@ -105,6 +109,12 @@ its oracle tests.
 - real↔fx64 conversion is exact and lives in JS at the plugin boundary,
   so no double enters the gated C++ tree.
 - Note ids are kernel ids. The structured id layout is dropped.
+- The engine never allocates ids (2026-09-24, session `0903619`).
+  `CreateSpace`/`CreateNote` carry the kernel's id in the payload; the
+  store rejects zero and duplicates (`Error::DuplicateId`) and does not
+  track deleted ids, because "never reused" is the kernel's promise, not
+  something the image can or should enforce. `World::apply` lost its
+  `created` out-param for the same reason.
 - Phase 1 ships one hardcoded bootstrap rule (`position += velocity`) so
   something moves; phase 3 deletes it.
 
