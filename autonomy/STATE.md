@@ -19,7 +19,7 @@ replay tool and goldens are kept.
 | 4 constraints | done headlessly (`60c8346`, `60cd37e`, `064966d`): `constraint.expr` + `compliance` by fixed XPBD passes over lifted symbolic gradients, goldens `rod` and `contact`, the `contact` preset, the `pendulum`/`rope-chain` comparison against ddsim (numbers under Learned). The "in the app" look joins the GUI checklist in Blocked |
 | 5 views | **done condition met headlessly** (`b27808a`): engine side (`61ef64f`), stage surface (`24f1dbb`, `4acdaab`), default views as presets `view-2d`/`view-3d`/`view-4d`, and one 4-space projected through `[x, y]` and `[z, w]` at once in `projection.test.js` and `presets.test.js`. Shapes and rule regions in the surface are optional polish (Next 2); the in-app look joins the GUI checklist in Blocked |
 | 6 metrics | **done condition met headlessly** (`9d47eaf`): engine side (`02481a2`, diagonal `metric`, geodesic integrator, golden `poincare`), plugin side (`566ff24`, `metric.expr` bound through `buildImage`), presets `poincare` and `sphere` (`c49dd84`), `identify` (`5b5b55e`) and `embed` (`9d47eaf`). The in-app look joins the GUI checklist in Blocked |
-| 7 fold ddsim | in progress: sliced (Next), 7a headers moved (`4a99d1c`), 7b brush body rule (`ff7c851`), 7c bridge (`3b6909a`) |
+| 7 fold ddsim | in progress: sliced (Next), 7a headers moved (`4a99d1c`), 7b brush body rule (`ff7c851`), 7c bridge (`3b6909a`), 7d emission (`4d1e6dc`) |
 
 ## In progress
 
@@ -33,38 +33,25 @@ deleted last so every earlier slice can be tested against it). The
 rope-chain deviation is accepted (Decisions), so `MS_STEP_VERSION` and
 the goldens do not change in 7b to 7e unless a slice says so.
 
-1. **7d emission at spacing in the bridge.** Exact JS port of ddsim's
-   `emit_segment`/`emit_node`/`curve_weight` (`include/ddsim/rules/emit.hpp`)
-   over BigInt Q32.32 using `fxMul`/`fxDiv` in `surface/src/ms-abi.ts`
-   (add `fxSqrt` = floor(isqrt(raw << 32)), port `isqrt128`), run per
-   tick AFTER the engine step from the body snapshot (`pos`, `velocity`;
-   `dir` is bridge state per stroke, updated from `velocity` with
-   `DD_DIR_EPS` like `body_substep`; `path_accum` and
-   `next_emission_index` too). Emitted nodes go in a SECOND space
-   `NODE_SPACE_ID = 4n` of dim 3 (the body space is dim 2, so a 3-D `pos`
-   cannot live there; the rule visits only its own space, so no `select`
-   is needed): CreateNote (id `makeNodeId(branch, ordinal, index)`) plus
-   SetField `pos` (plane transform of (u, v)), `weight`, `dir`,
-   `velocity`, `tick`, `brush`. End-tick samples: ddsim integrated them
-   inside StrokeEnd and emitted; the bridge currently deletes the body
-   before the step (its `translate` comment says so). Make `translate`
-   return `{ actions, afterStep }` and put the StrokeEnd DeleteNote in
-   `afterStep`, applied after that tick's step and emission, so the end
-   tick behaves like every other tick. Test in `ms-bridge.test.ts`: node
-   count and every node's raw fields equal ddsim's `_dd_nodes_ptr` table
-   (stride 88, `decodeNodes` layout) for the five one-sample fixtures
-   (`four-per-tick` differs, re-recorded in 7e).
-2. **7e Worker switch.** `sim-driver.ts`/`sim.worker.ts` load the
+1. **7e Worker switch.** `sim-driver.ts`/`sim.worker.ts` load the
    mathspace Wasm (`build-wasm.sh` already copies `mathspace.*` into
    `surface/wasm/`) through `MsEngine` in `ms-abi.ts` (the ported
    engine-core; `decodeSnapshot` there reads the notes snapshot, so
-   nothing is imported from plugins/mathspace), `decodeNodes` becomes a
-   view over that snapshot's node-space notes. Move the nine `data-drawing/sim/tests/golden/
+   nothing is imported from plugins/mathspace). Per tick the worker does
+   what `replayInLockstep` in `ms-bridge.test.ts` does: apply the tick's
+   actions through `bridge.translate` (its DD_ERR code is the action's
+   result code), `engine.step()`, then apply `bridge.afterStep(engine.notes(),
+   tick)`. `decodeNodes` becomes a view over that snapshot's node-space
+   notes (ids above `NODE_SPACE_ID` whose low 24 bits are not
+   `BODY_INDEX`; fields `pos` dim 3, `weight`, `dir`, `velocity`, `tick`,
+   `brush`, all fx64 raw; `scaleBand` is 0). The bodies view reads the
+   body notes (`pos`, `velocity`, `target`). Move the nine `data-drawing/sim/tests/golden/
    *.actions` to `plugins/data-drawing/surface/test/golden/` and
-   re-record their `.sha256` as mathspace hashes; `wasm-golden.test.ts`
-   replays them through the bridge. Keep the pause/hash-ring/replay
-   contract of `SimDriver`. `npm test` and `npm run typecheck` green.
-3. **7f delete ddsim.** `data-drawing/sim/`, `include/ddsim/` (move
+   re-record their `.sha256` as mathspace hashes (`ms_hash` after the
+   same per-tick sequence); `wasm-golden.test.ts` and `ms-bridge.test.ts`
+   read them from there. Keep the pause/hash-ring/replay contract of
+   `SimDriver`. `npm test` and `npm run typecheck` green.
+2. **7f delete ddsim.** `data-drawing/sim/`, `include/ddsim/` (move
    `ByteReader` + `decode_header` into `mathspace/wire.hpp`,
    `sha256_bytes` + picosha2 into `src/mathspace/hash.cpp`,
    `DD_FX_FORMAT_ID` and the DD_OK/DD_ERR codes the ABI re-exports into
@@ -74,7 +61,7 @@ the goldens do not change in 7b to 7e unless a slice says so.
    CMake targets; `rope_chain_test.cpp` keeps its mathspace numbers as
    a plain regression. All three presets and the Wasm green, README
    status paragraph, phase 7 done in this table, then `autonomy/DONE`.
-4. GUI confirmation of phases 1 to 6 (human, or a session that can
+3. GUI confirmation of phases 1 to 6 (human, or a session that can
    drive Electron): `npm install` at the root (or symlink node_modules,
    see Learned), `npm run build:native` in `app/` if the addon is
    missing, `npm run engine:wasm` and `npm run build` in
@@ -86,12 +73,20 @@ the goldens do not change in 7b to 7e unless a slice says so.
    Mathspace" shows two panels and only `zw` moves under Run. Without
    the app: `npm run dev` in `plugins/mathspace` serves the surface over
    a stub `window.tapestry` at localhost:5174.
-5. Optional polish, only if cheap: a `torus` preset (flat metric,
+4. Optional polish, only if cheap: a `torus` preset (flat metric,
    `identify.x`/`identify.y` 200); shapes by sampled level sets and rule
    regions in the surface; a `getNodes` poll while the surface is open.
 
 ## Done
 
+- `4d1e6dc` ms7d emission: `emit_segment`/`emit_node`/`curve_weight`
+  ported into `MsBridge.afterStep(notes, tick)` (run after each
+  `engine.step()`), `fxSqrt`/`isqrt128` in `ms-abi.ts`, `fxDiv` fixed to
+  floor, node space id 4 dim 3, deferred end-tick delete, emitted stroke
+  ids refused by StrokeBegin. `ms-bridge.test.ts`: the five one-sample
+  fixtures give ddsim's node table bit for bit (ids every tick, fields
+  once per node) as well as the body. No engine change; Debug and both
+  plugin suites green.
 - `3b6909a` ms7c the bridge: `surface/src/ms-bridge.ts` (kinds 1..4 to
   mathspace actions, every DD_ERR code reproduced before any state change,
   `MsBridge.bootstrap` for the body space and rule), `ms-abi.ts` (the
@@ -125,6 +120,17 @@ the goldens do not change in 7b to 7e unless a slice says so.
 
 ## Decisions
 
+- Emission (`4d1e6dc`): one `afterStep(notes, tick)` on the bridge, not
+  an `afterStep` list on each `Translation` as the slice sketched: the
+  emission pass needs the post-step snapshot anyway, so the end-tick
+  DeleteNote rides on its return value and a caller has one thing to
+  apply per tick. A StrokeEnd with no samples on its tick deletes the
+  body at once (ddsim skipped that tick's integration for it); one with
+  samples marks the stroke `ending`, the step integrates, `afterStep`
+  emits and then deletes. Emitted nodes carry `tick` and `brush` as fx64
+  integers (`fxFromInt`), no `scale_band` (always 0 in ddsim). The node
+  cap is the bridge's `nodeCount`; the "stroke id in use" check is a Set
+  of stroke ids that have emitted, since nodes are never deleted.
 - Bridge (`3b6909a`): the body note lives in a dim-2 space (id 1, the
   stroke plane's (u, v)) with the rule (id 2); emitted nodes (7d) get
   their own dim-3 space (id 4), so the rule never needs `select`. The
@@ -190,9 +196,11 @@ the goldens do not change in 7b to 7e unless a slice says so.
   (builds `data-drawing/sim` with emsdk, about a minute) to fill the
   gitignored `surface/wasm/`. `plugins/data-drawing` has no node_modules
   of its own; vitest and tsc resolve from the root symlink.
-- `div_q32` in fx64.hpp truncates toward zero (sign-magnitude long
-  division) although its comment says floor; `mul_q32` is a floor
-  (arithmetic shift). `fxDiv`/`fxMul` in `ms-abi.ts` match the code.
+- `div_q32` in fx64.hpp FLOORS, as its comment says (the sign-magnitude
+  division subtracts one when the signs differ and the remainder is
+  nonzero); an earlier note here said truncation and `fxDiv` copied the
+  error until `4d1e6dc`. `mul_q32` floors by arithmetic shift. Check
+  against the C++ with a negative dividend, not the note.
 - Plugin tests run against `plugins/mathspace/wasm/` as it is on disk:
   an engine change without `npm run engine:wasm` shows up as baffling
   compile errors (an `UnknownRef` for a reference the C++ resolves).
