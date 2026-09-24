@@ -35,9 +35,18 @@ are recorded in app/src/main/space/shapes.ts and 02.6-02-SUMMARY.
 
 ## In progress
 
-2026-09-24 16:10 session: wave 6 (02.6-06) executor dispatched on this tree.
-If this is still here and 02.6-06-SUMMARY.md is missing, check git log for
-`(02.6-06)` commits and resume from the first unfinished task.
+All six plans have SUMMARYs, but phase verification ended **gaps_found**
+(3/7; `02.6-VERIFICATION.md`, gaps in its frontmatter). There are no wave
+plans left for PROTOCOL step 3 to find, so the next session does gap closure:
+1. Invoke `gsd-plan-phase` with args `02.6 --gaps` (one session). It reads
+   VERIFICATION.md and writes `gap_closure: true` plans. Must cover CR-01
+   (unparseable settings.json overwritten at launch: tell missing from
+   unreadable, refuse to write), CR-02 + WR-01 (unavailable records keyed by
+   path only: clear in `registry.adopt()`, key by path+digest), and, if
+   cheap, WR-02..05 from `02.6-REVIEW.md`.
+2. Then one session per wave: `gsd-execute-phase 02.6 --gaps-only --wave N`.
+3. Re-run phase verification. `passed`/`human_needed` -> PROTOCOL step 7
+   (DONE). Do not write DONE before that.
 
 ## Log
 
@@ -72,6 +81,12 @@ If this is still here and 02.6-06-SUMMARY.md is missing, check git log for
   green, typecheck clean, ~11 min. Task 1 hands-on check deferred as REVIEW
   item 4. Next: wave 6 (02.6-06, launch cases, forest.md, phase gate).
 
+- 2026-09-24 16:08 wave 6 (02.6-06): executor 9b9ff29 6247076 feat,
+  cba550b 3fdf623 docs; 30 files / 619 tests, kernel 59/59, typecheck
+  clean. REVIEW item 5 (end-of-phase check) queued. Phase gate: code review
+  (02.6-REVIEW.md, 2 critical / 5 warning / 6 info), verification
+  gaps_found 3/7. Next: plan gap closure (see In progress).
+
 ## Learned
 
 - The worktree shares `node_modules` with `~/Tapestry` by symlink.
@@ -87,6 +102,9 @@ If this is still here and 02.6-06-SUMMARY.md is missing, check git log for
   After 02.6-03 (`749fff4`): 25 files, 559 tests.
   After 02.6-04 (`487042b`): 27 files, 576 tests.
   After 02.6-05 (`01258ee`): 29 files, 596 tests.
+  After 02.6-06 (`3fdf623`): 30 files, 619 tests; kernel 59/59.
+- Code-review scope: `git diff` from the phase start includes the merged
+  main; scope by files in `(02.6-0N)` commits instead.
 - Execute-phase here: dispatch-isolation says orchestrator-worktree but
   worktree.base-check degrades (HEAD != stale origin/HEAD), so executors
   run sequentially on this tree. One executor per plan, ~8 min for 01.
@@ -96,3 +114,6 @@ If this is still here and 02.6-06-SUMMARY.md is missing, check git log for
 ## Blocked
 
 (questions a human would have been asked, with the option taken)
+- 2026-09-24 16:08: the verifier found gaps. Fix now or ship with them? Took:
+  gap closure through GSD (`--gaps`) before DONE, not an inline fix. The
+  review's findings are advisory, but CR-01 loses data.

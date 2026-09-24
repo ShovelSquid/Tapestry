@@ -169,3 +169,8 @@ do it once, on copies only. Close every Tapestry window first, then:
 
 **If the answer is no:** `git revert 6247076 9b9ff29` for this plan (items 2-4 list theirs), and describe
 the issue in autonomy/RESPONSE.
+
+**Hold this check until the gap-closure plans land.** The phase gate found `gaps_found`
+(`02.6-VERIFICATION.md`, from code review `02.6-REVIEW.md`): CR-01 overwrites a `settings.json` that
+doesn't parse, so a check on a copy with a bad file would pass without showing the loss. The driver
+plans and runs gap closure next; this item's steps stay the same afterwards.
