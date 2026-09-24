@@ -175,6 +175,29 @@ if(DDSIM_BUILD_TESTS)
                 -DWORK=${CMAKE_CURRENT_BINARY_DIR}/two_process
                 -P ${PROJECT_SOURCE_DIR}/cmake/two_process.cmake)
     endforeach()
+
+    # mathspace twin of the above: ms_replay drives mathspace::World directly
+    # (no C ABI yet), fixtures live under tests/golden/ms, and the same
+    # two_process.cmake runs them (its mention of ddsim_replay is only in
+    # message text).
+    add_executable(ms_replay tools/ms_replay/main.cpp)
+    target_link_libraries(ms_replay PRIVATE mathspace)
+    target_include_directories(ms_replay PRIVATE ${PROJECT_SOURCE_DIR}/tests/mathspace)
+    target_compile_definitions(ms_replay PRIVATE
+        MATHSPACE_GOLDEN_DIR="${PROJECT_SOURCE_DIR}/tests/golden/ms")
+
+    file(GLOB MATHSPACE_FIXTURES CONFIGURE_DEPENDS ${PROJECT_SOURCE_DIR}/tests/golden/ms/*.actions)
+    foreach(fixture IN LISTS MATHSPACE_FIXTURES)
+        get_filename_component(fixture_name ${fixture} NAME_WE)
+        get_filename_component(fixture_dir ${fixture} DIRECTORY)
+        add_test(NAME ms_golden_two_process_${fixture_name}
+            COMMAND ${CMAKE_COMMAND}
+                -DREPLAY=$<TARGET_FILE:ms_replay>
+                -DACTIONS=${fixture}
+                -DEXPECTED=${fixture_dir}/${fixture_name}.sha256
+                -DWORK=${CMAKE_CURRENT_BINARY_DIR}/two_process_ms
+                -P ${PROJECT_SOURCE_DIR}/cmake/two_process.cmake)
+    endforeach()
 endif()
 
 # ---------------------------------------------------------------------------
