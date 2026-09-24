@@ -9,7 +9,7 @@
  * here spends a token or needs a login.
  */
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { readFileSync, rmSync, statSync, existsSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { TreeRegistry, type OpenTree } from '../trees/registry'
@@ -689,5 +689,134 @@ describe('the Allow shell switch', () => {
       blocks.filter((b) => b.includes(`agent.${CHAT_AGENT_NAME}`) && b.includes('src/nested/deep.txt')),
     ).toHaveLength(0)
     expect(h.events.at(-1)).toMatchObject({ type: 'done', ok: true })
+  }, 30000)
+})
+
+describe('the Allow shell switch at its edges', () => {
+  it('on, off, on within 100 ms while idle: on, one respawn, three notices, no orphan', async () => {
+    const h = await startHarness({ scenario: 'text' })
+    await h.chat.send(h.tree.id, 'first')
+    await waitFor(() => doneCount(h.events) === 1)
+    const first = recordedSpawns(h)[0]
+    expect(pidAlive(first.pid)).toBe(true)
+
+    const started = Date.now()
+    await Promise.all([
+      h.chat.setAllowShell(h.tree.id, true),
+      h.chat.setAllowShell(h.tree.id, false),
+      h.chat.setAllowShell(h.tree.id, true),
+    ])
+    expect(Date.now() - started).toBeLessThan(5000)
+    expect(h.chat.open(h.tree.id).allowShell).toBe(true)
+    expect(notices(h)).toEqual([SHELL_ON_NOTICE, SHELL_OFF_NOTICE, SHELL_ON_NOTICE])
+    expect(chatsEntry(h)?.shell?.on).toBe(true)
+    // The old process is gone once the switch calls resolve, not later.
+    expect(pidAlive(first.pid)).toBe(false)
+    expect(recordedSpawns(h)).toHaveLength(1)
+
+    await h.chat.send(h.tree.id, 'second')
+    await waitFor(() => doneCount(h.events) === 2)
+    const spawns = recordedSpawns(h)
+    expect(spawns).toHaveLength(2)
+    expectShellArgv(spawns[1].argv)
+    expect(flagValue(spawns[1].argv, '--resume')).toBe(flagValue(first.argv, '--session-id'))
+    // Exactly one chat process is alive: the new one.
+    expect(spawns.filter((spawn) => pidAlive(spawn.pid)).map((spawn) => spawn.pid)).toEqual([spawns[1].pid])
+  }, 30000)
+
+  it('on, off, on while a turn runs leaves that one process, which keeps the shell on after Stop', async () => {
+    const scenarioFile = join(makeScenarioDir(), 'scenario')
+    writeFileSync(scenarioFile, 'slow')
+    const h = await startHarness({ scenarioFile })
+    await h.chat.send(h.tree.id, 'take your time')
+    const pids = await slowPids(h)
+    await Promise.all([
+      h.chat.setAllowShell(h.tree.id, true),
+      h.chat.setAllowShell(h.tree.id, false),
+      h.chat.setAllowShell(h.tree.id, true),
+    ])
+    expect(pidAlive(pids.fake)).toBe(true)
+    expect(recordedSpawns(h)).toHaveLength(1)
+    await h.chat.stop(h.tree.id)
+    await expectAllDead(pids)
+
+    writeFileSync(scenarioFile, 'text')
+    await h.chat.send(h.tree.id, 'now')
+    await waitFor(() => doneCount(h.events) === 2)
+    expect(recordedSpawns(h)).toHaveLength(2)
+    expectShellArgv(recordedSpawns(h)[1].argv)
+  }, 30000)
+
+  it('a crash during a shell-on turn still records its file changes, and the shell stays on', async () => {
+    const scenarioFile = join(makeScenarioDir(), 'scenario')
+    writeFileSync(scenarioFile, 'crash')
+    const h = await startHarness({ scenarioFile })
+    const catchUp = vi.spyOn(h.workspaces, 'catchUp')
+    await h.chat.setAllowShell(h.tree.id, true)
+
+    // What a command did before Claude Code died.
+    writeFileSync(join(h.ws.root, 'src', 'nested', 'deep.txt'), 'deep text\ncrashed mid-command\n')
+    await h.chat.send(h.tree.id, 'run something')
+    await waitFor(() => doneCount(h.events) === 1)
+
+    expect(h.events.at(-1)).toMatchObject({ type: 'done', ok: false })
+    expect(h.events.some((e) => e.type === 'error' && e.kind === 'crashed')).toBe(true)
+    expect(catchUp).toHaveBeenCalledWith(h.tree.id)
+    const observed = commitBlocks(h).filter((b) => b.includes('observed change to src/nested/deep.txt'))
+    expect(observed).toHaveLength(1)
+    expect(observed[0]).toContain('actor plugin workspace.watcher')
+
+    writeFileSync(scenarioFile, 'text')
+    await h.chat.send(h.tree.id, 'again')
+    await waitFor(() => doneCount(h.events) === 2)
+    const spawns = recordedSpawns(h)
+    expect(spawns).toHaveLength(2)
+    expectShellArgv(spawns[1].argv)
+    expect(flagValue(spawns[1].argv, '--resume')).toBe(flagValue(spawns[0].argv, '--session-id'))
+    expect(h.chat.open(h.tree.id).allowShell).toBe(true)
+  }, 30000)
+
+  it('Stop during a shell-on turn kills the CLI and its grandchild; the shell stays on', async () => {
+    const scenarioFile = join(makeScenarioDir(), 'scenario')
+    writeFileSync(scenarioFile, 'slow')
+    const h = await startHarness({ scenarioFile })
+    const catchUp = vi.spyOn(h.workspaces, 'catchUp')
+    await h.chat.setAllowShell(h.tree.id, true)
+    await h.chat.send(h.tree.id, 'take your time')
+    const pids = await slowPids(h)
+    expectShellArgv(recordedSpawns(h)[0].argv)
+
+    await h.chat.stop(h.tree.id)
+    await expectAllDead(pids)
+    await waitFor(() => doneCount(h.events) === 1)
+    expect(h.events.at(-1)).toEqual({ type: 'done', ok: false, reason: 'stopped' })
+    // A stopped shell turn may have changed files too.
+    expect(catchUp).toHaveBeenCalledTimes(1)
+
+    writeFileSync(scenarioFile, 'text')
+    await h.chat.send(h.tree.id, 'next')
+    await waitFor(() => doneCount(h.events) === 2)
+    expectShellArgv(recordedSpawns(h)[1].argv)
+    expect(h.chat.open(h.tree.id).allowShell).toBe(true)
+  }, 30000)
+
+  it('never catches up for a turn that ran with the shell off', async () => {
+    const h = await startHarness({ scenario: 'delayed-text' })
+    const catchUp = vi.spyOn(h.workspaces, 'catchUp')
+    await h.chat.send(h.tree.id, 'hello')
+    await waitFor(() => h.events.some((e) => e.type === 'session'))
+    // Another process changes a file while the turn runs.
+    writeFileSync(join(h.ws.root, 'src', 'nested', 'deep.txt'), 'deep text\nchanged elsewhere\n')
+    await waitFor(() => doneCount(h.events) === 1)
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 200))
+
+    expect(catchUp).not.toHaveBeenCalled()
+    expect(commitBlocks(h).some((b) => b.includes('observed change to src/nested/deep.txt'))).toBe(false)
+
+    // Only the relaunch catch-up (Plan 01), or 02.7-06's watcher, records it.
+    await h.workspaces.catchUp(h.tree.id)
+    const observed = commitBlocks(h).filter((b) => b.includes('observed change to src/nested/deep.txt'))
+    expect(observed).toHaveLength(1)
+    expect(observed[0]).toContain('actor plugin workspace.watcher')
   }, 30000)
 })
