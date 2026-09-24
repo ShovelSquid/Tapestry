@@ -16,7 +16,7 @@ actions, replay tool, and goldens built before the redirect are kept.
 | Phase | Status |
 | --- | --- |
 | 1 engine over the kernel | built and tested headlessly (`836a4da`); only the human GUI confirmation is open, see Blocked |
-| 2 expressions | not started |
+| 2 expressions | in progress: `fxmath.hpp` done (`3ca1482`); ast/parser/bytecode/vm, action 37, golden `plot` remain |
 | 3 force rules | not started |
 | 4 constraints | not started |
 | 5 views | not started |
@@ -40,52 +40,60 @@ viewer; it is theirs to edit.)
    `.tree`. If a session cannot drive the GUI, skip this: the headless
    check in `plugins/mathspace/test/tree.test.js` already covers the
    file-level condition. Either way, do not block phase 2 on it.
-2. **Phase 2, first slice: `include/ddsim/fxmath.hpp`.** Fixed-iteration
-   `sqrt sin cos atan2 exp log pow` over `fx64`, each with a fixed loop
-   bound and no convergence check, tested in `tests/mathspace/fxmath_test.cpp`
-   against an integer oracle (Python-generated table checked in as
-   constants, or a big-integer oracle in the test) with an op-count
-   check. Read `include/ddsim/fx64.hpp` first for the existing mul/div
-   and rounding conventions; keep the forbidden-token gate green.
-3. Phase 2 continues per the plan: `expr/ast.hpp`, `parser.hpp`,
-   `bytecode.hpp`, `vm.hpp`, action 37 `BindField`, golden `plot`.
+2. **Phase 2, next slice: `include/mathspace/expr/ast.hpp` and
+   `parser.hpp` (+ `src/mathspace/expr/parser.cpp`, test
+   `tests/mathspace/expr_parser_test.cpp`).** Text to AST for the plan's
+   grammar (`mathspace_plan.md` "Phase 2"): number literals on the Q32.32
+   grid (parse decimals exactly, reject inexact like `image.js` does),
+   vector literals `[a, b]`, `+ - * /`, unary minus, comparisons, `if c
+   then a else b` (pick a syntax, record it), calls `min max abs clamp sqrt
+   sin cos atan2 exp log pow dot norm curve`, component access `.x .y .n`,
+   references `self.f`, `other.f`, `node(n12).f`, `space.dim`,
+   `world.tick`. No evaluation yet: the AST is a `std::vector` of nodes
+   with child indices (no pointers, no recursion in the walker), parse
+   errors are an error code plus byte offset. Keep the gate green: the
+   parser must not touch `<cmath>` or floating types even for literals
+   (parse digits into an integer numerator and a power-of-ten denominator,
+   then `div_q32`; inexact means the remainder is non-zero).
+3. Then `bytecode.hpp` (a flat op list from the AST, fixed-size stack,
+   ops call `ddsim::fxmath`), `vm.hpp` (evaluates against a `World` and a
+   note, every op bounded), `diff.hpp`, action 37 `BindField`, walk pin
+   for the expression version, golden `plot`. Decide in-phase whether the
+   plugin compiles text via a `ms_compile` ABI call (the parser is C++, so
+   that is the plan's spirit: one parser, one grammar, hashed bytecode).
 
 ## Done
 
-- `836a4da` ms1 real-tree check: `plugins/mathspace/test/tree.test.js`
-  (native kernel + facade + Wasm + run loop, `.tree` lines and reopen,
-  human edit mid-run); `image.js` pads lane-addressed fields to the
-  space dim. `README.md` status section added in the following commit.
-- `a111181` ms1 run loop: `runner.js` (rebuild/tick/flush/start/pause/
-  stepOnce/dispose), `index.js` wired, 6 tests with a fake kernel.
-- `07f35f4` ms1 image.js: exact real↔raw, key convention, JS encoders
-  pinned to `velocity.actions`, `buildImage`, `parseSnapshot`, `diff`,
-  checkpoint fixture `test/fixtures/velocity.json` (16 tests).
-- `feab148` ms1 plugin skeleton: `plugins/mathspace/` manifest, package,
-  `scripts/build-wasm.sh`, `engine.js` (Engine over ms_*), `index.js`
-  with stub commands, vitest golden replay (8 tests).
-- `f7013b3` ms1 wasm target: `wasm/mathspace_wasm.cpp`, `mathspace_wasm`
-  in `CMakeLists.txt`, `tools/wasm-hash-check.mjs` takes either module.
-- `8587ec9` ms1 C ABI: `include/mathspace/mathspace_c.h`,
-  `src/mathspace/ms_c.cpp`, `tests/mathspace/c_abi_test.cpp`.
-- `dc75224` ms1 lazy notes snapshot: `World::notes_bytes()` in
-  `snapshot.cpp`, `notes_dirty`/`notes_cache` set by mutators, step and
-  restore; tests in `snapshot_test.cpp`.
-- `a247eab` ms1 bootstrap integrate rule in `step.cpp`,
-  `MS_RULE_INTEGRATE_VERSION` in the walk (FORMAT_VERSION 2), golden
-  `velocity`.
-- `0903619` ms1 kernel ids: `NoteId` plain u64, create actions carry the
-  id, `next_group` gone from World and the walk, goldens re-recorded.
-- `3cd79d9` ms1 step 1: build scaffolding (`mathspace` lib, tests, ids).
-- `1d6f2f1` autonomy: driver bash 3.2 guard.
-- ms1 note store, world, hash walk, actions 32..36, replay tool, goldens
-  `empty` and `two-notes` (commits up to `943b9bb`).
-- SDL Space page (`bdf03eb`..`8774401`): reverted in the redirect commit;
-  kept in history only.
-- `215602c` merge of `phase-2-implementation-v1`.
+- `3ca1482` ms2 fxmath: `include/ddsim/fxmath.hpp` (`sincos sin cos atan2
+  exp log pow`, CORDIC Q3.60 x48, BKM Q5.58 x58, all constexpr, literal
+  loop bounds), `tools/gen_fxmath/gen.py` (mpmath tables and oracle),
+  `tests/mathspace/fxmath_oracle.inc` (~860 inputs), `fxmath_test.cpp`
+  (tolerances, bit-exact digest `727731501767094518`, control-flow scan).
+- Phase 1 (ms1), oldest last, one line each; git has the details:
+  `836a4da` real-tree check + lane padding; `b223a54` README status;
+  `a111181` run loop `runner.js`; `07f35f4` `image.js` + checkpoint
+  fixture; `feab148` plugin skeleton + vitest goldens; `f7013b3` wasm
+  target; `8587ec9` C ABI; `dc75224` lazy notes snapshot; `a247eab`
+  bootstrap integrate rule + golden `velocity`; `0903619` kernel ids;
+  `3cd79d9` build scaffolding; `1d6f2f1` driver bash 3.2 guard; note
+  store/world/hash walk/actions 32..36/replay tool/goldens `empty` and
+  `two-notes` up to `943b9bb`; SDL Space page `bdf03eb`..`8774401`
+  reverted in the redirect; `215602c` merge of `phase-2-implementation-v1`.
 
 ## Decisions
 
+- fxmath rounding: CORDIC results (`sin cos atan2`) round to nearest at
+  the final Q3.60 to Q32.32 shift (`to_grid`), because the working value
+  errs both ways and a floor would give `sin(0) = -2^-32`. `exp` and `log`
+  keep the floor since their shift-and-add never over-approximates.
+  `sin`/`cos`/`atan2` are within 1 ulp of the true floor, `log` within 2,
+  `exp` within 2^-50 relative, `pow` within 2^-48 relative (its exponent
+  product is formed in Q5.58, not on the Q32.32 grid). Contract results:
+  `log(x<=0)` and `pow(x<=0, y)` return 0 and assert in Debug; `exp`
+  saturates at `INT64_MAX` above 31 ln2 and returns 0 below -33 ln2;
+  `atan2(0, 0) = 0`. The mpmath script is the only place a floating value
+  is computed, and it lives under `tools/`, outside the gate. (2026-09-24,
+  `3ca1482`.)
 - A lane-addressed field (`f.x`, `f.2`) is a vector in the note's space
   and is zero-padded to the space's dim; a bare name is a scalar of dim
   1. Needed because the plan's done condition sets only `velocity.x` and
@@ -127,6 +135,17 @@ viewer; it is theirs to edit.)
 
 ## Learned
 
+- doctest `MESSAGE` ignores `std::hex`; print digests in decimal. A
+  `const char*` first token in `CHECK_MESSAGE(false, name << ...)` prints
+  as `1`; wrap it in `std::string`. The oracle `.inc` needs `INT64_MIN`
+  emitted as `(-9223372036854775807 - 1)`, a plain literal is unsigned
+  and fails narrowing. A "no `while`/`do`" source scan must strip `//`
+  comments first ("do not edit by hand").
+- The 2 pi reduction must not use the Q32.32 constant alone: floor(x /
+  TWO_PI_32) times the truncated constant loses half an ulp per period,
+  which showed as 3-7 ulps at |x| ~ 1000 and millions at 2^31. Three
+  28-bit-aligned parts (`TWO_PI_32`, `TWO_PI_MID`, `TWO_PI_LO`) fix it
+  and cost two extra multiplies.
 - `app/native/build/Release/tapestry_addon.node` was copied from the
   primary checkout (`/Users/kaelencook/Tapestry/app/native/build/Release/`)
   because `tapestry/kernel` and `app/native` are identical to
