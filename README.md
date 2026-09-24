@@ -90,7 +90,13 @@ the same way: `include/mathspace/expr` (parser, bytecode, VM over
 ABI, and `<f>.expr text` props that the plugin compiles and binds so the
 bound value is committed after a step; golden `plot` covers it, and
 `expr/diff.hpp` holds the symbolic derivatives phase 4's solver will use.
-Phases 3 to 7 are not started.
+Plan phase 3 (rules) is built and tested headlessly: force and `set.<f>`
+rules under unary, pair and global scope with `select`, `pinned`,
+runtime failures written to the rule node as `mathspace.error`, goldens
+`gravity` and `pair`, and `plugins/mathspace/presets/` whose seven
+presets (the plan's four plus the roadmap's `anger`, `gold` and `push`)
+are `mathspace.preset.<id>` commands checked on one engine build.
+Phases 4 to 7 are not started.
 
 ## Build
 
