@@ -19,56 +19,53 @@ replay tool and goldens are kept.
 | 4 constraints | done headlessly (`60c8346`, `60cd37e`, `064966d`): `constraint.expr` + `compliance` by fixed XPBD passes over lifted symbolic gradients, goldens `rod` and `contact`, the `contact` preset, the `pendulum`/`rope-chain` comparison against ddsim (numbers under Learned). The "in the app" look joins the GUI checklist in Blocked |
 | 5 views | **done condition met headlessly** (`b27808a`): engine side (`61ef64f`), stage surface (`24f1dbb`, `4acdaab`), default views as presets `view-2d`/`view-3d`/`view-4d`, and one 4-space projected through `[x, y]` and `[z, w]` at once in `projection.test.js` and `presets.test.js`. Shapes and rule regions in the surface are optional polish (Next 2); the in-app look joins the GUI checklist in Blocked |
 | 6 metrics | **done condition met headlessly** (`9d47eaf`): engine side (`02481a2`, diagonal `metric`, geodesic integrator, golden `poincare`), plugin side (`566ff24`, `metric.expr` bound through `buildImage`), presets `poincare` and `sphere` (`c49dd84`), `identify` (`5b5b55e`) and `embed` (`9d47eaf`). The in-app look joins the GUI checklist in Blocked |
-| 7 fold ddsim | in progress: sliced (Next), 7a headers moved (`4a99d1c`), 7b brush body rule (`ff7c851`), 7c bridge (`3b6909a`), 7d emission (`4d1e6dc`), 7e Worker switch (`f74d0db`); 7f (delete ddsim) is next |
+| 7 fold ddsim | **done condition met headlessly** (`a7ee49c`): 7a headers moved (`4a99d1c`), 7b brush body rule (`ff7c851`), 7c bridge (`3b6909a`), 7d emission (`4d1e6dc`), 7e Worker switch (`f74d0db`), 7f ddsim deleted (`a7ee49c`). The in-app look (drawing a stroke in the data-drawing surface) joins the GUI checklist in Blocked |
 
 ## In progress
 
-Nothing. Tree is clean. (`autonomy/watch.py` is the operator's log
-viewer; it is theirs to edit.)
+Nothing. Tree is clean. Every plan phase is done headlessly and
+`autonomy/DONE` exists; the driver stops on it. (`autonomy/watch.py` is
+the operator's log viewer; it is theirs to edit.)
 
 ## Next
 
-Phase 7 slices, one commit with tests each, in this order (ddsim is
-deleted last so every earlier slice can be tested against it). The
-rope-chain deviation is accepted (Decisions), so `MS_STEP_VERSION` and
-the goldens do not change in 7b to 7e unless a slice says so.
+Nothing for an unattended session: the seven phases of `mathspace_plan.md`
+are done (Phases) and `autonomy/DONE` is committed. What remains needs a
+human:
 
-1. **7f delete ddsim.** `data-drawing/sim/`, `include/ddsim/` (move
-   `ByteReader` + `decode_header` into `mathspace/wire.hpp`,
-   `sha256_bytes` + picosha2 into `src/mathspace/hash.cpp`,
-   `DD_FX_FORMAT_ID` and the DD_OK/DD_ERR codes the ABI re-exports into
-   `mathspace_c.h`), `src/sim.cpp`, `src/ddsim_c.cpp`, `src/hash.cpp`,
-   `wasm/ddsim_wasm.cpp`, `tests/*.cpp` (ddsim's), `tests/golden/*.actions`
-   (ddsim's, not `ms/`), `tools/ddsim_replay`, `tools/gen_fixtures`, their
-   CMake targets; `rope_chain_test.cpp` keeps its mathspace numbers as
-   a plain regression. Also `data-drawing/sim/` takes the original
-   `tests/golden/*.actions` with it (7e copied them to
-   `plugins/data-drawing/surface/test/golden/`); `build-wasm.sh` then
-   builds only mathspace; `ms-bridge.test.ts` loses its ddsim half (the
-   five lockstep parity tests and the fifteen code-equal rejections
-   become plain expectations against the recorded codes, or are dropped
-   as covered by the goldens); `ddsim-glue.d.ts` goes; `ddsim-abi.ts`
-   stays (it is the surface's wire format) but its `DdsimModule` type and
-   `_dd_*` members go. All three presets and the Wasm green, README
-   status paragraph, phase 7 done in this table, then `autonomy/DONE`.
-2. GUI confirmation of phases 1 to 6 (human, or a session that can
-   drive Electron): `npm install` at the root (or symlink node_modules,
-   see Learned), `npm run build:native` in `app/` if the addon is
-   missing, `npm run engine:wasm` and `npm run build` in
-   `plugins/mathspace`, then `npm run dev` in `app/`. Checklist: a note
-   with `velocity.x real 1` moves under `mathspace.run` and the `.tree`
-   records it; `y.expr text "self.position.x * 2"` shows `y real` after
-   Step; `mathspace.preset.anger`/`gold`/`push` run as described; a pair
-   `constraint.expr` rod swings; `mathspace.preset.view-4d` then "Open
-   Mathspace" shows two panels and only `zw` moves under Run. Without
-   the app: `npm run dev` in `plugins/mathspace` serves the surface over
-   a stub `window.tapestry` at localhost:5174.
-3. Optional polish, only if cheap: a `torus` preset (flat metric,
+1. GUI confirmation of phases 1 to 7 (human, or a session that can drive
+   Electron): `npm install` at the root (or symlink node_modules, see
+   Learned), `npm run build:native` in `app/` if the addon is missing,
+   `npm run engine:wasm` and `npm run build` in `plugins/mathspace`,
+   `npm run sim:wasm` and `npm run build` in `plugins/data-drawing`, then
+   `npm run dev` in `app/`. Checklist: a note with `velocity.x real 1`
+   moves under `mathspace.run` and the `.tree` records it; `y.expr text
+   "self.position.x * 2"` shows `y real` after Step; `mathspace.preset.
+   anger`/`gold`/`push` run as described; a pair `constraint.expr` rod
+   swings; `mathspace.preset.view-4d` then "Open Mathspace" shows two
+   panels and only `zw` moves under Run; a stroke in the data-drawing
+   surface lays nodes with the brush body's overshoot (mass 64). Without
+   the app: `npm run dev` in `plugins/mathspace` serves the surface over a
+   stub `window.tapestry` at localhost:5174.
+2. Optional polish, only if a human asks: a `torus` preset (flat metric,
    `identify.x`/`identify.y` 200); shapes by sampled level sets and rule
-   regions in the surface; a `getNodes` poll while the surface is open.
+   regions in the surface; a `getNodes` poll while the surface is open;
+   `CLAUDE.md`'s repository map (it still describes `include/ddsim`,
+   `src/*.cpp` and `data-drawing/sim/`, all deleted in 7f).
 
 ## Done
 
+- `a7ee49c` ms7f delete ddsim: `include/ddsim`, ddsim's sources, tests,
+  goldens, `ddsim_replay`, `gen_fixtures`, `ddsim_wasm` and
+  `data-drawing/sim/` gone; `ByteReader` + `read_header` in
+  `src/mathspace/wire.hpp`, picosha2 in `src/mathspace/hash.cpp`,
+  `MS_FX_FORMAT_ID` in `version.hpp` (same bytes, hashes unchanged);
+  `brush_reference.hpp` transcribes `body_substep` for the parity tests;
+  `rope_chain_test` is a plain regression; `ms-bridge.test.ts` replays
+  through the bridge alone and checks recorded codes; `DdsimModule` and
+  `ddsim-glue.d.ts` gone; `sim:wasm` builds only mathspace. Debug,
+  Release, UBSan 156/156; data-drawing 113, mathspace 98, typecheck,
+  build green. README status rewritten; phase 7 done.
 - `f74d0db` ms7e Worker switch: `ms-sim.ts` (engine + bridge behind
   ddsim's instance shape, node table kept as NODE_STRIDE records, body
   table from a filtered `decodeSnapshot`), `SimDriver` over `MsSim`,
@@ -117,6 +114,22 @@ the goldens do not change in 7b to 7e unless a slice says so.
 
 ## Decisions
 
+- Delete ddsim (`a7ee49c`): the rope-chain comparison is kept as a
+  regression with mathspace's EXACT raw positions per checkpoint and
+  ddsim's recorded ones beside them (from the deleted solver at
+  `f74d0db`), so the accepted deviation stays measurable and any step()
+  change for a chain fails loudly. The brush parity tests compare
+  against a transcription of `body_substep` (`brush_reference.hpp`)
+  rather than being dropped: the rule's bit-equality is the point of 7b.
+  The bridge test's five lockstep tests became bridge-only replays; bit
+  parity with ddsim's body and node table is the ten recorded `.sha256`
+  in `surface/test/golden/` (written while the bridge was lockstep-equal)
+  and `wasm-golden.test.ts` checks them. The `ddsim` namespace stays on
+  `fx64`, `rng`, `fxmath` (renaming is churn with no test); the CMake
+  interface stays `ddsim_settings` and the options `DDSIM_*` because
+  CLAUDE.md and the presets name them; the project is `mathspace`.
+  `MS_FX_FORMAT_ID` keeps ddsim's `0x00200020` so the walk bytes and
+  every golden are unchanged.
 - Worker switch (`f74d0db`): the snapshot keeps ddsim's byte layouts
   (`NODE_STRIDE` 88, `BODY_STRIDE` 56) rather than making `decodeNodes` a
   view over notes: nothing that renders changes, and the per-tick cost is
@@ -197,9 +210,8 @@ the goldens do not change in 7b to 7e unless a slice says so.
 ## Learned
 
 - `plugins/data-drawing` tests need `npm run sim:wasm` there (emsdk,
-  about a minute) to fill the gitignored `surface/wasm/` with both
-  `ddsim.*` (until 7f) and `mathspace.*`; the root `build/wasm-release/
-  ddsim.mjs` is the diverged copy and does not reproduce ddsim's goldens.
+  about a minute) to fill the gitignored `surface/wasm/` with
+  `mathspace.*` (a stale `ddsim.*` pair from before 7f can be deleted).
   `plugins/data-drawing` has no node_modules of its own; vitest and tsc
   resolve from the root symlink. `npm run build` there emits the wasm
   twice (`dist/<name>.wasm` and `dist/assets/<name>-*.wasm`); it did so
@@ -263,6 +275,10 @@ judgement, recorded here so a human can revisit)
   fractional zoom); the plan rejects such reals, so `buildImage` drops
   that note's `pos`. If the app check shows this bites, rounding and
   committing first is a plan change for a human. (2026-09-24)
+
+- **Phase 7 in the app.** The data-drawing surface now runs on the
+  mathspace Wasm (7e) with ddsim gone (7f); nobody has drawn a stroke in
+  Electron on it. Next item 1 covers it. (2026-09-24)
 
 - **Phase 7 sub-steps.** ddsim integrated every pen sample within a
   tick at h = 1/n; the mathspace bridge keeps the last sample per tick
