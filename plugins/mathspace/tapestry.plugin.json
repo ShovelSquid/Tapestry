@@ -5,8 +5,15 @@
   "main": "index.js",
   "api": "1",
   "contributions": {
-    "nodeTypes": [],
-    "commands": ["mathspace.run", "mathspace.pause", "mathspace.step"],
+    "nodeTypes": [
+      "mathspace/space@1",
+      "mathspace/rule@1"
+    ],
+    "commands": [
+      "mathspace.run",
+      "mathspace.pause",
+      "mathspace.step"
+    ],
     "surfaces": []
   }
 }

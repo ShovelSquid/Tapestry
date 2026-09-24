@@ -35,6 +35,11 @@ const LANE_LETTERS = ['x', 'y', 'z', 'w']
 const IMPLICIT_SPACE_ID = 1n << 63n
 const IMPLICIT_SPACE_DIM = 2
 const SPACE_TYPE = 'mathspace/space@1'
+const RULE_TYPE = 'mathspace/rule@1'
+/** RULE-07: where the plugin writes a rule's failures, on the rule node. */
+const ERROR_KEY = 'mathspace.error'
+/** `scope text` on a rule → the engine's scalar `scope` field (step.cpp). */
+const SCOPES = { unary: 0, pair: 1, global: 2 }
 
 const ACTION_VERSION = 1
 const KIND_CREATE_SPACE = 32
@@ -42,6 +47,7 @@ const KIND_CREATE_NOTE = 33
 const KIND_SET_FIELD = 34
 const KIND_BIND_FIELD = 37
 const NOTE_KIND_NOTE = 1
+const NOTE_KIND_RULE = 2
 
 /** The one renamed field: the app says position, the store says pos. */
 const ENGINE_NAMES = { position: 'pos' }
@@ -227,16 +233,23 @@ function fieldsOf(node, spaceDim, problems) {
  * runner binds them in a second pass after the image's actions. Any
  * numeric `<f>` props still set the field first, so a bound field keeps
  * its committed value until the first step.
+ *
+ * On a rule node the bound fields are its law (`select`, `force`, and
+ * `set.<f>` for an assignment rule, plan phase 3), so a dotted base is
+ * allowed there when it is `set.` plus one field name; the engine keeps
+ * the field under that dotted name.
  * Returns [{ name, text }] in name order.
  */
-function bindingsOf(node, problems) {
+function bindingsOf(node, problems, isRule = false) {
   const out = []
   for (const key of Object.keys(node.props).sort()) {
     if (!key.endsWith('.expr')) continue
     const prop = node.props[key]
     if (!prop || prop.type !== 'text' || typeof prop.value !== 'string') continue
     const base = key.slice(0, -'.expr'.length)
-    if (!validFieldName(base) || base.includes('.')) {
+    const setTarget = isRule && base.startsWith('set.') ? base.slice('set.'.length) : null
+    const plain = setTarget !== null ? setTarget : base
+    if (!validFieldName(base) || !validFieldName(plain) || plain.includes('.')) {
       problems.push({ id: node.id, key, reason: `${JSON.stringify(base)} is not a field name` })
       continue
     }
@@ -283,10 +296,22 @@ function engineSource(text) {
  *   types: Map<string, 'real'|'int'>,
  *   problems: Array<{id: string, key: string, reason: string}>,
  *   bindings: Array<{id: bigint, node: string, name: string, text: string}>,
+ *   rules: Map<string, string|null>,
  * }} actions in apply order; fields is the before-image diff() needs;
  *   types remembers `int` props so they come back as ints; bindings are
  *   the `<f>.expr` props for the runner to compile once the actions are
- *   applied, in id then name order.
+ *   applied, in id then name order; rules maps every `mathspace/rule@1`
+ *   node id (in the image or not) to the `mathspace.error` text it
+ *   carries now, null when none, so the runner can write only changes.
+ *
+ * A rule node joins the image like any note (a `space` ref, else its
+ * position puts it in the implicit space) as NoteKind::Rule, which the
+ * engine never moves or targets. Its `scope text` becomes the scalar
+ * `scope` (unary 0, pair 1, global 2; absent is unary); any other text is
+ * a problem and the rule stays out of the image rather than run under a
+ * scope the user did not write. Its bound fields are never committed
+ * back: a rule's `force` is evaluated per target, so the value the store
+ * holds for it means nothing (diff() skips them via `rules`).
  */
 function buildImage(nodes) {
   const problems = []
@@ -306,8 +331,14 @@ function buildImage(nodes) {
   }
 
   let usesImplicit = false
+  const rules = new Map()
   for (const node of nodes) {
     if (node.type === SPACE_TYPE) continue
+    const isRule = node.type === RULE_TYPE
+    if (isRule) {
+      const err = node.props[ERROR_KEY]
+      rules.set(node.id, err && err.type === 'text' && typeof err.value === 'string' ? err.value : null)
+    }
     const spaceProp = node.props['space']
     let space
     if (spaceProp && spaceProp.type === 'ref') {
@@ -331,7 +362,21 @@ function buildImage(nodes) {
       problems.push({ id: node.id, key: 'position', reason: `position has ${pos.dim} lanes, space has ${dim}` })
       fields.delete('pos')
     }
-    notes.push({ id: nodeIdToU64(node.id), space, fields, node: node.id, bindings: bindingsOf(node, problems) })
+    if (isRule) {
+      const scopeProp = node.props['scope']
+      if (scopeProp !== undefined) {
+        const scope = scopeProp.type === 'text' ? SCOPES[scopeProp.value] : undefined
+        if (scope === undefined) {
+          problems.push({ id: node.id, key: 'scope', reason: `scope must be one of ${Object.keys(SCOPES).join(', ')}` })
+          continue
+        }
+        fields.set('scope', { dim: 1, lanes: [BigInt(scope) * BigInt(FX_ONE)], types: ['real'] })
+      }
+    }
+    notes.push({
+      id: nodeIdToU64(node.id), space, fields, node: node.id,
+      kind: isRule ? NOTE_KIND_RULE : NOTE_KIND_NOTE, bindings: bindingsOf(node, problems, isRule),
+    })
   }
 
   const byId = (a, b) => (a < b ? -1 : a > b ? 1 : 0)
@@ -345,7 +390,7 @@ function buildImage(nodes) {
   }
   notes.sort((a, b) => byId(a.id, b.id))
   for (const n of notes) {
-    actions.push(encodeCreateNote(n.id, n.space, NOTE_KIND_NOTE))
+    actions.push(encodeCreateNote(n.id, n.space, n.kind))
     const before = new Map()
     for (const name of [...n.fields.keys()].sort(compareNames)) {
       const f = n.fields.get(name)
@@ -361,7 +406,7 @@ function buildImage(nodes) {
   for (const n of notes) {
     for (const b of n.bindings) bindings.push({ id: n.id, node: n.node, name: b.name, text: b.text })
   }
-  return { actions, fields: image, types, problems, bindings }
+  return { actions, fields: image, types, problems, bindings, rules }
 }
 
 // ---------------------------------------------------------------------------
@@ -395,11 +440,14 @@ function parseSnapshot(bytes) {
  * The setProperty ops that bring the kernel from `before` to `after`.
  * Only notes present in `before` are considered (the implicit space has
  * no kernel node); a field or lane missing from `before` counts as
- * changed. Ops are in id order, then field name order, then lane order.
+ * changed. Notes whose kernel id is in `skip` (rule nodes) are never
+ * written. Ops are in id order, then field name order, then lane order.
  */
-function diff(before, after, types = new Map()) {
+function diff(before, after, types = new Map(), skip = new Set()) {
   const ops = []
-  const ids = [...after.keys()].filter((id) => before.has(id)).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
+  const ids = [...after.keys()]
+    .filter((id) => before.has(id) && !skip.has(u64ToNodeId(id)))
+    .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
   for (const id of ids) {
     const was = before.get(id)
     const now = after.get(id)
@@ -420,7 +468,7 @@ function diff(before, after, types = new Map()) {
 }
 
 module.exports = {
-  FX_ONE, IMPLICIT_SPACE_ID, IMPLICIT_SPACE_DIM, SPACE_TYPE,
+  FX_ONE, IMPLICIT_SPACE_ID, IMPLICIT_SPACE_DIM, SPACE_TYPE, RULE_TYPE, ERROR_KEY,
   realToRaw, rawToReal, nodeIdToU64, u64ToNodeId, parseKey, laneKey, kernelName,
   encodeCreateSpace, encodeCreateNote, encodeSetField, encodeBindField,
   buildImage, parseSnapshot, diff, engineSource,

@@ -12,7 +12,7 @@ import { describe, expect, it } from 'vitest'
 
 import { Engine, hexOf, loadModule } from './engine-cjs.js'
 import {
-  IMPLICIT_SPACE_ID, SPACE_TYPE, buildImage, diff, encodeCreateNote, encodeCreateSpace, encodeSetField,
+  ERROR_KEY, IMPLICIT_SPACE_ID, RULE_TYPE, SPACE_TYPE, buildImage, diff, encodeCreateNote, encodeCreateSpace, encodeSetField,
   engineSource, laneKey, nodeIdToU64, parseKey, parseSnapshot, rawToReal, realToRaw, u64ToNodeId,
 } from './image-cjs.js'
 import { parseActions } from './fixture-replay.js'
@@ -139,6 +139,26 @@ describe('buildImage', () => {
     expect(img.fields.get(9n).get('pos')).toEqual([ONE, ONE, ONE])
     expect(img.fields.get(11n).has('pos')).toBe(false)
   })
+  it('rule nodes: NoteKind::Rule, scope text to a scalar, set.<f>.expr allowed, existing error text recorded', () => {
+    const img = buildImage([
+      { id: 'n2', type: 'tapestry.notes/note@1', props: { 'position.x': real(0), 'position.y': real(0), 'set.k.expr': { type: 'text', value: '1' } } },
+      { id: 'n3', type: RULE_TYPE, props: { 'position.x': real(5), 'position.y': real(5), scope: { type: 'text', value: 'pair' }, 'force.expr': { type: 'text', value: '[1, 0]' }, 'set.k.expr': { type: 'text', value: '1' }, 'set.a.b.expr': { type: 'text', value: '1' } } },
+      { id: 'n4', type: RULE_TYPE, props: { 'position.x': real(0), 'position.y': real(0), scope: { type: 'text', value: 'pari' }, 'force.expr': { type: 'text', value: '[1, 0]' }, [ERROR_KEY]: { type: 'text', value: 'old' } } },
+      { id: 'n5', type: RULE_TYPE, props: { 'position.x': real(0), 'position.y': real(0) } },
+    ])
+    // n2 is a plain note, so its dotted set.k is a bad key; n3's set.a.b is too; n4's scope is not a scope.
+    expect(img.problems).toEqual([
+      { id: 'n2', key: 'set.k.expr', reason: '"set.k" is not a field name' },
+      { id: 'n3', key: 'set.a.b.expr', reason: '"set.a.b" is not a field name' },
+      { id: 'n4', key: 'scope', reason: 'scope must be one of unary, pair, global' },
+    ])
+    expect([...img.fields.keys()]).toEqual([2n, 3n, 5n]) // n4 stays out of the image
+    expect(img.fields.get(3n).get('scope')).toEqual([ONE])
+    expect(img.fields.get(5n).has('scope')).toBe(false) // absent scope is unary in the engine
+    expect(hexOf(img.actions[3])).toBe(hexOf(encodeCreateNote(3n, IMPLICIT_SPACE_ID, 2)))
+    expect(img.bindings.map((b) => `${b.node} ${b.name}`)).toEqual(['n3 force', 'n3 set.k'])
+    expect(img.rules).toEqual(new Map([['n3', null], ['n4', 'old'], ['n5', null]]))
+  })
 })
 
 describe('parseSnapshot and diff', () => {
@@ -167,6 +187,7 @@ describe('parseSnapshot and diff', () => {
       { op: 'setProperty', target: 'n2', key: 'position.y', type: 'real', value: 5 },
     ])
     expect(diff(before, before)).toEqual([])
+    expect(diff(before, after, types, new Set(['n2']))).toEqual([])
   })
 })
 

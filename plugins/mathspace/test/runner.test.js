@@ -27,9 +27,9 @@ function fakeKernel(nodes) {
     async submit(actorKind, actorId, message, ops) {
       if (state.reject) throw new Error('refused')
       for (const op of ops) {
-        if (op.op !== 'setProperty') continue
         const node = state.nodes.find((n) => n.id === op.target)
-        node.props[op.key] = { type: op.type, value: op.value }
+        if (op.op === 'setProperty') node.props[op.key] = { type: op.type, value: op.value }
+        else if (op.op === 'unsetProperty') delete node.props[op.key]
       }
       state.seq += 1
       state.commits.push({ seq: state.seq, actorKind, actorId, message, ops })
@@ -251,6 +251,73 @@ describe('Runner with bound expressions', () => {
       { op: 'setProperty', target: 'n2', key: 'w', type: 'real', value: 0 },
       { op: 'advance', ticks: 1 },
     ])
+    runner.dispose()
+  })
+})
+
+
+describe('Runner with rule nodes', () => {
+  const RULE = 'mathspace/rule@1'
+  const at = (x, y, extra = {}) => ({ 'position.x': { type: 'real', value: x }, 'position.y': { type: 'real', value: y }, ...extra })
+  const text = (value) => ({ type: 'text', value })
+  const nodes = [
+    { id: 'n2', type: 'tapestry.notes/note@1', props: at(0, 0, { 'velocity.x': { type: 'real', value: 0 }, 'velocity.y': { type: 'real', value: 0 }, mass: { type: 'real', value: 2 } }) },
+    { id: 'n3', type: 'tapestry.notes/note@1', props: at(10, 0) }, // no velocity: forces never move it
+    // Unary weight rule: -mass along y, plus a constant push along x.
+    { id: 'n4', type: RULE, props: at(50, 50, { scope: text('unary'), 'force.expr': text('[1, 0 - self.mass]') }) },
+    // Selects nothing at first (x >= 20), then n2 once it has moved that far.
+    { id: 'n5', type: RULE, props: at(60, 60, { 'select.expr': text('self.position.x >= 20'), 'force.expr': text('[0, 4]') }) },
+    // Broken: an unknown ref and a bad scope, with a stale error text from before.
+    { id: 'n6', type: RULE, props: at(70, 70, { 'force.expr': text('[self.nope, 0]'), 'mathspace.error': text('stale') }) },
+    { id: 'n7', type: RULE, props: at(80, 80, { scope: text('everywhere'), 'force.expr': text('[1, 0]') }) },
+    // Was broken, fixed by a human: the old error text goes away.
+    { id: 'n8', type: RULE, props: at(90, 90, { 'force.expr': text('[0, 0]'), 'mathspace.error': text('force.expr: old') }) },
+  ]
+
+  it('a rule node moves a note through the runner; only bodies are committed, rules get their error text', async () => {
+    const kernel = fakeKernel(nodes)
+    const { runner } = makeRunner()
+    await runner.stepOnce(kernel)
+    expect(runner.image.problems.map((p) => p.id)).toEqual(['n7', 'n6'])
+    // Tick 1: n2 velocity += [1, -2] / 2 = [0.5, -1], pos = [0.5, -1]. Rule 5 selects nothing.
+    expect(kernel.state.commits[0].ops).toEqual([
+      { op: 'setProperty', target: 'n6', key: 'mathspace.error', type: 'text', value: expect.stringMatching(/^force\.expr: compile:UnknownRef at \d+$/) },
+      { op: 'setProperty', target: 'n7', key: 'mathspace.error', type: 'text', value: 'scope: scope must be one of unary, pair, global' },
+      { op: 'unsetProperty', target: 'n8', key: 'mathspace.error' },
+      { op: 'setProperty', target: 'n2', key: 'position.x', type: 'real', value: 0.5 },
+      { op: 'setProperty', target: 'n2', key: 'position.y', type: 'real', value: -1 },
+      { op: 'setProperty', target: 'n2', key: 'velocity.x', type: 'real', value: 0.5 },
+      { op: 'setProperty', target: 'n2', key: 'velocity.y', type: 'real', value: -1 },
+      { op: 'advance', ticks: 1 },
+    ])
+    expect(kernel.state.nodes.find((n) => n.id === 'n8').props['mathspace.error']).toBeUndefined()
+    // The next step rebuilds from the kernel, which now holds the same errors: no error ops again.
+    await runner.stepOnce(kernel)
+    expect(kernel.state.commits[1].ops.map((o) => o.target + ' ' + o.key)).toEqual([
+      'n2 position.x', 'n2 position.y', 'n2 velocity.x', 'n2 velocity.y', 'undefined undefined',
+    ])
+    expect(kernel.state.commits[1].ops[0].value).toBe(1.5)
+    runner.dispose()
+  })
+
+  it('select gates a rule: the lift kicks in once the target is past x >= 20', async () => {
+    const kernel = fakeKernel(nodes)
+    const { runner } = makeRunner({ commitEvery: 1000 })
+    await runner.start(kernel)
+    // With velocity.x growing by 0.5 each tick, x(t) = 0.5 * t(t+1)/2 passes 20 at t = 9 (x = 22.5).
+    for (let i = 0; i < 9; i++) runner.tick()
+    await runner.pause(kernel)
+    const ops = kernel.state.commits[0].ops
+    const y9 = ops.find((o) => o.target === 'n2' && o.key === 'position.y').value
+    const vy9 = ops.find((o) => o.target === 'n2' && o.key === 'velocity.y').value
+    expect(vy9).toBe(-9) // weight only
+    await runner.start(kernel)
+    runner.tick()
+    await runner.pause(kernel)
+    const ops10 = kernel.state.commits[1].ops
+    expect(ops10.find((o) => o.target === 'n2' && o.key === 'velocity.y').value).toBe(vy9 - 1 + 2) // lift [0, 4] / mass 2
+    expect(ops10.find((o) => o.target === 'n2' && o.key === 'position.y').value).toBe(y9 + vy9 + 1)
+    expect(ops.some((o) => o.target === 'n3')).toBe(false)
     runner.dispose()
   })
 })

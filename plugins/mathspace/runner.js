@@ -16,6 +16,13 @@
  * the image is rebuilt, so a drag or a formula edit is never overwritten
  * by stale engine output.
  *
+ * Rule nodes (RULE-07): every problem the image or the compile pass
+ * records against a `mathspace/rule@1` node is written onto that node as
+ * `mathspace.error text` in the next commit, and a node whose problems
+ * are gone gets the property unset, so a broken rule is visible in the
+ * inspector and in the .tree. Runtime skips inside the engine are silent
+ * for now (STATE.md, Next).
+ *
  * The snapshot and diff are taken synchronously before any await, so
  * ticks that land while a commit is in flight belong to the next one.
  * Timers and the kernel are injected: the tests drive tick() and flush()
@@ -24,7 +31,7 @@
  */
 
 const { Engine } = require('./engine')
-const { buildImage, diff, encodeBindField, engineSource, kernelName, parseSnapshot } = require('./image')
+const { ERROR_KEY, buildImage, diff, encodeBindField, engineSource, kernelName, nodeIdToU64, parseSnapshot } = require('./image')
 
 const ENGINE_SEED = 1n
 
@@ -93,6 +100,32 @@ class Runner {
     this.log(`image built: ${image.fields.size} notes at seq ${this.seq}`)
   }
 
+  /**
+   * RULE-07: the `mathspace.error` ops a commit owes rule nodes, and the
+   * text each rule should carry afterwards (null for none). A rule's text
+   * is its problems as `key: reason` lines joined by `; ` in key order;
+   * only rules whose text differs from what the kernel holds get an op.
+   */
+  errorOps() {
+    const wanted = new Map()
+    for (const p of this.image.problems) {
+      if (!this.image.rules.has(p.id)) continue
+      if (!wanted.has(p.id)) wanted.set(p.id, [])
+      wanted.get(p.id).push(`${p.key}: ${p.reason}`)
+    }
+    const ops = []
+    const ids = [...this.image.rules.keys()].sort((a, b) => (nodeIdToU64(a) < nodeIdToU64(b) ? -1 : 1))
+    for (const id of ids) {
+      const text = wanted.has(id) ? wanted.get(id).sort().join('; ') : null
+      wanted.set(id, text)
+      if (text === this.image.rules.get(id)) continue
+      ops.push(text === null
+        ? { op: 'unsetProperty', target: id, key: ERROR_KEY }
+        : { op: 'setProperty', target: id, key: ERROR_KEY, type: 'text', value: text })
+    }
+    return { ops, wanted }
+  }
+
   /** One engine tick. Triggers a commit every commitEvery ticks while running. */
   tick() {
     if (!this.engine) return
@@ -113,7 +146,8 @@ class Runner {
       const ticks = this.pending
       this.pending = 0
       const snapshot = parseSnapshot(this.engine.notes())
-      const ops = diff(this.image.fields, snapshot, this.image.types)
+      const errors = this.errorOps()
+      const ops = [...errors.ops, ...diff(this.image.fields, snapshot, this.image.types, new Set(this.image.rules.keys()))]
       const status = await this.kernel.status()
       if (status.lastGoodSeq !== this.seq) {
         this.log(`journal moved to seq ${status.lastGoodSeq} without us; rebuilding, ${ticks} ticks dropped`)
@@ -129,6 +163,7 @@ class Runner {
       }
       this.seq = result.seq
       this.image.fields = snapshot
+      this.image.rules = errors.wanted
       return result
     }
     // `flushing` is the settled-safe tracker (never rejects, so tick() and
