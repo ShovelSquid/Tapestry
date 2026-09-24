@@ -179,6 +179,67 @@ describe('SettingsStore.read validation', () => {
   })
 })
 
+describe('SettingsStore workspace trees (02.7)', () => {
+  it('keeps a workspace tree with its workspaceRoot, and drops one without a safe root', () => {
+    withTempDir((dir) => {
+      const settings = new SettingsStore(dir)
+      writeFileSync(
+        settings.path,
+        JSON.stringify({
+          version: 1,
+          userName: 'kaelen',
+          agentsEnabled: true,
+          trees: [
+            {
+              path: '/tmp/app/workspaces/windows-0123abcd.tree',
+              kind: 'workspace',
+              workspaceRoot: '/tmp/windows',
+              frame: { x: 3, y: 4 },
+            },
+            { path: '/tmp/app/workspaces/a.tree', kind: 'workspace', frame: { x: 0, y: 0 } },
+            {
+              path: '/tmp/app/workspaces/b.tree',
+              kind: 'workspace',
+              workspaceRoot: 'relative/windows',
+              frame: { x: 0, y: 0 },
+            },
+          ],
+        }),
+        'utf-8',
+      )
+
+      expect(settings.read().trees).toEqual([
+        {
+          path: '/tmp/app/workspaces/windows-0123abcd.tree',
+          kind: 'workspace',
+          workspaceRoot: '/tmp/windows',
+          frame: { x: 3, y: 4 },
+        },
+      ])
+    })
+  })
+
+  it('round-trips a workspace entry through addTree', () => {
+    withTempDir((dir) => {
+      const settings = new SettingsStore(dir)
+      settings.addTree({
+        path: '/tmp/app/workspaces/windows-0123abcd.tree',
+        kind: 'workspace',
+        workspaceRoot: '/tmp/windows',
+        frame: { x: 1, y: 2 },
+      })
+      expect(new SettingsStore(dir).read().trees).toEqual([
+        {
+          path: '/tmp/app/workspaces/windows-0123abcd.tree',
+          kind: 'workspace',
+          workspaceRoot: '/tmp/windows',
+          frame: { x: 1, y: 2 },
+        },
+      ])
+    })
+  })
+})
+
 describe('SettingsStore tree frames', () => {
   it('round-trips a frame move and a removal', () => {
     withTempDir((dir) => {
