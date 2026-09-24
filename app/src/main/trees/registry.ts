@@ -16,8 +16,8 @@
  * registry returns the existing entry instead.
  */
 
-import { existsSync } from 'fs'
-import { basename, resolve } from 'path'
+import { existsSync, realpathSync } from 'fs'
+import { basename, dirname, join, resolve } from 'path'
 import { KernelBridge } from '../kernel-bridge'
 import type { CommitResult, EdgeData, JournalStatus, NodeData, OpObject } from '../kernel-bridge'
 import type { Actor } from '../commands/actor'
@@ -81,6 +81,11 @@ export interface UnavailableTree {
   readonly status: UnavailableStatus
   /** The kernel's own words, so the frame can say what is actually wrong. */
   readonly reason: string
+  /**
+   * The identity the caller expected at this path, kept so `reopen` checks it
+   * again. Never exposed by `summary()`.
+   */
+  readonly expect?: ExpectedTree
 }
 
 /** Either kind of member of the space. */
@@ -97,10 +102,72 @@ export interface TreeSummary {
   reason?: string
 }
 
+/**
+ * The identity a caller expects to find at a path, and the words to show if a
+ * different world sits there instead. The registry holds no copy of its own:
+ * the reason always comes from the caller.
+ */
+export interface ExpectedTree {
+  /** `sha256:<hex>` — the header digest the caller knows this member by. */
+  readonly id: string
+  readonly reason: string
+}
+
 export interface OpenTreeOptions {
   kind?: TreeKind
   vaultRoot?: string
   name?: string
+  /**
+   * Refuse to adopt a world whose header digest is not this one (2.6 D-03,
+   * RESEARCH Pitfall 5). Honoured by `tryOpen`, which records a mismatch as
+   * `missing` with `expect.reason`.
+   */
+  expect?: ExpectedTree
+}
+
+/**
+ * Paths and identities the registry must never open as a member: Tapestry's
+ * own files (the forest and the Tapestry tree). `refusal` supplies the words,
+ * given the file's basename.
+ */
+export interface ReservedTrees {
+  paths: string[]
+  ids: string[]
+  refusal: (name: string) => string
+}
+
+/**
+ * The same world is already open from another path. The message is the one
+ * the registry has always thrown; the fields let a caller act on it (fold a
+ * duplicate stand-in, 2.6 RESEARCH Pitfall 10) without parsing the text.
+ */
+export class TreeIdentityClash extends Error {
+  readonly treeId: string
+  readonly openPath: string
+  readonly openName: string
+
+  constructor(open: { id: string; path: string; name: string }) {
+    super(`${open.name} is already open from ${open.path}`)
+    this.name = 'TreeIdentityClash'
+    this.treeId = open.id
+    this.openPath = open.path
+    this.openName = open.name
+  }
+}
+
+/**
+ * The real path of a file, or null when it does not resolve. A file that does
+ * not exist yet (a reserved file before it is created) is resolved through its
+ * folder, so a symlinked folder such as macOS `/var` still compares equal.
+ */
+function realPath(path: string): string | null {
+  try {
+    if (existsSync(path)) return realpathSync.native(path)
+    const folder = dirname(path)
+    return existsSync(folder) ? join(realpathSync.native(folder), basename(path)) : null
+  } catch {
+    return null
+  }
 }
 
 /** The file's basename without the `.tree` extension. */
@@ -126,12 +193,12 @@ function errorMessage(err: unknown): string {
  * Anything else that opened badly is treated as damage, which is the
  * conservative answer — a damaged tree is never written to.
  */
-function classifyOpenFailure(detail: string): 'locked' | 'damaged' {
+export function classifyOpenFailure(detail: string): 'locked' | 'damaged' {
   return /journal lock|\blocked\b/i.test(detail) ? 'locked' : 'damaged'
 }
 
 /** Release a bridge without letting the release itself throw. */
-function closeQuietly(bridge: KernelBridge): void {
+export function closeQuietly(bridge: KernelBridge): void {
   try {
     bridge.close()
   } catch (err) {
@@ -161,6 +228,49 @@ export class TreeRegistry {
 
   private readonly listeners = new Set<() => void>()
 
+  /** Tapestry's own files: resolved and real paths, identities, and the words. */
+  private reserved: {
+    paths: Set<string>
+    ids: Set<string>
+    refusal: (name: string) => string
+  } | null = null
+
+  // -------------------------------------------------------------------------
+  // Reserved files
+  // -------------------------------------------------------------------------
+
+  /**
+   * Refuse these paths and identities as members, or clear the refusal with
+   * null (2.6 RESEARCH Pitfall 4).
+   *
+   * Without it, "Open tree…" on the forest file would hit Tapestry's own
+   * journal lock and be reported as open in another window, which is untrue.
+   * Paths are kept both resolved and, when the file exists, in real-path form,
+   * so a symlink to a reserved file is refused too. Identities catch a copy.
+   */
+  setReserved(reserved: ReservedTrees | null): void {
+    if (!reserved) {
+      this.reserved = null
+      return
+    }
+    const paths = new Set<string>()
+    for (const path of reserved.paths) {
+      paths.add(resolve(path))
+      const real = realPath(path)
+      if (real !== null) paths.add(real)
+    }
+    this.reserved = { paths, ids: new Set(reserved.ids), refusal: reserved.refusal }
+  }
+
+  /** Throw the caller's refusal when `target` is, or resolves to, a reserved file. */
+  private refuseReservedPath(target: string): void {
+    if (!this.reserved) return
+    const real = realPath(target)
+    if (this.reserved.paths.has(target) || (real !== null && this.reserved.paths.has(real))) {
+      throw new Error(this.reserved.refusal(basename(target)))
+    }
+  }
+
   // -------------------------------------------------------------------------
   // Opening and creating
   // -------------------------------------------------------------------------
@@ -173,6 +283,7 @@ export class TreeRegistry {
    */
   open(path: string, opts: OpenTreeOptions = {}): OpenTree {
     const target = resolve(path)
+    this.refuseReservedPath(target)
     const existing = this.findByPath(target)
     if (existing) return existing
 
@@ -184,6 +295,7 @@ export class TreeRegistry {
   /** Create a new tree at `path` and register it. */
   create(path: string, worldName: string, opts: OpenTreeOptions = {}): OpenTree {
     const target = resolve(path)
+    this.refuseReservedPath(target)
     const existing = this.findByPath(target)
     if (existing) return existing
 
@@ -206,9 +318,17 @@ export class TreeRegistry {
    * An identity clash still throws, because it is a fact about the space
    * rather than about the file — the same world is already open from another
    * path, and recording a permanent "damaged" frame for it would be untrue.
+   * A reserved file (Tapestry's own) throws the caller's refusal for the same
+   * reason.
+   *
+   * With `opts.expect`, a world whose digest is not the expected one is not
+   * adopted: a different world now sits at this member's path, and giving it
+   * the member's frame would hand an old place to a new identity (2.6 D-03,
+   * RESEARCH Pitfall 5). It is recorded `missing` with the caller's reason.
    */
   tryOpen(path: string, opts: OpenTreeOptions = {}): OpenTree | UnavailableTree {
     const target = resolve(path)
+    this.refuseReservedPath(target)
 
     const existing = this.findByPath(target)
     if (existing) return existing
@@ -246,6 +366,20 @@ export class TreeRegistry {
       )
     }
 
+    if (opts.expect) {
+      let digest: string
+      try {
+        digest = bridge.getHeaderDigest()
+      } catch (err) {
+        closeQuietly(bridge)
+        return this.recordUnavailable(target, opts, 'damaged', errorMessage(err))
+      }
+      if (digest !== opts.expect.id) {
+        closeQuietly(bridge)
+        return this.recordUnavailable(target, opts, 'missing', opts.expect.reason)
+      }
+    }
+
     const tree = this.adopt(bridge, target, opts)
     // It opened, so any earlier record of it failing to is no longer true.
     this.unavailable.delete(unavailableId(target))
@@ -268,6 +402,7 @@ export class TreeRegistry {
       kind: entry.kind,
       name: entry.name,
       ...(entry.vaultRoot !== undefined ? { vaultRoot: entry.vaultRoot } : {}),
+      ...(entry.expect !== undefined ? { expect: entry.expect } : {}),
     })
   }
 
@@ -286,6 +421,7 @@ export class TreeRegistry {
       ...(opts.vaultRoot !== undefined ? { vaultRoot: opts.vaultRoot } : {}),
       status,
       reason,
+      ...(opts.expect !== undefined ? { expect: opts.expect } : {}),
     }
 
     this.unavailable.set(entry.id, entry)
@@ -298,7 +434,8 @@ export class TreeRegistry {
    *
    * Two paths with one identity means the same world was copied. Opening both
    * would let a change land in one copy and be invisible in the other, so the
-   * second open is refused and its bridge released immediately.
+   * second open is refused and its bridge released immediately, as is a
+   * world carrying a reserved identity (a copy of Tapestry's own files).
    */
   private adopt(bridge: KernelBridge, target: string, opts: OpenTreeOptions): OpenTree {
     let id: string
@@ -309,10 +446,15 @@ export class TreeRegistry {
       throw err
     }
 
+    if (this.reserved?.ids.has(id)) {
+      closeQuietly(bridge)
+      throw new Error(this.reserved.refusal(basename(target)))
+    }
+
     const clash = this.trees.get(id)
     if (clash) {
       bridge.close()
-      throw new Error(`${clash.name} is already open from ${clash.path}`)
+      throw new TreeIdentityClash(clash)
     }
 
     const tree: OpenTree = {
@@ -436,9 +578,9 @@ export class TreeRegistry {
   /**
    * The open trees without their bridges or their frames.
    *
-   * Frames live in settings, not here: where a frame sits is a preference
-   * about the space, while this table is about which worlds are loaded. The
-   * caller joins the two (see `trees:list`).
+   * Frames are not kept here. From phase 2.6 they are placement edges in the
+   * forest tree (2.6 D-01, D-04), joined to these entries by member identity
+   * outside the registry: this table is only about which worlds are loaded.
    */
   summary(): TreeSummary[] {
     const open: TreeSummary[] = this.list().map((tree) => ({
