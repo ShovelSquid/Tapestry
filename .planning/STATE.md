@@ -4,16 +4,16 @@ milestone: v1.0
 current_phase: "02.7"
 current_phase_name: File Windows & Workspace Sandbox
 status: executing
-stopped_at: Completed 02.7-01-PLAN.md (dogfood approved); next 02.7-02 wave 2
-last_updated: "2026-09-24T19:33:29.489Z"
+stopped_at: Completed 02.7-02-PLAN.md
+last_updated: "2026-09-24T20:06:40.883Z"
 last_activity: 2026-09-24
-last_activity_desc: 02.7-01 dogfood tracer complete; next 02.7-02 (wave 2)
-state_head: a1c63f4fd18e57b2fce7e5bef477dec607046569
+last_activity_desc: 02.7-02 in-app chat, connect-on-start and Ask Claude complete; next 02.7-03 (wave 3)
+state_head: c911d9496e134c54d0b6dccadf6b1d279e7e4885
 progress:
   total_phases: 13
   completed_phases: 0
   total_plans: 52
-  completed_plans: 28
+  completed_plans: 29
 ---
 
 # Project State
@@ -23,15 +23,15 @@ progress:
 See: .planning/PROJECT.md (updated 2026-09-08)
 
 **Core value:** Your world of thoughts must remain readable and under your control — in its spatial interface, its editable relationships and behavior, and its files and branching history.
-**Current focus:** Phase 02.7 — File Windows & Workspace Sandbox on ws/windows (02.7-01 complete; 02.7-02 next). 02.2 continues on its own branch
+**Current focus:** Phase 02.7 — File Windows & Workspace Sandbox on ws/windows (02.7-01 and 02.7-02 complete; 02.7-03 next). 02.2 continues on its own branch
 
 ## Current Position
 
 Phase: 02.7 (File Windows & Workspace Sandbox) — EXECUTING
-Plan: 02.7-01 of 7 complete (dogfood gate D-11 approved by Kaelen 2026-09-24); next is 02.7-02 (wave 2)
-Status: Ready to execute 02.7-02
+Plan: 02.7-02 of 7 complete (in-app Claude chat, connect-on-start, Ask Claude…; its hands-on checks fold into 02.7-03's combined checkpoint); next is 02.7-03 (wave 3)
+Status: Ready to execute 02.7-03
 Phase 02.4 (Lock Model): COMPLETE — verified 25/25, 2026-09-16; rebased onto the main line 2026-09-23
-Last activity: 2026-09-24 - Completed 02.7-01 dogfood tracer (workspaces, file windows, read_file/edit_file); 23 files / 449 tests
+Last activity: 2026-09-24 - Completed 02.7-02 (chat panel on the Claude Code CLI as agent.claude-chat, D-19 Ask Claude…, D-20 hello); 26 files / 499 tests
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -75,6 +75,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 02.4 P01 | 14 min | 2 tasks | 4 files |
 | Phase 02.4 P02 | 8 min | 2 tasks | 5 files |
 | Phase 02.7 P01 | 16 min | 4 tasks | 36 files |
+| Phase 02.7 P02 | 29 min | 4 tasks | 29 files |
 
 ## Accumulated Context
 
@@ -135,6 +136,9 @@ Recent decisions affecting current work:
 - [Phase 02.4]: 02.4-02: agent tool text states the lock rule and that refusals name the owner, without publishing lock.* key names
 - [Phase 02.7]: Workspace trees live at <userData>/workspaces/<name>-<hash8>.tree outside the folder (reversible); node types tapestry.workspace/{text,file,folder}@1 with file.* keys; observer actor plugin workspace.watcher
 - [Phase 02.7]: Agent file tools reach exactly git's view of the workspace; git-ignored paths, symlinks, .git, '..' and outside paths are refused with nothing written
+- [Phase 02.7]: 02.7-02: the in-app chat signs as agent.claude-chat, its token re-issued each launch into a 0600 MCP config file under <userData>/chat
+- [Phase 02.7]: 02.7-02: the chat CLI runs with --setting-sources user, so a workspace's own .claude settings and hooks are not loaded in the panel
+- [Phase 02.7]: 02.7-02: agents show Connected now from the shim's startup hello (60 s keep-alive), not only after a tool call (D-20)
 
 ### Pending Todos
 
@@ -183,6 +187,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-24T19:33:29.409Z
-Stopped at: Completed 02.7-01-PLAN.md (dogfood approved); next 02.7-02 wave 2
+Last session: 2026-09-24T20:06:40.801Z
+Stopped at: Completed 02.7-02-PLAN.md
 Resume file: None

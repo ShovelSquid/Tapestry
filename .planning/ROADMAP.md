@@ -346,7 +346,7 @@ Plans:
   7. A per-chat "Allow shell" switch, off by default and labelled not sandboxed, enables Claude Code's shell and built-in file tools in the workspace; edits made that way are recorded as observed changes
   8. The panel talks to a `ChatEngine` interface, so a later API-key engine (Anthropic SDK over the same sandboxed tools) plugs in without changing the panel
 
-**Plans**: 1/7 plans executed
+**Plans**: 2/7 plans executed
 
 Plans:
 **Wave 1**
@@ -355,7 +355,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 02.7-02-PLAN.md — Connect-on-start for agents (D-20), then the in-app chat panel on the Claude Code CLI (D-12..D-14) behind the ChatEngine seam (D-16) with only Tapestry's sandboxed tools as agent.claude-chat, and Ask Claude… from the canvas, file cards and notes (D-19)
+- [x] 02.7-02-PLAN.md — Connect-on-start for agents (D-20), then the in-app chat panel on the Claude Code CLI (D-12..D-14) behind the ChatEngine seam (D-16) with only Tapestry's sandboxed tools as agent.claude-chat, and Ask Claude… from the canvas, file cards and notes (D-19)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
