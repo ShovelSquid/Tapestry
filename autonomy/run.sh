@@ -139,9 +139,6 @@
       ) &
       WATCHDOG_PID=$!
 
-    ) &
-    WATCHDOG_PID=$!
-
     wait "$CHILD_PID"
     status=$?
     kill "$WATCHDOG_PID" 2>/dev/null
