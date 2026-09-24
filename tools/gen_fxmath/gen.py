@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""gen.py — constants for include/ddsim/fxmath.hpp and the oracle table for
+"""gen.py — constants for include/mathspace/fxmath.hpp and the oracle table for
 tests/mathspace/fxmath_test.cpp.
 
 The engine may not compute a floating-point value, but its tests may check

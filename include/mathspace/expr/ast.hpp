@@ -25,7 +25,7 @@
 #include <string_view>
 #include <vector>
 
-#include "ddsim/fx64.hpp"
+#include "mathspace/fx64.hpp"
 #include "mathspace/note.hpp"
 
 namespace mathspace::expr {

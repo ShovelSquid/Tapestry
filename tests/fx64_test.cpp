@@ -31,7 +31,7 @@ std::int64_t shape(std::uint64_t u, bool negative) {
 }
 
 TEST_CASE("fx64: the header holds no 128-bit integer type") {
-    const std::string header = ddsim_test::readFile(std::string(DDSIM_GOLDEN_DIR) + "/../../include/ddsim/fx64.hpp");
+    const std::string header = ddsim_test::readFile(std::string(DDSIM_GOLDEN_DIR) + "/../../include/mathspace/fx64.hpp");
     REQUIRE(!header.empty());
     CHECK(header.find("__int128") == std::string::npos);
     CHECK(header.find("mul_q32") != std::string::npos);

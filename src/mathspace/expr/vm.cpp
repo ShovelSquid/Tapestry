@@ -1,7 +1,7 @@
 // expr/vm.cpp — the lane stack machine.
 #include "mathspace/expr/vm.hpp"
 
-#include "ddsim/fxmath.hpp"
+#include "mathspace/fxmath.hpp"
 
 namespace mathspace::expr {
 

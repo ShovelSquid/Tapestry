@@ -4,7 +4,7 @@
 
 #include <string>
 
-#include "ddsim/fxmath.hpp"
+#include "mathspace/fxmath.hpp"
 #include "mathspace/expr/parser.hpp"
 #include "mathspace/expr/vm.hpp"
 

@@ -6,7 +6,7 @@
 // function has a stated tolerance in ulps (2^-32) that the test also reports
 // as a measured maximum. The tolerances are the contract; tightening them
 // is a change to fxmath.hpp, loosening them is a regression.
-#include "ddsim/fxmath.hpp"
+#include "mathspace/fxmath.hpp"
 
 #include <doctest.h>
 
@@ -68,7 +68,7 @@ template <std::size_t N>
 constexpr std::size_t count(const std::int64_t (&)[N][3]) { return N; }
 
 std::string readHeader() {
-    std::ifstream in(std::string(MATHSPACE_GOLDEN_DIR) + "/../../../include/ddsim/fxmath.hpp");
+    std::ifstream in(std::string(MATHSPACE_GOLDEN_DIR) + "/../../../include/mathspace/fxmath.hpp");
     std::stringstream ss;
     ss << in.rdbuf();
     return ss.str();
