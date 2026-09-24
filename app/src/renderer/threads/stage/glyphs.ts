@@ -23,10 +23,11 @@
  *  - `aActor`   an author index (D-21; a later plan assigns per-letter
  *               author colour and underlay from it — this plan always
  *               writes 0, "the person", since no other author writes yet)
- *  - `aDeletedAtMs` -1 while a letter is still live; a later plan (D-03)
- *               sets it to the ms a letter was deleted, so a ghost letter's
- *               fade/strike can be driven by this attribute directly
- *               instead of removing it from the buffer (nothing is erased)
+ *  - `aDeletedAtMs` -1 while a letter is still live; set to the ms a
+ *               letter was deleted (D-03) once the caller knows it -- the
+ *               ghost fade/strike this plan adds reads this attribute
+ *               directly, drawing a deleted letter faded and struck at the
+ *               moment it was typed instead of removing it from the buffer
  */
 
 import * as THREE from 'three'
@@ -84,6 +85,12 @@ function createGlyphMaterial(uniforms: StageUniforms): THREE.ShaderMaterial {
       varying vec2 vUv;
       varying vec3 vDist; // kind, edge, range
       varying float vPage, vAlpha;
+      // Ghost letters (D-03, L-8): a deleted letter (aDeletedAtMs >= 0, the
+      // live sentinel is -1) stays at the moment it was TYPED (rel is still
+      // derived from aBlock/aOffset, its insertion time -- deletion never
+      // moves a letter) but draws faded, struck through, and offset 4px
+      // below the strand, in screen space, so it never depends on zoom.
+      varying float vGhost, vStrikeCoord, vPxPerLocalY;
       void main() {
         float rel = relTime(aBlock, aOffset);
         vec4 mv = threadPoint(rel);
@@ -93,7 +100,9 @@ function createGlyphMaterial(uniforms: StageUniforms): THREE.ShaderMaterial {
         vec2 local = position.xy + 0.5; // unit plane [-0.5,0.5] -> [0,1]
         vec2 em = aQuad.xy + local * aQuad.zw;
         float size = uGlyphSize;
-        mv.xy += axis * em.x * size + perp * em.y * size;
+        float ghost = step(0.0, aDeletedAtMs);
+        float ghostOffsetPx = 4.0;
+        mv.xy += axis * em.x * size + perp * (em.y * size - ghost * ghostOffsetPx * upp);
         gl_Position = projectionMatrix * mv;
         vUv = vec2(mix(aUv.x, aUv.z, local.x), mix(aUv.y, aUv.w, local.y));
         vDist = vec3(aKind, aEdgeRange.x, aEdgeRange.y);
@@ -109,14 +118,17 @@ function createGlyphMaterial(uniforms: StageUniforms): THREE.ShaderMaterial {
           : smoothstep(4.0, 9.0, size / upp);
         float future = step(0.0, uNowRel - rel + 1e-3);
         vAlpha = fadeFor(rel) * legible * future;
+        vGhost = ghost;
+        vStrikeCoord = local.y; // 0..1 across the glyph's own em box
+        vPxPerLocalY = (aQuad.w * size) / max(upp, 1e-6); // screen px per unit of local.y
         if (vAlpha < 0.002) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
       }`,
     fragmentShader: /* glsl */ `
       uniform sampler2D uAtlas0, uAtlas1, uAtlas2, uAtlas3;
-      uniform vec3 uInkColor;
+      uniform vec3 uInkColor, uThreadLineColor;
       varying vec2 vUv;
       varying vec3 vDist;
-      varying float vPage, vAlpha;
+      varying float vPage, vAlpha, vGhost, vStrikeCoord, vPxPerLocalY;
       float median(vec3 c) { return max(min(c.r, c.g), min(max(c.r, c.g), c.b)); }
       vec4 sampleAtlas(vec2 uv) {
         if (vPage < 0.5) return texture2D(uAtlas0, uv);
@@ -142,6 +154,23 @@ function createGlyphMaterial(uniforms: StageUniforms): THREE.ShaderMaterial {
           float sdfAlpha = clamp((value - vDist.y) * vDist.z / spread + 0.5, 0.0, 1.0);
           color = uInkColor;
           alpha = sdfAlpha * vAlpha;
+        }
+        if (vGhost > 0.5) {
+          // Fade to 70% of the display colour (UI-SPEC "Ghost letters"):
+          // the ink case composites to 5.10:1 on paper -- comfortably above
+          // the 3:1 graphics floor. Per-letter *non*-ink display colour (the
+          // 80% case) is not distinguished here: the glyph shader has no
+          // per-letter display-colour attribute yet (every live glyph
+          // already draws in uInkColor only), so this path is not yet
+          // reachable -- a documented Known Stub, not a silent gap.
+          alpha *= 0.70;
+          // The strike is 1px in --tap-thread-line at FULL strength,
+          // independent of the fade above, so a ghost stays identifiable
+          // even where the fade is hardest to see (UI-SPEC).
+          float halfPxLocal = 0.5 / max(vPxPerLocalY, 1e-6);
+          float strike = 1.0 - smoothstep(halfPxLocal, halfPxLocal * 2.0, abs(vStrikeCoord - 0.5));
+          color = mix(color, uThreadLineColor, strike);
+          alpha = max(alpha, strike * vAlpha);
         }
         if (alpha < 0.01) discard;
         gl_FragColor = vec4(color, alpha);

@@ -17,7 +17,7 @@ const { app, BrowserWindow, ipcMain } = require('electron')
 const path = require('path')
 const fs = require('fs')
 const { createServer } = require('vite')
-const { generateHistory } = require('./synthetic-history.cjs')
+const { generateHistory, generateEditedStretch } = require('./synthetic-history.cjs')
 
 const APP_ROOT = path.resolve(__dirname, '..', '..') // app/
 const RESULTS_DIR = path.join(__dirname, 'results')
@@ -121,6 +121,47 @@ async function runShots(win) {
     fs.writeFileSync(file, image.resize({ width: 1400 }).toPNG())
     files.push(file)
   }
+
+  // c-edited-stretch*: ghosts (deleted/undone letters, faded and struck) and
+  // every marker kind (deletion, undo, paste, format, link) -- this plan's
+  // own <human-check> ("look at the line: confirm the deleted letters are
+  // still sitting where you typed them..."). One overview shot (the whole
+  // stretch; letters read small at this zoom -- the live-view legibility
+  // gate's own tradeoff, expected) plus one legible close-up per marker
+  // kind (`focusDebugCamera`, a narrow window centered on that moment).
+  const stretch = await win.webContents.executeJavaScript('window.__bench.buildEditedStretch()')
+  await wait(700)
+  const overviewImage = await win.webContents.capturePage()
+  const overviewFile = path.join(shotsDir, 'c-edited-stretch-overview.png')
+  fs.writeFileSync(overviewFile, overviewImage.resize({ width: 1400 }).toPNG())
+  files.push(overviewFile)
+
+  for (const [atSeconds, kind] of stretch.markers) {
+    await win.webContents.executeJavaScript(`window.__bench.focusDebugCamera(${atSeconds}, 4)`)
+    await wait(300)
+    const image = await win.webContents.capturePage()
+    const file = path.join(shotsDir, `d-${kind}.png`)
+    fs.writeFileSync(file, image.resize({ width: 1400 }).toPNG())
+    files.push(file)
+  }
+
+  // e-marker-zoom-*: the same link marker at a 100x window-size range
+  // (4s vs 400s) -- markers are drawn in screen space (UI-SPEC "Spacing"),
+  // so its pixel size must read the same in both, never shrinking or
+  // growing with zoom the way a world-sized glyph or dot would.
+  const [linkAtSeconds] = stretch.markers.find(([, kind]) => kind === 'link')
+  for (const [name, windowSeconds] of [
+    ['e-marker-zoom-1x', 4],
+    ['e-marker-zoom-100x', 400],
+  ]) {
+    await win.webContents.executeJavaScript(`window.__bench.focusDebugCamera(${linkAtSeconds}, ${windowSeconds})`)
+    await wait(300)
+    const image = await win.webContents.capturePage()
+    const file = path.join(shotsDir, `${name}.png`)
+    fs.writeFileSync(file, image.resize({ width: 1400 }).toPNG())
+    files.push(file)
+  }
+
   console.log(`\nScreenshots:\n${files.join('\n')}`)
   return 0
 }
@@ -129,6 +170,7 @@ async function main() {
   await app.whenReady()
 
   ipcMain.handle('bench-generate-history', (_event, hours, continuous) => generateHistory(hours, continuous))
+  ipcMain.handle('bench-generate-edited-stretch', () => generateEditedStretch())
 
   // A fixed, arbitrary port: Vite's `port: 0` config is not reliably
   // honored by `createServer`/`listen()` (it fell back to the default 5173

@@ -61,4 +61,65 @@ function generateHistory(hours, continuous) {
   return { sessions, keys, end }
 }
 
-module.exports = { mulberry32, generateHistory, SAMPLE_TEXT }
+/**
+ * A short, heavily-edited stretch exercising every ghost/marker kind this
+ * plan adds (D-02..D-05): a phrase deleted from the middle (ghosts + a
+ * deletion marker), a word typed then undone (a ghost + an undo marker), a
+ * paste landing as one cluster (a paste marker), and format/link markers.
+ * Used only by `--shots` (visual review), never by `--bench` (fps).
+ *
+ * @returns {{ keys: [number, string, number | null][], markers: [number, string][], end: number }}
+ *   `keys` are `[atSeconds, grapheme, deletedAtSeconds]`; `markers` are
+ *   `[atSeconds, kind]`, `kind` one of `MARKER_KINDS` (deletion, undo,
+ *   paste, format, link).
+ */
+function generateEditedStretch() {
+  const random = mulberry32(11)
+  const keys = []
+  const markers = []
+  let t = 0
+
+  function typeWord(word) {
+    for (const ch of word) {
+      keys.push([t, ch, null])
+      t += 0.12 + random() * 0.1
+    }
+  }
+
+  typeWord('Write a paragraph then delete a phrase from the middle ')
+  const phraseStart = keys.length
+  typeWord('right here ')
+  const phraseEnd = keys.length
+  typeWord('and keep going. ')
+  t += 1
+  const deleteAt = t
+  for (let i = phraseStart; i < phraseEnd; i++) keys[i][2] = deleteAt
+  markers.push([deleteAt, 'deletion'])
+  t += 1
+
+  const undoWordStart = keys.length
+  typeWord('oops ')
+  const undoWordEnd = keys.length
+  t += 0.5
+  const undoAt = t
+  for (let i = undoWordStart; i < undoWordEnd; i++) keys[i][2] = undoAt
+  markers.push([undoAt, 'undo'])
+  t += 1
+
+  const pasteAt = t
+  for (const ch of 'pasted content landing all at once ') keys.push([pasteAt, ch, null])
+  markers.push([pasteAt, 'paste'])
+  t += 1
+
+  typeWord('a bold word ')
+  markers.push([t, 'format'])
+  t += 1
+
+  typeWord('a link to Cast ')
+  markers.push([t, 'link'])
+  t += 1
+
+  return { keys, markers, end: t }
+}
+
+module.exports = { mulberry32, generateHistory, generateEditedStretch, SAMPLE_TEXT }
