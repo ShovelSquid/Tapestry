@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
 import { Engine, GLUE_PATH, loadModule } from './engine-cjs.js'
+import { encodeBindField, encodeCreateNote, encodeCreateSpace, encodeSetField, parseSnapshot } from './image-cjs.js'
 import { parseActions, parseSha256, replay } from './fixture-replay.js'
 
 const GOLDEN_DIR = fileURLToPath(new URL('../../../tests/golden/ms/', import.meta.url))
@@ -75,6 +76,50 @@ describe('engine wasm golden replay', () => {
     } finally {
       a.destroy()
       b.destroy()
+    }
+  })
+
+  it('compile returns bytecode that binds and evaluates', async () => {
+    const mod = await loadModule()
+    const e = new Engine(mod, 1n)
+    try {
+      const one = 1n << 32n
+      expect(e.apply(encodeCreateSpace(1n, 2))).toBe(0)
+      expect(e.apply(encodeCreateNote(2n, 1n, 1))).toBe(0)
+      expect(e.apply(encodeSetField(2n, { name: 'pos', dim: 2, lanes: [one, 2n * one] }))).toBe(0)
+      expect(e.apply(encodeSetField(2n, { name: 'k', dim: 1, lanes: [3n * one] }))).toBe(0)
+      const r = e.compile(2n, 'self.pos * self.k + [1, 2]')
+      expect(r.error).toBeUndefined()
+      expect(r.code.length).toBeGreaterThan(6)
+      expect(r.code[0]).toBe(1) // BYTECODE_VERSION
+      expect(r.code[1]).toBe(2) // result dim
+      const before = e.hash()
+      expect(e.apply(encodeBindField(2n, 'q', r.code))).toBe(0)
+      e.step()
+      expect(e.hash()).not.toBe(before)
+      const notes = parseSnapshot(e.notes())
+      expect(notes.get(2n).get('q')).toEqual([4n * one, 8n * one])
+    } finally {
+      e.destroy()
+    }
+  })
+
+  it('compile reports stage, name and offset on failure, and touches nothing', async () => {
+    const mod = await loadModule()
+    const e = new Engine(mod, 1n)
+    try {
+      expect(e.apply(encodeCreateSpace(1n, 2))).toBe(0)
+      expect(e.apply(encodeCreateNote(2n, 1n, 1))).toBe(0)
+      expect(e.apply(encodeSetField(2n, { name: 'pos', dim: 2, lanes: [0n, 0n] }))).toBe(0)
+      const before = e.hash()
+      expect(e.compile(9n, '1')).toEqual({ error: 'world:NoSuchNote', where: 0 })
+      expect(e.compile(2n, '1 + 0.1')).toEqual({ error: 'parse:InexactNumber', where: 4 })
+      expect(e.compile(2n, 'self.pos + 1')).toEqual({ error: 'compile:DimMismatch', where: expect.any(Number) })
+      expect(e.compile(2n, 'self.nope')).toEqual({ error: 'compile:UnknownRef', where: expect.any(Number) })
+      expect(e.compile(2n, 'sin(π)')).toEqual({ error: 'parse:UnexpectedChar', where: 4 })
+      expect(e.hash()).toBe(before)
+    } finally {
+      e.destroy()
     }
   })
 })

@@ -40,6 +40,7 @@ const ACTION_VERSION = 1
 const KIND_CREATE_SPACE = 32
 const KIND_CREATE_NOTE = 33
 const KIND_SET_FIELD = 34
+const KIND_BIND_FIELD = 37
 const NOTE_KIND_NOTE = 1
 
 /** The one renamed field: the app says position, the store says pos. */
@@ -166,6 +167,14 @@ function encodeSetField(note, field) {
   for (let i = 0; i < field.dim; i++) w.i64(field.lanes[i] ?? 0n)
   w.u32(0)
   return withHeader(KIND_SET_FIELD, w.done())
+}
+
+/** Bind `name` on `note` to `code` (bytes from Engine.compile); empty unbinds. */
+function encodeBindField(note, name, code) {
+  const w = new ByteWriter()
+  w.u64(note); w.str(name); w.u32(code.length)
+  for (const c of code) w.u8(c)
+  return withHeader(KIND_BIND_FIELD, w.done())
 }
 
 // ---------------------------------------------------------------------------
@@ -353,6 +362,6 @@ function diff(before, after, types = new Map()) {
 module.exports = {
   FX_ONE, IMPLICIT_SPACE_ID, IMPLICIT_SPACE_DIM, SPACE_TYPE,
   realToRaw, rawToReal, nodeIdToU64, u64ToNodeId, parseKey, laneKey,
-  encodeCreateSpace, encodeCreateNote, encodeSetField,
+  encodeCreateSpace, encodeCreateNote, encodeSetField, encodeBindField,
   buildImage, parseSnapshot, diff,
 }

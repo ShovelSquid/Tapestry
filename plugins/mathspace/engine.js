@@ -115,6 +115,38 @@ class Engine {
     }
   }
 
+  /**
+   * Compile an expression for a field of `noteId` against the world as it
+   * is now (self and node(nN) refs need their notes and fields present).
+   * @param {bigint|number} noteId
+   * @param {string} text
+   * @returns {{code: Uint8Array} | {error: string, where: number}}
+   *   `error` is ms_compile_error_name's "stage:Name"; `where` is the byte
+   *   offset in `text` for a parse error, else 0.
+   */
+  compile(noteId, text) {
+    const src = new TextEncoder().encode(text)
+    const tp = this.mod._malloc(src.length + 1)
+    const wp = this.mod._malloc(4)
+    let op = 0
+    try {
+      this.mod.HEAPU8.set(src, tp)
+      const need = this.mod._ms_compile(this.world, BigInt(noteId), tp, src.length, 0, 0, wp)
+      if (need < 0) {
+        const where = this.mod.HEAPU32[wp >> 2]
+        return { error: this.mod.UTF8ToString(this.mod._ms_compile_error_name(need)), where }
+      }
+      op = this.mod._malloc(need)
+      const got = this.mod._ms_compile(this.world, BigInt(noteId), tp, src.length, op, need, 0)
+      if (got !== need) throw new Error(`ms_compile wrote ${got} of ${need} bytes`)
+      return { code: this.mod.HEAPU8.slice(op, op + need) }
+    } finally {
+      if (op) this.mod._free(op)
+      this.mod._free(wp)
+      this.mod._free(tp)
+    }
+  }
+
   destroy() {
     if (this.world) {
       this.mod._ms_destroy(this.world)
