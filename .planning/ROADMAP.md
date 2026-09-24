@@ -346,7 +346,7 @@ Plans:
   7. A per-chat "Allow shell" switch, off by default and labelled not sandboxed, enables Claude Code's shell and built-in file tools in the workspace; edits made that way are recorded as observed changes
   8. The panel talks to a `ChatEngine` interface, so a later API-key engine (Anthropic SDK over the same sandboxed tools) plugs in without changing the panel
 
-**Plans**: 2/7 plans executed
+**Plans**: 3/7 plans executed
 
 Plans:
 **Wave 1**
@@ -359,7 +359,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 02.7-03-PLAN.md — Folders as subspaces (D-21): nested, collapsible, draggable folder frames in the tree-frame design with push-apart and folder-local positions; the combined hands-on checkpoint for 02 and 03
+- [x] 02.7-03-PLAN.md — Folders as subspaces (D-21): nested, collapsible, draggable folder frames in the tree-frame design with push-apart and folder-local positions; the combined hands-on checkpoint for 02 and 03
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
