@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 // wasm-hash-check.mjs — replay a golden fixture through the Wasm module in
 // Node and compare every checkpoint hash with the committed .sha256 file.
+// Works for both modules: ddsim.mjs (dd_* symbols) and mathspace.mjs
+// (ms_* symbols); the prefix is read off the loaded module.
 //
-//   node tools/wasm-hash-check.mjs <ddsim.mjs> <fixture.actions> <fixture.sha256>
+//   node tools/wasm-hash-check.mjs <ddsim.mjs|mathspace.mjs> <fixture.actions> <fixture.sha256>
 //
 // Prints "OK <name> <n checkpoints>" and exits 0, or "MISMATCH ..." for the
 // first differing tick and exits 1. Same replay rule as golden_support.hpp.
@@ -12,7 +14,7 @@ import { pathToFileURL } from 'node:url'
 
 const [glueArg, actionsArg, shaArg] = process.argv.slice(2)
 if (!glueArg || !actionsArg || !shaArg) {
-  console.error('usage: wasm-hash-check.mjs <ddsim.mjs> <fixture.actions> <fixture.sha256>')
+  console.error('usage: wasm-hash-check.mjs <ddsim.mjs|mathspace.mjs> <fixture.actions> <fixture.sha256>')
   process.exit(2)
 }
 
@@ -65,8 +67,9 @@ export function hexOf(bytes) {
 // heap (HEAPU8 re-read from the module at every use, never cached) and are
 // freed after each apply. Returns [{ tick, hex }] in checkpoint order.
 export function replay(mod, fixture) {
-  const sim = mod._dd_create(fixture.seed)
-  if (!sim) throw new Error('dd_create returned null')
+  const p = mod._ms_create ? 'ms' : 'dd'
+  const sim = mod[`_${p}_create`](fixture.seed)
+  if (!sim) throw new Error(`${p}_create returned null`)
   const out = []
   try {
     let max = 0
@@ -79,8 +82,8 @@ export function replay(mod, fixture) {
         const ptr = mod._malloc(a.bytes.length)
         try {
           mod.HEAPU8.set(a.bytes, ptr)
-          const rc = mod._dd_apply(sim, ptr, a.bytes.length)
-          if (rc !== 0) throw new Error(`dd_apply rejected action at tick ${t} with code ${rc}`)
+          const rc = mod[`_${p}_apply`](sim, ptr, a.bytes.length)
+          if (rc !== 0) throw new Error(`${p}_apply rejected action at tick ${t} with code ${rc}`)
         } finally {
           mod._free(ptr)
         }
@@ -88,23 +91,23 @@ export function replay(mod, fixture) {
       if (next < fixture.checkpoints.length && fixture.checkpoints[next] === t) {
         const hp = mod._malloc(32)
         try {
-          mod._dd_hash(sim, hp)
+          mod[`_${p}_hash`](sim, hp)
           out.push({ tick: t, hex: hexOf(mod.HEAPU8.slice(hp, hp + 32)) })
         } finally {
           mod._free(hp)
         }
         next++
       }
-      mod._dd_step(sim)
+      mod[`_${p}_step`](sim)
     }
   } finally {
-    mod._dd_destroy(sim)
+    mod[`_${p}_destroy`](sim)
   }
   return out
 }
 
-const { default: createDdsim } = await import(pathToFileURL(resolve(glueArg)).href)
-const mod = await createDdsim()
+const { default: createModule } = await import(pathToFileURL(resolve(glueArg)).href)
+const mod = await createModule()
 const fixture = parseActions(readFileSync(actionsArg, 'utf8'))
 const golden = parseSha256(readFileSync(shaArg, 'utf8'))
 const got = replay(mod, fixture)

@@ -221,4 +221,22 @@ if(EMSCRIPTEN)
         --no-entry
         "-sEXPORTED_FUNCTIONS=_dd_version,_dd_create,_dd_destroy,_dd_apply,_dd_step,_dd_tick,_dd_hash,_dd_serialize,_dd_restore,_dd_nodes_ptr,_dd_node_count,_dd_node_stride,_dd_body_ptr,_dd_body_count,_dd_body_stride,_malloc,_free"
         "-sEXPORTED_RUNTIME_METHODS=HEAPU8,HEAP32,HEAPU32")
+
+    # The mathspace engine as its own module: same link options, its own
+    # factory name, and the eleven ms_* symbols from mathspace_c.h.
+    add_executable(mathspace_wasm wasm/mathspace_wasm.cpp)
+    target_link_libraries(mathspace_wasm PRIVATE mathspace)
+    set_target_properties(mathspace_wasm PROPERTIES OUTPUT_NAME mathspace SUFFIX .mjs)
+    target_link_options(mathspace_wasm PRIVATE
+        -O2
+        -sMODULARIZE=1
+        -sEXPORT_ES6=1
+        -sENVIRONMENT=web,worker,node
+        -sALLOW_MEMORY_GROWTH=1
+        -sINITIAL_MEMORY=33554432
+        -sSTACK_SIZE=1048576
+        -sEXPORT_NAME=createMathspace
+        --no-entry
+        "-sEXPORTED_FUNCTIONS=_ms_version,_ms_create,_ms_destroy,_ms_apply,_ms_step,_ms_tick,_ms_hash,_ms_serialize,_ms_restore,_ms_notes_ptr,_ms_notes_len,_malloc,_free"
+        "-sEXPORTED_RUNTIME_METHODS=HEAPU8,HEAP32,HEAPU32")
 endif()
