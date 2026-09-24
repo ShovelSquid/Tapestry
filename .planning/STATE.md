@@ -4,16 +4,16 @@ milestone: v1.0
 current_phase: "02.3"
 current_phase_name: Time Threads (INSERTED)
 status: executing
-stopped_at: Completed 02.3-02-PLAN.md
-last_updated: "2026-09-24T18:01:18.639Z"
+stopped_at: Completed 02.3-03-PLAN.md
+last_updated: "2026-09-24T18:38:42.000Z"
 last_activity: 2026-09-24
-last_activity_desc: Phase 02.3 execution started
-state_head: 8174c90c7605b454c55bd25072428b57c331917b
+last_activity_desc: Phase 02.3 Plan 03 executed (grammar published, replay, readable fallback)
+state_head: 44c048deb1e3193fc176eee78bf007fbc9dae331
 progress:
   total_phases: 10
   completed_phases: 0
   total_plans: 38
-  completed_plans: 19
+  completed_plans: 20
 ---
 
 # Project State
@@ -28,11 +28,11 @@ See: .planning/PROJECT.md (updated 2026-09-08)
 ## Current Position
 
 Phase: 02.3 (Time Threads (INSERTED)) — EXECUTING
-Plan: 2 of 9
-Status: Ready to execute
-Last activity: 2026-09-24 — Phase 02.3 execution started
+Plan: 3 of 9
+Status: Ready to execute (Plan 04 next — Wave 3, blocked on Wave 2)
+Last activity: 2026-09-24 — Phase 02.3 Plan 03 executed (grammar published, replay, readable fallback)
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [█████░░░░░] 53%
 
 ## Performance Metrics
 
@@ -69,6 +69,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 02.2 P04 | 25 min | 3 tasks | 21 files |
 | Phase 02.3 P01 | 8 min | 2 tasks | 6 files |
 | Phase 02.3 P02 | 44 min | 2 tasks | 30 files |
+| Phase 02.3 P03 | 25 min | 3 tasks | 17 files |
 
 ## Accumulated Context
 
@@ -118,6 +119,11 @@ Recent decisions affecting current work:
 - [Phase 02.3]: [Phase 02.3]: thread.log grammar locked verbatim per Kaelen's checkpoint approval (in/out/ins/del/mark+/mark-/step/marker verbs, integer-millisecond offsets, FORMAT.md escaping, cont-line splitting past 1 MiB)
 - [Phase 02.3]: ThreadService is the single write authority per open thread: replays thread.log on open (never the body checkpoint), applies pushed steps to one authoritative doc, flushes on idle 300ms OR max-wait ~1s OR close OR actor switch
 - [Phase 02.3]: getPropertyValues added as a general kernel read API (Journal::commits() scan, no new verb or value type) mirroring buildHistoryIndex's shape
+- [Phase 02.3]: thread.log grammar and threads.md published as the reader's spec; example.tree grown to 10 commits (byte-identical through commit 6); a thread's body checkpoint is stored as plain flat text, not ProseMirror JSON, for maximum .tree readability
+- [Phase 02.3]: replay.ts's docAt/replayTo never sort records by time (commit order then line order only) and never replay more than one checkpoint interval, since a checkpoint's own stored text already accounts for everything before it
+- [Phase 02.3]: ThreadService.open() degrades to {unreadable: true, unreadableReason} with no write handle registered on a thread.log parse failure, rather than throwing (T-02.3-03-01)
+- [Phase 02.3]: kernel:getPropertyValues exposed as a generic, ungated IPC read (KernelBridge/preload/global.d.ts), independent of any plugin's enabled state, so FallbackNodeView can read a checkpoint's own recorded stamp with the owning plugin disabled
+- [Phase 02.3]: App.css gains its first CSS custom properties (--tap-destructive-text, --tap-surface), scoped to ThreadNotice.tsx's no-raw-hex requirement rather than a full token-system migration
 
 ### Pending Todos
 
@@ -162,6 +168,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-24T18:01:18.554Z
-Stopped at: Completed 02.3-02-PLAN.md
+Last session: 2026-09-24T18:38:42.000Z
+Stopped at: Completed 02.3-03-PLAN.md
 Resume file: None
