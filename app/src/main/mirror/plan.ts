@@ -793,6 +793,16 @@ export function describeMirrorChanges(summary: MirrorSummary): string {
   return `observed changes: ${parts.join('; ')}`
 }
 
+/**
+ * The messages for one moment that needs `count` commits (02.2 D-23). One
+ * commit keeps `base` as it is; several each end `(group <stamp>, i of n)`,
+ * so a reader can tell the commits of one moment belong together.
+ */
+export function groupMessages(base: string, count: number, stamp: string): string[] {
+  if (count <= 1) return count === 1 ? [base] : []
+  return Array.from({ length: count }, (_, i) => `${base} (group ${stamp}, ${i + 1} of ${count})`)
+}
+
 /** A whole-second stamp shared by every commit of one group (02.2 D-23). */
 export function groupStamp(): string {
   return new Date().toISOString().replace(/\.\d{3}Z$/, 'Z')

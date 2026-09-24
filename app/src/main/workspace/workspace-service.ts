@@ -20,10 +20,17 @@ import { SYSTEM_ACTOR, WORKSPACE_WATCHER_ACTOR } from '../commands/actor'
 import { prepareWriteFor, type CommandHooks } from '../commands/notes'
 import type { CommitResult, NodeData } from '../kernel-bridge'
 import { writeFileAtomicSync } from '../mirror/atomic-write'
-import { entriesFromPaths, isGitWorkTree, listGitFiles, sha256Hex, walkFolder } from '../mirror/fs'
 import {
-  buildMirrorModel,
+  entriesFromPaths,
+  isGitWorkTree,
+  listGitFiles,
+  sha256Hex,
+  walkFolder,
+  type FolderEntry,
+} from '../mirror/fs'
+import {
   describeMirrorChanges,
+  groupMessages,
   groupStamp,
   planMirror,
   planPathChange,
@@ -33,6 +40,8 @@ import {
   type PathState,
 } from '../mirror/plan'
 import { TAPESTRY_TMP_MARKER } from '../mirror/atomic-write'
+import { QuietWindowQueue } from '../mirror/quiet-queue'
+import { createFolderWatcher, type CreateFolderWatcher, type FolderWatcher } from '../mirror/watcher'
 import type { OpenTree, TreeEntry, TreeRegistry, UnavailableTree } from '../trees/registry'
 import { resolveWorkspaceTarget, type OpenWorkspace, type WorkspaceLookup, type WorkspaceTarget } from './sandbox'
 import type { CommandResult } from '../commands/notes'
@@ -52,7 +61,46 @@ export interface WorkspaceServiceOptions {
   /** `<userData>/workspaces` — where every workspace tree file lives. */
   treesDir: string
   hooks?: CommandHooks
+  /** The watcher factory; tests inject a fake. Defaults to createFolderWatcher. */
+  createWatcher?: CreateFolderWatcher
+  /** Told whenever a workspace's watching status changes (the frame header). */
+  onStatus?: (treeId: string, status: WorkspaceStatus) => void
+  /** How long a failed watcher waits before restarting. Default 5000 ms. */
+  restartDelayMs?: number
+  /**
+   * Test seam: runs after a reconcile has read the folder and before it
+   * checks the seq guard, so a test can land a write exactly there.
+   */
+  afterModelRead?: (treeId: string, attempt: number) => void | Promise<void>
 }
+
+/** What one reconcile did: files listed, read from disk, reused from the stat cache, commits written. */
+export interface ReconcileStats {
+  listed: number
+  read: number
+  reused: number
+  commits: number
+}
+
+/** Whether a workspace's outside changes are being recorded (the frame header). */
+export type WorkspaceStatus =
+  | { kind: 'watching' }
+  | { kind: 'not-watching'; reason: string }
+  | { kind: 'folder-missing' }
+
+/** One listed file as the last reconcile saw it. */
+interface StatEntry {
+  size: number
+  mtimeMs: number
+  ino: number
+  state: PathState
+}
+
+/** The pending-path marker for "the watcher could not say which path". Never a file name. */
+const ALL_PATHS = '\0all'
+
+/** How long a failed watcher waits before it restarts. */
+const WATCH_RESTART_MS = 5000
 
 interface RootInfo {
   root: string
@@ -79,17 +127,35 @@ function fail(message: string): never {
   throw new Error(message)
 }
 
+function errorText(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
+}
+
 export class WorkspaceService implements WorkspaceLookup {
   private readonly registry: TreeRegistry
   private readonly treesDir: string
   readonly hooks: CommandHooks
   private readonly roots = new Map<string, RootInfo>()
-  private readonly chains = new Map<string, Promise<void>>()
+  private readonly chains = new Map<string, Promise<unknown>>()
+  private readonly statCaches = new Map<string, Map<string, StatEntry>>()
+  private readonly watches = new Map<string, { watcher: FolderWatcher; queue: QuietWindowQueue }>()
+  /** Trees that should be watched: a failed watcher restarts only for these. */
+  private readonly wanted = new Set<string>()
+  private readonly restarts = new Map<string, ReturnType<typeof setTimeout>>()
+  private readonly statuses = new Map<string, WorkspaceStatus>()
+  private readonly createWatcher: CreateFolderWatcher
+  private readonly onStatus?: (treeId: string, status: WorkspaceStatus) => void
+  private readonly restartDelayMs: number
+  private readonly afterModelRead?: (treeId: string, attempt: number) => void | Promise<void>
 
   constructor(registry: TreeRegistry, opts: WorkspaceServiceOptions) {
     this.registry = registry
     this.treesDir = opts.treesDir
     this.hooks = opts.hooks ?? {}
+    this.createWatcher = opts.createWatcher ?? createFolderWatcher
+    this.onStatus = opts.onStatus
+    this.restartDelayMs = opts.restartDelayMs ?? WATCH_RESTART_MS
+    this.afterModelRead = opts.afterModelRead
   }
 
   // -------------------------------------------------------------------------
@@ -189,51 +255,73 @@ export class WorkspaceService implements WorkspaceLookup {
   }
 
   // -------------------------------------------------------------------------
-  // Catch-up (D-06)
+  // Reconciling (D-06): catch-up on open, and every live moment
   // -------------------------------------------------------------------------
 
   /** Record everything the folder says that the tree does not. Serialized per tree. */
   catchUp(treeId: string): Promise<void> {
+    return this.reconcileNow(treeId, 'all').then(() => undefined)
+  }
+
+  /**
+   * The one reconcile path, for catch-up and for live moments alike.
+   *
+   * `hints` are paths the watcher saw change: they are always read again. Any
+   * other listed file whose size, mtime and inode are what they were at the
+   * last reconcile reuses the state read then (the stat cache), so a moment
+   * with nothing new reads nothing. `'all'` names no path in particular, and
+   * the stat cache alone decides. Serialized per tree with catch-up, so two
+   * reconciles never plan against each other.
+   */
+  reconcileNow(treeId: string, hints: Set<string> | 'all'): Promise<ReconcileStats> {
     const previous = this.chains.get(treeId) ?? Promise.resolve()
-    const next = previous.catch(() => undefined).then(() => this.runCatchUp(treeId))
+    const next = previous.catch(() => undefined).then(() => this.runReconcile(treeId, hints))
     this.chains.set(treeId, next)
     return next
   }
 
-  private async runCatchUp(treeId: string): Promise<void> {
+  private async runReconcile(treeId: string, hints: Set<string> | 'all'): Promise<ReconcileStats> {
     const tree = this.registry.get(treeId)
     if (!tree) throw new Error(`Unknown tree ${treeId}`)
     const info = this.roots.get(treeId)
     if (!info) throw new Error(`${tree.name} is not an open workspace`)
 
-    let isDir = false
-    try {
-      isDir = lstatSync(info.realRoot).isDirectory()
-    } catch {
-      isDir = false
+    if (!this.rootIsFolder(info)) {
+      // A folder that disappeared is not "every file deleted" (T-02.7-25).
+      this.setStatus(treeId, { kind: 'folder-missing' })
+      if (this.wanted.has(treeId)) {
+        this.disposeWatch(treeId)
+        this.scheduleRestart(treeId)
+      }
+      throw new Error(`The workspace folder ${info.root} is missing; nothing was recorded`)
     }
-    if (!isDir) throw new Error(`The workspace folder ${info.root} is missing; nothing was recorded`)
 
-    let model: MirrorModel | null = null
+    let read: { model: MirrorModel; stats: ReconcileStats } | null = null
     for (let attempt = 0; attempt < MAX_CATCH_UP_ATTEMPTS; attempt += 1) {
       const before = tree.bridge.status().lastGoodSeq
-      const candidate = await this.readModel(tree, info)
+      const candidate = await this.readModel(tree, info, hints)
+      await this.afterModelRead?.(treeId, attempt)
+      // The seq guard: an in-process write (an agent's file tool, a window
+      // save) landed while the folder was being read, so this model may
+      // predate it, and planning against it would revert that write.
       if (tree.bridge.status().lastGoodSeq === before) {
-        model = candidate
+        read = candidate
         break
       }
     }
-    if (!model) {
-      // An in-process write kept landing while the folder was read; planning
-      // against the old model would revert it. The next catch-up will see it.
-      console.warn(`[WorkspaceService] ${tree.name} kept changing during catch-up; nothing recorded`)
-      return
+    if (!read) {
+      console.warn(`[WorkspaceService] ${tree.name} kept changing during a reconcile; nothing recorded`)
+      return { listed: 0, read: 0, reused: 0, commits: 0 }
     }
+    const { model, stats } = read
 
     const nodes = tree.bridge.getNodes()
     const firstImport = !nodes.some((node) => isWorkspaceType(node.type))
     const { ops, summary } = planMirror({ nodes }, model, WORKSPACE_SHAPE)
-    if (ops.length === 0) return
+    if (ops.length === 0) {
+      this.reconciled(treeId)
+      return stats
+    }
 
     let texts = 0
     let others = 0
@@ -244,20 +332,31 @@ export class WorkspaceService implements WorkspaceLookup {
     const base = firstImport
       ? `observed workspace ${tree.name}: ${texts} text files, ${others} other files, ${model.folders.size} folders`
       : describeMirrorChanges(summary)
-    const stamp = ops.length > 1 ? groupStamp() : ''
+    const messages = groupMessages(base, ops.length, ops.length > 1 ? groupStamp() : '')
 
     this.requireHealthy(tree)
     prepareWriteFor(tree, WORKSPACE_WATCHER_ACTOR, this.hooks)
     ops.forEach((chunk, index) => {
-      const message = ops.length === 1 ? base : `${base} (group ${stamp}, ${index + 1} of ${ops.length})`
-      const result = tree.bridge.submitAs(WORKSPACE_WATCHER_ACTOR, message, chunk)
+      const result = tree.bridge.submitAs(WORKSPACE_WATCHER_ACTOR, messages[index], chunk)
       this.committed(tree.id, WORKSPACE_WATCHER_ACTOR, result)
     })
+    this.reconciled(treeId)
+    return { ...stats, commits: ops.length }
   }
 
-  private async readModel(tree: OpenTree, info: RootInfo): Promise<MirrorModel> {
+  /**
+   * List the folder and read what may have changed. Every listed file is
+   * lstat-ed by the listing; a file is read again only when it is hinted,
+   * new, or its size, mtime or inode moved (an atomic rename always moves
+   * the inode). Reads never follow a link (readPathState, O_NOFOLLOW).
+   */
+  private async readModel(
+    tree: OpenTree,
+    info: RootInfo,
+    hints: Set<string> | 'all',
+  ): Promise<{ model: MirrorModel; stats: ReconcileStats }> {
     const listing = listGitFiles(info.realRoot)
-    let entries
+    let entries: FolderEntry[]
     if (listing.kind === 'git') {
       info.git = true
       const rels = listing.rels.filter(
@@ -273,7 +372,191 @@ export class WorkspaceService implements WorkspaceLookup {
     if (fileCount > MAX_WORKSPACE_FILES) {
       throw new Error(`${tree.name} has more than ${MAX_WORKSPACE_FILES} files; choose a smaller folder`)
     }
-    return buildMirrorModel(info.realRoot, entries)
+
+    const cache = this.statCaches.get(tree.id) ?? new Map<string, StatEntry>()
+    const next = new Map<string, StatEntry>()
+    const model: MirrorModel = { folders: new Set(), paths: new Map() }
+    const stats: ReconcileStats = { listed: 0, read: 0, reused: 0, commits: 0 }
+
+    for (const entry of entries) {
+      if (entry.kind === 'dir') {
+        model.folders.add(entry.rel)
+        continue
+      }
+      stats.listed += 1
+      const cached = cache.get(entry.rel)
+      const hinted = hints !== 'all' && hints.has(entry.rel)
+      let state: PathState
+      if (
+        cached &&
+        !hinted &&
+        cached.size === entry.size &&
+        cached.mtimeMs === entry.mtimeMs &&
+        cached.ino === entry.ino
+      ) {
+        state = cached.state
+        stats.reused += 1
+      } else {
+        state = readPathState(info.realRoot, entry.rel)
+        stats.read += 1
+        // Yield now and then so a large folder does not freeze the main process.
+        if (stats.read % 200 === 0) await new Promise((r) => setImmediate(r))
+      }
+      // Deleted, or replaced by a folder, between the listing and the read.
+      if (state.kind === 'absent' || state.kind === 'folder') continue
+      model.paths.set(entry.rel, state)
+      next.set(entry.rel, { size: entry.size, mtimeMs: entry.mtimeMs, ino: entry.ino, state })
+    }
+
+    this.statCaches.set(tree.id, next)
+    return { model, stats }
+  }
+
+  // -------------------------------------------------------------------------
+  // Watching (D-06): outside changes recorded within moments
+  // -------------------------------------------------------------------------
+
+  /** Watch an open workspace. A no-op when it is already watched. */
+  startWatching(treeId: string): void {
+    if (this.watches.has(treeId)) return
+    const info = this.roots.get(treeId)
+    if (!info || !this.registry.get(treeId)) {
+      throw new Error(`${treeId} is not an open workspace`)
+    }
+    this.wanted.add(treeId)
+    this.clearRestart(treeId)
+
+    const queue = new QuietWindowQueue({
+      onFlush: async (paths) => {
+        const hints = paths.has(ALL_PATHS) ? 'all' : paths
+        try {
+          await this.reconcileNow(treeId, hints)
+        } catch (err) {
+          // A missing folder has already said so in the header.
+          console.warn('[WorkspaceService] live reconcile failed:', errorText(err))
+        }
+      },
+    })
+
+    let watcher: FolderWatcher
+    try {
+      watcher = this.createWatcher(info.realRoot, {
+        onDirty: (rels) => queue.add(rels === 'all' ? [ALL_PATHS] : rels),
+        onError: (err) => this.watchFailed(treeId, err),
+      })
+    } catch (err) {
+      queue.dispose()
+      this.watchFailed(treeId, err)
+      return
+    }
+    this.watches.set(treeId, { watcher, queue })
+    this.setStatus(treeId, { kind: 'watching' })
+  }
+
+  /** Stop watching a workspace (its frame closed). */
+  stopWatching(treeId: string): void {
+    this.wanted.delete(treeId)
+    this.clearRestart(treeId)
+    this.disposeWatch(treeId)
+    this.statuses.delete(treeId)
+  }
+
+  /** Stop every watcher (Tapestry is quitting). */
+  stopAll(): void {
+    for (const treeId of new Set([...this.wanted, ...this.watches.keys(), ...this.restarts.keys()])) {
+      this.stopWatching(treeId)
+    }
+  }
+
+  /** Whether a workspace is being watched right now. */
+  isWatching(treeId: string): boolean {
+    return this.watches.has(treeId)
+  }
+
+  /** The last status reported for a workspace, if any. */
+  statusOf(treeId: string): WorkspaceStatus | null {
+    return this.statuses.get(treeId) ?? null
+  }
+
+  /**
+   * A watcher failed. Watching restarts by itself after the restart delay,
+   * with a full reconcile; until then the header says it is not watching
+   * (T-02.7-26: one attempt per delay, never a tight loop).
+   */
+  private watchFailed(treeId: string, err: unknown): void {
+    if (!this.wanted.has(treeId)) return
+    this.disposeWatch(treeId)
+    const info = this.roots.get(treeId)
+    if (info && !this.rootIsFolder(info)) {
+      this.setStatus(treeId, { kind: 'folder-missing' })
+    } else {
+      this.setStatus(treeId, { kind: 'not-watching', reason: errorText(err) })
+    }
+    this.scheduleRestart(treeId)
+  }
+
+  private scheduleRestart(treeId: string): void {
+    if (this.restarts.has(treeId)) return
+    const timer = setTimeout(() => {
+      this.restarts.delete(treeId)
+      if (!this.wanted.has(treeId) || !this.registry.get(treeId)) return
+      const info = this.roots.get(treeId)
+      if (!info) return
+      if (!this.rootIsFolder(info)) {
+        this.setStatus(treeId, { kind: 'folder-missing' })
+        this.scheduleRestart(treeId)
+        return
+      }
+      this.startWatching(treeId)
+      if (!this.watches.has(treeId)) return
+      this.reconcileNow(treeId, 'all').catch((err) => {
+        console.warn('[WorkspaceService] catch-up after restarting the watcher failed:', errorText(err))
+      })
+    }, this.restartDelayMs)
+    ;(timer as { unref?: () => void }).unref?.()
+    this.restarts.set(treeId, timer)
+  }
+
+  private clearRestart(treeId: string): void {
+    const timer = this.restarts.get(treeId)
+    if (timer !== undefined) clearTimeout(timer)
+    this.restarts.delete(treeId)
+  }
+
+  private disposeWatch(treeId: string): void {
+    const watch = this.watches.get(treeId)
+    if (!watch) return
+    this.watches.delete(treeId)
+    watch.queue.dispose()
+    try {
+      watch.watcher.close()
+    } catch (err) {
+      console.warn('[WorkspaceService] closing a watcher failed:', errorText(err))
+    }
+  }
+
+  /** A reconcile succeeded: a watched folder that was missing is back. */
+  private reconciled(treeId: string): void {
+    if (this.watches.has(treeId)) this.setStatus(treeId, { kind: 'watching' })
+  }
+
+  private setStatus(treeId: string, status: WorkspaceStatus): void {
+    const last = this.statuses.get(treeId)
+    if (last && JSON.stringify(last) === JSON.stringify(status)) return
+    this.statuses.set(treeId, status)
+    try {
+      this.onStatus?.(treeId, status)
+    } catch (err) {
+      console.error('[WorkspaceService] onStatus listener threw:', err)
+    }
+  }
+
+  private rootIsFolder(info: RootInfo): boolean {
+    try {
+      return lstatSync(info.realRoot).isDirectory()
+    } catch {
+      return false
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -490,6 +773,9 @@ export class WorkspaceService implements WorkspaceLookup {
       // A missing folder keeps its spelling; catch-up will say it is missing.
     }
     this.roots.set(treeId, { root, realRoot, git: null })
+    // A fresh open reads every file once: the cache only ever holds what
+    // this session has read itself.
+    this.statCaches.delete(treeId)
   }
 
   /**

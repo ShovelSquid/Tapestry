@@ -151,6 +151,8 @@ let pluginHost: PluginHost
 let agentServer: AgentSocketServer | null = null
 /** The in-app chat panel (02.7 D-12), one chat per open workspace. */
 let chatService: ChatService | null = null
+/** Kept at module level so will-quit can stop every workspace watcher. */
+let workspaceServiceRef: WorkspaceService | null = null
 
 /** A tree id is exactly what the registry mints: `sha256:` + 64 hex digits. */
 const TREE_ID_PATTERN = /^sha256:[0-9a-f]{64}$/
@@ -305,6 +307,7 @@ app.whenReady().then(async () => {
     treesDir: join(app.getPath('userData'), 'workspaces'),
     hooks: commandHooks,
   })
+  workspaceServiceRef = workspaceService
 
   const agentCommands: AgentCommands = {
     notes: new NoteCommands(registry, commandHooks),
@@ -628,6 +631,8 @@ app.whenReady().then(async () => {
       void chatService?.closeWorkspace(treeId).catch((err) => {
         console.error('[Main] could not close the workspace chat:', err)
       })
+      // Watching ends with the frame (D-06).
+      workspaceServiceRef?.stopWatching(treeId)
     }
     registry.close(treeId)
     settings.removeTree(treePath)
@@ -754,6 +759,15 @@ app.whenReady().then(async () => {
     }
   })
 
+  /** A watcher that cannot start must never fail adding or restoring a workspace. */
+  function startWatchingSafely(treeId: string): void {
+    try {
+      workspaceService.startWatching(treeId)
+    } catch (err) {
+      console.error('[Main] could not watch the workspace:', err)
+    }
+  }
+
   ipcMain.handle('dialog:showOpenWorkspaceFolder', async () => {
     if (!mainWindow) return { canceled: true, folderPath: undefined }
     const result = await dialog.showOpenDialog(mainWindow, {
@@ -779,6 +793,8 @@ app.whenReady().then(async () => {
     }
     try {
       const tree = await workspaceService.addWorkspace(target)
+      // From now on, outside changes are recorded within moments (D-06).
+      startWatchingSafely(tree.id)
       settings.addTree({
         path: tree.path,
         kind: 'workspace',
@@ -876,7 +892,10 @@ app.whenReady().then(async () => {
       approvedWorkspaceRoots.add(root)
       void workspaceService
         .openWorkspace(root, tree.path)
-        .then(() => notifyTreesChanged())
+        .then((entry) => {
+          if ('bridge' in entry) startWatchingSafely(entry.id)
+          notifyTreesChanged()
+        })
         .catch((err) => console.error('[Main] could not restore workspace:', err))
       continue
     }
@@ -936,5 +955,8 @@ app.on('will-quit', () => {
     void agentServer.close()
     agentServer = null
   }
+  // No watcher may fire into a kernel that is being closed.
+  workspaceServiceRef?.stopAll()
+  workspaceServiceRef = null
   registry.closeAll()
 })
