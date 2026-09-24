@@ -21,22 +21,27 @@ Nothing. Tree is clean.
 
 ## Next
 
-1. **`include/mathspace/world.hpp` + `src/mathspace/world.cpp`**: `World`
-   with seed, tick, sorted notes vector, `next_group`. `create_space(dim)`,
-   `create_note(space, kind, group?)`, `set_field`, `delete_note`,
-   `delete_field`, all returning an error code and leaving state untouched
-   on failure. `step()` increments tick only. Tests.
-2. **Canonical walk + hash** in `src/mathspace/hash.cpp`, per the plan's
-   walk, plus `serialize`/`restore` strict inverse. Tests: round-trip hash
-   equality, tampered byte rejected, restore failure leaves state untouched.
-3. **Actions** `include/mathspace/action.hpp`: kinds 32 to 36 with the
+1. **Canonical walk + hash** in `src/mathspace/hash.cpp`, per the plan's
+   walk with one addition: `u32 next_group` right after `u64 tick` (see
+   Decisions). Declare `hash(const World&, uint8_t out[32])`,
+   `serialize(const World&) -> std::vector<uint8_t>`,
+   `restore(World&, bytes) -> Error` in `world.hpp` (add `Error::BadBytes`).
+   `restore` decodes into a local World, checks `well_formed()`, and swaps
+   only on success. Use `ddsim::sha256_bytes` from `ddsim/sim.hpp`. Look at
+   `src/hash.cpp` for the ddsim byte-writer helpers and copy the style, not
+   the code. Tests in `tests/mathspace/hash_test.cpp`: hash equal after
+   round-trip, every single-byte tamper of a serialized world is rejected
+   or hashes differently, restore failure leaves state untouched, hash
+   changes when a field value / name / dim / bound / kind / space changes,
+   hash ignores nothing that `operator==` sees.
+2. **Actions** `include/mathspace/action.hpp`: kinds 32 to 36 with the
    ddsim header layout, bounds-checked decoder into a local, `World::apply`.
    Tests per kind including malformed payloads.
-4. **Replay tool and goldens**: `tools/ms_replay/main.cpp`, fixture format
+3. **Replay tool and goldens**: `tools/ms_replay/main.cpp`, fixture format
    shared with `tests/golden_support.hpp` where possible,
    `tests/golden/ms/empty.actions` and `two-notes.actions` with `.sha256`,
    wired into the two-process CTest loop in `CMakeLists.txt`.
-5. **Tapestry Space page** (phase 1 done condition): `PageKind::Space`,
+4. **Tapestry Space page** (phase 1 done condition): `PageKind::Space`,
    page owns a mathspace `World`, notes drawn as labelled dots, drag
    issues `SetField pos`, `.tapestry` delta line `mspace <page> <base64
    actions>`; reload and compare hash. Link `mathspace` into
@@ -49,6 +54,9 @@ its oracle tests.
 
 ## Done
 
+- `1832b88` ms1 step 3: `world.hpp`/`world.cpp` World store: create_space,
+  create_note, set_field, delete_note, delete_field, step, well_formed,
+  Error enum + error_name. 12 tests incl. untouched-on-reject checks.
 - `d7a8862` ms1 step 2: `note.hpp`/`note.cpp` Field, Note, NoteKind,
   `find_field`/`set_field`/`erase_field`/`fields_well_formed`, tests.
 - `3cd79d9` ms1 step 1: build scaffolding. `mathspace` static lib over
@@ -61,6 +69,22 @@ its oracle tests.
 
 ## Decisions
 
+- **A space's dimension is the dim of the Space note's own `pos` field**
+  (zero vector, set by create_space). The plan's hash walk has no per-note
+  dim slot, so dim had to be a field; `pos` is the one name the store
+  already knows structurally. Rewriting a Space's pos at another dim is
+  PosDimMismatch; deleting it is LockedField.
+- `create_note` always allocates a fresh group ordinal (group of one,
+  index 0). Appending to an existing group (stroke emission) is deferred
+  until the input bridge needs it; it will need a per-group counter that
+  must be serialized, so decide it then.
+- `delete_note` on a Space that still holds notes is SpaceNotEmpty, not
+  a cascade. Explicit over hidden mutation; can be relaxed later.
+- `next_group` is state that must round-trip through serialize/restore,
+  else a restored world could reuse a deleted group's ordinal and diverge
+  from the original on the next create. It goes into the hash walk as
+  `u32 next_group` immediately after `u64 tick`. This is a deliberate
+  addition to the plan's walk, recorded here rather than made silently.
 - A Space note is top level: its `space` id is unassigned (0), and that
   zero is what the hash walk writes for it.
 - Field names: 1 to 31 bytes, no byte below 0x20. Anything else is
