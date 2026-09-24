@@ -5,10 +5,10 @@ current_phase: "02.2"
 current_phase_name: Obsidian Bridge
 status: executing
 stopped_at: Completed 02.2-07-PLAN.md
-last_updated: "2026-09-23T06:50:00.000Z"
-last_activity: 2026-09-23
+last_updated: "2026-09-24T08:36:18.624Z"
+last_activity: 2026-09-24
 last_activity_desc: Phase 02.4 Lock Model complete and rebased onto the main line; Phase 02.2 still executing
-state_head: c3f4f3d6c993f90c55415c6117705b124bb9667a
+state_head: 1500b322fc4be49cbc916cbd13892ff3b481f7d4
 progress:
   total_phases: 11
   completed_phases: 1
@@ -154,6 +154,7 @@ None yet.
 | 260915-v51 | Fix the kernel copy-per-commit quadratic: Kernel::replayUpTo and Kernel::submit copied the entire World once per commit, making reopen O(n^2) in commit count | 2026-09-15 | 7fed53f | [260915-v51-fix-the-kernel-copy-per-commit-quadratic](./quick/260915-v51-fix-the-kernel-copy-per-commit-quadratic/) |
 | 260924-1gd | In hands-face-voice/, wire hand-face relative position through the live playground and add MediaPipe Pose Landmarker as a shared body skeleton anchoring hands and face, replacing scene3d.js's fixed-offset spacing hack | 2026-09-24 | 797dc1d, 6d7ee79 | [260924-1gd-in-hands-face-voice-wire-hand-face-relat](./quick/260924-1gd-in-hands-face-voice-wire-hand-face-relat/) |
 | 260924-1c5 | Improve facial fidelity/expressiveness of the hands-face-voice real-time face tracker: enable FaceLandmarker blendshapes and render the full face tessellation mesh (not just contours) in the 3D view | 2026-09-24 | 46d8cc8 | [260924-1c5-improve-facial-fidelity-expressiveness-o](./quick/260924-1c5-improve-facial-fidelity-expressiveness-o/) |
+| 8 | In hands-face-voice/, cap the metrics line width under the landmarks panel so it stops jittering and pushing the 3D panel off to the side | 2026-09-24 | 1500b32 | — |
 
 ### Roadmap Evolution
 
