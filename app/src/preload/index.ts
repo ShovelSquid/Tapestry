@@ -190,6 +190,10 @@ const tapestryAPI = {
 
     close: (treeId: string, nodeId: string): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke('thread:close', treeId, nodeId),
+
+    /** D-22 (TA-07): the Authors legend's refused-change count, per actor id. */
+    getRefusedCounts: (treeId: string, nodeId: string): Promise<Record<string, number>> =>
+      ipcRenderer.invoke('thread:getRefusedCounts', treeId, nodeId),
   },
 
   /**

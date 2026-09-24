@@ -35,17 +35,21 @@ import {
   createStageUniforms,
   type StageUniforms,
 } from './stage/ribbon'
-import { GlyphLayer } from './stage/glyphs'
+import { GlyphLayer, GlyphUnderlayLayer } from './stage/glyphs'
 import { getGlyphCache } from './stage/glyph-cache'
 import { createLiveView, type LiveViewHandle } from './stage/live-view'
 import { SideView, SIDE_ZOOM_DURATION_FACTOR, centerForZoomAroundScreenX, clampSpanSeconds } from './stage/side-view'
 import { stepMarker, markerLabel } from './stage/markers'
 import { getStageRenderer, isWebglAvailable } from './stage/renderer'
-import { readStageTokens } from './stage/tokens'
+import { readAuthorPalette, readStageTokens } from './stage/tokens'
+import { StrandLayer, deriveAuthorSpans } from './stage/strands'
 import { loadSessions, formatDuration, useSessions } from './SessionBridge'
 import DateScrubber from './DateScrubber'
 import { NAV_KEYS, dayIndexOf, dayStartMs, flyTo, gravityStep, zoomStep, type NavAction } from './navigation'
 import DocAtTimeView, { BRANCHING_NOTICE } from './DocAtTimeView'
+import AuthorsLegend, { type AuthorLegendRow } from './AuthorsLegend'
+import AuthorChip from './AuthorChip'
+import { authorPaletteIndex, orderAgentsByConnection } from './author-palette'
 import { parseThreadFrame, parseThreadSettings, type ThreadFrame, type ThreadNodeProps } from '../../shared/threads/settings'
 import { parseSlowdown, type SlowdownCurve } from '../../shared/threads/slowdown'
 import { createDocAtCache, docAt, type DocAtCache, type ReplayResult, type ThreadCommitEntry, type ThreadLetter } from '../../shared/threads/replay'
@@ -77,7 +81,14 @@ async function loadThreadCommits(treeId: string, nodeId: string): Promise<Thread
     window.tapestry.kernel.getPropertyValues(treeId, nodeId, 'body'),
   ])
   const tagged: Array<{ seq: number; entry: ThreadCommitEntry }> = [
-    ...logEntries.map((e) => ({ seq: e.seq, entry: { kind: 'log' as const, value: String(e.value.value) } })),
+    // D-21: the commit's own actor id travels with its log entry, so
+    // replay.ts's docAt/replayTo can attribute every letter it mints to
+    // who actually wrote it -- read straight off the record, never a claim
+    // a writer could make about itself.
+    ...logEntries.map((e) => ({
+      seq: e.seq,
+      entry: { kind: 'log' as const, value: String(e.value.value), actor: e.actor.id },
+    })),
     ...bodyEntries.map((e) => ({ seq: e.seq, entry: { kind: 'checkpoint' as const, value: String(e.value.value) } })),
   ]
   tagged.sort((a, b) => a.seq - b.seq)
@@ -88,8 +99,20 @@ interface StageHistory {
   frame: ThreadFrame
   slowdown: SlowdownCurve
   timeoutSeconds: number
-  /** Live (non-deleted) letters, in the order `docAt` returned them. */
+  /** Live (non-deleted) letters, in the order `docAt` returned them
+   * (insertion order, not document order -- fine for the stage, since a
+   * glyph's screen position comes from its own `insertedAtMs`, never from
+   * reading order). */
   letters: ThreadLetter[]
+  /** Live letter ids in **document order** (`ReplayResult.liveOrder`): the
+   * order `use-thread-editor.ts` needs to seed its own `LetterIndex`
+   * correctly, since that seeding inserts each letter sequentially at an
+   * increasing position to reconstruct the flat document. */
+  liveOrder: number[]
+  /** Every letter this replay ever saw, live or deleted (D-21): the source
+   * `deriveAuthorSpans` reads for the strand layer -- a deleted letter still
+   * represents real writing activity at the moment it happened. */
+  allLetters: ThreadLetter[]
   /** D-07/D-16: the thread's own recorded sessions, so the ribbon's
    * historical reconstruction below can draw true-length gaps between them
    * instead of one continuous span standing in for real history. */
@@ -105,14 +128,61 @@ async function loadStageHistory(treeId: string, nodeId: string): Promise<StageHi
   const props: ThreadNodeProps = node?.props ?? {}
   const frame = parseThreadFrame(props)
   const settings = parseThreadSettings(props)
-  const { letters } = docAt(commits, Date.now())
+  const { letters, liveOrder } = docAt(commits, Date.now())
   return {
     frame,
     slowdown: parseSlowdown(settings.slowdown),
     timeoutSeconds: settings.timeout,
     letters: letters.filter((l) => l.deletedAtMs === null),
+    liveOrder,
+    allLetters: letters,
     sessions,
   }
+}
+
+// ---------------------------------------------------------------------------
+// Authors legend data (D-21, D-22, TA-07): agent connection order, live
+// per-actor letter counts, and this session's refusal counts.
+// ---------------------------------------------------------------------------
+
+async function loadAuthorData(
+  treeId: string,
+  nodeId: string,
+  liveLetters: readonly ThreadLetter[],
+): Promise<{ orderedAgentNames: string[]; rows: AuthorLegendRow[] }> {
+  const [agents, refusedCounts] = await Promise.all([
+    window.tapestry.agents.list(),
+    window.tapestry.thread.getRefusedCounts(treeId, nodeId),
+  ])
+  const orderedAgentNames = orderAgentsByConnection(agents)
+
+  const letterCounts = new Map<string, number>()
+  for (const letter of liveLetters) {
+    letterCounts.set(letter.actor, (letterCounts.get(letter.actor) ?? 0) + 1)
+  }
+
+  // Every actor with either a letter or a refusal gets a row -- an agent
+  // that has only ever been refused (never actually landed a letter) still
+  // needs to be visible, since the refusal is the one thing TA-07 promises
+  // is never silent.
+  const actorIds = new Set<string>([...letterCounts.keys(), ...Object.keys(refusedCounts)])
+  const rows: AuthorLegendRow[] = [...actorIds].map((actorId) => ({
+    actorId,
+    letterCount: letterCounts.get(actorId) ?? 0,
+    refusedCount: refusedCounts[actorId] ?? 0,
+  }))
+
+  // Self first, then agents in connection order, then anything unrecognized.
+  rows.sort((a, b) => {
+    const rank = (id: string): number => {
+      if (id.startsWith('user.')) return -1
+      const agentIndex = orderedAgentNames.indexOf(id.replace(/^agent\./, ''))
+      return id.startsWith('agent.') && agentIndex !== -1 ? agentIndex : orderedAgentNames.length
+    }
+    return rank(a.actorId) - rank(b.actorId)
+  })
+
+  return { orderedAgentNames, rows }
 }
 
 // ---------------------------------------------------------------------------
@@ -125,6 +195,15 @@ interface StageRuntime {
   scene: THREE.Scene
   ribbon: Ribbon
   glyphs: GlyphLayer
+  underlay: GlyphUnderlayLayer
+  strands: StrandLayer
+  /** D-21: agent names in first-connected order (`agents:list`'s own
+   * `createdAt`), the ordering `author-palette.ts` assigns colour/pattern
+   * slots by. Read once per stage build; a mid-session new connection
+   * appears on this thread's next open, not live (a documented, honest
+   * simplification -- matching the rest of this file's "records, not
+   * screens" rebuild discipline). */
+  orderedAgentNames: string[]
   liveView: LiveViewHandle
   /** D-15..D-19: the side view's own camera, sharing this stage's ribbon,
    * glyphs and uniforms -- switching views changes the camera and a few
@@ -206,6 +285,33 @@ export default function ThreadOverlay({
   const [focusedMarkerIndex, setFocusedMarkerIndex] = useState(-1)
   const [announcement, setAnnouncement] = useState('')
   const sessions = useSessions(treeId, nodeId)
+
+  // D-21 (Task 2): the Authors legend and the stage's per-letter colouring
+  // both read this same author-row data, refreshed on open and again
+  // whenever a refusal might have landed (an agent write always resolves
+  // to a confirmed commit or a refusal, never silence).
+  const [authorRows, setAuthorRows] = useState<AuthorLegendRow[]>([])
+  const [showAuthorsLegend, setShowAuthorsLegend] = useState(false)
+  // D-21: the typer's own underlay/caret-readout hook needs this actor's
+  // literal id, the agents' connection order, and the thread's live letters
+  // at open, all as plain render-time values (not read from a ref, since
+  // useThreadEditor consumes them as ordinary hook arguments).
+  const [selfActorId, setSelfActorId] = useState('user.unknown')
+  const [typerOrderedAgentNames, setTyperOrderedAgentNames] = useState<string[]>([])
+  const [initialLiveLetters, setInitialLiveLetters] = useState<Array<{ grapheme: string; actor: string }>>([])
+
+  useEffect(() => {
+    let cancelled = false
+    window.tapestry.settings
+      .getUserName()
+      .then(({ userName }) => {
+        if (!cancelled && userName) setSelfActorId(`user.${userName}`)
+      })
+      .catch((err: unknown) => console.error('[ThreadOverlay] getUserName failed:', err))
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const dragRef = useRef<{ x: number } | null>(null)
   const pointerRef = useRef<{ x: number; y: number } | null>(null)
@@ -336,17 +442,30 @@ export default function ThreadOverlay({
     stage.pauseOpen = false
     stage.lastActivitySeconds = tSeconds
 
+    // Author index 0 (self) is correct for the person's own local typing,
+    // which is what `dispatchTransaction` mostly calls this for. A step
+    // that arrived by `receiveTransaction` (a rebased agent write landing
+    // while this exact view is open) currently also draws as author 0 --
+    // a documented Known Stub: the real-time steps broadcast that would let
+    // this callback know it was actually an agent's step does not exist yet
+    // (thread-ipc.ts only broadcasts `thread:confirmed`/`thread:flush-error`,
+    // never a steps payload). Reopening the thread always attributes every
+    // letter correctly, from the authoritative replay (`applyHistory`
+    // above), which is the reliable path this stub does not affect.
     for (const grapheme of Array.from(text)) {
-      stage.glyphs.add(renderer.renderer, cache, tSeconds, grapheme)
+      stage.glyphs.add(renderer.renderer, cache, tSeconds, grapheme, { actor: 0 })
     }
   }, [])
 
-  const { editorRef } = useThreadEditor({
+  const { editorRef, captionText, hoveredAuthor } = useThreadEditor({
     nodeId,
     checkpointBody,
     ready,
     onPush: handlePush,
     onLocalInsert: handleLocalInsert,
+    selfActorId,
+    orderedAgentNames: typerOrderedAgentNames,
+    initialLiveLetters,
   })
 
   // -------------------------------------------------------------------
@@ -760,11 +879,21 @@ export default function ThreadOverlay({
     const scene = new THREE.Scene()
     const tokens = readStageTokens()
     const uniforms = createStageUniforms(tokens)
+    const authorColors = readAuthorPalette().map((c) => new THREE.Vector3(c.r, c.g, c.b))
     const ribbon = new Ribbon()
     ribbon.setUniforms(uniforms)
+    const strands = new StrandLayer()
+    strands.setUniforms(uniforms, authorColors)
     const glyphs = new GlyphLayer()
     glyphs.setUniforms(uniforms)
-    scene.add(ribbon.mesh, glyphs.mesh)
+    // D-21: the underlay band draws *behind* the glyph, never over it
+    // (UI-SPEC "Two colour channels") -- scene order plus depthTest:false on
+    // both materials makes that a painter's-order guarantee, not a shader
+    // trick. Strands sit below both: they read as the line's own geometry,
+    // never as a wash on top of the letters.
+    const underlay = new GlyphUnderlayLayer(glyphs)
+    underlay.setUniforms(uniforms, authorColors)
+    scene.add(ribbon.mesh, strands.mesh, underlay.mesh, glyphs.mesh)
     const liveView = createLiveView(uniforms)
     const sideView = new SideView(uniforms)
 
@@ -777,7 +906,7 @@ export default function ThreadOverlay({
     // the initial open and for a `webglcontextlost` recovery, so a lost
     // context is never repaired from whatever pixels happened to be on
     // screen (T-02.3-04-03).
-    function applyHistory(history: StageHistory): void {
+    function applyHistory(history: StageHistory, orderedAgentNames: string[]): void {
       const finiteTimes = history.letters.map((l) => l.insertedAtMs).filter((ms) => Number.isFinite(ms))
       const sessionStarts = history.sessions.map((s) => s.startMs)
       const threadStartMs =
@@ -823,13 +952,21 @@ export default function ThreadOverlay({
       for (const letter of history.letters) {
         if (!Number.isFinite(letter.insertedAtMs)) continue
         const tSeconds = secondsSince(threadStartMs, letter.insertedAtMs)
-        glyphs.add(rendererHandle.renderer, cache, tSeconds, letter.grapheme, { bulk: true })
+        const actorIndex = authorPaletteIndex(letter.actor, orderedAgentNames)
+        glyphs.add(rendererHandle.renderer, cache, tSeconds, letter.grapheme, { bulk: true, actor: actorIndex })
         built++
       }
       glyphs.markBulkUploaded()
       cache.markPagesClean()
       setStageBuiltCount(built)
       setStageBuilding(false)
+
+      // D-21: two coloured strands, twisting where two authors wrote close
+      // together. Built from every letter this replay ever saw (including
+      // deleted ones -- a strand represents when someone wrote, not just
+      // what survived), independent of the glyph loop just above.
+      const spans = deriveAuthorSpans(history.allLetters, threadStartMs)
+      strands.buildFromSpans(spans, (actor) => authorPaletteIndex(actor, orderedAgentNames))
 
       liveView.applyFrame(history.frame)
       sideView.applyFrame(history.frame)
@@ -839,6 +976,9 @@ export default function ThreadOverlay({
         scene,
         ribbon,
         glyphs,
+        underlay,
+        strands,
+        orderedAgentNames,
         liveView,
         sideView,
         uniforms,
@@ -852,9 +992,22 @@ export default function ThreadOverlay({
       }
     }
 
-    loadStageHistory(treeId, nodeId)
-      .then((history) => {
-        if (!cancelled) applyHistory(history)
+    Promise.all([loadStageHistory(treeId, nodeId), window.tapestry.agents.list()])
+      .then(([history, agents]) => {
+        const orderedAgentNames = orderAgentsByConnection(agents)
+        if (!cancelled) applyHistory(history, orderedAgentNames)
+        if (!cancelled) {
+          // D-21: the typer's own underlay/caret readout (useThreadEditor)
+          // needs this same agent order and the thread's live letters, in
+          // document order, at the moment this view opened.
+          setTyperOrderedAgentNames(orderedAgentNames)
+          setInitialLiveLetters(history.liveOrder.map((id) => history.allLetters[id]).map((l) => ({ grapheme: l.grapheme, actor: l.actor })))
+          loadAuthorData(treeId, nodeId, history.letters)
+            .then(({ rows }) => {
+              if (!cancelled) setAuthorRows(rows)
+            })
+            .catch((err: unknown) => console.error('[ThreadOverlay] loadAuthorData failed:', err))
+        }
       })
       .catch((err: unknown) => {
         if (!cancelled) setStageError(err instanceof Error ? err.message : String(err))
@@ -977,9 +1130,12 @@ export default function ThreadOverlay({
     unsubscribeRestored = rendererHandle.onContextRestored(() => {
       setStageError(null)
       setStageBuilding(true)
-      loadStageHistory(treeId, nodeId)
-        .then((history) => {
-          if (!cancelled) applyHistory(history)
+      // A lost/restored context rebuilds from the thread's own records,
+      // never from the screen (T-02.3-04-03) -- the agent order is re-read
+      // too, in case a new agent connected while this context was lost.
+      Promise.all([loadStageHistory(treeId, nodeId), window.tapestry.agents.list()])
+        .then(([history, agents]) => {
+          if (!cancelled) applyHistory(history, orderAgentsByConnection(agents))
         })
         .catch((err: unknown) => {
           if (!cancelled) setStageError(err instanceof Error ? err.message : String(err))
@@ -995,7 +1151,7 @@ export default function ThreadOverlay({
       unsubscribeLost?.()
       unsubscribeRestored?.()
       stageRuntimeRef.current = null
-      scene.remove(ribbon.mesh, glyphs.mesh)
+      scene.remove(ribbon.mesh, strands.mesh, underlay.mesh, glyphs.mesh)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [treeId, nodeId])
@@ -1049,6 +1205,15 @@ export default function ThreadOverlay({
             </>
           )}
 
+          {/* D-21: "Authors · [n]" (UI-SPEC "Thread overlay header"). */}
+          <button
+            type="button"
+            onClick={() => setShowAuthorsLegend((was) => !was)}
+            style={styles.closeButton}
+          >
+            {`Authors · ${authorRows.length}`}
+          </button>
+
           <button
             type="button"
             aria-label="Thread settings"
@@ -1074,6 +1239,15 @@ export default function ThreadOverlay({
           />
         )}
 
+        {showAuthorsLegend && (
+          <div style={styles.authorsLegendWrap}>
+            <AuthorsLegend
+              rows={authorRows}
+              orderedAgentNames={stageRuntimeRef.current?.orderedAgentNames ?? []}
+            />
+          </div>
+        )}
+
         {openError && <div style={styles.error}>Couldn't finish reading this thread's history — {openError}</div>}
 
         {/* D-08/D-18: the live typer never unmounts (its own EditorView
@@ -1094,6 +1268,21 @@ export default function ThreadOverlay({
             </div>
           )}
         </div>
+
+        {/* D-21: the caret authorship readout, a live region updated on
+            every selection change, throttled to 300ms -- names the author
+            at the caret in words at all times, no key held (UI-SPEC
+            "Screen-reader announcements", "Author of the text at the
+            caret"). */}
+        {pastMomentMs === null && ready !== null && (
+          <div aria-live="polite" style={styles.underTyperLine}>
+            {captionText}
+          </div>
+        )}
+
+        {hoveredAuthor && (
+          <AuthorChip actorId={hoveredAuthor.actorId} x={hoveredAuthor.x} y={hoveredAuthor.y} orderedAgentNames={typerOrderedAgentNames} />
+        )}
 
         {pastMomentMs === null && showStatus && ready === null && !openError && (
           <div style={styles.underTyperLine}>
@@ -1280,6 +1469,12 @@ const styles: Record<string, React.CSSProperties> = {
     left: 16,
     right: 16,
     bottom: 8,
+  },
+  authorsLegendWrap: {
+    position: 'absolute',
+    top: 96,
+    right: 16,
+    zIndex: 10,
   },
   visuallyHidden: {
     position: 'absolute',

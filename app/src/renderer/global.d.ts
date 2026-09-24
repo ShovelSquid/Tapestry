@@ -213,6 +213,8 @@ interface TapestryThreadAPI {
     causes: (string | null)[],
   ): Promise<TapestryThreadPushResult>
   close(treeId: string, nodeId: string): Promise<{ ok: boolean }>
+  /** D-22 (TA-07): the Authors legend's refused-change count, per actor id. */
+  getRefusedCounts(treeId: string, nodeId: string): Promise<Record<string, number>>
 }
 
 /** What an agent write into a rewound tree reports (UA-14). */

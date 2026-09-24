@@ -162,6 +162,26 @@ async function runShots(win) {
     files.push(file)
   }
 
+  // f-two-authors*: Plan 08's D-20..D-23 strands/underlay, against the real
+  // production StrandLayer/GlyphUnderlayLayer -- a wide overview (the twist
+  // where "Hello " and "world" fall within SPAN_GAP_SECONDS of each other,
+  // and the parallel stretch afterward where "!" lands alone) plus a close
+  // zoom (the 24px-em underlay-reveal threshold).
+  await win.webContents.executeJavaScript('window.__bench.buildTwoAuthorStretch()')
+  await win.webContents.executeJavaScript('window.__bench.focusDebugCamera(7, 17)')
+  await wait(300)
+  const twoAuthorsOverview = await win.webContents.capturePage()
+  const twoAuthorsOverviewFile = path.join(shotsDir, 'f-two-authors-overview.png')
+  fs.writeFileSync(twoAuthorsOverviewFile, twoAuthorsOverview.resize({ width: 1400 }).toPNG())
+  files.push(twoAuthorsOverviewFile)
+
+  await win.webContents.executeJavaScript('window.__bench.focusDebugCamera(2, 4)')
+  await wait(300)
+  const twoAuthorsClose = await win.webContents.capturePage()
+  const twoAuthorsCloseFile = path.join(shotsDir, 'f-two-authors-twist-close.png')
+  fs.writeFileSync(twoAuthorsCloseFile, twoAuthorsClose.resize({ width: 1400 }).toPNG())
+  files.push(twoAuthorsCloseFile)
+
   console.log(`\nScreenshots:\n${files.join('\n')}`)
   return 0
 }

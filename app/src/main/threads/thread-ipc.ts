@@ -88,5 +88,16 @@ export class ThreadIpc {
       threadService.close(treeId, nodeId)
       return { ok: true }
     })
+
+    // D-22 (TA-07): the Authors legend's refused-change count, read from
+    // the currently open handle's in-memory tally -- never a recorded fact,
+    // since a refusal writes nothing.
+    ipcMain.handle('thread:getRefusedCounts', (_event: any, treeId: unknown, nodeId: unknown) => {
+      if (typeof treeId !== 'string' || typeof nodeId !== 'string') {
+        throw new Error('thread:getRefusedCounts expects (treeId: string, nodeId: string)')
+      }
+      const bridge = resolveTree(treeId)
+      return threadService.getRefusedCounts(bridge, getHumanActor(), treeId, nodeId)
+    })
   }
 }

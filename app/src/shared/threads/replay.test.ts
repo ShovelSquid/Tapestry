@@ -9,7 +9,15 @@
 
 import { describe, expect, it } from 'vitest'
 import { formatBlock } from './grammar'
-import { createDocAtCache, docAt, replayTo, type ThreadCommitEntry, type TimedThreadRecord } from './replay'
+import {
+  createDocAtCache,
+  docAt,
+  parseTimedRecords,
+  replayTo,
+  UNKNOWN_AUTHOR,
+  type ThreadCommitEntry,
+  type TimedThreadRecord,
+} from './replay'
 
 describe('replayTo', () => {
   it('replays ins/del onto an empty checkpoint, in the order given', () => {
@@ -104,6 +112,44 @@ describe('replayTo', () => {
     // 'e' (id 1) was deleted -- liveOrder holds only ids 0 ('H') and 2 ('y').
     expect(result.liveOrder).toEqual([0, 2])
   })
+
+  it('records with no actor mint UNKNOWN_AUTHOR letters, never a crash (D-21)', () => {
+    const records: TimedThreadRecord[] = [{ verb: 'ins', offsetMs: 0, cause: null, pos: 1, text: 'a', marks: [], atMs: 0 }]
+    const result = replayTo('', records, Infinity)
+    expect(result.letters[0].actor).toBe(UNKNOWN_AUTHOR)
+  })
+
+  it('a checkpoint-seeded letter is UNKNOWN_AUTHOR; a record-minted letter carries its own commit actor (D-21)', () => {
+    const records: TimedThreadRecord[] = [
+      { verb: 'ins', offsetMs: 0, cause: null, pos: 4, text: '!', marks: [], atMs: 500, actor: 'agent.claude' },
+    ]
+    const result = replayTo('abc', records, Infinity)
+    expect(result.document).toBe('abc!')
+    expect(result.letters.filter((l) => l.grapheme !== '!').every((l) => l.actor === UNKNOWN_AUTHOR)).toBe(true)
+    expect(result.letters.find((l) => l.grapheme === '!')?.actor).toBe('agent.claude')
+  })
+})
+
+describe('parseTimedRecords (actor tagging)', () => {
+  it('tags every record in a block with the block\'s own actor', () => {
+    const log = formatBlock(
+      [{ verb: 'ins', offsetMs: 0, cause: null, pos: 1, text: 'Hi', marks: [] }],
+      Date.parse('2026-01-01T00:00:00.000Z'),
+      0,
+    )
+    const records = parseTimedRecords(log, 'agent.claude')
+    expect(records.every((r) => r.actor === 'agent.claude')).toBe(true)
+  })
+
+  it('with no actor argument, records carry no actor (replayTo falls back to UNKNOWN_AUTHOR)', () => {
+    const log = formatBlock(
+      [{ verb: 'ins', offsetMs: 0, cause: null, pos: 1, text: 'Hi', marks: [] }],
+      Date.parse('2026-01-01T00:00:00.000Z'),
+      0,
+    )
+    const records = parseTimedRecords(log)
+    expect(records.every((r) => r.actor === undefined)).toBe(true)
+  })
 })
 
 describe('docAt', () => {
@@ -139,6 +185,19 @@ describe('docAt', () => {
     // ANCHOR_B + 0) has happened; its second (at ANCHOR_B + 200) has not.
     const result = docAt(commits, ANCHOR_B)
     expect(result.document).toBe('abc')
+  })
+
+  it("each commit's own actor (D-21) reaches the letters it minted, end to end through docAt", () => {
+    const log1 = block(ANCHOR_A, 0, ['+0.000 ins 1 "a"', '+0.100 ins 2 "b"'])
+    const log2 = block(ANCHOR_B, 2, ['+0.000 ins 3 "c"'])
+    const commits: ThreadCommitEntry[] = [
+      { kind: 'log', value: log1, actor: 'user.kaelen' },
+      { kind: 'log', value: log2, actor: 'agent.claude' },
+    ]
+    const result = docAt(commits, ANCHOR_B)
+    expect(result.document).toBe('abc')
+    expect(result.letters.filter((l) => 'ab'.includes(l.grapheme)).every((l) => l.actor === 'user.kaelen')).toBe(true)
+    expect(result.letters.find((l) => l.grapheme === 'c')?.actor).toBe('agent.claude')
   })
 
   it('before the first checkpoint, replays from the implicit empty document', () => {

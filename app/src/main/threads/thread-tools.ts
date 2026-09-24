@@ -385,7 +385,13 @@ function replaceInThread(
   const letterIndex = cmds.threadService.getLetterIndex(resolved.tree.bridge, actor, resolved.tree.id, resolved.nodeId)
   if ('error' in letterIndex) return { ok: false, error: letterIndex.error }
   const refusal = assertRangeAuthoredBy(letterIndex, range.from, range.to, actor.id)
-  if (refusal) return { ok: false, error: refusal }
+  if (refusal) {
+    // TA-07: caught here, before applyAgentEdit's own identical check would
+    // ever run -- record it directly so the Authors legend's count is
+    // accurate either way, never doubled.
+    cmds.threadService.recordAgentRefusal(resolved.tree.bridge, actor, resolved.tree.id, resolved.nodeId)
+    return { ok: false, error: refusal }
+  }
 
   const result = cmds.threadService.applyAgentEdit(resolved.tree.bridge, actor, resolved.tree.id, resolved.nodeId, {
     from: range.from,
@@ -418,7 +424,10 @@ function deleteFromThread(
   const letterIndex = cmds.threadService.getLetterIndex(resolved.tree.bridge, actor, resolved.tree.id, resolved.nodeId)
   if ('error' in letterIndex) return { ok: false, error: letterIndex.error }
   const refusal = assertRangeAuthoredBy(letterIndex, range.from, range.to, actor.id)
-  if (refusal) return { ok: false, error: refusal }
+  if (refusal) {
+    cmds.threadService.recordAgentRefusal(resolved.tree.bridge, actor, resolved.tree.id, resolved.nodeId)
+    return { ok: false, error: refusal }
+  }
 
   const result = cmds.threadService.applyAgentEdit(resolved.tree.bridge, actor, resolved.tree.id, resolved.nodeId, {
     from: range.from,

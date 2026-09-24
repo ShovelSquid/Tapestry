@@ -47,6 +47,16 @@ function graphemesOf(text: string): string[] {
 // Letters
 // ---------------------------------------------------------------------------
 
+/**
+ * The sentinel author for a letter whose true writer cannot be recovered —
+ * a letter seeded from a checkpoint's own text (D-21's "author unknown" —
+ * the renderer's `author-palette.ts` maps this id to its own display token,
+ * never referenced by name here). Never a real actor id: every real one
+ * carries a dot (`human.kaelen`, `agent.claude`, `obsidian.bridge`), so this
+ * is unambiguous against any of them.
+ */
+export const UNKNOWN_AUTHOR = 'unknown'
+
 /** One grapheme cluster, addressable across the whole replay (D-03, D-21). */
 export interface ThreadLetter {
   /** Insertion order across the whole replay: the k-th grapheme inserted is letter k. */
@@ -56,6 +66,14 @@ export interface ThreadLetter {
   insertedAtMs: number
   /** Absolute ms this letter was deleted, or null while it is still live (D-03: nothing is ever dropped from this table). */
   deletedAtMs: number | null
+  /**
+   * The commit's own `actor` line (D-21) — never a self-declared field, and
+   * never written to `.tree` itself; the host stamps every commit's actor,
+   * so this is a fact read off the record, not a claim a writer made about
+   * itself. `UNKNOWN_AUTHOR` for a letter seeded from a checkpoint, whose
+   * original commit this replay never saw.
+   */
+  actor: string
 }
 
 export interface ReplayResult {
@@ -83,16 +101,22 @@ export interface ReplayResult {
  * these from a raw `thread.log` block; `replayTo`'s caller is responsible
  * for handing records to it in commit-order-then-line-order (rule 6) and
  * never resorting them by `atMs`.
+ *
+ * `actor` is optional so a caller building records by hand (most of this
+ * module's own test suite) is not forced to supply one — `replayTo` treats
+ * a record with no `actor` as `UNKNOWN_AUTHOR`, never as a crash.
  */
-export type TimedThreadRecord = ThreadRecord & { atMs: number }
+export type TimedThreadRecord = ThreadRecord & { atMs: number; actor?: string }
 
 /**
  * Parses one `thread.log` block and returns its records annotated with
- * absolute time, in the block's own line order.
+ * absolute time, in the block's own line order. `actor` is the block's own
+ * commit actor (D-06: a commit never mixes authors, so one value covers
+ * every record the block contains).
  */
-export function parseTimedRecords(block: string): TimedThreadRecord[] {
+export function parseTimedRecords(block: string, actor?: string): TimedThreadRecord[] {
   const { anchorMs } = parseBlockHeader(block)
-  return parseBlock(block).map((record) => ({ ...record, atMs: anchorMs + record.offsetMs }))
+  return parseBlock(block).map((record) => ({ ...record, atMs: anchorMs + record.offsetMs, actor }))
 }
 
 // ---------------------------------------------------------------------------
@@ -117,7 +141,7 @@ export function replayTo(checkpointDoc: string, records: readonly TimedThreadRec
 
   for (const grapheme of graphemesOf(checkpointDoc)) {
     const id = letters.length
-    letters.push({ id, grapheme, insertedAtMs: -Infinity, deletedAtMs: null })
+    letters.push({ id, grapheme, insertedAtMs: -Infinity, deletedAtMs: null, actor: UNKNOWN_AUTHOR })
     live.push(id)
   }
 
@@ -126,9 +150,10 @@ export function replayTo(checkpointDoc: string, records: readonly TimedThreadRec
 
     if (record.verb === 'ins') {
       const at = Math.max(0, Math.min(live.length, record.pos - 1))
+      const actor = record.actor ?? UNKNOWN_AUTHOR
       const insertedIds = graphemesOf(record.text).map((grapheme) => {
         const id = letters.length
-        letters.push({ id, grapheme, insertedAtMs: record.atMs, deletedAtMs: null })
+        letters.push({ id, grapheme, insertedAtMs: record.atMs, deletedAtMs: null, actor })
         return id
       })
       live.splice(at, 0, ...insertedIds)
@@ -155,6 +180,11 @@ export interface ThreadLogCommit {
   kind: 'log'
   /** The raw `thread.log` block text, exactly as committed. */
   value: string
+  /** The commit's own actor id (D-21), e.g. `human.kaelen`/`agent.claude`.
+   * Optional so a caller with no authorship data (most of this module's own
+   * test suite) is not forced to supply one — every letter this commit
+   * mints then reads back as `UNKNOWN_AUTHOR` rather than throwing. */
+  actor?: string
 }
 
 /** One `body` checkpoint, in commit order. */
@@ -193,7 +223,7 @@ function buildCommitIndex(commits: readonly ThreadCommitEntry[]): CommitIndex {
 
   for (const commit of commits) {
     if (commit.kind === 'log') {
-      allRecords.push(...parseTimedRecords(commit.value))
+      allRecords.push(...parseTimedRecords(commit.value, commit.actor))
     } else {
       checkpoints.push({ afterRecordCount: allRecords.length, value: commit.value })
     }

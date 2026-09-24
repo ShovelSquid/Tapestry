@@ -100,6 +100,12 @@ interface ThreadHandle {
    * Plan 08's D-22 enforcement reads this before any delete/replace touches
    * the kernel). */
   letterIndex: LetterIndex
+  /** D-22 refusals, per actor (TA-07, UI-SPEC "Authors legend"): a refusal
+   * never interrupts writing -- no modal -- so this count and the Authors
+   * legend row it feeds are the only visible trace of it. Reset on every
+   * open() (in-memory only; a refusal is not itself a recorded fact, since
+   * nothing was written). */
+  refusedCounts: Map<string, number>
 
   pending: ThreadRecord[]
   batchAnchorMs: number | null
@@ -456,6 +462,7 @@ export class ThreadService {
       version,
       steps: [],
       letterIndex,
+      refusedCounts: new Map(),
       pending: [],
       batchAnchorMs: null,
       batchVersionBefore: version,
@@ -634,6 +641,33 @@ export class ThreadService {
     return resolved.handle.letterIndex
   }
 
+  /** D-22 refusal counts, per actor, for the currently open handle (TA-07,
+   * UI-SPEC "Authors legend"). Empty for a thread with no refusals this
+   * session; in-memory only, since a refusal is not itself a recorded fact. */
+  getRefusedCounts(bridge: KernelBridge, actor: Actor, treeId: string, nodeId: string): Record<string, number> | { error: string } {
+    const resolved = this.ensureHandle(bridge, actor, treeId, nodeId)
+    if ('error' in resolved) return resolved
+    return Object.fromEntries(resolved.handle.refusedCounts)
+  }
+
+  /**
+   * Records a D-22 refusal for `actor` without attempting any edit.
+   *
+   * `thread-tools.ts` calls this when its own up-front `LetterIndex` check
+   * (`getLetterIndex` + `authorOf`/`lettersIn`) already refuses a
+   * delete/replace before ever calling `applyAgentEdit` — which carries the
+   * identical check and increments this same counter for any caller that
+   * reaches it directly, but is then never reached for that call. Calling
+   * this keeps the Authors legend's count accurate either way, without
+   * double-counting a single refusal.
+   */
+  recordAgentRefusal(bridge: KernelBridge, actor: Actor, treeId: string, nodeId: string): void {
+    const resolved = this.ensureHandle(bridge, actor, treeId, nodeId)
+    if ('error' in resolved) return
+    const { handle } = resolved
+    handle.refusedCounts.set(actor.id, (handle.refusedCounts.get(actor.id) ?? 0) + 1)
+  }
+
   /**
    * Applies one agent-originated edit — an insert (`from === to`), a delete
    * (`insertText === ''`), or a replace (both) — to the thread's
@@ -657,6 +691,10 @@ export class ThreadService {
     const { handle } = resolved
 
     if (edit.to > edit.from && !handle.letterIndex.allAuthoredBy(edit.from, edit.to, actor.id)) {
+      // TA-07: a refusal never interrupts writing -- no modal, no thrown
+      // error surfaced as a failure banner. The count below is the only
+      // visible trace, read by the Authors legend.
+      handle.refusedCounts.set(actor.id, (handle.refusedCounts.get(actor.id) ?? 0) + 1)
       return {
         ok: false,
         error: `${actor.id} may only delete or replace letters it wrote; the given range includes a letter written by someone else`,

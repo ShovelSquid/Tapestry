@@ -38,6 +38,20 @@
   /* UI-SPEC "Color" table, "Secondary, sunk": a session pill that is
      currently being read (SessionBridge.tsx, SessionList.tsx). */
   --tap-surface-sunk: #F0EDE8;
+
+  /* UI-SPEC "Author identity" (D-21, L-4, L-7, 02.3-08): the provenance
+     palette, reused verbatim from 02.1's user text-colour palette so this
+     phase adds no new hues. Ratios computed against --tap-paper (#F7F5F0),
+     not #FFFFFF. Colour is a display mapping derived from the commit's own
+     actor id -- never written to `.tree` (author-palette.ts is the pure
+     mapping; nothing here is document data). */
+  --tap-author-self: #2C2C2C;    /* Kaelen (human.*): 12.82:1 */
+  --tap-author-1: #CD2B74;       /* 1st connected agent: 4.60:1 */
+  --tap-author-2: #18794E;       /* 2nd: 4.96:1 */
+  --tap-author-3: #AD5700;       /* 3rd: 4.66:1 */
+  --tap-author-4: #6E56CF;       /* 4th: 4.95:1 */
+  --tap-author-5: #D13415;       /* 5th: 4.57:1 */
+  --tap-author-unknown: #6B6B6B; /* observed edits, an agent beyond the 5th cycles back to --tap-author-1; this token is only for a truly unattributable author: 4.89:1 */
 }
 
 /* Reset */
@@ -1319,6 +1333,24 @@ html, body, #root {
 .tap-thread-past-stage {
   border: 1px solid var(--tap-thread-line) !important;
   caret-color: transparent;
+}
+
+/* 02.3-08 (D-21, UI-SPEC "Revealing the underlay without striping the
+   typer"): the author underlay is always present in the DOM as a
+   `.tap-author-underlay` decoration (use-thread-editor.ts always builds it),
+   but its wash is only ever drawn under one of the three reveal routes --
+   holding Opt (`.tap-reveal-authors`, toggled by a window keydown/keyup
+   listener), hovering the run itself, or a future "always on" settings
+   toggle (not yet wired -- Known Stub). The default state is a plain
+   underline in the author's own pattern (DRAW-04: colour is never the only
+   cue), never a plain reading surface with no cue at all. */
+.tap-author-underlay {
+  text-decoration-color: var(--tap-author-underlay-color);
+  transition: background-color 120ms ease;
+}
+.tap-reveal-authors .tap-author-underlay,
+.tap-author-underlay:hover {
+  background-color: color-mix(in srgb, var(--tap-author-underlay-color) 18%, transparent);
 }
 
 /* 02.3-07: this phase's first prefers-reduced-motion rule (UI-SPEC "Motion

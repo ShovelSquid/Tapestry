@@ -12,12 +12,13 @@
  */
 import * as THREE from 'three'
 import { Ribbon, SPEED, clearPendingFullUpload, createStageUniforms, setOrigin } from '../../src/renderer/threads/stage/ribbon'
-import { GlyphLayer } from '../../src/renderer/threads/stage/glyphs'
+import { GlyphLayer, GlyphUnderlayLayer } from '../../src/renderer/threads/stage/glyphs'
 import { getGlyphCache } from '../../src/renderer/threads/stage/glyph-cache'
 import { MarkerLayer, type MarkerKind } from '../../src/renderer/threads/stage/markers'
+import { StrandLayer, deriveAuthorSpans } from '../../src/renderer/threads/stage/strands'
 import { createLiveView, type LiveViewHandle } from '../../src/renderer/threads/stage/live-view'
 import { getStageRenderer } from '../../src/renderer/threads/stage/renderer'
-import { readStageTokens } from '../../src/renderer/threads/stage/tokens'
+import { readAuthorPalette, readStageTokens } from '../../src/renderer/threads/stage/tokens'
 import { defaultThreadFrame } from '../../src/shared/threads/settings'
 
 interface SyntheticHistory {
@@ -100,7 +101,12 @@ const glyphs = new GlyphLayer(1 << 18)
 glyphs.setUniforms(uniforms)
 const markers = new MarkerLayer(256)
 markers.setUniforms(uniforms)
-scene.add(ribbon.mesh, glyphs.mesh, markers.mesh)
+const strands = new StrandLayer(256)
+const authorColors = readAuthorPalette().map((c) => new THREE.Vector3(c.r, c.g, c.b))
+strands.setUniforms(uniforms, authorColors)
+const underlay = new GlyphUnderlayLayer(glyphs)
+underlay.setUniforms(uniforms, authorColors)
+scene.add(ribbon.mesh, strands.mesh, underlay.mesh, glyphs.mesh, markers.mesh)
 const cache = getGlyphCache()
 
 let liveView: LiveViewHandle = createLiveView(uniforms)
@@ -193,6 +199,7 @@ async function buildLoad(hours: number, continuous: boolean): Promise<{ buildMs:
   ribbon.reset()
   glyphs.reset()
   markers.reset()
+  strands.reset()
 
   let previousEnd: number | null = null
   for (const [s, e] of history.sessions) {
@@ -251,8 +258,54 @@ async function buildEditedStretch(): Promise<{ end: number; markers: [number, Ma
   return { end: history.end, markers: history.markers }
 }
 
+/**
+ * A short two-author stretch (Plan 08, D-20..D-23): the person types
+ * "Hello " (author 0), an agent's "world" lands close enough behind to fall
+ * inside `SPAN_GAP_SECONDS`, so `computeTwistWindows` marks that overlap as
+ * a twist -- then the person types "!" well clear of it, a parallel,
+ * non-twisting stretch. Generated inline (no IPC round trip needed: this is
+ * a small, fixed, deterministic scenario, unlike the seeded-random
+ * `generateHistory`/`generateEditedStretch` scenarios above), so `--shots`
+ * can prove `StrandLayer`/`GlyphUnderlayLayer` render against the real
+ * production modules without a synthetic-history generator of their own.
+ */
+async function buildTwoAuthorStretch(): Promise<{ end: number }> {
+  ribbon.reset()
+  glyphs.reset()
+  markers.reset()
+  strands.reset()
+
+  const personLetters: Array<{ t: number; g: string }> = [...'Hello '].map((g, i) => ({ t: i * 0.3, g }))
+  const agentLetters: Array<{ t: number; g: string }> = [...'world'].map((g, i) => ({ t: 1.8 + i * 0.3, g }))
+  const laterPersonLetters: Array<{ t: number; g: string }> = [{ t: 12, g: '!' }]
+
+  const end = 14
+  ribbon.addSpan(0, end, 0)
+
+  for (const { t, g } of personLetters) glyphs.add(rendererHandle!.renderer, cache, t, g, { bulk: true, actor: 0 })
+  for (const { t, g } of agentLetters) glyphs.add(rendererHandle!.renderer, cache, t, g, { bulk: true, actor: 1 })
+  for (const { t, g } of laterPersonLetters) glyphs.add(rendererHandle!.renderer, cache, t, g, { bulk: true, actor: 0 })
+  glyphs.markBulkUploaded()
+  cache.markPagesClean()
+
+  const spans = deriveAuthorSpans(
+    [
+      ...personLetters.map((l) => ({ insertedAtMs: l.t * 1000, actor: 'self' })),
+      ...agentLetters.map((l) => ({ insertedAtMs: l.t * 1000, actor: 'agent' })),
+      ...laterPersonLetters.map((l) => ({ insertedAtMs: l.t * 1000, actor: 'self' })),
+    ],
+    0,
+  )
+  strands.buildFromSpans(spans, (actor) => (actor === 'self' ? 0 : 1))
+
+  historyEnd = end
+  buildFinishedAtMs = performance.now()
+  focusDebugCamera(end / 2, end + 3)
+  return { end }
+}
+
 function bytesOf(): number {
-  return ribbon.bytes() + glyphs.bytes() + markers.bytes()
+  return ribbon.bytes() + glyphs.bytes() + markers.bytes() + strands.bytes()
 }
 
 declare global {
@@ -260,6 +313,7 @@ declare global {
     __bench: {
       buildLoad: typeof buildLoad
       buildEditedStretch: typeof buildEditedStretch
+      buildTwoAuthorStretch: typeof buildTwoAuthorStretch
       focusDebugCamera: typeof focusDebugCamera
       startCollecting: () => void
       stopCollecting: () => FrameStats
@@ -273,6 +327,7 @@ declare global {
 window.__bench = {
   buildLoad,
   buildEditedStretch,
+  buildTwoAuthorStretch,
   focusDebugCamera,
   startCollecting() {
     collected.intervals = []

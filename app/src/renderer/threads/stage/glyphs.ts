@@ -33,6 +33,7 @@
 import * as THREE from 'three'
 import { STAGE_COMMON_GLSL, type StageUniforms } from './ribbon'
 import { ATLAS, type GlyphCache } from './glyph-cache'
+import { AUTHOR_TOKEN_NAMES } from './tokens'
 
 const MAX_ATLAS_PAGES = 4
 
@@ -222,6 +223,17 @@ export class GlyphLayer {
     this.mesh.material = createGlyphMaterial(uniforms)
   }
 
+  /** The shared instanced geometry, exposed read-only so
+   * `GlyphUnderlayLayer` can draw a second mesh over the exact same
+   * per-letter instances (position, size, author) without duplicating a
+   * single buffer -- the two meshes always agree on instance count and
+   * per-instance data because they are, literally, the same geometry
+   * object (this field is never reassigned, only its attributes are
+   * replaced in place by `growIfNeeded`). */
+  get instancedGeometry(): THREE.InstancedBufferGeometry {
+    return this.geometry
+  }
+
   /** Points the material's per-page sampler uniforms at the glyph cache's
    * current pages (a page allocated after the material was created is
    * picked up the next time this is called -- call once per frame before
@@ -316,5 +328,87 @@ export class GlyphLayer {
   bytes(): number {
     const itemSizes = Object.values(this.attrs).reduce((sum, attr) => sum + attr.itemSize, 0)
     return this.count * itemSizes * 4
+  }
+}
+
+// ---------------------------------------------------------------------------
+// GlyphUnderlayLayer — the D-21 author underlay band on the stage
+// ---------------------------------------------------------------------------
+
+/**
+ * `GlyphUnderlayLayer` — the D-21 author underlay band, "beneath the glyph,
+ * never over it" (UI-SPEC "Two colour channels"). Draws a second mesh that
+ * shares `GlyphLayer`'s own instanced geometry verbatim (same position,
+ * size and `aActor` per instance — literally the same buffers, never a
+ * duplicated copy that could drift), scaled to `em x 1.15` and rendered
+ * first in the scene graph so painter's-order plus `depthTest: false` put it
+ * behind the glyph it belongs to.
+ *
+ * The band only draws once a letter's own screen-space em size reaches 24px
+ * (UI-SPEC "examining closely is literal"); below that, authorship is
+ * carried by strand position, dash pattern and the legend alone.
+ */
+function createUnderlayMaterial(uniforms: StageUniforms, authorColors: THREE.Vector3[]): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      ...uniforms,
+      uAuthorColors: { value: authorColors },
+      uUnderlayScale: { value: 1.15 },
+      uUnderlayThresholdPx: { value: 24 },
+    },
+    vertexShader:
+      STAGE_COMMON_GLSL +
+      /* glsl */ `
+      attribute float aBlock, aOffset;
+      attribute vec4 aQuad;
+      attribute float aActor, aDeletedAtMs;
+      uniform float uGlyphSize, uUnderlayScale, uUnderlayThresholdPx;
+      varying float vAlpha, vAuthor;
+      void main() {
+        float rel = relTime(aBlock, aOffset);
+        vec4 mv = threadPoint(rel);
+        float upp = unitsPerPx(mv);
+        vec2 axis = threadAxis();
+        vec2 perp = vec2(-axis.y, axis.x);
+        vec2 local = (position.xy + 0.5) * uUnderlayScale - (uUnderlayScale - 1.0) * 0.5;
+        vec2 em = aQuad.xy + local * aQuad.zw;
+        float size = uGlyphSize;
+        mv.xy += axis * em.x * size + perp * em.y * size;
+        gl_Position = projectionMatrix * mv;
+        float emPx = (aQuad.z * size) / max(upp, 1e-6);
+        float visible = step(uUnderlayThresholdPx, emPx);
+        float future = step(0.0, uNowRel - rel + 1e-3);
+        vAlpha = fadeFor(rel) * visible * future;
+        vAuthor = aActor;
+        if (vAlpha < 0.002) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+      }`,
+    fragmentShader: /* glsl */ `
+      uniform vec3 uAuthorColors[${AUTHOR_TOKEN_NAMES.length}];
+      varying float vAlpha, vAuthor;
+      void main() {
+        // UI-SPEC "Wash strength": 18% of the author colour.
+        float alpha = vAlpha * 0.18;
+        if (alpha < 0.01) discard;
+        int a = int(vAuthor + 0.5);
+        vec3 color = uAuthorColors[max(0, min(${AUTHOR_TOKEN_NAMES.length - 1}, a))];
+        gl_FragColor = vec4(color, alpha);
+      }`,
+    transparent: true,
+    depthTest: false,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  })
+}
+
+export class GlyphUnderlayLayer {
+  readonly mesh: THREE.Mesh
+
+  constructor(glyphs: GlyphLayer) {
+    this.mesh = new THREE.Mesh(glyphs.instancedGeometry, undefined)
+    this.mesh.frustumCulled = false
+  }
+
+  setUniforms(uniforms: StageUniforms, authorColors: THREE.Vector3[]): void {
+    this.mesh.material = createUnderlayMaterial(uniforms, authorColors)
   }
 }

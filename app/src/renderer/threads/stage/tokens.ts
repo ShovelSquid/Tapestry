@@ -109,3 +109,29 @@ export function readStageTokens(root: Element = document.documentElement): Stage
   }
   return tokens
 }
+
+// ---------------------------------------------------------------------------
+// Author palette (D-21, UI-SPEC "Author identity"): the 7-slot colour array
+// stage/strands.ts and stage/glyphs.ts index by the `aActor`/author palette
+// index (author-palette.ts's authorPaletteIndex: 0 self, 1-5 agents, 6
+// unknown). Read alongside the rest of the stage's tokens, once at stage
+// start-up (and again on a theme change) -- never per frame.
+// ---------------------------------------------------------------------------
+
+/** `--tap-author-*`, in `authorPaletteIndex`'s own 0-6 slot order. */
+export const AUTHOR_TOKEN_NAMES = [
+  '--tap-author-self',
+  '--tap-author-1',
+  '--tap-author-2',
+  '--tap-author-3',
+  '--tap-author-4',
+  '--tap-author-5',
+  '--tap-author-unknown',
+] as const
+
+/** Reads the 7-slot author palette as linear-light colours, in
+ * `authorPaletteIndex` order (index 0 = self, 6 = unknown). */
+export function readAuthorPalette(root: Element = document.documentElement): LinearColor[] {
+  const style = getComputedStyle(root)
+  return AUTHOR_TOKEN_NAMES.map((name) => parseLinearColor(style.getPropertyValue(name)))
+}

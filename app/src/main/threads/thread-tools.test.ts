@@ -300,6 +300,12 @@ describe('thread-tools (D-20..D-24)', () => {
 
       // Nothing changed: the text is exactly as the human left it.
       expect(flatTextNow(human, threadId)).toBe('Kaelen wrote this')
+
+      // TA-07: the refusal is visible as a count on the Authors legend's
+      // data path, never as an interruption.
+      const bridge2 = registry.resolveRef('world').bridge
+      const refused = threadService.getRefusedCounts(bridge2, agent, treeId(), threadId)
+      expect('error' in refused ? refused : refused[agent.id]).toBe(1)
     })
 
     it('an agent replacing a user-written letter is refused, and nothing is written', () => {
