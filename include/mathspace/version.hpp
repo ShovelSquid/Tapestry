@@ -34,7 +34,11 @@ const char* version();
 //      scope's visits in step order) move `self.pos` by the XPBD
 //      projection along the symbolic gradient; then `velocity = pos -
 //      prev` for every note the integrator moves; then set rules as in 6.
-inline constexpr std::uint32_t MS_STEP_VERSION = 8u;
+//   9: View notes (NoteKind::View). Rule targets are Note-kind notes only
+//      (a View with `pos` is never pushed), and the bound-field pass skips
+//      Views as it skips Rules: a View's `project` is evaluated only on
+//      demand by ms_project, outside step() and the hash.
+inline constexpr std::uint32_t MS_STEP_VERSION = 9u;
 
 // The constraint solver's fixed pass count (ddsim's
 // DD_CONSTRAINT_ITERATIONS, never a convergence check) and the guard

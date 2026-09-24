@@ -12,7 +12,7 @@ import { describe, expect, it } from 'vitest'
 
 import { Engine, hexOf, loadModule } from './engine-cjs.js'
 import {
-  ERROR_KEY, IMPLICIT_SPACE_ID, RULE_TYPE, SPACE_TYPE, buildImage, diff, encodeCreateNote, encodeCreateSpace, encodeSetField,
+  ERROR_KEY, IMPLICIT_SPACE_ID, RULE_TYPE, SPACE_TYPE, VIEW_TYPE, buildImage, diff, encodeCreateNote, encodeCreateSpace, encodeSetField,
   engineSource, laneKey, nodeIdToU64, parseKey, parseSnapshot, rawToReal, realToRaw, u64ToNodeId,
 } from './image-cjs.js'
 import { parseActions } from './fixture-replay.js'
@@ -158,6 +158,19 @@ describe('buildImage', () => {
     expect(hexOf(img.actions[3])).toBe(hexOf(encodeCreateNote(3n, IMPLICIT_SPACE_ID, 2)))
     expect(img.bindings.map((b) => `${b.node} ${b.name}`)).toEqual(['n3 force', 'n3 set.k'])
     expect(img.rules).toEqual(new Map([['n3', null], ['n4', 'old'], ['n5', null]]))
+  })
+  it('view nodes: NoteKind::View, project.expr bound like a law, error text recorded, set. not allowed', () => {
+    const img = buildImage([
+      { id: 'n1', type: SPACE_TYPE, props: { dim: { type: 'int', value: 3 } } },
+      { id: 'n2', type: 'tapestry.notes/note@1', props: { space: { type: 'ref', value: 'n1' }, 'position.x': real(1) } },
+      { id: 'n3', type: VIEW_TYPE, props: { space: { type: 'ref', value: 'n1' }, 'project.expr': { type: 'text', value: '[self.position.x, self.position.y]' }, [ERROR_KEY]: { type: 'text', value: 'old' } } },
+      { id: 'n4', type: VIEW_TYPE, props: { 'position.x': real(0), 'position.y': real(0), 'set.k.expr': { type: 'text', value: '1' } } },
+    ])
+    expect(img.problems).toEqual([{ id: 'n4', key: 'set.k.expr', reason: '"set.k" is not a field name' }])
+    expect([...img.fields.keys()]).toEqual([2n, 3n, 4n])
+    expect(hexOf(img.actions[4])).toBe(hexOf(encodeCreateNote(3n, 1n, 3)))
+    expect(img.bindings.map((b) => `${b.node} ${b.name}`)).toEqual(['n3 project'])
+    expect(img.rules).toEqual(new Map([['n3', 'old'], ['n4', null]]))
   })
   it('maps pinned bool true to the scalar pinned 1 and sends nothing for false', () => {
     const img = buildImage([

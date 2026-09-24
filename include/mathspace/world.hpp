@@ -169,6 +169,12 @@ inline constexpr std::string_view SET_PREFIX = "set.";
 // rule's scalar `compliance` (0 when absent) is XPBD's alpha, h = 1.
 inline constexpr std::string_view CONSTRAINT_FIELD = "constraint";
 inline constexpr std::string_view COMPLIANCE_FIELD = "compliance";
+// On a View note: `project` is the bound dim-2 map from a note of the
+// view's space (as `self`, so it is written in terms of `self.pos`) to
+// the page plane. step() never evaluates it; the renderer asks through
+// ms_project (mathspace_c.h). Views are neither targets nor evaluated.
+inline constexpr std::string_view PROJECT_FIELD = "project";
+inline constexpr std::uint8_t PROJECT_DIM = 2;
 
 // Bumped whenever the canonical walk (hash.cpp) changes shape. Pinned in
 // the walk itself so old bytes are rejected instead of misread.

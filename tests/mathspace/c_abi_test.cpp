@@ -295,3 +295,55 @@ TEST_CASE("ms_compile failures carry the stage, the code and where") {
     CHECK(std::string(ms_compile_error_name(-((7 << 8) | 1))) == "?");
     CHECK(hashOf(h.w) == before);
 }
+
+TEST_CASE("ms_project evaluates a View's project against a note without touching the world") {
+    Handle h(2);
+    constexpr NoteId V{5};
+    constexpr NoteId T{6};
+    constexpr NoteId B{7};
+    for (const auto& a : {encode_create_space(S, 3), encode_create_note(A, space_of(S), NoteKind::Note),
+                          encode_set_field(A, vec("pos", 3, 4, 6)), encode_create_note(V, space_of(S), NoteKind::View),
+                          encode_create_note(T, space_of(S), NoteKind::Note), encode_create_space(B, 2)}) {
+        REQUIRE(applyTo(h.w, a) == MS_OK);
+    }
+    // A perspective-like map from 3D to the page: divide by (z + 2).
+    const std::string text = "[self.pos.x, self.pos.y] / (self.pos.z + 2)";
+    const int32_t needed = ms_compile(h.w, V.value, text.data(), static_cast<uint32_t>(text.size()), nullptr, 0, nullptr);
+    REQUIRE(needed > 0);
+    std::vector<std::uint8_t> code(static_cast<std::size_t>(needed));
+    REQUIRE(ms_compile(h.w, V.value, text.data(), static_cast<uint32_t>(text.size()), code.data(),
+                       static_cast<uint32_t>(code.size()), nullptr) == needed);
+    int64_t out[2] = {7, 7};
+    // No bound project yet.
+    CHECK(ms_project(h.w, V.value, A.value, out) == -((MS_STAGE_WORLD << 8) | MS_ERR_NO_SUCH_FIELD));
+    REQUIRE(applyTo(h.w, encode_bind_field(V, "project", code)) == MS_OK);
+    const auto before = hashOf(h.w);
+    const auto notes_before = notesOf(h.w);
+    CHECK(ms_project(h.w, V.value, A.value, out) == 0);
+    CHECK(out[0] == fx64::from_int(2).raw);
+    CHECK(out[1] == fx64::from_int(3).raw);
+    CHECK(hashOf(h.w) == before);
+    CHECK(notesOf(h.w) == notes_before);
+    // T has no pos: an evaluation failure, named like a skip.
+    int32_t r = ms_project(h.w, V.value, T.value, out);
+    CHECK(r == -((MS_STAGE_EVAL << 8) | static_cast<int>(expr::VmError::NoSuchField)));
+    CHECK(std::string(ms_compile_error_name(r)) == "eval:NoSuchField");
+    CHECK(std::string(ms_compile_error_name(-((MS_STAGE_EVAL << 8) | 200))) == "eval:?");
+    // Structural failures.
+    CHECK(ms_project(h.w, A.value, T.value, out) == -((MS_STAGE_WORLD << 8) | MS_ERR_BAD_KIND));
+    CHECK(ms_project(h.w, V.value, 42, out) == -((MS_STAGE_WORLD << 8) | MS_ERR_NO_SUCH_NOTE));
+    CHECK(ms_project(h.w, 42, A.value, out) == -((MS_STAGE_WORLD << 8) | MS_ERR_NO_SUCH_NOTE));
+    CHECK(ms_project(h.w, V.value, B.value, out) == -((MS_STAGE_WORLD << 8) | MS_ERR_NO_SUCH_SPACE));
+    CHECK(ms_project(nullptr, V.value, A.value, out) == -((MS_STAGE_WORLD << 8) | MS_ERR_BAD_BYTES));
+    CHECK(ms_project(h.w, V.value, A.value, nullptr) == -((MS_STAGE_WORLD << 8) | MS_ERR_BAD_BYTES));
+    // A project bound at a dim other than 2 is BadDim.
+    const std::string scalar = "self.pos.z";
+    const int32_t n2 = ms_compile(h.w, V.value, scalar.data(), static_cast<uint32_t>(scalar.size()), nullptr, 0, nullptr);
+    REQUIRE(n2 > 0);
+    std::vector<std::uint8_t> code2(static_cast<std::size_t>(n2));
+    REQUIRE(ms_compile(h.w, V.value, scalar.data(), static_cast<uint32_t>(scalar.size()), code2.data(),
+                       static_cast<uint32_t>(code2.size()), nullptr) == n2);
+    REQUIRE(applyTo(h.w, encode_bind_field(V, "project", code2)) == MS_OK);
+    CHECK(ms_project(h.w, V.value, A.value, out) == -((MS_STAGE_WORLD << 8) | MS_ERR_BAD_DIM));
+    CHECK(ms_version() == 3u);
+}

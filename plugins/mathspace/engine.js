@@ -170,6 +170,31 @@ class Engine {
     }
   }
 
+  /**
+   * Evaluate the bound `project` of the View note `viewId` with `self` =
+   * `noteId` (ms_project in the header): the note's place on the page
+   * plane as two raw fx64 lanes. Reads the world, never changes it, and
+   * is not part of a step or the hash.
+   * @param {bigint|number} viewId
+   * @param {bigint|number} noteId
+   * @returns {{lanes: [bigint, bigint]} | {error: string}}
+   *   `error` is ms_compile_error_name's, e.g. "world:NoSuchField" when
+   *   the view has no bound project or "eval:NoSuchField" when the note
+   *   lacks a field the expression reads.
+   */
+  project(viewId, noteId) {
+    const op = this.mod._malloc(16)
+    try {
+      const rc = this.mod._ms_project(this.world, BigInt(viewId), BigInt(noteId), op)
+      if (rc !== 0) return { error: this.mod.UTF8ToString(this.mod._ms_compile_error_name(rc)) }
+      const bytes = this.mod.HEAPU8.slice(op, op + 16)
+      const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+      return { lanes: [view.getBigInt64(0, true), view.getBigInt64(8, true)] }
+    } finally {
+      this.mod._free(op)
+    }
+  }
+
   destroy() {
     if (this.world) {
       this.mod._ms_destroy(this.world)

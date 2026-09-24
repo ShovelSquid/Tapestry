@@ -148,10 +148,11 @@ int32_t ms_compile(const ms_world* w, uint64_t note, const char* text, uint32_t 
         }
         return failure(MS_STAGE_PARSE, static_cast<int>(p.error));
     }
-    // A Rule note's program runs against its targets, so its dims come
-    // from the space, not from the rule note (vm.hpp, RuleDims).
+    // A Rule note's program runs against its targets, and a View's
+    // `project` against the notes of its space, so their dims come from
+    // the space, not from the note itself (vm.hpp, RuleDims).
     const mathspace::expr::CompileResult c =
-        self->kind == mathspace::NoteKind::Rule
+        self->kind == mathspace::NoteKind::Rule || self->kind == mathspace::NoteKind::View
             ? mathspace::expr::compile(p.ast, mathspace::expr::RuleDims{w->world, *self})
             : mathspace::expr::compile(p.ast, mathspace::expr::WorldDims{w->world, *self});
     if (!c.ok()) {
@@ -170,6 +171,44 @@ int32_t ms_compile(const ms_world* w, uint64_t note, const char* text, uint32_t 
     }
     std::memcpy(out, bytes.data(), needed);
     return static_cast<int32_t>(needed);
+}
+
+int32_t ms_project(const ms_world* w, uint64_t view, uint64_t note, int64_t out[2]) {
+    if (w == nullptr || out == nullptr) {
+        return failure(MS_STAGE_WORLD, MS_ERR_BAD_BYTES);
+    }
+    const mathspace::Note* v = w->world.find(mathspace::NoteId{view});
+    const mathspace::Note* self = w->world.find(mathspace::NoteId{note});
+    if (v == nullptr || self == nullptr) {
+        return failure(MS_STAGE_WORLD, MS_ERR_NO_SUCH_NOTE);
+    }
+    if (v->kind != mathspace::NoteKind::View) {
+        return failure(MS_STAGE_WORLD, MS_ERR_BAD_KIND);
+    }
+    if (self->space != v->space) {
+        return failure(MS_STAGE_WORLD, MS_ERR_NO_SUCH_SPACE);
+    }
+    const mathspace::Field* f = mathspace::find_field(*v, mathspace::PROJECT_FIELD);
+    if (f == nullptr || !f->bound) {
+        return failure(MS_STAGE_WORLD, MS_ERR_NO_SUCH_FIELD);
+    }
+    mathspace::expr::Program program;
+    std::uint32_t where = 0;
+    if (mathspace::expr::decode(f->bytecode.data(), f->bytecode.size(), program, where) !=
+        mathspace::expr::CompileError::Ok) {
+        return failure(MS_STAGE_WORLD, MS_ERR_BAD_BYTECODE);
+    }
+    if (program.dim != mathspace::PROJECT_DIM) {
+        return failure(MS_STAGE_WORLD, MS_ERR_BAD_DIM);
+    }
+    mathspace::expr::Lanes lanes{};
+    const mathspace::expr::VmError err = mathspace::expr::eval(program, w->world, *self, nullptr, lanes);
+    if (err != mathspace::expr::VmError::Ok) {
+        return failure(MS_STAGE_EVAL, static_cast<int>(err));
+    }
+    out[0] = lanes[0].raw;
+    out[1] = lanes[1].raw;
+    return 0;
 }
 
 const char* ms_compile_error_name(int32_t result) {
@@ -194,7 +233,12 @@ const char* ms_compile_error_name(int32_t result) {
         "ok", "compile:DimMismatch", "compile:NotScalar", "compile:NestedVector", "compile:BadLane",
         "compile:UnknownRef", "compile:EmptyAst", "compile:TooManyOps", "compile:StackTooDeep",
         "compile:BadBytes", "compile:BadJump", "compile:BadStack"};
+    static const char* const eval_names[] = {"ok", "eval:NoOther", "eval:NoSuchNote", "eval:NoSpace",
+                                             "eval:NoSuchField", "eval:UnknownRef", "eval:DimChanged",
+                                             "eval:BadProgram"};
     static_assert(sizeof(world_names) / sizeof(world_names[0]) == MS_ERR_BAD_BYTECODE + 1);
+    static_assert(sizeof(eval_names) / sizeof(eval_names[0]) ==
+                  static_cast<int>(mathspace::expr::VmError::BadProgram) + 1);
     static_assert(sizeof(parse_names) / sizeof(parse_names[0]) ==
                   static_cast<int>(mathspace::expr::ParseError::TooManyNodes) + 1);
     static_assert(sizeof(compile_names) / sizeof(compile_names[0]) ==
@@ -206,6 +250,8 @@ const char* ms_compile_error_name(int32_t result) {
         return c < static_cast<int>(sizeof(parse_names) / sizeof(parse_names[0])) ? parse_names[c] : "parse:?";
     case MS_STAGE_COMPILE:
         return c < static_cast<int>(sizeof(compile_names) / sizeof(compile_names[0])) ? compile_names[c] : "compile:?";
+    case MS_STAGE_EVAL:
+        return c < static_cast<int>(sizeof(eval_names) / sizeof(eval_names[0])) ? eval_names[c] : "eval:?";
     default:
         return "?";
     }

@@ -29,9 +29,9 @@ describe('engine wasm golden replay', () => {
     expect(fixtureNames).toContain('velocity')
   })
 
-  it('reports ABI version 2', async () => {
+  it('reports ABI version 3', async () => {
     const mod = await loadModule()
-    expect(mod._ms_version()).toBe(2)
+    expect(mod._ms_version()).toBe(3)
   })
 
   it('errors() is empty on a fresh engine and after a clean step', async () => {

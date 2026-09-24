@@ -36,6 +36,8 @@ const IMPLICIT_SPACE_ID = 1n << 63n
 const IMPLICIT_SPACE_DIM = 2
 const SPACE_TYPE = 'mathspace/space@1'
 const RULE_TYPE = 'mathspace/rule@1'
+/** A View: `project.expr` maps a note of its space to the page plane. */
+const VIEW_TYPE = 'mathspace/view@1'
 /** RULE-07: where the plugin writes a rule's failures, on the rule node. */
 const ERROR_KEY = 'mathspace.error'
 /** `scope text` on a rule → the engine's scalar `scope` field (step.cpp). */
@@ -48,6 +50,7 @@ const KIND_SET_FIELD = 34
 const KIND_BIND_FIELD = 37
 const NOTE_KIND_NOTE = 1
 const NOTE_KIND_RULE = 2
+const NOTE_KIND_VIEW = 3
 
 /** The one renamed field: the app says position, the store says pos. */
 const ENGINE_NAMES = { position: 'pos' }
@@ -301,8 +304,9 @@ function engineSource(text) {
  *   types remembers `int` props so they come back as ints; bindings are
  *   the `<f>.expr` props for the runner to compile once the actions are
  *   applied, in id then name order; rules maps every `mathspace/rule@1`
- *   node id (in the image or not) to the `mathspace.error` text it
- *   carries now, null when none, so the runner can write only changes.
+ *   and `mathspace/view@1` node id (in the image or not) to the
+ *   `mathspace.error` text it carries now, null when none, so the runner
+ *   can write only changes (and never commits their bound fields back).
  *
  * The app's `pinned bool true` is the engine's scalar `pinned` 1, which
  * holds the note still (step.cpp, RULE-08); false or absent sends
@@ -316,6 +320,12 @@ function engineSource(text) {
  * scope the user did not write. Its bound fields are never committed
  * back: a rule's `force` is evaluated per target, so the value the store
  * holds for it means nothing (diff() skips them via `rules`).
+ *
+ * A view node joins the image the same way as NoteKind::View, which the
+ * engine neither targets nor evaluates in a step: its `project.expr`
+ * (dim 2, in terms of `self.position`) is bound like a rule's law and
+ * evaluated only on demand through Engine.project(view, note). Its
+ * failures are reported in `mathspace.error` like a rule's.
  */
 function buildImage(nodes) {
   const problems = []
@@ -339,7 +349,8 @@ function buildImage(nodes) {
   for (const node of nodes) {
     if (node.type === SPACE_TYPE) continue
     const isRule = node.type === RULE_TYPE
-    if (isRule) {
+    const isView = node.type === VIEW_TYPE
+    if (isRule || isView) {
       const err = node.props[ERROR_KEY]
       rules.set(node.id, err && err.type === 'text' && typeof err.value === 'string' ? err.value : null)
     }
@@ -383,7 +394,8 @@ function buildImage(nodes) {
     }
     notes.push({
       id: nodeIdToU64(node.id), space, fields, node: node.id,
-      kind: isRule ? NOTE_KIND_RULE : NOTE_KIND_NOTE, bindings: bindingsOf(node, problems, isRule),
+      kind: isRule ? NOTE_KIND_RULE : isView ? NOTE_KIND_VIEW : NOTE_KIND_NOTE,
+      bindings: bindingsOf(node, problems, isRule),
     })
   }
 
@@ -476,7 +488,7 @@ function diff(before, after, types = new Map(), skip = new Set()) {
 }
 
 module.exports = {
-  FX_ONE, IMPLICIT_SPACE_ID, IMPLICIT_SPACE_DIM, SPACE_TYPE, RULE_TYPE, ERROR_KEY,
+  FX_ONE, IMPLICIT_SPACE_ID, IMPLICIT_SPACE_DIM, SPACE_TYPE, RULE_TYPE, VIEW_TYPE, ERROR_KEY,
   realToRaw, rawToReal, nodeIdToU64, u64ToNodeId, parseKey, laneKey, kernelName,
   encodeCreateSpace, encodeCreateNote, encodeSetField, encodeBindField,
   buildImage, parseSnapshot, diff, engineSource,

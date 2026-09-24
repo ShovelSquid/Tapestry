@@ -459,11 +459,11 @@ TEST_CASE("a pair rule visits every ordered pair with other bound; global visits
 }
 
 TEST_CASE("the step version is pinned in the walk") {
-    CHECK(MS_STEP_VERSION == 8u);
+    CHECK(MS_STEP_VERSION == 9u);
     const World w;
     const auto bytes = serialize(w);
     // magic 4 | FORMAT_VERSION 4 | DD_FX_FORMAT_ID 4 | rule version 4
-    CHECK(bytes[12] == 8);
+    CHECK(bytes[12] == 9);
     CHECK(bytes[13] == 0);
     CHECK(bytes[14] == 0);
     CHECK(bytes[15] == 0);
@@ -632,5 +632,32 @@ TEST_CASE("a constraint that is not scalar, or has no gradient, skips the rule w
     w.step();
     CHECK(w.reports.empty());
     CHECK(field(w, B, "pos").value[0] == fx64::from_int(15));
+    CHECK(w.well_formed());
+}
+
+TEST_CASE("a View note is neither a rule target nor evaluated by the bound-field pass") {
+    World w(1);
+    constexpr NoteId V{6};
+    REQUIRE(w.create_space(S, 2) == Error::Ok);
+    REQUIRE(w.create_note(A, space_of(S), NoteKind::Note) == Error::Ok);
+    REQUIRE(w.set_field(A, vec("pos", 2, 1, 2)) == Error::Ok);
+    REQUIRE(w.set_field(A, vec("velocity", 2, 0, 0)) == Error::Ok);
+    REQUIRE(w.create_note(V, space_of(S), NoteKind::View) == Error::Ok);
+    REQUIRE(w.set_field(V, vec("pos", 2, 5, 5)) == Error::Ok);
+    REQUIRE(w.set_field(V, vec("velocity", 2, 0, 0)) == Error::Ok);
+    // The view's project is compiled for the notes of its space (RuleDims).
+    REQUIRE(w.bind_field(V, "project", rule_code(w, V, "self.pos * 2")) == Error::Ok);
+    REQUIRE(w.create_note(R, space_of(S), NoteKind::Rule) == Error::Ok);
+    REQUIRE(w.bind_field(R, "force", rule_code(w, R, "[1, 0]")) == Error::Ok);
+    w.step();
+    CHECK(w.reports.empty());
+    // A is pushed; the View, though it has pos and velocity, is not a target.
+    CHECK(field(w, A, "pos").value[0] == fx64::from_int(2));
+    CHECK(field(w, V, "pos").value[0] == fx64::from_int(5));
+    CHECK(field(w, V, "velocity").value[0] == fx64{});
+    // The bound project keeps its zero lanes: step() never evaluates it.
+    CHECK(field(w, V, "project").bound);
+    CHECK(field(w, V, "project").value[0] == fx64{});
+    CHECK(field(w, V, "project").value[1] == fx64{});
     CHECK(w.well_formed());
 }

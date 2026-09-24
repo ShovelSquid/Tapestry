@@ -427,6 +427,36 @@ describe('Runner with rule nodes', () => {
     runner2.dispose()
   })
 
+  it('a view node projects a note of its space on demand and is never committed or moved', async () => {
+    const VIEW = 'mathspace/view@1'
+    const ref = (value) => ({ type: 'ref', value })
+    const real = (value) => ({ type: 'real', value })
+    const kernel = fakeKernel([
+      { id: 'n1', type: 'mathspace/space@1', props: { dim: { type: 'int', value: 3 } } },
+      { id: 'n2', type: 'tapestry.notes/note@1', props: { space: ref('n1'), 'position.x': real(4), 'position.y': real(6), 'position.z': real(0), 'velocity.x': real(0), 'velocity.y': real(0), 'velocity.z': real(1) } },
+      // A perspective-like view; it has a position of its own that gravity must not touch.
+      { id: 'n3', type: VIEW, props: { space: ref('n1'), 'position.x': real(9), 'position.y': real(9), 'position.z': real(9), 'velocity.x': real(0), 'velocity.y': real(0), 'velocity.z': real(0), 'project.expr': text('[self.position.x, self.position.y] / (self.position.z + 2)') } },
+      // Compiles, but is not a map to the plane.
+      { id: 'n4', type: VIEW, props: { space: ref('n1'), 'project.expr': text('self.position.z') } },
+      { id: 'n5', type: RULE, props: { space: ref('n1'), 'force.expr': text('[0, 0, 1]') } },
+    ])
+    const { runner } = makeRunner()
+    await runner.stepOnce(kernel)
+    expect(runner.image.problems).toEqual([])
+    // Only the body moves: pos (4, 6, 0) + velocity (0, 0, 1 + 1); the views' fields are never written back.
+    expect(kernel.state.commits[0].ops).toEqual([
+      { op: 'setProperty', target: 'n2', key: 'position.z', type: 'real', value: 2 },
+      { op: 'setProperty', target: 'n2', key: 'velocity.z', type: 'real', value: 2 },
+      { op: 'advance', ticks: 1 },
+    ])
+    // project = [4, 6] / (2 + 2), evaluated against the engine as it is now.
+    expect(runner.engine.project(3n, 2n)).toEqual({ lanes: [BigInt(2 ** 32), BigInt(1.5 * 2 ** 32)] })
+    expect(runner.engine.project(4n, 2n)).toEqual({ error: 'world:BadDim' })
+    expect(runner.engine.project(3n, 5n)).toEqual({ error: 'eval:NoSuchField' })
+    expect(runner.engine.project(2n, 3n)).toEqual({ error: 'world:BadKind' })
+    runner.dispose()
+  })
+
   it('a pinned note is held still under velocity and force (RULE-08)', async () => {
     const kernel = fakeKernel([
       { id: 'n2', type: 'tapestry.notes/note@1', props: at(0, 0, { 'velocity.x': { type: 'real', value: 1 }, 'velocity.y': { type: 'real', value: 0 }, pinned: { type: 'bool', value: true } }) },

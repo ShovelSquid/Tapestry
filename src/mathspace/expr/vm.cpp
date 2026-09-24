@@ -326,7 +326,7 @@ std::uint8_t RuleDims::dim(RefKind ref, std::uint64_t id, std::string_view name)
             return world.space_dim(rule.space);
         }
         for (const Note& n : world.notes) {
-            if (n.kind == NoteKind::Rule || n.space != rule.space) {
+            if (n.kind != NoteKind::Note || n.space != rule.space) {
                 continue;
             }
             if (const Field* f = find_field(n, name)) {

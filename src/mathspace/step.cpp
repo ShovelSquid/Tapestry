@@ -228,7 +228,7 @@ bool for_each_target(const World& w, const Note& rule, Reporter& report, Fn&& fn
         return out[0].raw != 0;
     };
     auto is_target = [&](const Note& n) {
-        return n.kind != NoteKind::Rule && n.space == rule.space && find_field(n, POS_FIELD) != nullptr;
+        return n.kind == NoteKind::Note && n.space == rule.space && find_field(n, POS_FIELD) != nullptr;
     };
     if (scope == Scope::Global) {
         const std::size_t i = w.note_lower_bound(rule.id);
@@ -506,7 +506,10 @@ void World::step() {
         }
     }
     for (Note& n : notes) {
-        if (n.kind == NoteKind::Rule) {
+        // A View's `project` (like a rule's law) runs against other notes
+        // as `self`, on demand from the renderer (ms_project), never here:
+        // rendering never enters the hash.
+        if (n.kind == NoteKind::Rule || n.kind == NoteKind::View) {
             continue;
         }
         for (Field& f : n.fields) {

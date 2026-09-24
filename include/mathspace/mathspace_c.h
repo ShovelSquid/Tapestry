@@ -73,12 +73,13 @@ enum ms_error {
 enum ms_compile_stage {
     MS_STAGE_WORLD = 0,
     MS_STAGE_PARSE = 1,
-    MS_STAGE_COMPILE = 2
+    MS_STAGE_COMPILE = 2,
+    MS_STAGE_EVAL = 3 /* ms_project only: an expr::VmError */
 };
 
-/* 1: initial. 2: ms_errors_ptr/len and ms_skip_reason_name. */
+/* 1: initial. 2: ms_errors_ptr/len and ms_skip_reason_name. 3: ms_project. */
 enum ms_layout {
-    MS_ABI_VERSION = 2,
+    MS_ABI_VERSION = 3,
     MS_HASH_BYTES = 32
 };
 
@@ -117,10 +118,23 @@ MS_EXPORT const char* ms_skip_reason_name(uint8_t reason);
  * ms_compile_stage); `where` may be null. Compiling never changes the
  * world. On a Rule note the program is compiled for the rule's targets
  * (vm.hpp, RuleDims): `self.pos` is the space dim, other fields take the
- * dim of the first note in the space that has them. */
+ * dim of the first note in the space that has them. A View note compiles
+ * the same way: its `project` runs against the notes of its space. */
 MS_EXPORT int32_t ms_compile(const ms_world* w, uint64_t note, const char* text, uint32_t len,
                              uint8_t* out, uint32_t cap, uint32_t* where);
 MS_EXPORT const char* ms_compile_error_name(int32_t result);
+
+/* Evaluates the bound dim-2 `project` field of the View note `view`
+ * with `self` = `note` (a note of the view's space) and writes the two
+ * raw fx64 lanes to out[2]. Never changes the world and is not part of
+ * step() or the hash (rendering reads state, never writes it). Returns 0
+ * on success; a negative failure packed like ms_compile's: stage
+ * MS_STAGE_WORLD with NoSuchNote (either id), BadKind (`view` is not a
+ * View), NoSuchSpace (`note` is not in the view's space), NoSuchField
+ * (no bound `project`), BadDim (bound at a dim other than 2) or
+ * BadBytecode; stage MS_STAGE_EVAL with the expr::VmError of the
+ * evaluation. ms_compile_error_name names all of them ("eval:NoSuchField"). */
+MS_EXPORT int32_t ms_project(const ms_world* w, uint64_t view, uint64_t note, int64_t out[2]);
 
 #ifdef __cplusplus
 } /* extern "C" */
