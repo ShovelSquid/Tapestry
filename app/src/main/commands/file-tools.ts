@@ -5,7 +5,7 @@
  * touched, and every refusal returns before anything is written or committed.
  * An agent edit lands on disk at once; the tree then records what the file
  * says, signed by the agent (D-04). Before that, any disk state the tree has
- * not yet recorded is committed as an observation by `plugin workspace.bridge`
+ * not yet recorded is committed as an observation by `plugin workspace.watcher`
  * (D-06), so the agent is never credited with somebody else's change.
  *
  * Every method is synchronous and returns a CommandResult; none throws.

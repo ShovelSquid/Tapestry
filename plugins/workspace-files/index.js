@@ -2,7 +2,7 @@
  * workspace-files — the first-party views for a workspace tree (02.7).
  *
  * The mirror and the file writes are a host service in main, because they
- * need the filesystem and the reserved `workspace.bridge` actor. What a file
+ * need the filesystem and the reserved `workspace.watcher` actor. What a file
  * note looks like is not privileged, so it ships as a plugin through the same
  * public SDK any third-party plugin uses — and disabling it leaves every file
  * note readable through the generic fallback card.

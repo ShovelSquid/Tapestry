@@ -2,7 +2,7 @@
  * WorkspaceService — a folder becomes a tree, and stays one (02.7 D-01..D-06).
  *
  * The contract is the vault's: **the tree records what the files contain.**
- * Observations are signed `plugin workspace.bridge` and never guess an author
+ * Observations are signed `plugin workspace.watcher` and never guess an author
  * (D-06). Tapestry's own writes are signed by whoever made them — an agent
  * through the file tools, or a person typing in a window — and before any such
  * write is recorded, a disk state the tree has not yet seen is committed first
@@ -16,7 +16,7 @@ import { existsSync, lstatSync, mkdirSync, realpathSync } from 'fs'
 import { homedir } from 'os'
 import { isAbsolute, resolve } from 'path'
 import type { Actor } from '../commands/actor'
-import { WORKSPACE_BRIDGE_ACTOR } from '../commands/actor'
+import { WORKSPACE_WATCHER_ACTOR } from '../commands/actor'
 import { prepareWriteFor, type CommandHooks } from '../commands/notes'
 import type { CommitResult, NodeData } from '../kernel-bridge'
 import { writeFileAtomicSync } from '../mirror/atomic-write'
@@ -241,11 +241,11 @@ export class WorkspaceService implements WorkspaceLookup {
     const stamp = ops.length > 1 ? groupStamp() : ''
 
     this.requireHealthy(tree)
-    prepareWriteFor(tree, WORKSPACE_BRIDGE_ACTOR, this.hooks)
+    prepareWriteFor(tree, WORKSPACE_WATCHER_ACTOR, this.hooks)
     ops.forEach((chunk, index) => {
       const message = ops.length === 1 ? base : `${base} (group ${stamp}, ${index + 1} of ${ops.length})`
-      const result = tree.bridge.submitAs(WORKSPACE_BRIDGE_ACTOR, message, chunk)
-      this.committed(tree.id, WORKSPACE_BRIDGE_ACTOR, result)
+      const result = tree.bridge.submitAs(WORKSPACE_WATCHER_ACTOR, message, chunk)
+      this.committed(tree.id, WORKSPACE_WATCHER_ACTOR, result)
     })
   }
 
@@ -286,7 +286,7 @@ export class WorkspaceService implements WorkspaceLookup {
 
   /**
    * Commit whatever the disk says about `rel` that the tree does not yet
-   * record, as `plugin workspace.bridge` (D-06 observe-first). `why` is added
+   * record, as `plugin workspace.watcher` (D-06 observe-first). `why` is added
    * to the message in parentheses.
    */
   observePath(ws: OpenWorkspace, rel: string, why?: string): PathState {
@@ -302,15 +302,15 @@ export class WorkspaceService implements WorkspaceLookup {
     if (plan.ops.length === 0) return null
 
     this.requireHealthy(tree)
-    prepareWriteFor(tree, WORKSPACE_BRIDGE_ACTOR, this.hooks)
+    prepareWriteFor(tree, WORKSPACE_WATCHER_ACTOR, this.hooks)
     const base = describeMirrorChanges({
       created: plan.change === 'created' ? [rel] : [],
       modified: plan.change === 'modified' ? [rel] : [],
       deleted: plan.change === 'deleted' ? [rel] : [],
     })
     const message = why ? `${base} (${why})` : base
-    const result = tree.bridge.submitAs(WORKSPACE_BRIDGE_ACTOR, message, plan.ops)
-    this.committed(tree.id, WORKSPACE_BRIDGE_ACTOR, result)
+    const result = tree.bridge.submitAs(WORKSPACE_WATCHER_ACTOR, message, plan.ops)
+    this.committed(tree.id, WORKSPACE_WATCHER_ACTOR, result)
     return result
   }
 

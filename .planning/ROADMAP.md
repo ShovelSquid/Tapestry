@@ -367,7 +367,7 @@ Plans:
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 02.7-05-PLAN.md — Live watching of outside changes, grouped per moment and signed workspace.bridge, with self-healing watch errors, Retry write and scale measures
+- [ ] 02.7-05-PLAN.md — Live watching of outside changes, grouped per moment and signed workspace.watcher, with self-healing watch errors, Retry write and scale measures
 
 **Wave 6** *(blocked on Wave 5 completion)*
 

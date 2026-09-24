@@ -116,7 +116,7 @@ describe('addWorkspace', () => {
     expect([...nodes.keys()].some((rel) => rel.startsWith('.git/'))).toBe(false)
 
     const text = journal(reopened)
-    expect(text).toContain('actor plugin workspace.bridge')
+    expect(text).toContain('actor plugin workspace.watcher')
     expect(text).toMatch(/observed workspace Work Space: \d+ text files, \d+ other files, \d+ folders/)
   })
 
@@ -130,7 +130,7 @@ describe('addWorkspace', () => {
     expect(statSync(tree.path).size).toBe(size)
   })
 
-  it('records an outside change as workspace.bridge on catch-up', async () => {
+  it('records an outside change as workspace.watcher on catch-up', async () => {
     const { ws, service } = setup()
     const tree = await service.addWorkspace(ws.root)
     writeFileSync(join(ws.root, 'src', 'nested', 'deep.txt'), 'changed outside\n')
@@ -210,7 +210,7 @@ describe('editFile (agent writes, D-04/D-06)', () => {
 
     const blocks = commitBlocks(tree)
     expect(blocks.length).toBe(before + 2)
-    expect(blocks.at(-2)).toContain('actor plugin workspace.bridge')
+    expect(blocks.at(-2)).toContain('actor plugin workspace.watcher')
     expect(blocks.at(-2)).toContain('observed change to src/hello.ts')
     expect(blocks.at(-1)).toContain('actor plugin agent.claude')
     expect(blocks.at(-1)).toContain('edit src/hello.ts (1 replacement)')

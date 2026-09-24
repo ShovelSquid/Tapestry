@@ -80,7 +80,7 @@ describe('WorkspaceService.saveFile', () => {
     expect(all.length).toBe(before + 2)
     expect(all.at(-2)).toContain('actor human user.kaelen')
     expect(all.at(-2)).toContain('edit src/hello.ts')
-    expect(all.at(-1)).toContain('actor plugin workspace.bridge')
+    expect(all.at(-1)).toContain('actor plugin workspace.watcher')
     expect(all.at(-1)).toContain(
       "observed change to src/hello.ts (the file changed before Tapestry's edit was written; the file wins)",
     )
@@ -133,7 +133,7 @@ describe('WorkspaceService.openWorkspace (restore)', () => {
     const opened = reopened as OpenTree
     const text = readFileSync(treePath, 'utf-8')
     expect(text.split('observed change to src/nested/deep.txt').length - 1).toBe(1)
-    expect(blocks(opened).at(-1)).toContain('actor plugin workspace.bridge')
+    expect(blocks(opened).at(-1)).toContain('actor plugin workspace.watcher')
     expect(String(node(opened, 'src/nested/deep.txt')!.props[FILE_TEXT].value)).toBe('changed while closed\n')
   })
 })

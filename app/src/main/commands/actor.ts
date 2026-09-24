@@ -131,9 +131,9 @@ export const OBSIDIAN_BRIDGE_ACTOR: Actor = Object.freeze({
 } as const)
 
 /** Changes a workspace mirror observed on disk but cannot attribute (02.7 D-06). */
-export const WORKSPACE_BRIDGE_ACTOR: Actor = Object.freeze({
+export const WORKSPACE_WATCHER_ACTOR: Actor = Object.freeze({
   kind: 'plugin',
-  id: 'workspace.bridge',
+  id: 'workspace.watcher',
 } as const)
 
 /** Tapestry's own recorded events (plugin enabled/disabled, crashes). */
