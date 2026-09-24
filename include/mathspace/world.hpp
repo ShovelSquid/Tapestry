@@ -62,12 +62,14 @@ enum class Skip : std::uint8_t {
     WrongDim,       // the force program does not yield the space dim
     NoTargetField,  // set.<f>: the target lacks `f`, or holds it at another dim
     BadGradient,    // constraint: its program does not lift, differentiate or compile per pos lane
+    BadMetric,      // a Space's `metric` is not a program of the space dim, or has no gradient
 };
 const char* skip_name(std::uint8_t reason);
 
-// One Rule note's skips in the last step(): how many visits (or the whole
-// rule, counted once) were skipped and the reason of the last skip, in
-// step()'s deterministic order. Diagnostics only: never hashed,
+// One Rule note's skips in the last step() (or a Space note's, for its
+// `metric`): how many visits (or the whole rule, counted once) were
+// skipped and the reason of the last skip, in step()'s deterministic
+// order. Diagnostics only: never hashed,
 // serialized or compared, so a report is not state and the plugin's
 // `mathspace.error` text stays out of the walk.
 struct RuleReport {
@@ -175,6 +177,15 @@ inline constexpr std::string_view COMPLIANCE_FIELD = "compliance";
 // ms_project (mathspace_c.h). Views are neither targets nor evaluated.
 inline constexpr std::string_view PROJECT_FIELD = "project";
 inline constexpr std::uint8_t PROJECT_DIM = 2;
+// On a Space note: a bound `metric` of the space dim is the diagonal of
+// the chart's metric tensor, g_kk(x), written in terms of `self.pos` and
+// evaluated at each moving note of the space as `self` (like a rule's
+// law, never against the space itself). The integrator then takes one
+// geodesic step (step.cpp, version.hpp): only diagonal metrics for now,
+// which covers the plan's Poincaré and sphere charts without a matrix
+// inverse; a full tensor would be a later `metric.<row>` set. Absent or
+// unbound, the chart is Euclidean.
+inline constexpr std::string_view METRIC_FIELD = "metric";
 
 // Bumped whenever the canonical walk (hash.cpp) changes shape. Pinned in
 // the walk itself so old bytes are rejected instead of misread.

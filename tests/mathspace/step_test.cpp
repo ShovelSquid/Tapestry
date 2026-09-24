@@ -459,11 +459,11 @@ TEST_CASE("a pair rule visits every ordered pair with other bound; global visits
 }
 
 TEST_CASE("the step version is pinned in the walk") {
-    CHECK(MS_STEP_VERSION == 9u);
+    CHECK(MS_STEP_VERSION == 10u);
     const World w;
     const auto bytes = serialize(w);
     // magic 4 | FORMAT_VERSION 4 | DD_FX_FORMAT_ID 4 | rule version 4
-    CHECK(bytes[12] == 9);
+    CHECK(bytes[12] == 10);
     CHECK(bytes[13] == 0);
     CHECK(bytes[14] == 0);
     CHECK(bytes[15] == 0);
@@ -660,4 +660,96 @@ TEST_CASE("a View note is neither a rule target nor evaluated by the bound-field
     CHECK(field(w, V, "project").value[0] == fx64{});
     CHECK(field(w, V, "project").value[1] == fx64{});
     CHECK(w.well_formed());
+}
+
+// Phase 6: a Space note's bound `metric` (the diagonal of g) makes the
+// integrator geodesic.
+namespace {
+
+// A 2-space S with note A at (x, y) carrying velocity (vx, vy) in raw
+// units, no rules.
+World metric_world(std::int32_t x, std::int32_t y, std::int64_t vx_raw, std::int64_t vy_raw) {
+    World w(1);
+    REQUIRE(w.create_space(S, 2) == Error::Ok);
+    REQUIRE(w.create_note(A, space_of(S), NoteKind::Note) == Error::Ok);
+    REQUIRE(w.set_field(A, vec("pos", 2, x, y)) == Error::Ok);
+    Field v = vec(VELOCITY_FIELD.data(), 2);
+    v.value[0] = fx64::from_raw(vx_raw);
+    v.value[1] = fx64::from_raw(vy_raw);
+    REQUIRE(w.set_field(A, v) == Error::Ok);
+    return w;
+}
+
+} // namespace
+
+TEST_CASE("a Euclidean metric [1, 1] steps bit for bit like no metric") {
+    World plain = metric_world(3, 4, fx64::ONE, -fx64::ONE / 2);
+    World flat = metric_world(3, 4, fx64::ONE, -fx64::ONE / 2);
+    REQUIRE(flat.bind_field(S, METRIC_FIELD, code_for(flat, S, "[1, 1]")) == Error::Ok);
+    for (int t = 0; t < 20; ++t) {
+        plain.step();
+        flat.step();
+        CHECK(flat.reports.empty());
+        CHECK(field(flat, A, POS_FIELD).value == field(plain, A, POS_FIELD).value);
+        CHECK(field(flat, A, VELOCITY_FIELD).value == field(plain, A, VELOCITY_FIELD).value);
+    }
+    // The metric's own lanes on the space are never written by the
+    // bound-field pass: it is a law, not a value.
+    CHECK(field(flat, S, METRIC_FIELD).value == std::array<fx64, MAX_DIM>{});
+}
+
+TEST_CASE("polar coordinates: a geodesic is a straight line, r grows as sqrt(r0^2 + t^2)") {
+    // Chart (r, theta) with g = diag(1, r^2). A note at r = 100 moving
+    // tangentially at unit speed (theta' = 1 / 100) follows the line
+    // x = 100, so r^2 = 100^2 + t^2 and theta -> atan(t / 100).
+    World w = metric_world(100, 0, 0, fx64::ONE / 100);
+    REQUIRE(w.bind_field(S, METRIC_FIELD, code_for(w, S, "[1, self.pos.x * self.pos.x]")) == Error::Ok);
+    for (int t = 0; t < 100; ++t) {
+        w.step();
+        REQUIRE(w.reports.empty());
+    }
+    const Field& pos = field(w, A, POS_FIELD);
+    const fx64 r = pos.value[0];
+    const fx64 theta = pos.value[1];
+    // r = 141.42 within 2 percent of the exact line (Euler, h = 1).
+    CHECK(r.raw > 138 * fx64::ONE);
+    CHECK(r.raw < 145 * fx64::ONE);
+    // theta = pi / 4 = 0.785 within the same tolerance.
+    CHECK(theta.raw > (fx64::ONE * 76) / 100);
+    CHECK(theta.raw < (fx64::ONE * 81) / 100);
+    // Without the metric the same chart velocities would leave r at 100.
+    World flat = metric_world(100, 0, 0, fx64::ONE / 100);
+    for (int t = 0; t < 100; ++t) flat.step();
+    CHECK(field(flat, A, POS_FIELD).value[0] == fx64::from_int(100));
+}
+
+TEST_CASE("a metric that is not a dim-N program is reported on the space and the chart is Euclidean") {
+    World w = metric_world(100, 0, 0, fx64::ONE);
+    REQUIRE(w.bind_field(S, METRIC_FIELD, code_for(w, S, "self.pos.x")) == Error::Ok);
+    w.step();
+    REQUIRE(w.reports.size() == 1);
+    CHECK(w.reports[0].rule == S);
+    CHECK(w.reports[0].skipped == 1);
+    CHECK(std::string(skip_name(w.reports[0].reason)) == "BadMetric");
+    CHECK(field(w, A, POS_FIELD).value[1] == fx64::from_int(1));
+    // A metric with no symbolic gradient (curve of pos) is the same skip.
+    World c = metric_world(100, 0, 0, fx64::ONE);
+    REQUIRE(c.bind_field(S, METRIC_FIELD, code_for(c, S, "[curve([1, 2], self.pos.x), 1]")) == Error::Ok);
+    c.step();
+    REQUIRE(c.reports.size() == 1);
+    CHECK(std::string(skip_name(c.reports[0].reason)) == "BadMetric");
+}
+
+TEST_CASE("a degenerate chart point skips the correction silently; a note without velocity is untouched") {
+    // g_thetatheta = r^2 = 0 at the origin: Euclidean there, no report.
+    World w = metric_world(0, 0, 0, fx64::ONE);
+    REQUIRE(w.bind_field(S, METRIC_FIELD, code_for(w, S, "[1, self.pos.x * self.pos.x]")) == Error::Ok);
+    REQUIRE(w.create_note(B, space_of(S), NoteKind::Note) == Error::Ok);
+    REQUIRE(w.set_field(B, vec("pos", 2, 50, 50)) == Error::Ok);
+    w.step();
+    CHECK(w.reports.empty());
+    CHECK(field(w, A, POS_FIELD).value[0] == fx64{});
+    CHECK(field(w, A, POS_FIELD).value[1] == fx64::from_int(1));
+    CHECK(field(w, B, POS_FIELD).value[0] == fx64::from_int(50));
+    CHECK(field(w, B, POS_FIELD).value[1] == fx64::from_int(50));
 }

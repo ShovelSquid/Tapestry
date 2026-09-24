@@ -23,8 +23,29 @@
 // Then the integrator, notes in id order: a note with `pos` and
 // `velocity` at the same dim takes `velocity += force / mass` (mass is
 // the scalar `mass` field, 1 when absent or not scalar; a mass <= 0
-// drops the force), then `pos += velocity`, both lane by lane with
-// fx64's wrapping arithmetic and h = 1. A note without `velocity` never
+// drops the force), then the geodesic correction below when its space
+// has a metric, then `pos += velocity`, all lane by lane with fx64's
+// wrapping arithmetic and h = 1.
+//
+// Metric spaces (phase 6): a Space note with a bound `metric` (world.hpp
+// METRIC_FIELD) gives the diagonal g_kk(x) of the chart's metric as a
+// dim-N program in `self.pos`. Before the integrator, each such metric
+// is lifted, differentiated with respect to every pos lane and compiled
+// (as a constraint's gradient is, once per space per step); a metric
+// that is not a dim-N program, or has no gradient, is reported on the
+// Space note as BadMetric and its space is Euclidean this tick. For a
+// moving note of that space the integrator evaluates g and its N
+// gradients at the note (as `self`) and adds the geodesic acceleration
+// of a diagonal metric, Gamma^k_ij v^i v^j written out:
+//   a_k = -(2 v_k (grad g_kk . v) - sum_i (d_k g_ii) v_i^2) / (2 g_kk)
+// to the velocity before `pos += velocity` (semi-implicit Euler, h = 1,
+// v the velocity after the force). Forces are taken as vectors in the
+// chart as written (no index raised through g). An evaluation error is
+// reported on the Space note and skips the correction for that note;
+// a g_kk below MS_METRIC_EPS_RAW skips it silently, as the constraint
+// pass skips a flat gradient. Nothing new is stored: the metric's own
+// lanes on the Space note stay as set, and the bound-field pass at the
+// end leaves `metric` alone as it leaves a rule's law. A note without `velocity` never
 // moves, however much force it collects; the rule never creates fields.
 // A note whose scalar `pinned` is nonzero is held still (RULE-08): it
 // still collects force (a later pair rule may read it as `other`), but
@@ -318,6 +339,89 @@ bool prepare_constraint(const World& w, const Note& rule, const Field& f, Report
     return true;
 }
 
+// A space's metric prepared for the integrator: g (dim-N) and d g / d
+// self.pos.lane per lane (each dim-N), compiled on the Space note.
+struct MetricLaw {
+    SpaceId space;
+    std::uint8_t dim = 0;
+    expr::Program g;
+    std::vector<expr::Program> grad;
+};
+
+// Lifts, differentiates and compiles the gradient of `f` (a Space note's
+// bound `metric`); false with the reason reported on the space.
+bool prepare_metric(const World& w, const Note& space, const Field& f, Reporter& report, MetricLaw& out) {
+    out.space = space_of(space.id);
+    out.dim = w.space_dim(out.space);
+    if (out.dim == 0 || !program_of(f, out.dim, out.g)) {
+        report.skip(space.id, Skip::BadMetric);
+        return false;
+    }
+    const expr::LiftResult lifted = expr::lift(out.g);
+    if (!lifted.ok()) {
+        report.skip(space.id, Skip::BadMetric);
+        return false;
+    }
+    // The space note's own `pos` has the space dim, so WorldDims on it
+    // resolves `self.pos` exactly as ms_compile did when binding.
+    const expr::WorldDims dims{w, space};
+    for (std::uint8_t lane = 0; lane < out.dim; ++lane) {
+        const expr::DiffResult d = expr::differentiate(lifted.ast, POS_FIELD, lane, dims);
+        if (!d.ok()) {
+            report.skip(space.id, Skip::BadMetric);
+            return false;
+        }
+        expr::CompileResult c = expr::compile(d.ast, dims);
+        if (!c.ok() || c.program.dim != out.dim) {
+            report.skip(space.id, Skip::BadMetric);
+            return false;
+        }
+        out.grad.push_back(std::move(c.program));
+    }
+    return true;
+}
+
+// Adds the geodesic acceleration of `law` at `self` to `vel` (see the
+// header comment). False, with nothing changed, when g or a gradient
+// fails to evaluate (reported) or the chart is degenerate there.
+bool geodesic_correction(const World& w, const MetricLaw& law, const Note& self, Reporter& report, Field& vel) {
+    expr::Lanes g{};
+    expr::VmError err = expr::eval(law.g, w, self, nullptr, g);
+    if (err != expr::VmError::Ok) {
+        report.skip(w.find_space(law.space)->id, err);
+        return false;
+    }
+    std::vector<expr::Lanes> jac(law.dim); // jac[i][k] = d g_kk / d pos_i
+    for (std::uint8_t i = 0; i < law.dim; ++i) {
+        err = expr::eval(law.grad[i], w, self, nullptr, jac[i]);
+        if (err != expr::VmError::Ok) {
+            report.skip(w.find_space(law.space)->id, err);
+            return false;
+        }
+    }
+    for (std::uint8_t k = 0; k < law.dim; ++k) {
+        if (g[k].raw < MS_METRIC_EPS_RAW) {
+            return false;
+        }
+    }
+    const expr::Lanes v = vel.value;
+    expr::Lanes a{};
+    for (std::uint8_t k = 0; k < law.dim; ++k) {
+        fx64 grad_dot_v{};
+        fx64 sum_dk_gii_vi2{};
+        for (std::uint8_t i = 0; i < law.dim; ++i) {
+            grad_dot_v += jac[i][k] * v[i];
+            sum_dk_gii_vi2 += jac[k][i] * v[i] * v[i];
+        }
+        const fx64 two = fx64::from_int(2);
+        a[k] = -(two * v[k] * grad_dot_v - sum_dk_gii_vi2) / (two * g[k]);
+    }
+    for (std::uint8_t k = 0; k < law.dim; ++k) {
+        vel.value[k] += a[k];
+    }
+    return true;
+}
+
 } // namespace
 
 const char* skip_name(std::uint8_t reason) {
@@ -331,6 +435,7 @@ const char* skip_name(std::uint8_t reason) {
     case Skip::WrongDim: return "WrongDim";
     case Skip::NoTargetField: return "NoTargetField";
     case Skip::BadGradient: return "BadGradient";
+    case Skip::BadMetric: return "BadMetric";
     default: return "?";
     }
 }
@@ -378,6 +483,29 @@ void World::step() {
             prev[i] = pos->value;
         }
     }
+    // Metric spaces, in space id order (World::notes is sorted).
+    std::vector<MetricLaw> metrics;
+    for (const Note& space : notes) {
+        if (space.kind != NoteKind::Space) {
+            continue;
+        }
+        const Field* m = find_field(space, METRIC_FIELD);
+        if (m == nullptr || !m->bound) {
+            continue;
+        }
+        MetricLaw law;
+        if (prepare_metric(*this, space, *m, report, law)) {
+            metrics.push_back(std::move(law));
+        }
+    }
+    auto metric_of = [&](SpaceId space) -> const MetricLaw* {
+        for (const MetricLaw& law : metrics) {
+            if (law.space == space) {
+                return &law;
+            }
+        }
+        return nullptr;
+    };
     for (std::size_t i = 0; i < notes.size(); ++i) {
         Note& n = notes[i];
         Field* pos = find_field(n, POS_FIELD);
@@ -393,6 +521,9 @@ void World::step() {
             for (std::uint8_t lane = 0; lane < pos->dim; ++lane) {
                 vel->value[lane] += force[i][lane] / mass;
             }
+        }
+        if (const MetricLaw* law = metric_of(n.space)) {
+            geodesic_correction(*this, *law, n, report, *vel);
         }
         for (std::uint8_t lane = 0; lane < pos->dim; ++lane) {
             pos->value[lane] += vel->value[lane];
@@ -514,6 +645,11 @@ void World::step() {
         }
         for (Field& f : n.fields) {
             if (!f.bound) {
+                continue;
+            }
+            // A Space's `metric` is a law over its notes, not a value of
+            // the space (the integrator evaluates it per note above).
+            if (n.kind == NoteKind::Space && f.name == METRIC_FIELD) {
                 continue;
             }
             expr::Program program;
