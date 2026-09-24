@@ -6,6 +6,7 @@
   "api": "1",
   "contributions": {
     "nodeTypes": [],
-    "commands": []
+    "commands": [],
+    "surfaces": ["datadrawing.canvas"]
   }
 }

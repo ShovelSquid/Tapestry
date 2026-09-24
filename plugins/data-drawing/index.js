@@ -10,14 +10,39 @@
  * surface/dist/surface.js) runs the fixed-point sim as WebAssembly inside a
  * module Worker and never touches Electron either.
  *
- * Nothing is registered yet: `registerSurface` is called here in 01-06, once
- * the SDK's surface contribution (01-02) and the host's surface layer (01-04)
- * exist. Until then the surface is exercised through its own Vite dev page
+ * The surface is registered through the public extension point (CANV-04):
+ * the host lists it as "Open Data Drawing", serves surface/dist/ over
+ * tapestry-plugin://data-drawing/ and calls the module's default mount(host).
+ * The same dist/ is what the plugin's own dev page mounts
  * (`npm --prefix plugins/data-drawing run dev`).
  */
 
 /** @typedef {import('@tapestry/sdk').TapestryPlugin} TapestryPlugin */
 /** @typedef {import('@tapestry/sdk').PluginContext} PluginContext */
+/** @typedef {import('@tapestry/sdk').SurfaceContribution} SurfaceContribution */
+
+// ---------------------------------------------------------------------------
+// Surface contribution
+// ---------------------------------------------------------------------------
+
+/**
+ * The painting surface: a full-window stage layer. The entry is the Vite
+ * library build of surface/src/main.ts (`npm --prefix plugins/data-drawing
+ * run build`); the module Worker chunk and ddsim.wasm it references sit
+ * next to it under surface/dist/assets/ and load over the same origin.
+ *
+ * @type {SurfaceContribution}
+ */
+const canvasSurface = {
+  id: 'datadrawing.canvas',
+  displayName: 'Data Drawing',
+  entry: 'surface/dist/surface.js',
+  placement: 'stage',
+}
+
+// ---------------------------------------------------------------------------
+// Plugin entry point
+// ---------------------------------------------------------------------------
 
 /** @type {TapestryPlugin} */
 const dataDrawingPlugin = {
@@ -26,12 +51,13 @@ const dataDrawingPlugin = {
 
   /** @param {PluginContext} context */
   activate(context) {
-    // 01-06: context.registerSurface({ id: 'datadrawing.canvas', ... })
-    void context
+    // Register the stage surface (CANV-04)
+    context.registerSurface(canvasSurface)
   },
 
   deactivate() {
-    // No subscriptions or handlers to clean up yet.
+    // The surface's own dispose() (called by the host on unmount) releases
+    // its Worker and listeners; nothing is held here.
   },
 }
 

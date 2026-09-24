@@ -9,6 +9,8 @@
  * and 01-08; MainThreadTransport (same module, no worker) in 01-08.
  */
 import type { BrushVersionSpec } from './ddsim-abi'
+import simWorkerUrl from './sim.worker?worker&url'
+import { spawnSameOriginModuleWorker } from './worker-spawn'
 
 export interface Snapshot {
   tick: number
@@ -88,6 +90,8 @@ export class WorkerTransport implements SimHost {
   readonly ready: Promise<{ version: number; tickHz: number }>
 
   private readonly worker: Worker
+  /** Releases the blob: trampoline the worker was spawned through. */
+  private readonly revokeTrampoline: () => void
   private readonly pending = new Map<number, Pending>()
   private readonly snapshotSubs = new Set<(s: Snapshot) => void>()
   private readonly rejectedSubs = new Set<(e: DdError) => void>()
@@ -96,7 +100,15 @@ export class WorkerTransport implements SimHost {
   private disposed = false
 
   constructor(seed: number | bigint) {
-    this.worker = new Worker(new URL('./sim.worker.ts', import.meta.url), { type: 'module' })
+    // The worker chunk's URL (Vite `?worker&url`: the same chunk the direct
+    // `new Worker(new URL(...))` form would emit), resolved absolute against
+    // this module and spawned through a same-origin blob: trampoline so the
+    // spawn also works when this module is served from tapestry-plugin://
+    // inside Tapestry (01-04: Worker scripts must be same-origin with the
+    // document; CORS cannot relax it).
+    const spawned = spawnSameOriginModuleWorker(new URL(simWorkerUrl, import.meta.url).href)
+    this.worker = spawned.worker
+    this.revokeTrampoline = spawned.revoke
     this.ready = new Promise((resolve, reject) => {
       this.worker.onmessage = (ev: MessageEvent<WorkerOutbound>) => {
         const msg = ev.data
@@ -155,6 +167,7 @@ export class WorkerTransport implements SimHost {
     this.disposed = true
     this.post({ kind: 'dispose' })
     this.worker.terminate()
+    this.revokeTrampoline()
     for (const p of this.pending.values()) p.reject(new Error('sim host disposed'))
     this.pending.clear()
     this.snapshotSubs.clear()

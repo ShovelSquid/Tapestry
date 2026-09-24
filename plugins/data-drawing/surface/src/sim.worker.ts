@@ -16,6 +16,17 @@
  */
 import createDdsim from '../wasm/ddsim.mjs'
 import wasmUrl from '../wasm/ddsim.wasm?url'
+
+/**
+ * The .wasm URL made absolute against this module's own URL. This worker is
+ * spawned through a same-origin blob: trampoline (worker-spawn.ts), so the
+ * worker global's base URL is blob:… and a root-relative asset path (what
+ * Vite's `?url` yields in dev) cannot be resolved against it; the glue would
+ * fail with "Invalid URL". import.meta.url here is the module's real URL
+ * (http://localhost:5173/src/… in dev, tapestry-plugin://…/assets/… built),
+ * and the built URL is already absolute, so this is a no-op there.
+ */
+const WASM_URL = new URL(wasmUrl, import.meta.url).href
 import {
   ActionKind,
   BODY_STRIDE,
@@ -99,7 +110,7 @@ function loop(): void {
 
 async function init(seed: bigint): Promise<void> {
   const m = await createDdsim({
-    locateFile: (path: string, prefix: string) => (path.endsWith('.wasm') ? wasmUrl : prefix + path),
+    locateFile: (path: string, prefix: string) => (path.endsWith('.wasm') ? WASM_URL : prefix + path),
   })
   sim = m._dd_create(seed)
   if (sim === 0) throw new Error('dd_create returned null')

@@ -62,6 +62,11 @@ function wasmAsFile(): Plugin {
 
 export default defineConfig({
   root,
+  // Relative base: with the default '/' the worker chunk is referenced as
+  // "/assets/sim.worker-*.js", which under tapestry-plugin://data-drawing/
+  // resolves to the plugin root instead of surface/dist/. './' makes every
+  // emitted reference resolve against the importing module's own URL.
+  base: './',
   plugins: [wasmAsFile()],
   build: {
     lib: {
