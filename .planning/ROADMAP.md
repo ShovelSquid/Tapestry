@@ -345,7 +345,7 @@ Plans:
   6. Note positions are untouched: `position.x/y` stay node properties and D-27's thread frame is not moved — that migration is a later phase after 2.3 (#4)
   7. No code writes the Tapestry-tree or forest-tree record shape, or migrates `settings.json`, until Kaelen has approved the exact type strings, keys and labels and the migration at a blocking checkpoint (#17, #18)
 
-**Plans:** 1/6 plans executed
+**Plans:** 2/6 plans executed
 
 Plans:
 **Wave 1**
@@ -354,7 +354,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1)*
 
-- [ ] 02.6-02-PLAN.md — BLOCKING CHECKPOINT for #17/#18 (record shape, migration, Ctrl+Z reach, new wording), then tracer at the service level: first launch imports into the forest, a drop is one signed commit, a second launch restores from the forest (D-01..D-07, D-10, D-11, D-13, D-14)
+- [x] 02.6-02-PLAN.md — BLOCKING CHECKPOINT for #17/#18 (record shape, migration, Ctrl+Z reach, new wording), then tracer at the service level: first launch imports into the forest, a drop is one signed commit, a second launch restores from the forest (D-01..D-07, D-10, D-11, D-13, D-14)
 
 **Wave 3** *(blocked on Wave 2)*
 
