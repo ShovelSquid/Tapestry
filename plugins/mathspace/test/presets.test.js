@@ -103,7 +103,7 @@ const byId = Object.fromEntries(presets.map((p) => [p.id, p]))
 
 describe('presets', () => {
   it('ships the plan\'s presets, the three roadmap examples and the default views, one command each, listed in the manifest', () => {
-    expect(presets.map((p) => p.id)).toEqual(['anger', 'contact', 'drag', 'gold', 'gravity-field', 'nbody', 'poincare', 'push', 'sphere', 'spring-to-anchor', 'view-2d', 'view-3d', 'view-4d'])
+    expect(presets.map((p) => p.id)).toEqual(['anger', 'brush', 'contact', 'drag', 'gold', 'gravity-field', 'nbody', 'poincare', 'push', 'sphere', 'spring-to-anchor', 'view-2d', 'view-3d', 'view-4d'])
     const manifest = require('../tapestry.plugin.json')
     for (const p of presets) {
       expect(manifest.contributions.commands).toContain(COMMAND_PREFIX + p.id)
@@ -159,6 +159,16 @@ describe('presets', () => {
     far.nodes.find((n) => n.props.title.value === 'Chips').props['position.x'].value = 400
     const distant = await runPreset(far, 60)
     expect(distant.ops.filter((o) => o.key === 'anger')).toEqual([])
+  })
+
+  it('brush: the pen body chases its target with momentum and overshoots it', async () => {
+    // k = 1/64, c = 1/8: underdamped with a damped period near 58 ticks, so
+    // at tick 30 the body is around its first peak, past the target at 120.
+    const { before, after, prop } = await runPreset(byId.brush, 30)
+    expect(prop(before, 'Pen', 'position.x')).toBe(0)
+    expect(prop(after, 'Pen', 'position.x')).toBeGreaterThan(120)
+    expect(prop(after, 'Pen', 'position.y')).toBe(0)
+    expect(prop(after, 'Pen', 'target.x')).toBe(120)
   })
 
   it('gold: each note accumulates its own income', async () => {

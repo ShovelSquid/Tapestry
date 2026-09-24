@@ -15,6 +15,7 @@
       "mathspace.pause",
       "mathspace.step",
       "mathspace.preset.anger",
+      "mathspace.preset.brush",
       "mathspace.preset.contact",
       "mathspace.preset.drag",
       "mathspace.preset.gold",
