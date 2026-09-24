@@ -343,11 +343,20 @@ Plans:
   4. With no workspace open, agent file tools refuse rather than falling back to any default directory
   5. Dogfood: with the workspace set to this repo, Claude Code connected over MCP can open and edit a real source file in a Tapestry window, and the edit shows up in `git diff`
 
-**Plans**: 0 plans
+**Plans**: 3 plans
 
 Plans:
+**Wave 1**
 
-- [ ] TBD (run /gsd-plan-phase 2.7 to break down)
+- [ ] 02.7-01-PLAN.md — Dogfood tracer: generic mirror core, workspace trees in app data, sandboxed read_file/edit_file over MCP as agent.<name>, file windows with the human save and file-wins rule, restore across restarts, D-11 checkpoint
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 02.7-02-PLAN.md — Full agent file tools (list_files, write_file, open_file), the D-08 refusal matrix, file locks (D-09), and guards that keep workspace trees from diverging
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 02.7-03-PLAN.md — Live watching of outside changes, grouped per moment and signed workspace.bridge, with self-healing watch errors, Retry write and scale measures
 
 **UI hint**: yes
 
