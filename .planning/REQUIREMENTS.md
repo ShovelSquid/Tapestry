@@ -66,13 +66,13 @@ The first phase must prove an actual plugin-authored interaction and readable sa
 - [ ] **DRAW-01**: User can create and remove drawing strokes in world space alongside notes and retain them through save, replay and branching.
 - [ ] **DRAW-02**: User can associate a drawing with a node or related content.
 - [x] **DRAW-03**: User can navigate dense or zoomed-out content and return to legible editable text without losing spatial orientation.
-- [ ] **DRAW-04**: User can operate essential editing, inspection and history controls without depending solely on hover or color.
+- [x] **DRAW-04**: User can operate essential editing, inspection and history controls without depending solely on hover or color.
 
 ### Origin and review
 
-- [ ] **PROV-01**: User can distinguish explicit user content from generated content at the relevant text passage/property level.
+- [x] **PROV-01**: User can distinguish explicit user content from generated content at the relevant text passage/property level.
 - [ ] **PROV-02**: User can accept or reject generated content while its generated origin remains permanently identifiable in history.
-- [ ] **PROV-03**: Editing mixed-origin content preserves attribution for unaffected content and records the authorship of new edits.
+- [x] **PROV-03**: Editing mixed-origin content preserves attribution for unaffected content and records the authorship of new edits.
 - [ ] **PROV-04**: User can inspect the source interaction or rule/input evidence behind a generated claim or state change.
 
 ### Conversational companion plugin
@@ -191,10 +191,10 @@ Each v1 requirement has one owning phase; later phases may exercise it through i
 | DRAW-01 | Phase 4 | Pending |
 | DRAW-02 | Phase 4 | Pending |
 | DRAW-03 | Phase 4 | Complete |
-| DRAW-04 | Phase 4 | Pending |
-| PROV-01 | Phase 4 | Pending |
+| DRAW-04 | Phase 4 | Complete |
+| PROV-01 | Phase 4 | Complete |
 | PROV-02 | Phase 4 | Pending |
-| PROV-03 | Phase 4 | Pending |
+| PROV-03 | Phase 4 | Complete |
 | PROV-04 | Phase 6 | Pending |
 | AI-01 | Phase 6 | Pending |
 | AI-02 | Phase 6 | Pending |

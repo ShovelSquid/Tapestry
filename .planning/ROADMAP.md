@@ -220,7 +220,7 @@ Plans:
   5. No `thread-center` / `thread-arm` occurrences remain in tracked source under `app/`, `plugins/` or `sdk/`; 2.1's feature works as `knot` / `knot-tie` (D-26)
   6. Each thread stores its own readable frame — `origin.x/y/z`, `direction.x/y/z` and `roll` — and both the live and side views derive their camera from it rather than a hardcoded axis (D-27)
 
-**Plans**: 4/9 plans executed in 8 waves
+**Plans**: 5/9 plans executed in 8 waves
 
 Plans:
 **Wave 1**
@@ -238,7 +238,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3)*
 
-- [ ] 02.3-05-PLAN.md — Nothing erased: LetterIndex, the full cause vocabulary, ghosts and markers on the line (D-02..D-05)
+- [x] 02.3-05-PLAN.md — Nothing erased: LetterIndex, the full cause vocabulary, ghosts and markers on the line (D-02..D-05)
 
 **Wave 5** *(blocked on Wave 4)*
 
