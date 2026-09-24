@@ -47,11 +47,19 @@ export interface ThreadOpenResult {
   /** The collab version to start the renderer's `collab()` plugin at. */
   version: number
   /** ProseMirror JSON, replayed from `thread.log` records alone — never
-   * the `body` checkpoint (that is what makes reopen honest: D-06). */
+   * the `body` checkpoint (that is what makes reopen honest: D-06). Falls
+   * back to the `body` checkpoint alone when `unreadable` is true. */
   doc: unknown
   /** The number of `thread.log` values the addon returned on open — taken
    * up front, never an estimate (UI-SPEC "Loading and catch-up" rule 4). */
   totalChanges: number
+  /** True when at least one `thread.log` value failed to parse (T-02.3-03-01):
+   * `doc` is the last `body` checkpoint alone, and no write handle was
+   * registered, so a `push` against this open refuses rather than building a
+   * new commit on top of a history this process could not fully read. */
+  unreadable?: boolean
+  /** Present when `unreadable` is true: why the parse failed. */
+  unreadableReason?: string
 }
 
 export type ThreadPushResult =
@@ -266,16 +274,37 @@ export class ThreadService {
 
     const entries = bridge.getPropertyValues(nodeId, 'thread.log')
     const blocks = entries.map((entry) => String(entry.value.value))
-    const doc = docFromFlatText(replayFlatText(blocks))
 
+    let doc: ProseMirrorNode
     let version = 0
     let sessionCount = 0
-    for (const block of blocks) {
-      const header = parseBlockHeader(block)
-      const records = parseBlock(block)
-      const stepCount = records.filter((r) => r.verb !== 'in' && r.verb !== 'out').length
-      version = header.versionBefore + stepCount
-      sessionCount += records.filter((r) => r.verb === 'in').length
+    try {
+      doc = docFromFlatText(replayFlatText(blocks))
+      for (const block of blocks) {
+        const header = parseBlockHeader(block)
+        const records = parseBlock(block)
+        const stepCount = records.filter((r) => r.verb !== 'in' && r.verb !== 'out').length
+        version = header.versionBefore + stepCount
+        sessionCount += records.filter((r) => r.verb === 'in').length
+      }
+    } catch (err) {
+      // A malformed thread.log must never become the base for a new commit
+      // (T-02.3-03-01): no handle is registered below, so a push against
+      // this open refuses ("Thread not open") rather than building on a
+      // half-read history. The fallback document is the last body
+      // checkpoint alone -- the same text PLUG-04's FallbackNodeView shows
+      // with the plugin disabled entirely, so a thread degrades to the same
+      // honest state whether the plugin is missing or its history cannot be
+      // parsed.
+      const node = bridge.getNode(nodeId)
+      const checkpointText = node ? String(node.props.body?.value ?? '') : ''
+      return {
+        version: 0,
+        doc: docFromFlatText(checkpointText).toJSON(),
+        totalChanges: entries.length,
+        unreadable: true,
+        unreadableReason: errorMessage(err),
+      }
     }
 
     this.handles.set(key, {

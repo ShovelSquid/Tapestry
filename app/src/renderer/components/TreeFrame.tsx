@@ -355,6 +355,7 @@ export default function TreeFrame({
             <FallbackNodeView
               key={node.id}
               node={node}
+              treeId={tree.id}
               isSelected={selectedKey === key}
               isHovered={hoveredKey === key}
               zoom={zoom}

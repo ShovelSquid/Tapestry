@@ -37,6 +37,16 @@ interface TapestryHistoryIndex {
   edges: Record<string, TapestryEdgeHistory>
 }
 
+/** One value a property was ever set to, and the commit that set it
+ * (tapestry/kernel/PropertyValues.hpp `PropertyValueEntry`). */
+interface TapestryPropertyValueEntry {
+  seq: number
+  /** RFC 3339 UTC, whole seconds (the commit's own `recorded` stamp). */
+  recorded: string
+  actor: TapestryActorRef
+  value: { type: string; value: string | number | boolean }
+}
+
 /**
  * Kernel operations, each naming its tree first (D-15). A tree id is the
  * `sha256:<hex>` header digest the main process minted when it opened the file.
@@ -71,6 +81,12 @@ interface TapestryKernelAPI {
   getEdges(treeId: string): Promise<any[]>
   status(treeId: string): Promise<any>
   getHistoryIndex(treeId: string): Promise<TapestryHistoryIndex>
+  getPropertyValues(
+    treeId: string,
+    nodeId: string,
+    key: string,
+    fromSeq?: number,
+  ): Promise<TapestryPropertyValueEntry[]>
   undo(treeId: string): Promise<{ ok: boolean }>
   redo(treeId: string): Promise<{ ok: boolean }>
 }
@@ -169,10 +185,16 @@ interface TapestryAgentsAPI {
 interface TapestryThreadOpenResult {
   /** The collab version to start the renderer's `collab()` plugin at. */
   version: number
-  /** ProseMirror JSON, replayed from `thread.log` records alone. */
+  /** ProseMirror JSON, replayed from `thread.log` records alone. Falls back
+   * to the `body` checkpoint alone when `unreadable` is true. */
   doc: unknown
   /** The number of `thread.log` values found on open (never an estimate). */
   totalChanges: number
+  /** True when at least one `thread.log` value failed to parse: the thread
+   * stays read-only on the last checkpoint (T-02.3-03-01). */
+  unreadable?: boolean
+  /** Present when `unreadable` is true: why the parse failed. */
+  unreadableReason?: string
 }
 
 type TapestryThreadPushResult =

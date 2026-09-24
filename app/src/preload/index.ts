@@ -45,6 +45,13 @@ const tapestryAPI = {
     getHistoryIndex: (treeId: string): Promise<any> =>
       ipcRenderer.invoke('kernel:getHistoryIndex', treeId),
 
+    /** Every value `key` was ever set to on `nodeId`, in commit order — a
+     * generic kernel read capability (not thread-specific), used by
+     * FallbackNodeView to read a checkpoint's own `recorded` stamp even
+     * with the owning plugin disabled (PLUG-04). */
+    getPropertyValues: (treeId: string, nodeId: string, key: string, fromSeq?: number): Promise<any[]> =>
+      ipcRenderer.invoke('kernel:getPropertyValues', treeId, nodeId, key, fromSeq),
+
     undo: (treeId: string): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke('kernel:undo', treeId),
 

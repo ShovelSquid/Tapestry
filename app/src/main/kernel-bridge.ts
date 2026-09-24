@@ -456,6 +456,21 @@ export class KernelBridge {
       return resolveTree(treeId).getHistoryIndex()
     })
 
+    // A generic kernel read capability, not thread-specific (02.3-02's own
+    // conclusion): every value one property key was ever set to, in commit
+    // order. Registered here rather than gated behind any plugin, so a
+    // fallback view can read a checkpoint's own `recorded` stamp even with
+    // the plugin that understands the rest of the node disabled (PLUG-04).
+    ipcMain.handle(
+      'kernel:getPropertyValues',
+      (_event: any, treeId: unknown, nodeId: unknown, key: unknown, fromSeq?: unknown) => {
+        if (typeof nodeId !== 'string' || typeof key !== 'string') {
+          throw new Error('kernel:getPropertyValues expects (treeId, nodeId: string, key: string, fromSeq?: number)')
+        }
+        return resolveTree(treeId).getPropertyValues(nodeId, key, fromSeq as number | undefined)
+      },
+    )
+
     ipcMain.handle('kernel:undo', (_event: any, treeId: unknown) => {
       return { ok: resolveTree(treeId).undo() }
     })

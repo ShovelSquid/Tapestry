@@ -1,5 +1,17 @@
 /* Tapestry App -- visual values from UI-SPEC.md */
 
+/* Design tokens (02.3-time-threads UI-SPEC "Theming"): most of this file
+   still uses raw hex per-component, matching the rest of the app; this
+   token is introduced for ThreadNotice.tsx specifically, whose failure
+   copy must never carry a raw hex literal at its own use site. */
+:root {
+  /* #B4232A: 6.00:1 on --tap-paper (#F7F5F0), 6.53:1 on --tap-surface
+     (#FFFFFF) -- AA and AAA for normal text (UI-SPEC TA-20). */
+  --tap-destructive-text: #B4232A;
+  /* UI-SPEC "Secondary (30%)": the surface ThreadNotice's card sits on. */
+  --tap-surface: #FFFFFF;
+}
+
 /* Reset */
 *, *::before, *::after {
   margin: 0;
