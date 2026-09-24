@@ -173,7 +173,13 @@ describe('SpaceService first launch (case A)', () => {
       'import 3 trees and their frames from settings.json; skipped 1 unreadable entries',
     )
     expect(forestText).toContain('vault.root.hint')
-    expect(commitCount(forestText)).toBe(1)
+    // The import, then one system commit per native member recording its
+    // identity on first open (Plan 04, D-03). The vault stays unopened.
+    expect(commitCount(forestText)).toBe(3)
+    expect(forestText.indexOf('import 3 trees')).toBeLessThan(
+      forestText.indexOf('record identity of \\"alpha\\"'),
+    )
+    expect(forestText).toContain('message "record identity of \\"beta\\""')
 
     const homeText = readFileSync(r.paths.home, 'utf-8')
     expect(homeText).toContain(HOME_ROOT_TYPE)

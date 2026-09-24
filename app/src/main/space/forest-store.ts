@@ -383,6 +383,84 @@ export class ForestStore {
     return this.bridge.submitAs(actor, message, ops)
   }
 
+  /**
+   * Put one member in the forest: its stand-in and the placement edge from
+   * the space node, in one commit (D-01, Pattern 1). The digest is not
+   * written here; the system records it on first open (D-03).
+   */
+  addMember(seed: MemberSeed, actor: Actor, message: string): { nodeId: string; edgeId: string } {
+    this.assertWritable()
+    const spaceId = this.spaceNodeId()
+    const predicted = this.bridge.getNextIds().node
+
+    const props: Record<string, { type: string; value: string }> = {
+      [KEY_KIND]: { type: 'text', value: seed.kind },
+      [KEY_PATH_HINT]: { type: 'text', value: seed.pathHint },
+    }
+    if (seed.kind === 'vault' && seed.vaultRootHint !== undefined) {
+      props[KEY_VAULT_ROOT_HINT] = { type: 'text', value: seed.vaultRootHint }
+    }
+
+    const result = this.bridge.submitAs(actor, message, [
+      { op: 'createNode', type: MEMBER_TYPE, props },
+      {
+        op: 'createEdge',
+        from: spaceId,
+        to: predicted,
+        label: PLACEMENT_LABEL,
+        props: {
+          [KEY_ORIGIN_X]: { type: 'real', value: seed.origin.x },
+          [KEY_ORIGIN_Y]: { type: 'real', value: seed.origin.y },
+        },
+      },
+    ])
+    if (result.nodeIds.length !== 1 || result.nodeIds[0] !== predicted) {
+      throw new Error(`Expected node ${predicted} but the kernel issued ${result.nodeIds.join(', ')}`)
+    }
+    return { nodeId: predicted, edgeId: result.edgeIds[0] }
+  }
+
+  /**
+   * Take a member out of the forest in one commit. Deleting the stand-in
+   * deletes its placement edge with it, so its last frame stays in history.
+   */
+  removeMember(nodeId: string, actor: Actor, message: string): CommitResult {
+    this.assertWritable()
+    return this.bridge.submitAs(actor, message, [{ op: 'deleteNode', id: nodeId }])
+  }
+
+  /**
+   * Update stand-in facts (path hint, vault root hint, digest) and delete
+   * stand-ins, all in one commit. Used for the first-open digest, a member
+   * found at a new path, and folding a duplicate stand-in away.
+   */
+  writeMemberFacts(
+    changes: Array<{ nodeId: string; pathHint?: string; vaultRootHint?: string; digest?: string }>,
+    deletions: string[],
+    actor: Actor,
+    message: string,
+  ): CommitResult {
+    this.assertWritable()
+    const ops: OpObject[] = []
+    const text = (target: string, key: string, value: string): OpObject => ({
+      op: 'setProperty',
+      target,
+      key,
+      type: 'text',
+      value,
+    })
+    for (const change of changes) {
+      if (change.pathHint !== undefined) ops.push(text(change.nodeId, KEY_PATH_HINT, change.pathHint))
+      if (change.vaultRootHint !== undefined) {
+        ops.push(text(change.nodeId, KEY_VAULT_ROOT_HINT, change.vaultRootHint))
+      }
+      if (change.digest !== undefined) ops.push(text(change.nodeId, KEY_DIGEST, change.digest))
+    }
+    for (const nodeId of deletions) ops.push({ op: 'deleteNode', id: nodeId })
+    if (ops.length === 0) throw new Error('No member facts to write')
+    return this.bridge.submitAs(actor, message, ops)
+  }
+
   /** Release the journal lock. */
   close(): void {
     closeQuietly(this.bridge)

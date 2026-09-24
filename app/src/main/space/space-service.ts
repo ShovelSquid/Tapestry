@@ -20,11 +20,11 @@
 
 import { basename, dirname, resolve } from 'path'
 import { existsSync } from 'fs'
-import type { Actor } from '../commands/actor'
+import { SYSTEM_ACTOR, type Actor } from '../commands/actor'
 import { isSafeTreePath } from '../settings'
 import type { SettingsStore } from '../settings'
-import type { TreeEntry, TreeRegistry, TreeSummary } from '../trees/registry'
-import type { ForestMember, ForestStore } from './forest-store'
+import type { OpenTree, TreeEntry, TreeRegistry, TreeSummary } from '../trees/registry'
+import type { ForestMember, ForestStore, MemberSeed } from './forest-store'
 import type { TapestryHome } from './home-tree'
 import {
   SPACE_NOT_OPEN,
@@ -34,7 +34,21 @@ import {
   type SpacePaths,
   type SpaceProblem,
 } from './migrate'
-import { moveFrameMessage } from './shapes'
+import {
+  addTreeMessage,
+  moveFrameMessage,
+  recordIdentityMessage,
+  removeTreeMessage,
+} from './shapes'
+
+/**
+ * Where a new member's frame goes before the renderer measures it: right of
+ * the rightmost frame, at its height. 480 and 64 are FRAME_MIN_WIDTH and
+ * FRAME_GAP from renderer/layout/frames.ts, repeated rather than imported
+ * because main and renderer are separate bundles.
+ */
+const FRAME_MIN_WIDTH = 480
+const FRAME_GAP = 64
 
 // ---------------------------------------------------------------------------
 // Types
@@ -158,14 +172,26 @@ export class SpaceService {
       }
 
       this.approve(hint)
+      let entry: TreeEntry
       try {
-        this.registry.tryOpen(hint, { kind: 'native' })
+        entry = this.registry.tryOpen(hint, { kind: 'native' })
         restored += 1
       } catch (err) {
         console.error(`[SpaceService] could not restore ${hint}:`, err)
+        continue
       }
+      if (isOpen(entry)) this.settleIdentityQuietly(member.nodeId, entry)
     }
     return restored
+  }
+
+  /** Record a restored member's identity without letting a failure stop the launch. */
+  private settleIdentityQuietly(nodeId: string, tree: OpenTree): void {
+    try {
+      this.settleIdentity(nodeId, tree)
+    } catch (err) {
+      console.error(`[SpaceService] could not record the identity of ${tree.path}:`, err)
+    }
   }
 
   /** Call the approvePath hook without letting it break the launch. */
@@ -183,13 +209,13 @@ export class SpaceService {
 
   /**
    * The registry's trees, each with its frame from the forest. A tree no
-   * stand-in matches (opened through a path Plan 04 has not yet converted)
+   * stand-in matches (which the membership handlers never leave behind)
    * sits at (0, 0).
    */
   list(): SpaceTreeSummary[] {
     const members = this.forest?.members() ?? []
     return this.registry.summary().map((entry) => {
-      const placement = matchMember(members, entry)?.placement
+      const placement = this.memberFor(entry, members)?.placement
       return { ...entry, frame: placement ? { x: placement.x, y: placement.y } : { x: 0, y: 0 } }
     })
   }
@@ -206,7 +232,7 @@ export class SpaceService {
    * is written, and a batch that changes nothing makes no history entry.
    */
   moveFrames(moves: unknown, actor: Actor): { committed: boolean } {
-    const forest = this.requireForest()
+    const forest = this.requireReady()
     const members = forest.members()
 
     if (!Array.isArray(moves) || moves.length === 0 || moves.length > members.length) {
@@ -229,7 +255,7 @@ export class SpaceService {
       seen.add(treeId)
 
       const entry = this.registry.entry(treeId)
-      const placement = entry ? matchMember(members, entry)?.placement : undefined
+      const placement = entry ? this.memberFor(entry, members)?.placement : undefined
       if (!entry || !placement) throw new Error(`Unknown tree ${treeId}`)
       if (resolved.some((r) => r.edgeId === placement.edgeId)) {
         throw new Error(`Tree ${treeId} is moved twice in one drop`)
@@ -256,6 +282,101 @@ export class SpaceService {
   }
 
   // -------------------------------------------------------------------------
+  // Membership (D-01, D-02, D-03)
+  // -------------------------------------------------------------------------
+
+  /**
+   * Put a registry entry in the forest, signed by the person who added it.
+   *
+   * A tree that is already recorded at this path keeps its frame (re-adding
+   * never moves it, as with the old settings list); only a missing digest is
+   * filled in. Otherwise a new stand-in and placement are written in one
+   * commit, right of the rightmost frame. An open tree then has its digest
+   * recorded by the system (CONTEXT discretion: the first open is the system's).
+   */
+  addMember(entry: TreeEntry, actor: Actor): { committed: boolean } {
+    const forest = this.requireReady()
+    const members = forest.members()
+
+    const recorded = this.memberFor(entry, members)
+    if (recorded && samePath(recorded.pathHint, entry.path)) {
+      return isOpen(entry) ? this.settleIdentity(recorded.nodeId, entry) : { committed: false }
+    }
+
+    const seed: MemberSeed = {
+      kind: entry.kind,
+      pathHint: entry.path,
+      ...(entry.kind === 'vault' && entry.vaultRoot !== undefined
+        ? { vaultRootHint: entry.vaultRoot }
+        : {}),
+      origin: nextFrameOrigin(members),
+    }
+    const { nodeId } = forest.addMember(seed, actor, addTreeMessage(entry.name))
+    if (isOpen(entry)) this.settleIdentity(nodeId, entry)
+    return { committed: true }
+  }
+
+  /**
+   * Write an open tree's digest to its stand-in once, signed by the system.
+   * A stand-in that already has one is left alone, so a later launch writes
+   * nothing.
+   */
+  recordIdentity(entry: OpenTree): { committed: boolean } {
+    const forest = this.requireReady()
+    const standIn = this.memberFor(entry, forest.members())
+    if (!standIn) return { committed: false }
+    return this.settleIdentity(standIn.nodeId, entry)
+  }
+
+  /**
+   * Take a tree out of the forest, signed by the person. Call it before
+   * `registry.close`, while the registry entry still joins to its stand-in.
+   * A tree that is not a member writes nothing.
+   */
+  removeMember(treeId: string, actor: Actor): { committed: boolean } {
+    const forest = this.requireReady()
+    const entry = this.registry.entry(treeId)
+    if (!entry) return { committed: false }
+    const standIn = this.memberFor(entry, forest.members())
+    if (!standIn) return { committed: false }
+    forest.removeMember(standIn.nodeId, actor, removeTreeMessage(entry.name))
+    return { committed: true }
+  }
+
+  /** Write the digest of `tree` to stand-in `nodeId` if it has none yet. */
+  private settleIdentity(nodeId: string, tree: OpenTree): { committed: boolean } {
+    const forest = this.requireReady()
+    const standIn = forest.members().find((m) => m.nodeId === nodeId)
+    if (!standIn || standIn.digest !== undefined) return { committed: false }
+    forest.writeMemberFacts(
+      [{ nodeId, digest: tree.id }],
+      [],
+      SYSTEM_ACTOR,
+      recordIdentityMessage(tree.name),
+    )
+    return { committed: true }
+  }
+
+  /**
+   * The stand-in for a registry entry (the join rule `list`, `moveFrames`
+   * and membership all use): by digest for an open tree, falling back to a
+   * path match on a stand-in whose digest is not yet recorded; by path for a
+   * tree that would not open and so has no digest.
+   */
+  private memberFor(
+    entry: TreeEntry | TreeSummary,
+    members: ForestMember[] = this.forest?.members() ?? [],
+  ): ForestMember | undefined {
+    if (entry.id.startsWith('sha256:')) {
+      return (
+        members.find((m) => m.digest === entry.id) ??
+        members.find((m) => m.digest === undefined && samePath(m.pathHint, entry.path))
+      )
+    }
+    return members.find((m) => samePath(m.pathHint, entry.path))
+  }
+
+  // -------------------------------------------------------------------------
   // Closing
   // -------------------------------------------------------------------------
 
@@ -267,31 +388,32 @@ export class SpaceService {
     this.home = null
   }
 
-  private requireForest(): ForestStore {
-    if (!this.forest) throw new Error(SPACE_NOT_OPEN)
+  /** The forest, or the approved 4.9 refusal when the space is not open. */
+  private requireReady(): ForestStore {
+    if (!this.forest || !this.home) throw new Error(SPACE_NOT_OPEN)
     return this.forest
   }
 }
 
 // ---------------------------------------------------------------------------
-// Joining the registry to the forest
+// Helpers
 // ---------------------------------------------------------------------------
 
-/**
- * The stand-in for a registry entry: by digest for an open tree (falling back
- * to a path match on a stand-in whose digest is not yet recorded), by path
- * for a tree that would not open and so has no digest.
- */
-function matchMember(
-  members: ForestMember[],
-  entry: TreeEntry | TreeSummary,
-): ForestMember | undefined {
-  const path = resolve(entry.path)
-  if (entry.id.startsWith('sha256:')) {
-    return (
-      members.find((m) => m.digest === entry.id) ??
-      members.find((m) => m.digest === undefined && resolve(m.pathHint) === path)
-    )
+function isOpen(entry: TreeEntry): entry is OpenTree {
+  return 'bridge' in entry
+}
+
+function samePath(a: string, b: string): boolean {
+  return resolve(a) === resolve(b)
+}
+
+/** Right of the rightmost placed frame, at its height; (0, 0) in an empty forest. */
+function nextFrameOrigin(members: ForestMember[]): { x: number; y: number } {
+  let rightmost: { x: number; y: number } | null = null
+  for (const member of members) {
+    const p = member.placement
+    if (p && (rightmost === null || p.x > rightmost.x)) rightmost = p
   }
-  return members.find((m) => resolve(m.pathHint) === path)
+  if (rightmost === null) return { x: 0, y: 0 }
+  return { x: rightmost.x + FRAME_MIN_WIDTH + FRAME_GAP, y: rightmost.y }
 }

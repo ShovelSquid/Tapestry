@@ -144,3 +144,23 @@ export function moveFrameMessage(name: string, pushed: number): string {
   const base = `move frame "${name}"`
   return pushed > 0 ? `${base} and push ${pushed} aside` : base
 }
+
+/** The person put a tree in the space, or opened a member from its new path (D-03). */
+export function addTreeMessage(name: string): string {
+  return `add tree "${name}"`
+}
+
+/** The person took a tree out of the space; its last frame stays in history. */
+export function removeTreeMessage(name: string): string {
+  return `remove tree "${name}" from the forest`
+}
+
+/** The system wrote a member's digest the first time its world opened (D-03). */
+export function recordIdentityMessage(name: string): string {
+  return `record identity of "${name}"`
+}
+
+/** The system folded away a stand-in that turned out to be another member's world. */
+export function forgetDuplicateMessage(name: string, file: string, other: string): string {
+  return `forget "${name}" at ${file}: it is the same world as "${other}"`
+}

@@ -71,6 +71,16 @@ export type SpaceLaunch = 'import' | 'reopen' | 'recover-home' | 'recover-forest
 export const SPACE_NOT_OPEN =
   "Your space isn't open, so trees can't be added, closed or moved right now."
 
+/** 4.10: adding Tapestry's own forest or Tapestry tree, or a copy of either. */
+export function reservedFileRefusal(fileName: string): string {
+  return `${fileName} is Tapestry's own arrangement file and can't be added as a tree.`
+}
+
+/** 4.11: the file at a member's path now holds a different world. */
+export function differentWorldReason(path: string): string {
+  return `A different world is now at ${path}, so this tree's file can't be found.`
+}
+
 /** The sentence shown in the app-error banner for a problem (answer 4.1). */
 export function problemMessage(problem: SpaceProblem): string {
   const file = basename(problem.path)
