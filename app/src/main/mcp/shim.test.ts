@@ -303,6 +303,31 @@ describe('MCP shim over stdio', () => {
     expect(statSync(treePath).size).toBe(sizeBefore)
   }, 30000)
 
+  it('creates a note with where near the note it grew from, so it follows, stepping past n2', async () => {
+    const called = await request(9, 'tools/call', {
+      name: 'create_note',
+      arguments: {
+        tree: 'agents',
+        grewFrom: 'n1',
+        title: 'Near',
+        text: 'placed by where',
+        where: { near: 'n1' },
+      },
+    })
+
+    expect(called.error).toBeUndefined()
+    expect(called.result?.isError).not.toBe(true)
+
+    // n1 is at 0,0 with the default size and n2 already sits at 360,0, so the
+    // new note steps down once: 0 + height 120 + gutter 24.
+    const treeText = readFileSync(treePath, 'utf-8')
+    expect(treeText).toContain('create-node n3')
+    expect(treeText).toMatch(/^set n3 pinned bool false$/m)
+    expect(treeText).toMatch(/^set n3 position\.x real 360$/m)
+    expect(treeText).toMatch(/^set n3 position\.y real 144$/m)
+    expect(treeText).toContain('placed near n1')
+  }, 30000)
+
   it('refuses an extra actor key and writes nothing', async () => {
     const sizeBefore = statSync(treePath).size
 
