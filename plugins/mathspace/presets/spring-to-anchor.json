@@ -1,0 +1,76 @@
+{
+  "name": "Spring to anchor",
+  "description": "A unary force rule pulls each body toward its own anchor point with a spring, and a little drag so it settles there. Move a body and it springs back; edit anchor.x and anchor.y to move the rest point.",
+  "nodes": [
+    {
+      "type": "mathspace/rule@1",
+      "props": {
+        "title": {
+          "type": "text",
+          "value": "Spring"
+        },
+        "position.x": {
+          "type": "real",
+          "value": 0
+        },
+        "position.y": {
+          "type": "real",
+          "value": -160
+        },
+        "scope": {
+          "type": "text",
+          "value": "unary"
+        },
+        "force.expr": {
+          "type": "text",
+          "value": "(self.anchor - self.position) * self.stiffness - self.velocity * 0.0625"
+        }
+      }
+    },
+    {
+      "type": "tapestry.notes/note@1",
+      "props": {
+        "title": {
+          "type": "text",
+          "value": "Weight"
+        },
+        "body": {
+          "type": "text",
+          "value": ""
+        },
+        "position.x": {
+          "type": "real",
+          "value": 120
+        },
+        "position.y": {
+          "type": "real",
+          "value": 0
+        },
+        "velocity.x": {
+          "type": "real",
+          "value": 0
+        },
+        "velocity.y": {
+          "type": "real",
+          "value": 0
+        },
+        "mass": {
+          "type": "real",
+          "value": 1
+        },
+        "anchor.x": {
+          "type": "real",
+          "value": 0
+        },
+        "anchor.y": {
+          "type": "real",
+          "value": 0
+        },
+        "stiffness": {
+          "type": "real",
+          "value": 0.015625
+        }
+      }
+    }
+  ]
+}

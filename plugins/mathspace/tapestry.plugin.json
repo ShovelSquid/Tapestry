@@ -12,7 +12,14 @@
     "commands": [
       "mathspace.run",
       "mathspace.pause",
-      "mathspace.step"
+      "mathspace.step",
+      "mathspace.preset.anger",
+      "mathspace.preset.drag",
+      "mathspace.preset.gold",
+      "mathspace.preset.gravity-field",
+      "mathspace.preset.nbody",
+      "mathspace.preset.push",
+      "mathspace.preset.spring-to-anchor"
     ],
     "surfaces": []
   }

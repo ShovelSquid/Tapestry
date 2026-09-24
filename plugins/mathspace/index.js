@@ -9,12 +9,14 @@
  *                    committing position changes back through kernel.submit
  *   mathspace.pause  stop stepping and commit what has moved
  *   mathspace.step   one tick, then commit
+ *   mathspace.preset.<id>
+ *                    create the nodes of presets/<id>.json in one commit
  *
  * Plugins are plain CommonJS so the host can require() them, and import
  * only from @tapestry/sdk (PLUG-03). This file is the composition file:
  * engine.js wraps the Wasm ABI, image.js maps kernel nodes to engine
  * actions and snapshots back to ops, runner.js is the loop and the
- * commit cadence.
+ * commit cadence, presets.js turns presets/*.json into commands.
  */
 
 /** @typedef {import('@tapestry/sdk').TapestryPlugin} TapestryPlugin */
@@ -23,6 +25,7 @@
 
 const { loadModule } = require('./engine')
 const { Runner } = require('./runner')
+const { loadPresets, presetCommands } = require('./presets')
 
 /** One run loop for the plugin's lifetime; each command hands it the kernel. */
 const runner = new Runner({ loadModule })
@@ -48,6 +51,9 @@ const stepCommand = {
   handler: (context) => runner.stepOnce(context.kernel),
 }
 
+/** The presets directory is read once, when the host requires this file. */
+const presets = presetCommands(loadPresets())
+
 /** @type {TapestryPlugin} */
 const mathspacePlugin = {
   name: 'mathspace',
@@ -58,6 +64,7 @@ const mathspacePlugin = {
     context.registerCommand(runCommand)
     context.registerCommand(pauseCommand)
     context.registerCommand(stepCommand)
+    for (const command of presets) context.registerCommand(command)
   },
 
   deactivate() {
