@@ -31,6 +31,13 @@
   /* UI-SPEC "Accent (10%)": the now-head cap and its stage uses. Matches
      the accent colour already used throughout this file. */
   --tap-accent: #4A7CFF;
+  /* UI-SPEC "Color" table: the border colour already used as an inline
+     fallback (e.g. ThreadOverlay.tsx's close button) but never declared as
+     a token until now (02.3-06). */
+  --tap-border: #E0DDD7;
+  /* UI-SPEC "Color" table, "Secondary, sunk": a session pill that is
+     currently being read (SessionBridge.tsx, SessionList.tsx). */
+  --tap-surface-sunk: #F0EDE8;
 }
 
 /* Reset */

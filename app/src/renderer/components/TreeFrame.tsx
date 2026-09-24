@@ -19,6 +19,7 @@ import ConnectionLine from './ConnectionLine'
 import KnotNode, { KNOT_TYPE, KNOT_TIE_LABEL } from './KnotNode'
 import FrameHeader from './FrameHeader'
 import ThreadCard, { THREAD_TYPE } from '../threads/ThreadCard'
+import SessionBridge from '../threads/SessionBridge'
 import type { ForestTree, NodeRef } from '../state/use-forest'
 import { nodeKey } from '../state/use-forest'
 import type { FrameRect } from '../layout/frames'
@@ -292,22 +293,61 @@ export default function TreeFrame({
           const key = keyFor(node.id)
 
           if (isThread(node) && pluginNodeViews[node.type]) {
+            const px = Number(node.props['position.x']?.value ?? 0)
+            const py = Number(node.props['position.y']?.value ?? 0)
+            const dims = getDims(key)
+            const cardBottom = py + (dims?.height ?? 80)
+
+            // D-24: "Grew from [note title] · started by agent.[name]" --
+            // read generically from an ordinary `grew-from` edge and the
+            // creating actor, so this renders the moment a later plan
+            // (agents starting threads) actually produces that data; no
+            // thread today has either, so this is dormant until then.
+            const grewFromEdge = tree.edges.find((e) => e.label === 'grew-from' && e.from === node.id)
+            const originNode = grewFromEdge ? tree.nodes.find((n) => n.id === grewFromEdge.to) : undefined
+            const createdBy = tree.history?.nodes[node.id]?.createdBy
+            const isAgentStarted = createdBy?.kind === 'plugin' && createdBy.id.startsWith('agent.')
+            const originTitle = originNode ? String(originNode.props['title']?.value ?? 'Untitled') : null
+
             return (
-              <ThreadCard
-                key={node.id}
-                node={node}
-                isEditing={editingKey === key}
-                isHovered={hoveredKey === key}
-                isSelected={selectedKey === key}
-                zoom={zoom}
-                onStartEditing={() => handlers.onStartEditing(refFor(node.id))}
-                onBorderSelect={() => handlers.onBorderSelect(refFor(node.id))}
-                onSave={(nodeId, body, title) => handlers.onSave(refFor(nodeId), body, title)}
-                onMarkDirty={(nodeId) => handlers.onMarkDirty(refFor(nodeId))}
-                onMarkClean={(nodeId) => handlers.onMarkClean(refFor(nodeId))}
-                onHover={(hovered) => handlers.onHover(refFor(node.id), hovered)}
-                onRegisterDims={(nodeId, w, h) => handlers.onRegisterDims(refFor(nodeId), w, h)}
-              />
+              <React.Fragment key={node.id}>
+                <ThreadCard
+                  node={node}
+                  isEditing={editingKey === key}
+                  isHovered={hoveredKey === key}
+                  isSelected={selectedKey === key}
+                  zoom={zoom}
+                  onStartEditing={() => handlers.onStartEditing(refFor(node.id))}
+                  onBorderSelect={() => handlers.onBorderSelect(refFor(node.id))}
+                  onSave={(nodeId, body, title) => handlers.onSave(refFor(nodeId), body, title)}
+                  onMarkDirty={(nodeId) => handlers.onMarkDirty(refFor(nodeId))}
+                  onMarkClean={(nodeId) => handlers.onMarkClean(refFor(nodeId))}
+                  onHover={(hovered) => handlers.onHover(refFor(node.id), hovered)}
+                  onRegisterDims={(nodeId, w, h) => handlers.onRegisterDims(refFor(nodeId), w, h)}
+                />
+                {isAgentStarted && originTitle && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      left: px,
+                      top: cardBottom + 2,
+                      fontSize: 11,
+                      color: 'var(--tap-muted)',
+                    }}
+                  >
+                    {`Grew from ${originTitle} · started by ${createdBy!.id}`}
+                  </div>
+                )}
+                <SessionBridge
+                  treeId={tree.id}
+                  nodeId={node.id}
+                  cardX={px}
+                  cardBottom={cardBottom}
+                  focusedSessionIndex={null}
+                  onOpenSession={() => handlers.onStartEditing(refFor(node.id))}
+                  onShowAllSessions={() => handlers.onStartEditing(refFor(node.id))}
+                />
+              </React.Fragment>
             )
           }
 

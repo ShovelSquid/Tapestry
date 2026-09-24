@@ -57,6 +57,18 @@ export const DASH = 127
  * within a session (D-11), new in this plan. */
 export type ChunkKind = 0 | 1 | 2
 
+/**
+ * Named aliases for the chunk-kind vocabulary above. `SessionBridge.tsx`
+ * (02.3-06) draws the 2D canvas bridge with a plain 2D `<div>` line, not this
+ * WebGL ribbon — but it reuses this same three-state vocabulary (a solid
+ * session stretch, a dashed gap, a squashed dash run standing in for both
+ * a time-out and a time-in dash) for its own dash rendering, so "the
+ * language the line already speaks" (UI-SPEC "Bridge time scale") is
+ * spelled out once here rather than re-invented as a second set of magic
+ * numbers on the canvas side.
+ */
+export const CHUNK_KIND = { SESSION: 0, GAP: 1, PAUSE: 2 } as const satisfies Record<string, ChunkKind>
+
 // ---------------------------------------------------------------------------
 // Hour-block time encoding + floating origin (thread.js:40-43, 623-628)
 // ---------------------------------------------------------------------------
