@@ -29,14 +29,9 @@ strictly in order: 01, 02, 03, 04, 05, then 06.
 
 ## Checkpoint
 
-- Phase 02.6, plan 02.6-02, **Task 1** (checkpoint:decision,
-  gate="blocking-human"): record shape #17, settings migration #18, Ctrl+Z
-  reach, new wording. Written to autonomy/WAITING 2026-09-24 ~12:55.
-  No executor was spawned and nothing of Task 2 exists yet.
-- To resume: spawn the gsd-executor for 02.6-02 with RESPONSE's text
-  verbatim as Kaelen's Task 1 answer (pre-resolved), starting at Task 2.
-  Task 2 records every numbered item (1.1-1.12, 2.1-2.7, cases A-J,
-  Part 3, 4.1-4.12) in shapes.ts and 02.6-02-SUMMARY § Checkpoint decisions.
+(none pending) 02.6-02 Task 1 was resolved autonomously as `recommended`
+(PROTOCOL step 4) and is queued as item 1 in autonomy/REVIEW.md. The shapes
+are recorded in app/src/main/space/shapes.ts and 02.6-02-SUMMARY.
 
 ## In progress
 
@@ -57,6 +52,11 @@ strictly in order: 01, 02, 03, 04, 05, then 06.
   blocking-human gate, so it was presented straight from the plan (no
   executor spawn; see memory gsd-execute-phase-in-conductor). WAITING
   written; only this STATE.md committed.
+- 2026-09-24 15:15 wave 2 (02.6-02): resolved Task 1 as `recommended`
+  (98e6eed, REVIEW item 1), executor ran Task 2: 1d5acfa feat, 879dcf3
+  docs. 25 files / 555 tests green, typecheck clean, ~11 min. Next: wave 3
+  (02.6-03, app launches into the forest). Plan 03 owns tests for cases
+  E/G/H; Plan 06 owns recovery for cases B/C (return not-set-up until then).
 
 ## Learned
 
@@ -69,6 +69,7 @@ strictly in order: 01, 02, 03, 04, 05, then 06.
 - The baseline after the merge (`256fae7`): 21 test files, 443 tests
   passing, typecheck clean. After quick 260924-glr (`e66b3a8`): 22 files,
   486 tests. After 02.6-01 (`1d1c606`): 24 files, 530 tests.
+  After 02.6-02 (`879dcf3`): 25 files, 555 tests.
 - Execute-phase here: dispatch-isolation says orchestrator-worktree but
   worktree.base-check degrades (HEAD != stale origin/HEAD), so executors
   run sequentially on this tree. One executor per plan, ~8 min for 01.
