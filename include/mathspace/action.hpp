@@ -6,8 +6,8 @@
 // they can never collide with ddsim's 1 to 6 once the two logs share a
 // journal at plan phase 7. All fields little-endian.
 //
-//   Kind 32 CreateSpace: u8 dim
-//   Kind 33 CreateNote:  u64 space | u8 kind
+//   Kind 32 CreateSpace: u64 id | u8 dim
+//   Kind 33 CreateNote:  u64 id | u64 space | u8 kind
 //   Kind 34 SetField:    u64 note | field record (u8 name_len | name
 //                        | u8 dim | u8 bound | dim x i64 | u32 code_len
 //                        | code; the same record the hash walk writes)
@@ -45,8 +45,8 @@ enum class ActionKind : std::uint8_t {
 inline constexpr std::uint8_t ACTION_VERSION = 1;
 inline constexpr std::size_t ACTION_HEADER_BYTES = 8;
 
-std::vector<std::uint8_t> encode_create_space(std::uint8_t dim);
-std::vector<std::uint8_t> encode_create_note(SpaceId space, NoteKind kind);
+std::vector<std::uint8_t> encode_create_space(NoteId id, std::uint8_t dim);
+std::vector<std::uint8_t> encode_create_note(NoteId id, SpaceId space, NoteKind kind);
 std::vector<std::uint8_t> encode_set_field(NoteId note, const Field& field);
 std::vector<std::uint8_t> encode_delete_note(NoteId note);
 std::vector<std::uint8_t> encode_delete_field(NoteId note, std::string_view name);

@@ -1,10 +1,11 @@
 // mathspace/world.hpp — the store: every note of every space, in id order.
 //
-// World is the authoritative state. Notes live in one vector sorted by id
-// (a lower_bound insert, exactly as ddsim's state.nodes), so the hash walk,
-// serialize and every rule iterate in id order without a map. Spaces are
-// notes of kind Space and take the next group ordinal like anything else;
-// a note created by hand is a group of one (index 0).
+// World is the engine image of the kernel's nodes. Notes live in one
+// vector sorted by id (a lower_bound insert, exactly as ddsim's
+// state.nodes), so the hash walk, serialize and every rule iterate in id
+// order without a map. Ids are the kernel's (ids.hpp): the caller of
+// create_space/create_note supplies them, and the store only refuses zero
+// and a duplicate. Spaces are notes of kind Space.
 //
 // A space's dimension is the dim of its own `pos` field: create_space
 // gives the space note a zero `pos` of that dim, and `pos` on any note in
@@ -15,13 +16,8 @@
 // Every mutator validates everything first and only then writes, so a
 // rejected call leaves the world byte-identical; the tests check this by
 // comparing the whole World before and after. Mutators return an Error
-// rather than throwing because World::apply (the action decoder, next
-// step) needs to turn the same outcomes into a replayable result code.
-//
-// next_group is state: it must survive serialize/restore, otherwise a
-// restored world could reuse the ordinal of a deleted group and diverge
-// from the original on the next create. The hash walk therefore carries
-// it (see hash.cpp when it lands, and STATE.md Decisions).
+// rather than throwing because World::apply (the action decoder) needs
+// to turn the same outcomes into a replayable result code.
 #pragma once
 
 #include <cstdint>
@@ -44,7 +40,7 @@ enum class Error : std::uint8_t {
     PosDimMismatch,  // `pos` dim differs from the note's space dim
     SpaceNotEmpty,   // delete_note of a Space that still holds notes
     LockedField,     // delete_field `pos` on a Space note
-    IdExhausted,     // group ordinal space (32 bits) used up
+    DuplicateId,     // create_* with id zero or an id already in the store
     TooManyFields,   // set_field of a new name on a note that already has MAX_FIELDS
     BadBytes,        // restore: bytes are not a canonical walk of a well-formed world
     BadAction,       // apply: header, kind, or payload bytes malformed (action.hpp)
@@ -55,7 +51,6 @@ const char* error_name(Error e);
 struct World {
     std::uint64_t seed = 0;
     std::uint64_t tick = 0;
-    std::uint32_t next_group = 1;
     std::vector<Note> notes; // sorted by id, unique
 
     World() = default;
@@ -72,19 +67,16 @@ struct World {
     // Count of notes whose space is `space` (the space itself excluded).
     std::size_t notes_in(SpaceId space) const;
 
-    Error create_space(std::uint8_t dim, NoteId* out);
-    Error create_note(SpaceId space, NoteKind kind, NoteId* out);
+    Error create_space(NoteId id, std::uint8_t dim);
+    Error create_note(NoteId id, SpaceId space, NoteKind kind);
     Error set_field(NoteId note, Field field);
     Error delete_note(NoteId note);
     Error delete_field(NoteId note, std::string_view name);
 
     // Decodes one action (action.hpp) and calls the mutator it names.
-    // `created` receives the new id for CreateSpace/CreateNote; it may be
-    // null. Any outcome other than Ok leaves the world byte-identical.
-    Error apply(const std::uint8_t* bytes, std::size_t len, NoteId* created = nullptr);
-    Error apply(const std::vector<std::uint8_t>& bytes, NoteId* created = nullptr) {
-        return apply(bytes.data(), bytes.size(), created);
-    }
+    // Any outcome other than Ok leaves the world byte-identical.
+    Error apply(const std::uint8_t* bytes, std::size_t len);
+    Error apply(const std::vector<std::uint8_t>& bytes) { return apply(bytes.data(), bytes.size()); }
 
     // Advances tick only. Rules and bound expressions come in later phases.
     void step();
@@ -93,8 +85,7 @@ struct World {
     bool well_formed() const;
 
     friend bool operator==(const World& a, const World& b) {
-        return a.seed == b.seed && a.tick == b.tick && a.next_group == b.next_group &&
-               a.notes == b.notes;
+        return a.seed == b.seed && a.tick == b.tick && a.notes == b.notes;
     }
     friend bool operator!=(const World& a, const World& b) { return !(a == b); }
 };

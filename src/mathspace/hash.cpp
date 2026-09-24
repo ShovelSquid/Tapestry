@@ -7,10 +7,9 @@
 // hash implementation and the golden .sha256 files stay verifiable with
 // `shasum -a 256` over the serialized bytes.
 //
-// Walk (mathspace_plan.md, plus `u32 next_group` after tick; STATE.md
-// Decisions explains why that ordinal is state):
+// Walk (mathspace_plan.md):
 //   "MSP1" | u32 FORMAT_VERSION | u32 DD_FX_FORMAT_ID
-//   | u64 seed | u64 tick | u32 next_group
+//   | u64 seed | u64 tick
 //   | u32 note_count, per note in id order:
 //       u64 id | u64 space_id | u8 kind
 //       | u8 field_count, per field in name order: the field record of
@@ -89,7 +88,7 @@ bool read_world(const std::uint8_t* bytes, std::size_t len, World& w) {
         }
     }
     std::uint32_t note_count = 0;
-    if (!r.read_u64(w.seed) || !r.read_u64(w.tick) || !r.read_u32(w.next_group) || !r.read_u32(note_count) ||
+    if (!r.read_u64(w.seed) || !r.read_u64(w.tick) || !r.read_u32(note_count) ||
         note_count > MAX_NOTES || static_cast<std::size_t>(note_count) * MIN_NOTE_BYTES > r.remaining()) {
         return false;
     }
@@ -116,7 +115,6 @@ std::vector<std::uint8_t> serialize(const World& w) {
     put_u32(out, ddsim::DD_FX_FORMAT_ID);
     put_u64(out, w.seed);
     put_u64(out, w.tick);
-    put_u32(out, w.next_group);
     put_u32(out, static_cast<std::uint32_t>(w.notes.size()));
     for (const Note& n : w.notes) {
         put_u64(out, n.id.value);

@@ -23,19 +23,22 @@ Field vec(const char* name, std::uint8_t dim, std::int32_t v0 = 0, std::int32_t 
     return f;
 }
 
-// A world with one 2-space and one note in it, built by direct calls.
+// A world with one 2-space (id 1) and one note (id 2) in it, built by
+// direct calls.
 World base(NoteId* space_out, NoteId* note_out) {
     World w(3);
-    REQUIRE(w.create_space(2, space_out) == Error::Ok);
-    REQUIRE(w.create_note(space_of(*space_out), NoteKind::Note, note_out) == Error::Ok);
+    *space_out = NoteId{1};
+    *note_out = NoteId{2};
+    REQUIRE(w.create_space(*space_out, 2) == Error::Ok);
+    REQUIRE(w.create_note(*note_out, space_of(*space_out), NoteKind::Note) == Error::Ok);
     return w;
 }
 
 // Applies `action` to a copy of `w`, checks the result code and that a
 // failure left the copy byte-identical, and returns the copy.
-World apply_checked(const World& w, const Bytes& action, Error expected, NoteId* created = nullptr) {
+World apply_checked(const World& w, const Bytes& action, Error expected) {
     World copy = w;
-    const Error got = copy.apply(action, created);
+    const Error got = copy.apply(action);
     CHECK(got == expected);
     CHECK(error_name(got) == error_name(expected));
     if (got != Error::Ok) {
@@ -48,18 +51,21 @@ World apply_checked(const World& w, const Bytes& action, Error expected, NoteId*
 } // namespace
 
 TEST_CASE("header layout is ddsim's: kind, version 1, reserved 0, payload_len") {
-    const Bytes a = encode_create_space(2);
-    REQUIRE(a.size() == ACTION_HEADER_BYTES + 1);
+    const Bytes a = encode_create_space(NoteId{0x0102}, 2);
+    REQUIRE(a.size() == ACTION_HEADER_BYTES + 9);
     CHECK(a[0] == 32);
     CHECK(a[1] == ACTION_VERSION);
     CHECK(a[2] == 0);
     CHECK(a[3] == 0);
-    CHECK(a[4] == 1);
+    CHECK(a[4] == 9);
     CHECK(a[5] == 0);
     CHECK(a[6] == 0);
     CHECK(a[7] == 0);
-    CHECK(a[8] == 2);
-    CHECK(encode_create_note(SpaceId{}, NoteKind::Note)[0] == 33);
+    CHECK(a[8] == 2);  // id, little-endian
+    CHECK(a[9] == 1);
+    CHECK(a[15] == 0);
+    CHECK(a[16] == 2); // dim
+    CHECK(encode_create_note(NoteId{}, SpaceId{}, NoteKind::Note)[0] == 33);
     CHECK(encode_set_field(NoteId{}, vec("a", 1))[0] == 34);
     CHECK(encode_delete_note(NoteId{})[0] == 35);
     CHECK(encode_delete_field(NoteId{}, "a")[0] == 36);
@@ -67,40 +73,38 @@ TEST_CASE("header layout is ddsim's: kind, version 1, reserved 0, payload_len") 
 
 TEST_CASE("CreateSpace through apply equals the direct call") {
     World direct(3);
-    NoteId d;
-    REQUIRE(direct.create_space(2, &d) == Error::Ok);
+    REQUIRE(direct.create_space(NoteId{1}, 2) == Error::Ok);
 
     World w(3);
-    NoteId a;
-    REQUIRE(w.apply(encode_create_space(2), &a) == Error::Ok);
-    CHECK(a == d);
+    REQUIRE(w.apply(encode_create_space(NoteId{1}, 2)) == Error::Ok);
     CHECK(w == direct);
-    // The out pointer is optional.
-    CHECK(w.apply(encode_create_space(3)) == Error::Ok);
+    CHECK(w.apply(encode_create_space(NoteId{2}, 3)) == Error::Ok);
     CHECK(w.notes.size() == 2);
 
-    apply_checked(w, encode_create_space(0), Error::BadDim);
-    apply_checked(w, encode_create_space(9), Error::BadDim);
+    apply_checked(w, encode_create_space(NoteId{3}, 0), Error::BadDim);
+    apply_checked(w, encode_create_space(NoteId{3}, 9), Error::BadDim);
+    apply_checked(w, encode_create_space(NoteId{}, 2), Error::DuplicateId);
+    apply_checked(w, encode_create_space(NoteId{1}, 2), Error::DuplicateId);
 }
 
 TEST_CASE("CreateNote through apply equals the direct call") {
     NoteId s, n;
     const World w = base(&s, &n);
     World direct = w;
-    NoteId d;
-    REQUIRE(direct.create_note(space_of(s), NoteKind::Rule, &d) == Error::Ok);
+    const NoteId d{3};
+    REQUIRE(direct.create_note(d, space_of(s), NoteKind::Rule) == Error::Ok);
 
-    NoteId a;
-    World got = apply_checked(w, encode_create_note(space_of(s), NoteKind::Rule), Error::Ok, &a);
-    CHECK(a == d);
+    World got = apply_checked(w, encode_create_note(d, space_of(s), NoteKind::Rule), Error::Ok);
     CHECK(got == direct);
 
-    apply_checked(w, encode_create_note(space_of(s), NoteKind::Space), Error::BadKind);
-    apply_checked(w, encode_create_note(space_of(n), NoteKind::Note), Error::NoSuchSpace);
-    apply_checked(w, encode_create_note(SpaceId{}, NoteKind::Note), Error::NoSuchSpace);
+    apply_checked(w, encode_create_note(d, space_of(s), NoteKind::Space), Error::BadKind);
+    apply_checked(w, encode_create_note(d, space_of(n), NoteKind::Note), Error::NoSuchSpace);
+    apply_checked(w, encode_create_note(d, SpaceId{}, NoteKind::Note), Error::NoSuchSpace);
+    apply_checked(w, encode_create_note(n, space_of(s), NoteKind::Note), Error::DuplicateId);
+    apply_checked(w, encode_create_note(NoteId{}, space_of(s), NoteKind::Note), Error::DuplicateId);
     // A kind byte past the enum is BadKind, not BadAction: the bytes are
     // well-formed, the content is not.
-    Bytes k = encode_create_note(space_of(s), NoteKind::Note);
+    Bytes k = encode_create_note(d, space_of(s), NoteKind::Note);
     k.back() = 200;
     apply_checked(w, k, Error::BadKind);
 }
@@ -156,7 +160,7 @@ TEST_CASE("DeleteNote and DeleteField through apply equal the direct calls") {
 TEST_CASE("malformed headers are BadAction and leave the world untouched") {
     NoteId s, n;
     const World w = base(&s, &n);
-    const Bytes good = encode_create_space(2);
+    const Bytes good = encode_create_space(NoteId{3}, 2);
 
     SUBCASE("null and short") {
         World copy = w;
@@ -212,8 +216,8 @@ TEST_CASE("every kind rejects a truncated or extended payload") {
     Field f = vec("vel", 2, 1, 2);
     f.bytecode = {1, 2};
     const Bytes actions[] = {
-        encode_create_space(3),
-        encode_create_note(space_of(s), NoteKind::Note),
+        encode_create_space(NoteId{3}, 3),
+        encode_create_note(NoteId{3}, space_of(s), NoteKind::Note),
         encode_set_field(n, f),
         encode_delete_note(n),
         encode_delete_field(n, "pos"),
@@ -240,19 +244,19 @@ TEST_CASE("every kind rejects a truncated or extended payload") {
 
 TEST_CASE("a log of actions replays to the same hash as the direct build") {
     World direct(11);
-    NoteId s, a, b;
-    REQUIRE(direct.create_space(2, &s) == Error::Ok);
-    REQUIRE(direct.create_note(space_of(s), NoteKind::Note, &a) == Error::Ok);
-    REQUIRE(direct.create_note(space_of(s), NoteKind::Note, &b) == Error::Ok);
+    const NoteId s{1}, a{2}, b{3};
+    REQUIRE(direct.create_space(s, 2) == Error::Ok);
+    REQUIRE(direct.create_note(a, space_of(s), NoteKind::Note) == Error::Ok);
+    REQUIRE(direct.create_note(b, space_of(s), NoteKind::Note) == Error::Ok);
     REQUIRE(direct.set_field(a, vec("pos", 2, 1, 2)) == Error::Ok);
     REQUIRE(direct.set_field(b, vec("pos", 2, 3, 4)) == Error::Ok);
     REQUIRE(direct.delete_note(a) == Error::Ok);
     direct.step();
 
     const Bytes log[] = {
-        encode_create_space(2),
-        encode_create_note(space_of(s), NoteKind::Note),
-        encode_create_note(space_of(s), NoteKind::Note),
+        encode_create_space(s, 2),
+        encode_create_note(a, space_of(s), NoteKind::Note),
+        encode_create_note(b, space_of(s), NoteKind::Note),
         encode_set_field(a, vec("pos", 2, 1, 2)),
         encode_set_field(b, vec("pos", 2, 3, 4)),
         encode_delete_note(a),

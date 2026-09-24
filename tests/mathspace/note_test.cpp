@@ -112,8 +112,8 @@ TEST_CASE("name order is byte order, not length order") {
 
 TEST_CASE("Note equality covers id, space, kind and fields") {
     Note a;
-    a.id = make_note_id(0, 1, 0);
-    a.space = space_of(make_note_id(0, 1, 0));
+    a.id = NoteId{2};
+    a.space = SpaceId{1};
     a.kind = NoteKind::Note;
     set_field(a, make("x", 1, 1));
     Note b = a;

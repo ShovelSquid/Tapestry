@@ -30,16 +30,16 @@ Field vec(const char* name, std::uint8_t dim, std::int32_t v0 = 0, std::int32_t 
 }
 
 // Two spaces, three notes, a bound field with bytecode, a deleted note
-// so next_group is ahead of the live ids, and a few ticks.
+// so the ids have a gap, and a few ticks.
 World sample() {
     World w(42);
-    NoteId s2, s3, a, b, gone, c;
-    REQUIRE(w.create_space(2, &s2) == Error::Ok);
-    REQUIRE(w.create_space(3, &s3) == Error::Ok);
-    REQUIRE(w.create_note(space_of(s2), NoteKind::Note, &a) == Error::Ok);
-    REQUIRE(w.create_note(space_of(s2), NoteKind::Rule, &b) == Error::Ok);
-    REQUIRE(w.create_note(space_of(s3), NoteKind::View, &gone) == Error::Ok);
-    REQUIRE(w.create_note(space_of(s3), NoteKind::Note, &c) == Error::Ok);
+    const NoteId s2{1}, s3{2}, a{3}, b{4}, gone{5}, c{6};
+    REQUIRE(w.create_space(s2, 2) == Error::Ok);
+    REQUIRE(w.create_space(s3, 3) == Error::Ok);
+    REQUIRE(w.create_note(a, space_of(s2), NoteKind::Note) == Error::Ok);
+    REQUIRE(w.create_note(b, space_of(s2), NoteKind::Rule) == Error::Ok);
+    REQUIRE(w.create_note(gone, space_of(s3), NoteKind::View) == Error::Ok);
+    REQUIRE(w.create_note(c, space_of(s3), NoteKind::Note) == Error::Ok);
     REQUIRE(w.set_field(a, vec("pos", 2, 3, -4)) == Error::Ok);
     REQUIRE(w.set_field(a, vec("mass", 1, 5)) == Error::Ok);
     Field bound = vec("vel", 2, 1, 1);
@@ -59,8 +59,8 @@ World sample() {
 TEST_CASE("empty world serializes to the header alone and round-trips") {
     World w;
     const auto bytes = serialize(w);
-    // magic 4 | 2 pins 8 | seed 8 | tick 8 | next_group 4 | note_count 4
-    CHECK(bytes.size() == 36);
+    // magic 4 | 2 pins 8 | seed 8 | tick 8 | note_count 4
+    CHECK(bytes.size() == 32);
     CHECK(bytes[0] == 'M');
     CHECK(bytes[3] == '1');
     World back(99);
@@ -78,12 +78,10 @@ TEST_CASE("serialize then restore gives an equal world with an equal hash") {
     CHECK(back == w);
     CHECK(digest(back) == digest(w));
     CHECK(serialize(back) == bytes);
-    // And the restored world keeps allocating where the original would.
-    NoteId n1, n2;
+    // And the restored world accepts the same next create as the original.
     World w2 = w;
-    REQUIRE(w2.create_note(space_of(w2.notes[0].id), NoteKind::Note, &n1) == Error::Ok);
-    REQUIRE(back.create_note(space_of(back.notes[0].id), NoteKind::Note, &n2) == Error::Ok);
-    CHECK(n1 == n2);
+    REQUIRE(w2.create_note(NoteId{7}, space_of(w2.notes[0].id), NoteKind::Note) == Error::Ok);
+    REQUIRE(back.create_note(NoteId{7}, space_of(back.notes[0].id), NoteKind::Note) == Error::Ok);
     CHECK(back == w2);
 }
 
@@ -150,9 +148,9 @@ TEST_CASE("restore refuses a walk that decodes but is not well formed") {
     World back;
     CHECK(restore(back, serialize(w)) == Error::BadBytes);
 
-    // A note whose group is not below next_group.
+    // A member note whose space is missing.
     World w2 = sample();
-    w2.next_group = 2;
+    w2.notes[4].space = SpaceId{99};
     REQUIRE_FALSE(w2.well_formed());
     CHECK(restore(back, serialize(w2)) == Error::BadBytes);
 }
@@ -172,9 +170,9 @@ TEST_CASE("hash changes with every part of the state operator== sees") {
         w.step();
         CHECK(digest(w) != h);
     }
-    SUBCASE("next_group") {
+    SUBCASE("note id") {
         World w = base;
-        w.next_group += 1;
+        w.notes.back().id = NoteId{w.notes.back().id.value + 1};
         CHECK(digest(w) != h);
     }
     SUBCASE("field value") {
@@ -243,9 +241,9 @@ TEST_CASE("hash changes with every part of the state operator== sees") {
 
 TEST_CASE("set_field refuses the 256th name and fields_well_formed agrees") {
     World w;
-    NoteId s, n;
-    REQUIRE(w.create_space(1, &s) == Error::Ok);
-    REQUIRE(w.create_note(space_of(s), NoteKind::Note, &n) == Error::Ok);
+    const NoteId s{1}, n{2};
+    REQUIRE(w.create_space(s, 1) == Error::Ok);
+    REQUIRE(w.create_note(n, space_of(s), NoteKind::Note) == Error::Ok);
     for (std::size_t i = 0; i < MAX_FIELDS; ++i) {
         REQUIRE(w.set_field(n, vec(("f" + std::to_string(1000 + i)).c_str(), 1)) == Error::Ok);
     }

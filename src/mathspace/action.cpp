@@ -49,14 +49,16 @@ bool read_name(ddsim::ByteReader& r, std::string& out) {
 
 } // namespace
 
-Bytes encode_create_space(std::uint8_t dim) {
+Bytes encode_create_space(NoteId id, std::uint8_t dim) {
     Bytes p;
+    wire::put_u64(p, id.value);
     wire::put_u8(p, dim);
     return with_header(ActionKind::CreateSpace, std::move(p));
 }
 
-Bytes encode_create_note(SpaceId space, NoteKind kind) {
+Bytes encode_create_note(NoteId id, SpaceId space, NoteKind kind) {
     Bytes p;
+    wire::put_u64(p, id.value);
     wire::put_u64(p, space.value);
     wire::put_u8(p, static_cast<std::uint8_t>(kind));
     return with_header(ActionKind::CreateNote, std::move(p));
@@ -83,7 +85,7 @@ Bytes encode_delete_field(NoteId note, std::string_view name) {
     return with_header(ActionKind::DeleteField, std::move(p));
 }
 
-Error World::apply(const std::uint8_t* bytes, std::size_t len, NoteId* created) {
+Error World::apply(const std::uint8_t* bytes, std::size_t len) {
     if (bytes == nullptr || len < ACTION_HEADER_BYTES) {
         return Error::BadAction;
     }
@@ -92,27 +94,26 @@ Error World::apply(const std::uint8_t* bytes, std::size_t len, NoteId* created) 
     if (ddsim::decode_header(r, h) != DD_OK || h.payload_len != len - ACTION_HEADER_BYTES) {
         return Error::BadAction;
     }
-    NoteId scratch;
-    NoteId* out = created != nullptr ? created : &scratch;
-
     switch (static_cast<ActionKind>(h.kind)) {
     case ActionKind::CreateSpace: {
+        NoteId id;
         std::uint8_t dim = 0;
-        if (!r.read_u8(dim) || !r.at_end()) {
+        if (!r.read_u64(id.value) || !r.read_u8(dim) || !r.at_end()) {
             return Error::BadAction;
         }
-        return create_space(dim, out);
+        return create_space(id, dim);
     }
     case ActionKind::CreateNote: {
+        NoteId id;
         SpaceId space;
         std::uint8_t kind = 0;
-        if (!r.read_u64(space.value) || !r.read_u8(kind) || !r.at_end()) {
+        if (!r.read_u64(id.value) || !r.read_u64(space.value) || !r.read_u8(kind) || !r.at_end()) {
             return Error::BadAction;
         }
         if (kind > static_cast<std::uint8_t>(NoteKind::View)) {
             return Error::BadKind;
         }
-        return create_note(space, static_cast<NoteKind>(kind), out);
+        return create_note(id, space, static_cast<NoteKind>(kind));
     }
     case ActionKind::SetField: {
         NoteId note;

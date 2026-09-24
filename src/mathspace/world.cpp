@@ -20,7 +20,7 @@ const char* error_name(Error e) {
     case Error::PosDimMismatch: return "PosDimMismatch";
     case Error::SpaceNotEmpty: return "SpaceNotEmpty";
     case Error::LockedField: return "LockedField";
-    case Error::IdExhausted: return "IdExhausted";
+    case Error::DuplicateId: return "DuplicateId";
     case Error::TooManyFields: return "TooManyFields";
     case Error::BadBytes: return "BadBytes";
     case Error::BadAction: return "BadAction";
@@ -75,29 +75,23 @@ std::size_t World::notes_in(SpaceId space) const {
 
 namespace {
 
-// Allocates the next group-of-one id on branch 0 without committing it.
-Error next_id(const World& w, NoteId* out) {
-    if (w.next_group == 0 || w.next_group > ID_GROUP_MASK) {
-        return Error::IdExhausted;
-    }
-    *out = make_note_id(0, w.next_group, 0);
-    return Error::Ok;
+// The caller's id (the kernel's) must be nonzero and not already stored.
+Error check_new_id(const World& w, NoteId id) {
+    return (id.assigned() && w.find(id) == nullptr) ? Error::Ok : Error::DuplicateId;
 }
 
 void insert_note(World& w, Note note) {
     const std::size_t i = w.note_lower_bound(note.id);
     w.notes.insert(w.notes.begin() + static_cast<std::ptrdiff_t>(i), std::move(note));
-    ++w.next_group;
 }
 
 } // namespace
 
-Error World::create_space(std::uint8_t dim, NoteId* out) {
+Error World::create_space(NoteId id, std::uint8_t dim) {
     if (!valid_dim(dim)) {
         return Error::BadDim;
     }
-    NoteId id;
-    if (const Error e = next_id(*this, &id); e != Error::Ok) {
+    if (const Error e = check_new_id(*this, id); e != Error::Ok) {
         return e;
     }
     Note space;
@@ -108,21 +102,17 @@ Error World::create_space(std::uint8_t dim, NoteId* out) {
     pos.dim = dim;
     mathspace::set_field(space, std::move(pos));
     insert_note(*this, std::move(space));
-    if (out != nullptr) {
-        *out = id;
-    }
     return Error::Ok;
 }
 
-Error World::create_note(SpaceId space, NoteKind kind, NoteId* out) {
+Error World::create_note(NoteId id, SpaceId space, NoteKind kind) {
     if (kind == NoteKind::Space) {
         return Error::BadKind;
     }
     if (find_space(space) == nullptr) {
         return Error::NoSuchSpace;
     }
-    NoteId id;
-    if (const Error e = next_id(*this, &id); e != Error::Ok) {
+    if (const Error e = check_new_id(*this, id); e != Error::Ok) {
         return e;
     }
     Note note;
@@ -130,9 +120,6 @@ Error World::create_note(SpaceId space, NoteKind kind, NoteId* out) {
     note.space = space;
     note.kind = kind;
     insert_note(*this, std::move(note));
-    if (out != nullptr) {
-        *out = id;
-    }
     return Error::Ok;
 }
 
@@ -199,9 +186,6 @@ bool World::well_formed() const {
             return false;
         }
         if (i > 0 && !(notes[i - 1].id < n.id)) {
-            return false;
-        }
-        if (note_group(n.id) >= next_group) {
             return false;
         }
         if (n.kind == NoteKind::Space) {

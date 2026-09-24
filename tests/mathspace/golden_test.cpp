@@ -86,18 +86,18 @@ TEST_CASE("golden empty: parses, replays, matches the committed hashes") {
 TEST_CASE("golden two-notes: hand-written hex equals the encoders") {
     const Fixture f = load("two-notes");
     CHECK(f.seed == 7);
-    const NoteId space = make_note_id(0, 1, 0);
-    const NoteId a = make_note_id(0, 2, 0);
-    const NoteId b = make_note_id(0, 3, 0);
+    const NoteId space{1};
+    const NoteId a{2};
+    const NoteId b{3};
     struct Stamped {
         std::uint64_t tick;
         std::vector<std::uint8_t> bytes;
     };
     const std::vector<Stamped> log = {
-        {0, encode_create_space(2)},
-        {0, encode_create_note(space_of(space), NoteKind::Note)},
+        {0, encode_create_space(space, 2)},
+        {0, encode_create_note(a, space_of(space), NoteKind::Note)},
         {0, encode_set_field(a, pos2(1, 2))},
-        {1, encode_create_note(space_of(space), NoteKind::Note)},
+        {1, encode_create_note(b, space_of(space), NoteKind::Note)},
         {1, encode_set_field(b, pos2(3, 4))},
         {2, encode_set_field(a, pos2(5, 6))},
         {3, encode_delete_note(a)},
@@ -115,12 +115,12 @@ TEST_CASE("golden two-notes: replay equals the direct build and the committed ha
 
     // Direct build, stepping the same way the replay rule does.
     World direct(f.seed);
-    NoteId space, a, b;
-    REQUIRE(direct.create_space(2, &space) == Error::Ok);
-    REQUIRE(direct.create_note(space_of(space), NoteKind::Note, &a) == Error::Ok);
+    const NoteId space{1}, a{2}, b{3};
+    REQUIRE(direct.create_space(space, 2) == Error::Ok);
+    REQUIRE(direct.create_note(a, space_of(space), NoteKind::Note) == Error::Ok);
     REQUIRE(direct.set_field(a, pos2(1, 2)) == Error::Ok);
     direct.step();
-    REQUIRE(direct.create_note(space_of(space), NoteKind::Note, &b) == Error::Ok);
+    REQUIRE(direct.create_note(b, space_of(space), NoteKind::Note) == Error::Ok);
     REQUIRE(direct.set_field(b, pos2(3, 4)) == Error::Ok);
     direct.step();
     REQUIRE(direct.set_field(a, pos2(5, 6)) == Error::Ok);

@@ -1,5 +1,5 @@
 # empty — a world with no notes, stepped 60 ticks. Pins the walk header
-# (format version, fx format id, seed, tick, next_group) on its own.
+# (format version, fx format id, seed, tick) on its own.
 seed 42
 checkpoint 0
 checkpoint 1
