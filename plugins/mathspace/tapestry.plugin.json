@@ -22,6 +22,7 @@
       "mathspace.preset.nbody",
       "mathspace.preset.poincare",
       "mathspace.preset.push",
+      "mathspace.preset.sphere",
       "mathspace.preset.spring-to-anchor",
       "mathspace.preset.view-2d",
       "mathspace.preset.view-3d",

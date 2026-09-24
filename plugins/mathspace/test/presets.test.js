@@ -103,7 +103,7 @@ const byId = Object.fromEntries(presets.map((p) => [p.id, p]))
 
 describe('presets', () => {
   it('ships the plan\'s presets, the three roadmap examples and the default views, one command each, listed in the manifest', () => {
-    expect(presets.map((p) => p.id)).toEqual(['anger', 'contact', 'drag', 'gold', 'gravity-field', 'nbody', 'poincare', 'push', 'spring-to-anchor', 'view-2d', 'view-3d', 'view-4d'])
+    expect(presets.map((p) => p.id)).toEqual(['anger', 'contact', 'drag', 'gold', 'gravity-field', 'nbody', 'poincare', 'push', 'sphere', 'spring-to-anchor', 'view-2d', 'view-3d', 'view-4d'])
     const manifest = require('../tapestry.plugin.json')
     for (const p of presets) {
       expect(manifest.contributions.commands).toContain(COMMAND_PREFIX + p.id)
@@ -206,6 +206,31 @@ describe('presets', () => {
     const seen = await projectNodes(after)
     expect(seen.errors).toEqual([])
     expect(seen.points.Upward.Disk).toEqual([prop(after, 'Upward', 'position.x'), prop(after, 'Upward', 'position.y')])
+  })
+
+  it('sphere: only great circles are geodesics, so the equator note stays near the equator and the pole note leaves its parallel', async () => {
+    const { before, after, prop, ops } = await runPreset(byId.sphere, 240)
+    expect(ops.filter((o) => o.key === 'mathspace.error')).toEqual([])
+    // Equator: phi advances at nearly the full 240/64 = 3.75 (sin theta ~ 1) and theta
+    // swings within [1.5, pi - 1.5] (1.64 at tick 120, back toward 1.5 by 240).
+    // Pole: theta climbs from 0.25 past 0.9 and phi slows as it does, since
+    // sin(theta)^2 * phi' is conserved along a geodesic.
+    const theta = (title) => prop(after, title, 'position.x')
+    const phi = (title) => prop(after, title, 'position.y')
+    expect(phi('Equator')).toBeGreaterThan(3.5)
+    expect(theta('Equator')).not.toBe(1.5)
+    expect(theta('Equator')).toBeGreaterThanOrEqual(1.5 - 1e-6)
+    expect(theta('Equator')).toBeLessThanOrEqual(Math.PI - 1.5 + 1e-6)
+    expect(prop(before, 'Pole', 'position.x')).toBe(0.25)
+    expect(theta('Pole')).toBeGreaterThan(0.9)
+    expect(theta('Pole')).toBeLessThan(Math.PI / 2)
+    expect(phi('Pole')).toBeGreaterThan(1)
+    expect(phi('Pole')).toBeLessThan(2)
+    // The side view embeds the chart: the equator note is drawn near height 0.
+    const seen = await projectNodes(after)
+    expect(seen.errors).toEqual([])
+    expect(Math.abs(seen.points.Equator.Side[1])).toBeLessThan(10)
+    expect(Math.hypot(...seen.points.Pole.Side)).toBeLessThanOrEqual(100.001)
   })
 
   it('view presets: the space comes one commit before its members, and $0 is the space\'s id', async () => {

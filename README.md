@@ -117,9 +117,9 @@ Plan phase 6 (metric spaces) is in progress: a `metric.expr` on a
 `mathspace/space@1` node (the diagonal of the chart's metric in
 `self.position`) is bound through the plugin and applied by the engine's
 geodesic step, with compile problems and `BadMetric` reported on the
-space as `mathspace.error`; golden `poincare` and the `poincare` preset
-exist, while the `sphere` preset, `embed` and `identify` are open. Phase
-7 is not started.
+space as `mathspace.error`; golden `poincare` and the presets `poincare`
+(the disk) and `sphere` (chart (theta, phi)) exist, while `embed` and
+`identify` are open. Phase 7 is not started.
 
 ## Build
 
