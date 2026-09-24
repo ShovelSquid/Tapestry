@@ -87,10 +87,10 @@ export function createScene3D(container) {
     });
 
     faceLandmarksList.forEach((landmarks) => {
-      const contourIndices = new Set(
-        FaceLandmarker.FACE_LANDMARKS_CONTOURS.flatMap((c) => [c.start, c.end])
+      const tessellationIndices = new Set(
+        FaceLandmarker.FACE_LANDMARKS_TESSELATION.flatMap((c) => [c.start, c.end])
       );
-      const points = [...contourIndices].map((i) => normalizedTransform(landmarks[i]));
+      const points = [...tessellationIndices].map((i) => normalizedTransform(landmarks[i]));
       liveGroup.add(cloud(points, FACE_COLOR));
       liveGroup.add(
         lines(landmarks, FaceLandmarker.FACE_LANDMARKS_CONTOURS, FACE_COLOR, normalizedTransform)

@@ -31,7 +31,7 @@ Phase: 02.2 (Obsidian Bridge) — EXECUTING
 Plan: 8 of 16 (02.2-01 to 02.2-07 complete; 02.2-08 code committed, no summary yet)
 Status: Executing
 Phase 02.4 (Lock Model): COMPLETE — verified 25/25, 2026-09-16; rebased onto the main line 2026-09-23
-Last activity: 2026-09-24 - Completed quick task 260924-1gd: In hands-face-voice/, wire hand-face relative position through the live playground (use normalized landmarks alongside world landmarks) and add MediaPipe Pose Landmarker as a shared body skeleton anchoring hands and face, replacing scene3d.js's fixed-offset spacing hack
+Last activity: 2026-09-24 - Merged ws/hands-face-voice into ws/hands-face-voice-gesture-capture: quick tasks 260924-1gd (pose skeleton + shared normalized-frame 3D placement) and 260924-1c5 (face blendshapes + tessellation point cloud)
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -153,6 +153,7 @@ None yet.
 | 260915-v62 | Fix connect-agent command argument order so `claude mcp add` parses the server name | 2026-09-15 | 27b3869 | [260915-v62-fix-connect-agent-command-argument-order](./quick/260915-v62-fix-connect-agent-command-argument-order/) |
 | 260915-v51 | Fix the kernel copy-per-commit quadratic: Kernel::replayUpTo and Kernel::submit copied the entire World once per commit, making reopen O(n^2) in commit count | 2026-09-15 | 7fed53f | [260915-v51-fix-the-kernel-copy-per-commit-quadratic](./quick/260915-v51-fix-the-kernel-copy-per-commit-quadratic/) |
 | 260924-1gd | In hands-face-voice/, wire hand-face relative position through the live playground and add MediaPipe Pose Landmarker as a shared body skeleton anchoring hands and face, replacing scene3d.js's fixed-offset spacing hack | 2026-09-24 | 797dc1d, 6d7ee79 | [260924-1gd-in-hands-face-voice-wire-hand-face-relat](./quick/260924-1gd-in-hands-face-voice-wire-hand-face-relat/) |
+| 260924-1c5 | Improve facial fidelity/expressiveness of the hands-face-voice real-time face tracker: enable FaceLandmarker blendshapes and render the full face tessellation mesh (not just contours) in the 3D view | 2026-09-24 | 46d8cc8 | [260924-1c5-improve-facial-fidelity-expressiveness-o](./quick/260924-1c5-improve-facial-fidelity-expressiveness-o/) |
 
 ### Roadmap Evolution
 
