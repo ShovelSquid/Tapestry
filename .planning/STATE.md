@@ -5,15 +5,15 @@ current_phase: "02.2"
 current_phase_name: Obsidian Bridge
 status: executing
 stopped_at: Completed 02.2-07-PLAN.md
-last_updated: "2026-09-16T07:00:27.729Z"
-last_activity: 2026-09-15
-last_activity_desc: Phase 02.2 execution started
+last_updated: "2026-09-23T06:50:00.000Z"
+last_activity: 2026-09-23
+last_activity_desc: Phase 02.4 Lock Model complete and rebased onto the main line; Phase 02.2 still executing
 state_head: c3f4f3d6c993f90c55415c6117705b124bb9667a
 progress:
   total_phases: 11
-  completed_phases: 0
-  total_plans: 38
-  completed_plans: 20
+  completed_phases: 1
+  total_plans: 40
+  completed_plans: 22
 ---
 
 # Project State
@@ -23,14 +23,15 @@ progress:
 See: .planning/PROJECT.md (updated 2026-09-08)
 
 **Core value:** Your world of thoughts must remain readable and under your control — in its spatial interface, its editable relationships and behavior, and its files and branching history.
-**Current focus:** Phase 02.4 — Lock Model: complete on ws/notifications-rank; holding for Kaelen (WR-02 redo decision, #19 lock naming, merge)
+**Current focus:** Phase 02.2 — Obsidian Bridge (executing). Phase 02.4 — Lock Model is complete and on the main line; open for Kaelen: WR-02 redo decision, WR-01 owner-matching confirmation, #19 lock naming
 
 ## Current Position
 
 Phase: 02.2 (Obsidian Bridge) — EXECUTING
-Plan: 5 of 16
-Status: Ready to execute
-Last activity: 2026-09-15 — Phase 02.2 execution started
+Plan: 8 of 16 (02.2-01 to 02.2-07 complete; 02.2-08 code committed, no summary yet)
+Status: Executing
+Phase 02.4 (Lock Model): COMPLETE — verified 25/25, 2026-09-16; rebased onto the main line 2026-09-23
+Last activity: 2026-09-23 — Phase 02.4 rebased onto phase-2-implementation-v1
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -71,6 +72,8 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 02.2 P05 | 25 min | 2 tasks | 19 files |
 | Phase 02.2 P06 | 40 min | 3 tasks | 13 files |
 | Phase 02.2 P07 | 35 min | 1 tasks | 26 files |
+| Phase 02.4 P01 | 14 min | 2 tasks | 4 files |
+| Phase 02.4 P02 | 8 min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -125,6 +128,10 @@ Recent decisions affecting current work:
 - [Phase 02.2]: The vault test fixture is synthetic and authored in-repo; no House Party content enters git history, and .gitattributes pins its bytes so normalisation cannot rewrite the shapes under test (02.2-07)
 - [Phase 02.2]: A plugin's registered node-view name now selects a component through NODE_VIEW_COMPONENTS; an unmapped name falls back to the readable card instead of rendering as a NoteCard (02.2-07)
 - [Phase 02.2]: The Obsidian mirror refuses bytes it would have to change in order to store them, rather than transcoding them (02.2-07, D-12)
+- [Phase 02.4]: 02.4-01: update/rename check the note's text aspect, delete checks delete, all via writeToNote -> assertMayWrite -> checkLock; 02.2 D-05 authorship gate removed
+- [Phase 02.4]: 02.4-01: malformed lock values fail closed; only exact 'open' unlocks; blank owner shown as (unknown); allow list read in Plan 02
+- [Phase 02.4]: 02.4-02: lock.<aspect>.allow is read for explicit and derived locks; only a text value counts, whitespace-split, exact match
+- [Phase 02.4]: 02.4-02: agent tool text states the lock rule and that refusals name the owner, without publishing lock.* key names
 
 ### Pending Todos
 
