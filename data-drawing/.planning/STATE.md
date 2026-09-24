@@ -3,15 +3,15 @@ gsd_state_version: "1.0"
 current_phase: 01
 current_phase_name: Painting with the Pen
 status: executing
-stopped_at: Completed 01-03-PLAN.md
-last_updated: "2026-09-23T01:45:17.346Z"
+stopped_at: Completed 01-04-PLAN.md
+last_updated: "2026-09-24T06:44:11.829Z"
 last_activity: 2026-09-22
 last_activity_desc: Phase 01 execution started
 progress:
   total_phases: 3
   completed_phases: 0
   total_plans: 8
-  completed_plans: 3
+  completed_plans: 4
   percent: 0
 ---
 
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-09-22)
 ## Current Position
 
 Phase: 01 (Painting with the Pen) — EXECUTING
-Plan: 4 of 8
+Plan: 5 of 8
 Status: Ready to execute
 Last activity: 2026-09-22 — Phase 01 execution started
 
@@ -60,6 +60,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 01 P01 | 27 min | 3 tasks | 45 files |
 | Phase 01 P02 | 30 min | 3 tasks | 8 files |
 | Phase 01 P03 | 14 min | 3 tasks | 13 files |
+| Phase 01 P04 | 28h 53m | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -88,6 +89,7 @@ Recent decisions affecting current work:
 - [Phase 01]: seed_stream(world, purpose, entity) seeds splitmix64 on world XOR purpose XOR entity (interfaces block), so seed_stream(seed, 0, 0) equals the 01-01 seed_from and the goldens are untouched; rng golden first output 0x0bab45d9a0e3ae53 frozen
 - [Phase 01]: sim.cpp unchanged for strict restore: the 157-offset byte sweep proves 01-01 read_canonical is already reject-or-exact (0 silent corrections)
 - [Phase 01]: SIM-01 marked complete after 01-03; SIM-02 left to the shared-ID gate (01-05 also declares it)
+- [Phase 01]: Blob trampoline for scheme-hosted module Workers (Kaelen, 01-04 checkpoint): Chromium refuses new Worker('tapestry-plugin://...') from the renderer document because Worker scripts must be same-origin with the document and CORS cannot relax it; the spike worker is spawned through a same-origin blob: module whose sole statement statically imports the absolute worker URL, so the scheme stays the origin of the worker module graph and the .wasm. Chosen over RESEARCH fallback A1 (serve from renderer origin) and over halting. sim-host.ts must adopt the same pattern in 01-06/01-08. — Plugin-side only; no SDK contract or host change; verified worker=ok wasm=ok in dev and built loads.
 
 ### Pending Todos
 
@@ -110,6 +112,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-23T01:45:17.332Z
-Stopped at: Completed 01-03-PLAN.md
+Last session: 2026-09-24T06:44:11.812Z
+Stopped at: Completed 01-04-PLAN.md
 Resume file: None
