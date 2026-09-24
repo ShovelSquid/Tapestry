@@ -18,42 +18,33 @@ replay tool and goldens are kept.
 | 3 force rules | done headlessly (`e1e30a5`): force and `set.<f>` rules under unary, pair and global scope with `select`, mass integrator, `pinned`, RULE-07 skips on the rule node, goldens `gravity` and `pair`, and `plugins/mathspace/presets/` with the plan's four presets plus the roadmap's `anger`, `gold`, `push`, each a `mathspace.preset.<id>` command; `presets.test.js` runs all seven on one engine build with no skip and the promised field change. The "in the app" clause joins the GUI checklist in Blocked |
 | 4 constraints | done headlessly (`60c8346`, `60cd37e`, `064966d`): `constraint.expr` + `compliance` by fixed XPBD passes over lifted symbolic gradients, goldens `rod` and `contact`, the `contact` preset, the `pendulum`/`rope-chain` comparison against ddsim (numbers under Learned). The "in the app" look joins the GUI checklist in Blocked |
 | 5 views | **done condition met headlessly** (`b27808a`): engine side (`61ef64f`), stage surface (`24f1dbb`, `4acdaab`), default views as presets `view-2d`/`view-3d`/`view-4d`, and one 4-space projected through `[x, y]` and `[z, w]` at once in `projection.test.js` and `presets.test.js`. Shapes and rule regions in the surface are optional polish (Next 2); the in-app look joins the GUI checklist in Blocked |
-| 6 metrics | engine side (`02481a2`): diagonal `metric` on the Space note, geodesic integrator, golden `poincare`; plugin side (`566ff24`, `c49dd84`): `metric.expr` on a space node binds through `buildImage`, errors land on the space, presets `poincare` and `sphere`; `identify` (`5b5b55e`, engine and plugin); open: `embed`, then the done condition |
+| 6 metrics | **done condition met headlessly** (`9d47eaf`): engine side (`02481a2`, diagonal `metric`, geodesic integrator, golden `poincare`), plugin side (`566ff24`, `metric.expr` bound through `buildImage`), presets `poincare` and `sphere` (`c49dd84`), `identify` (`5b5b55e`) and `embed` (`9d47eaf`). The in-app look joins the GUI checklist in Blocked |
 | 7 fold ddsim | not started |
 
 ## In progress
 
-**`embed` (Next 1), started 2026-09-24 15:10.** Nothing committed for it
-yet; if the tree is dirty, this is it. (`autonomy/watch.py` is the
-operator's log viewer; it is theirs to edit.)
+Nothing. Tree is clean. (`autonomy/watch.py` is the operator's log
+viewer; it is theirs to edit.)
 
 ## Next
 
-1. **Phase 6 fifth slice: `embed`.** Chosen form (see Decisions once
-   done): a bound dim-3 `embed` on the Space note, evaluated like a
-   View's `project` (never in `step()`, never hashed by value). In
-   `ms_project`, when the view's space holds a bound `embed`, evaluate
-   it against the note first and hand `project` a copy of the note
-   carrying a plain dim-3 `embed` field, so `project.expr` may read
-   `self.embed.x/y/z`; `RuleDims`/`WorldDims` must resolve `self.embed`
-   on a View to the space's embed dim at compile time (check
-   `expr/dims` or wherever `RuleDims` lives; today it resolves fields
-   from the first note that has them). A bad embed (not dim 3, or a
-   VmError) is `MS_STAGE_EVAL` on the view like any project failure.
-   Plugin: `image.js` `SPACE_FIELDS` gains `embed`; `sphere.json`'s
-   `Side` view becomes `embed.expr` on the space plus a `project.expr`
-   over `self.embed`; `projection.test.js` covers it. No
-   `MS_STEP_VERSION` bump (step is untouched) but `MS_ABI_VERSION`
-   stays 3 unless the C ABI changes. Then wasm rebuild and plugin tests.
-   Also: add `identify.y 3.140625` (not pi, which fx64 cannot hold
-   exactly; leave a comment) to `sphere.json`? Decided against: the
-   sphere's phi is fine unwrapped and a fake pi would mislead. A torus
-   preset (`identify [200, 200]`, flat metric) is the honest wrap demo
-   if a preset is wanted; optional.
-2. Phase 6 done condition per the plan (re-read it: "Unchanged:
-   metric.expr on the Space node, Christoffel symbols by symbolic
-   differentiation, geodesic step, identify, embed, and the Poincaré and
-   sphere presets"), then README's status paragraph and the Phases row.
+1. **Phase 7 first slice: read the plan's phase 7 section and cut it
+   into slices.** Re-read `mathspace_plan.md` "Phase 7 — fold ddsim in"
+   and `data-drawing/sim/` (the live ddsim the data-drawing plugin
+   builds) against `include/ddsim` (the diverged root copy: particles,
+   constraints). Write the slice list into this "Next" section (each
+   slice one commit with tests), then take the first: the plan names
+   the brush body as a preset rule, pen samples as `SetField` actions
+   on a target field, and emission at spacing in the data-drawing
+   plugin's bridge emitting `CreateNote`/`SetField`. The `rope-chain`
+   deviation under Learned (a free-free rod keeps 2^-8 of its stretch)
+   must be accepted or fixed by letting a pair constraint write `other`
+   too; decide that first, since it changes `MS_STEP_VERSION` and every
+   golden if fixed.
+2. Optional, phase 6 polish only if a preset is wanted: a `torus` preset
+   (flat metric, `identify.x`/`identify.y` 200) is the honest wrap demo;
+   the sphere is left unwrapped on purpose (fx64 cannot hold pi, and a
+   fake pi would mislead).
 3. Phase 5 optional polish, only if cheap: shapes by sampled level sets
    and rule regions faintly in the surface; three.js only if a 3D panel
    needs it. The surface refreshes only on `onTreeChanged` (fired for
@@ -74,6 +65,15 @@ operator's log viewer; it is theirs to edit.)
 
 ## Done
 
+- `9d47eaf` ms6 `embed`: a bound dim-3 `embed` on the Space note;
+  `ms_project` embeds the note first when the view's space has one and
+  runs `project` against a copy carrying plain `embed`, `RuleDims`
+  resolves `self.embed` on a View; not dim 3 is BadDim on every view of
+  the space; step() leaves a space's `embed` alone like `metric`
+  (folded into `MS_STEP_VERSION` 11, no golden changed). Plugin:
+  `embed.expr` on a space, sphere preset embedded onto the unit sphere
+  with the Side view `[100 * self.embed.x, 100 * self.embed.z]`,
+  projection test. Phase 6 done condition met; README updated.
 - `5b5b55e` ms6 `identify`: engine wraps every Note-kind note's pos
   lane k with L_k > 0 into [-L_k, L_k) after the velocity derivation
   (one fx64 expression per lane, `Skip::BadIdentify` for a wrong dim,
@@ -141,6 +141,15 @@ operator's log viewer; it is theirs to edit.)
 
 ## Decisions
 
+- Embed (`9d47eaf`): the smallest form that satisfies the design's
+  "used by View for drawing curved spaces convincingly and never by
+  physics" is a bound dim-3 `embed` on the Space note that only
+  `ms_project` evaluates, exposed to the view's `project.expr` as
+  `self.embed` on a per-call copy of the note (no new C ABI entry, no
+  new field on any stored note, `MS_ABI_VERSION` stays 3). The surface
+  therefore needs no change: a view of an embedded space is still a
+  map to the page. A note's own stored `embed` field, if it had one,
+  is shadowed by the space's for that projection.
 - Identify (`5b5b55e`): half-widths, not a period, so `[100, 0]` reads
   as "x lives in [-100, 100)" and 0 is "open"; pinned notes are wrapped
   too (a wrap is a change of representative, not motion); the wrap sits
@@ -190,6 +199,9 @@ operator's log viewer; it is theirs to edit.)
 
 ## Learned
 
+- Plugin tests run against `plugins/mathspace/wasm/` as it is on disk:
+  an engine change without `npm run engine:wasm` shows up as baffling
+  compile errors (an `UnknownRef` for a reference the C++ resolves).
 - Sphere geodesics through the engine (`c49dd84`, h = 1, phi' = 1/64):
   the equator note's theta goes 1.5, 1.529, 1.592, 1.638, 1.629 at ticks
   0/60/120/180/240 with phi 3.742 at 240; the pole note's theta 0.25,

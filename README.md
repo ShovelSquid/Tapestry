@@ -113,13 +113,17 @@ canvas panel per View (seen in a headless browser), and the presets
 are checked by projecting every note through every view after a run.
 Shapes and rule regions in the surface are optional polish; a human look
 at the panel in the Electron app is still open.
-Plan phase 6 (metric spaces) is in progress: a `metric.expr` on a
-`mathspace/space@1` node (the diagonal of the chart's metric in
-`self.position`) is bound through the plugin and applied by the engine's
-geodesic step, with compile problems and `BadMetric` reported on the
-space as `mathspace.error`; golden `poincare` and the presets `poincare`
-(the disk) and `sphere` (chart (theta, phi)) exist, while `embed` and
-`identify` are open. Phase 7 is not started.
+Plan phase 6 (metric spaces) meets its done condition headlessly: a
+`metric.expr` on a `mathspace/space@1` node (the diagonal of the chart's
+metric in `self.position`) is bound through the plugin and applied by
+the engine's geodesic step, with compile problems and `BadMetric`
+reported on the space as `mathspace.error`; `identify.x`/`identify.y`
+(or `identify.expr`) half-widths on a space wrap each note's position
+lane into [-L, L) after every step; `embed.expr` on a space maps the
+chart into 3-space and a View's `project.expr` may read `self.embed`;
+golden `poincare` and the presets `poincare` (the disk) and `sphere`
+(chart (theta, phi), embedded onto the unit sphere for its Side view)
+exist. Phase 7 is not started.
 
 ## Build
 
