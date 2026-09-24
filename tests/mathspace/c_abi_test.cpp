@@ -182,6 +182,39 @@ TEST_CASE("ms_compile follows the cap protocol and matches the C++ compiler") {
     CHECK(hashOf(h.w) != before);
 }
 
+TEST_CASE("ms_compile on a Rule note compiles for the rule's targets") {
+    Handle h(2);
+    World w(2);
+    constexpr NoteId R{4};
+    for (const auto& a : {encode_create_space(S, 2), encode_create_note(A, space_of(S), NoteKind::Note),
+                          encode_set_field(A, vec("pos", 2, 1, 2)), encode_set_field(A, vec("mass", 1, 3)),
+                          encode_create_note(R, space_of(S), NoteKind::Rule)}) {
+        REQUIRE(applyTo(h.w, a) == MS_OK);
+        REQUIRE(w.apply(a) == Error::Ok);
+    }
+    // The rule has neither pos nor mass; the space and A supply the dims.
+    const std::string text = "self.pos * self.mass";
+    const expr::ParseResult p = expr::parse(text);
+    REQUIRE(p.ok());
+    const expr::CompileResult c = expr::compile(p.ast, expr::RuleDims{w, *w.find(R)});
+    REQUIRE(c.ok());
+    const std::vector<std::uint8_t> want = expr::encode(c.program);
+    std::vector<std::uint8_t> got(want.size());
+    CHECK(ms_compile(h.w, R.value, text.data(), static_cast<uint32_t>(text.size()), got.data(),
+                     static_cast<uint32_t>(got.size()), nullptr) == static_cast<int32_t>(want.size()));
+    CHECK(got == want);
+    // Bound as the rule's force it moves A once A has a velocity.
+    REQUIRE(applyTo(h.w, encode_bind_field(R, "force", got)) == MS_OK);
+    REQUIRE(applyTo(h.w, encode_set_field(A, vec("velocity", 2))) == MS_OK);
+    REQUIRE(w.bind_field(R, "force", want) == Error::Ok);
+    REQUIRE(w.set_field(A, vec("velocity", 2)) == Error::Ok);
+    ms_step(h.w);
+    w.step();
+    CHECK(hashOf(h.w) == hashOf(w));
+    CHECK(find_field(*w.find(A), "pos")->value[0] == fx64::from_int(2)); // 1 + 1*3/3
+    CHECK(find_field(*w.find(A), "pos")->value[1] == fx64::from_int(4));
+}
+
 TEST_CASE("ms_compile failures carry the stage, the code and where") {
     Handle h(2);
     REQUIRE(applyTo(h.w, encode_create_space(S, 2)) == MS_OK);

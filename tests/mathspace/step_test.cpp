@@ -1,5 +1,6 @@
-// step_test.cpp — the bootstrap integrate rule: pos += velocity per tick
-// for notes that have both at one dim, and nothing else changes.
+// step_test.cpp — the tick: unary force rules accumulate into velocity
+// through mass, pos += velocity for notes that have both at one dim, then
+// the bound fields of non-Rule notes; nothing else changes.
 #include <doctest.h>
 
 #include "mathspace/version.hpp"
@@ -36,6 +37,20 @@ Field vec(const char* name, std::uint8_t dim, std::int32_t v0 = 0, std::int32_t 
 constexpr NoteId S{1};
 constexpr NoteId A{2};
 constexpr NoteId B{3};
+constexpr NoteId R{4};
+constexpr NoteId R2{5};
+
+// The encoded program for `text` compiled on the Rule `rule` for its
+// targets (RuleDims), as the plugin's ms_compile does.
+std::vector<std::uint8_t> rule_code(const World& w, NoteId rule, const char* text) {
+    const expr::ParseResult p = expr::parse(text);
+    REQUIRE_MESSAGE(p.ok(), text << ": " << expr::parse_error_name(p.error));
+    const expr::CompileResult c = expr::compile(p.ast, expr::RuleDims{w, *w.find(rule)});
+    REQUIRE_MESSAGE(c.ok(), text << ": " << expr::compile_error_name(c.error));
+    return expr::encode(c.program);
+}
+
+fx64 half(std::int32_t n) { return fx64::from_raw(std::int64_t{n} * (fx64::ONE / 2)); }
 
 const Field& field(const World& w, NoteId id, std::string_view name) {
     const Field* f = find_field(*w.find(id), name);
@@ -101,12 +116,158 @@ TEST_CASE("notes without both fields, or at different dims, are untouched") {
     CHECK(w.well_formed());
 }
 
+TEST_CASE("unary force rules accumulate in id order and integrate through mass") {
+    World w(1);
+    REQUIRE(w.create_space(S, 2) == Error::Ok);
+    REQUIRE(w.create_note(A, space_of(S), NoteKind::Note) == Error::Ok);
+    REQUIRE(w.create_note(B, space_of(S), NoteKind::Note) == Error::Ok);
+    REQUIRE(w.create_note(R, space_of(S), NoteKind::Rule) == Error::Ok);
+    REQUIRE(w.create_note(R2, space_of(S), NoteKind::Rule) == Error::Ok);
+    REQUIRE(w.set_field(A, vec("pos", 2, 0, 0)) == Error::Ok);
+    REQUIRE(w.set_field(A, vec("velocity", 2, 0, 0)) == Error::Ok);
+    REQUIRE(w.set_field(A, vec("mass", 1, 2)) == Error::Ok);
+    REQUIRE(w.set_field(B, vec("pos", 2, 10, 0)) == Error::Ok);
+    REQUIRE(w.set_field(B, vec("velocity", 2, 1, 0)) == Error::Ok); // no mass: 1
+    // Weight, proportional to mass: B has no mass, so this rule skips B.
+    REQUIRE(w.bind_field(R, "force", rule_code(w, R, "[0, 0 - self.mass]")) == Error::Ok);
+    // A constant push on everything in the space.
+    REQUIRE(w.bind_field(R2, "force", rule_code(w, R2, "[1, 0]")) == Error::Ok);
+
+    w.step();
+    CHECK(field(w, A, "velocity").value[0] == half(1));
+    CHECK(field(w, A, "velocity").value[1] == fx64::from_int(-1));
+    CHECK(field(w, A, "pos").value[0] == half(1));
+    CHECK(field(w, A, "pos").value[1] == fx64::from_int(-1));
+    CHECK(field(w, B, "velocity") == vec("velocity", 2, 2, 0));
+    CHECK(field(w, B, "pos") == vec("pos", 2, 12, 0));
+    w.step();
+    CHECK(field(w, A, "velocity").value[0] == fx64::from_int(1));
+    CHECK(field(w, A, "velocity").value[1] == fx64::from_int(-2));
+    CHECK(field(w, A, "pos").value[0] == half(3));
+    CHECK(field(w, A, "pos").value[1] == fx64::from_int(-3));
+    CHECK(field(w, B, "velocity") == vec("velocity", 2, 3, 0));
+    CHECK(field(w, B, "pos") == vec("pos", 2, 15, 0));
+    // The rules' own lanes are never written: a rule is not its own target.
+    CHECK(field(w, R, "force").value[0].raw == 0);
+    CHECK(field(w, R, "force").value[1].raw == 0);
+    CHECK(field(w, R2, "force").value[0].raw == 0);
+    CHECK(field(w, A, "mass") == vec("mass", 1, 2));
+    CHECK(w.well_formed());
+}
+
+TEST_CASE("a rule is skipped when it is not unary, not a space vector, or in another space") {
+    World w(1);
+    constexpr NoteId S2{6};
+    constexpr NoteId C{7};
+    REQUIRE(w.create_space(S, 2) == Error::Ok);
+    REQUIRE(w.create_space(S2, 2) == Error::Ok);
+    REQUIRE(w.create_note(A, space_of(S), NoteKind::Note) == Error::Ok);
+    REQUIRE(w.create_note(R, space_of(S), NoteKind::Rule) == Error::Ok);
+    REQUIRE(w.create_note(C, space_of(S2), NoteKind::Note) == Error::Ok);
+    REQUIRE(w.set_field(A, vec("pos", 2, 0, 0)) == Error::Ok);
+    REQUIRE(w.set_field(A, vec("velocity", 2, 0, 0)) == Error::Ok);
+    REQUIRE(w.set_field(C, vec("pos", 2, 0, 0)) == Error::Ok);
+    REQUIRE(w.set_field(C, vec("velocity", 2, 0, 0)) == Error::Ok);
+    REQUIRE(w.bind_field(R, "force", rule_code(w, R, "[1, 1]")) == Error::Ok);
+    const World before = w;
+
+    // Pair scope: nothing happens this phase.
+    REQUIRE(w.set_field(R, vec("scope", 1, 1)) == Error::Ok);
+    w.step();
+    CHECK(field(w, A, "pos") == vec("pos", 2, 0, 0));
+    CHECK(field(w, C, "pos") == vec("pos", 2, 0, 0));
+
+    // Unary by an explicit 0: A moves, C (another space) does not.
+    REQUIRE(w.set_field(R, vec("scope", 1, 0)) == Error::Ok);
+    w.step();
+    CHECK(field(w, A, "pos") == vec("pos", 2, 1, 1));
+    CHECK(field(w, C, "pos") == vec("pos", 2, 0, 0));
+
+    // A scalar force is not a space vector: skipped.
+    w = before;
+    REQUIRE(w.bind_field(R, "force", rule_code(w, R, "1")) == Error::Ok);
+    w.step();
+    CHECK(field(w, A, "pos") == vec("pos", 2, 0, 0));
+
+    // A bound `force` on a plain note is an ordinary bound field, not a law.
+    w = before;
+    REQUIRE(w.delete_field(R, "force") == Error::Ok);
+    REQUIRE(w.bind_field(A, "force", rule_code(w, R, "[1, 1]")) == Error::Ok);
+    w.step();
+    CHECK(field(w, A, "pos") == vec("pos", 2, 0, 0));
+    CHECK(field(w, A, "force").value[0] == fx64::from_int(1));
+    CHECK(field(w, A, "force").value[1] == fx64::from_int(1));
+    CHECK(w.well_formed());
+}
+
+TEST_CASE("force needs velocity and a positive mass; a per-note failure skips that note") {
+    World w(1);
+    REQUIRE(w.create_space(S, 2) == Error::Ok);
+    REQUIRE(w.create_note(A, space_of(S), NoteKind::Note) == Error::Ok);
+    REQUIRE(w.create_note(B, space_of(S), NoteKind::Note) == Error::Ok);
+    REQUIRE(w.create_note(R, space_of(S), NoteKind::Rule) == Error::Ok);
+    REQUIRE(w.set_field(A, vec("pos", 2, 0, 0)) == Error::Ok); // no velocity
+    REQUIRE(w.set_field(B, vec("pos", 2, 0, 0)) == Error::Ok);
+    REQUIRE(w.set_field(B, vec("velocity", 2, 0, 0)) == Error::Ok);
+    REQUIRE(w.set_field(B, vec("k", 1, 3)) == Error::Ok);
+    REQUIRE(w.bind_field(R, "force", rule_code(w, R, "[self.k, 0]")) == Error::Ok);
+    w.step();
+    CHECK(field(w, A, "pos") == vec("pos", 2, 0, 0)); // never created a velocity
+    CHECK(find_field(*w.find(A), "velocity") == nullptr);
+    CHECK(field(w, B, "velocity") == vec("velocity", 2, 3, 0));
+
+    // mass 0 and a negative mass drop the force; velocity still integrates.
+    REQUIRE(w.set_field(B, vec("mass", 1, 0)) == Error::Ok);
+    w.step();
+    CHECK(field(w, B, "velocity") == vec("velocity", 2, 3, 0));
+    CHECK(field(w, B, "pos") == vec("pos", 2, 6, 0));
+    REQUIRE(w.set_field(B, vec("mass", 1, -1)) == Error::Ok);
+    w.step();
+    CHECK(field(w, B, "velocity") == vec("velocity", 2, 3, 0));
+    // A vector mass is not a mass: the default 1 applies.
+    REQUIRE(w.set_field(B, vec("mass", 2, 5, 5)) == Error::Ok);
+    w.step();
+    CHECK(field(w, B, "velocity") == vec("velocity", 2, 6, 0));
+
+    // `self.k` reshaped on B: DimChanged for B only; A is untouched anyway.
+    REQUIRE(w.set_field(B, vec("k", 2, 1, 1)) == Error::Ok);
+    w.step();
+    CHECK(field(w, B, "velocity") == vec("velocity", 2, 6, 0));
+    CHECK(w.well_formed());
+}
+
+TEST_CASE("RuleDims resolves pos from the space and other fields from the first note that has them") {
+    World w(1);
+    REQUIRE(w.create_space(S, 3) == Error::Ok);
+    REQUIRE(w.create_note(R, space_of(S), NoteKind::Rule) == Error::Ok);
+    REQUIRE(w.set_field(R, vec("k", 1, 9)) == Error::Ok); // the rule's own field is not a target's
+    // Built per query: creating a note moves the vector under a held reference.
+    auto dim = [&](expr::RefKind ref, std::uint64_t id, const char* name) {
+        return expr::RuleDims{w, *w.find(R)}.dim(ref, id, name);
+    };
+    CHECK(dim(expr::RefKind::Self, 0, "pos") == 3);
+    CHECK(dim(expr::RefKind::Other, 0, "pos") == 3);
+    CHECK(dim(expr::RefKind::Self, 0, "k") == 0);
+    CHECK(dim(expr::RefKind::Space, 0, "dim") == 1);
+    CHECK(dim(expr::RefKind::Space, 0, "pos") == 3);
+    CHECK(dim(expr::RefKind::World, 0, "tick") == 1);
+    CHECK(dim(expr::RefKind::Node, R.value, "k") == 1);
+    REQUIRE(w.create_note(A, space_of(S), NoteKind::Note) == Error::Ok);
+    REQUIRE(w.create_note(B, space_of(S), NoteKind::Note) == Error::Ok);
+    REQUIRE(w.set_field(B, vec("k", 2, 1, 1)) == Error::Ok);
+    CHECK(dim(expr::RefKind::Self, 0, "k") == 2); // B is the first note that has k
+    REQUIRE(w.set_field(A, vec("k", 1, 1)) == Error::Ok);
+    CHECK(dim(expr::RefKind::Self, 0, "k") == 1); // now A is
+    CHECK(dim(expr::RefKind::Other, 0, "k") == 1);
+    CHECK(dim(expr::RefKind::Self, 0, "nope") == 0);
+}
+
 TEST_CASE("the step version is pinned in the walk") {
-    CHECK(MS_STEP_VERSION == 2u);
+    CHECK(MS_STEP_VERSION == 3u);
     const World w;
     const auto bytes = serialize(w);
     // magic 4 | FORMAT_VERSION 4 | DD_FX_FORMAT_ID 4 | rule version 4
-    CHECK(bytes[12] == 2);
+    CHECK(bytes[12] == 3);
     CHECK(bytes[13] == 0);
     CHECK(bytes[14] == 0);
     CHECK(bytes[15] == 0);

@@ -15,7 +15,10 @@ const char* version();
 //      has both fields at the same dim.
 //   2: then every bound field is evaluated (expr/vm.hpp), notes in id
 //      order, fields in name order, against the live world.
-// Plan phase 3 replaces the bootstrap rule with a Rule note.
-inline constexpr std::uint32_t MS_STEP_VERSION = 2u;
+//   3: the bootstrap rule is gone. Unary force rules (Rule notes with a
+//      bound `force`) accumulate per target note in rule id order, then
+//      `velocity += force / mass; pos += velocity` (mass defaults to 1),
+//      then the bound fields of non-Rule notes as in 2.
+inline constexpr std::uint32_t MS_STEP_VERSION = 3u;
 
 } // namespace mathspace

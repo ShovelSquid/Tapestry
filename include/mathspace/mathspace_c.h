@@ -99,7 +99,9 @@ MS_EXPORT uint32_t ms_notes_len(const ms_world* w);
  * cap 0 returns the needed length and writes nothing; an insufficient
  * cap returns 0 and writes nothing. A negative return is a failure (see
  * ms_compile_stage); `where` may be null. Compiling never changes the
- * world. */
+ * world. On a Rule note the program is compiled for the rule's targets
+ * (vm.hpp, RuleDims): `self.pos` is the space dim, other fields take the
+ * dim of the first note in the space that has them. */
 MS_EXPORT int32_t ms_compile(const ms_world* w, uint64_t note, const char* text, uint32_t len,
                              uint8_t* out, uint32_t cap, uint32_t* where);
 MS_EXPORT const char* ms_compile_error_name(int32_t result);

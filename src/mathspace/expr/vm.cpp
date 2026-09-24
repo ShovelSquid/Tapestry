@@ -317,4 +317,38 @@ std::uint8_t WorldDims::dim(RefKind ref, std::uint64_t id, std::string_view name
     return f == nullptr ? 0 : f->dim;
 }
 
+std::uint8_t RuleDims::dim(RefKind ref, std::uint64_t id, std::string_view name) const {
+    const Note* note = nullptr;
+    switch (ref) {
+    case RefKind::Self:
+    case RefKind::Other:
+        if (name == POS_FIELD) {
+            return world.space_dim(rule.space);
+        }
+        for (const Note& n : world.notes) {
+            if (n.kind == NoteKind::Rule || n.space != rule.space) {
+                continue;
+            }
+            if (const Field* f = find_field(n, name)) {
+                return f->dim;
+            }
+        }
+        return 0;
+    case RefKind::Node: note = world.find(NoteId{id}); break;
+    case RefKind::Space:
+        if (name == "dim") {
+            return world.space_dim(rule.space) != 0 ? 1 : 0;
+        }
+        note = world.find_space(rule.space);
+        break;
+    case RefKind::World:
+        return name == "tick" ? 1 : 0;
+    }
+    if (note == nullptr) {
+        return 0;
+    }
+    const Field* f = find_field(*note, name);
+    return f == nullptr ? 0 : f->dim;
+}
+
 } // namespace mathspace::expr

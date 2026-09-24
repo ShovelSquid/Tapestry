@@ -124,7 +124,12 @@ int32_t ms_compile(const ms_world* w, uint64_t note, const char* text, uint32_t 
         }
         return failure(MS_STAGE_PARSE, static_cast<int>(p.error));
     }
-    const mathspace::expr::CompileResult c = mathspace::expr::compile(p.ast, mathspace::expr::WorldDims{w->world, *self});
+    // A Rule note's program runs against its targets, so its dims come
+    // from the space, not from the rule note (vm.hpp, RuleDims).
+    const mathspace::expr::CompileResult c =
+        self->kind == mathspace::NoteKind::Rule
+            ? mathspace::expr::compile(p.ast, mathspace::expr::RuleDims{w->world, *self})
+            : mathspace::expr::compile(p.ast, mathspace::expr::WorldDims{w->world, *self});
     if (!c.ok()) {
         if (where != nullptr) {
             *where = c.where;

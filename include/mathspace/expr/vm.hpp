@@ -73,4 +73,20 @@ struct WorldDims : DimResolver {
     std::uint8_t dim(RefKind ref, std::uint64_t id, std::string_view name) const override;
 };
 
+// The DimResolver for a program bound on a Rule note (step.cpp), whose
+// `self` (and `other`) is a target note of the rule's space that does not
+// exist at compile time. `pos` is the space dim; any other field takes
+// the dim of the first note in the space, in id order, that has it (the
+// rule note itself and other rules excluded); `space.*` is the rule's
+// space. A wrong guess for a note that holds the field at another dim
+// is a per-note DimChanged at evaluation, not a misread.
+struct RuleDims : DimResolver {
+    const World& world;
+    const Note& rule;
+
+    RuleDims(const World& w, const Note& r) : world(w), rule(r) {}
+
+    std::uint8_t dim(RefKind ref, std::uint64_t id, std::string_view name) const override;
+};
+
 } // namespace mathspace::expr

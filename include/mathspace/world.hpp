@@ -87,8 +87,9 @@ struct World {
     Error apply(const std::uint8_t* bytes, std::size_t len);
     Error apply(const std::vector<std::uint8_t>& bytes) { return apply(bytes.data(), bytes.size()); }
 
-    // One tick (step.cpp): the bootstrap integrate rule, then every bound
-    // field evaluated in id then name order, then ++tick.
+    // One tick (step.cpp): force rules, the integrator, then every bound
+    // field of every non-Rule note evaluated in id then name order, then
+    // ++tick.
     void step();
 
     // Sorted, unique ids and well-formed fields; the tests' invariant check.
@@ -115,8 +116,14 @@ struct World {
 
 // The one field name the store knows; see the header comment.
 inline constexpr std::string_view POS_FIELD = "pos";
-// The one field name the bootstrap rule knows (step.cpp, version.hpp).
+// The field names the integrator and the rule pass know (step.cpp,
+// version.hpp). They are conventions of step(), not of the store.
 inline constexpr std::string_view VELOCITY_FIELD = "velocity";
+inline constexpr std::string_view MASS_FIELD = "mass";
+// On a Rule note: `force` is the bound contribution, `scope` a scalar
+// 0 unary (the default when absent), 1 pair, 2 global.
+inline constexpr std::string_view FORCE_FIELD = "force";
+inline constexpr std::string_view SCOPE_FIELD = "scope";
 
 // Bumped whenever the canonical walk (hash.cpp) changes shape. Pinned in
 // the walk itself so old bytes are rejected instead of misread.
