@@ -276,11 +276,32 @@ Plans:
   6. Note positions are untouched: `position.x/y` stay node properties and D-27's thread frame is not moved — that migration is a later phase after 2.3 (#4)
   7. No code writes the Tapestry-tree or forest-tree record shape, or migrates `settings.json`, until Kaelen has approved the exact type strings, keys and labels and the migration at a blocking checkpoint (#17, #18)
 
-**Plans:** 0 plans
+**Plans:** 6 plans
 
 Plans:
+**Wave 1**
 
-- [ ] TBD (run /gsd-plan-phase 2.6 to break down)
+- [ ] 02.6-01-PLAN.md — Groundwork that writes no record: settings passthrough (tracer), pure drop-batch and Ctrl+Z routing helpers, registry seams (D-08, D-10, D-11)
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [ ] 02.6-02-PLAN.md — BLOCKING CHECKPOINT for #17/#18 (record shape, migration, Ctrl+Z reach, new wording), then tracer at the service level: first launch imports into the forest, a drop is one signed commit, a second launch restores from the forest (D-01..D-07, D-10, D-11, D-13, D-14)
+
+**Wave 3** *(blocked on Wave 2)*
+
+- [ ] 02.6-03-PLAN.md — The app launches into the forest: startup/shutdown wiring, `trees:list`, `trees:moveFrames`, preload, types and the Canvas drop (tracer); launch cases E, G, H write nothing and open no member (D-10, D-11, D-14)
+
+**Wave 4** *(blocked on Wave 3)*
+
+- [ ] 02.6-04-PLAN.md — Membership and identity: open/create/close/vault-add recorded in the forest; a tree is its digest (moved files, copies, impostors, duplicates, reserved files) (D-01..D-03, D-12)
+
+**Wave 5** *(blocked on Wave 4)*
+
+- [ ] 02.6-05-PLAN.md — Ctrl+Z after a drag as a compensating commit (tracer), and system-signed automatic fit; `trees:setFrame` removed (D-08, D-09, D-11, D-12)
+
+**Wave 6** *(blocked on Wave 5)*
+
+- [ ] 02.6-06-PLAN.md — Remaining launch cases (B, C, F, I, J) with in-window notices (tracer), reader's guide `docs/tree/forest.md`, legacy settings writers removed, phase gate and Kaelen's check on copied data (D-05..D-07, D-10, D-14)
 
 **UI hint**: yes
 
