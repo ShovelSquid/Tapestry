@@ -114,7 +114,7 @@
     <h2>Microphone Waveform</h2>
     <canvas id="waveform" width="640" height="160"></canvas>
     <div id="transcript"><span id="transcriptFinal"></span><span id="transcriptInterim" class="interim"></span></div>
-    <p class="caveat">Transcription uses the browser's built-in speech recognition. In Chrome this sends audio to Google's speech service — not on-device. See README's privacy question.</p>
+    <p class="caveat">Transcription runs fully on-device via a local Whisper model (onnx-community/whisper-tiny.en) — nothing is sent to a server after the one-time model download. It transcribes in short chunks after a pause in speech, not live word-by-word, so expect a brief pause after each phrase before text appears.</p>
   </div>
 
   <div class="panel">
