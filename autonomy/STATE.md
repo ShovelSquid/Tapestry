@@ -16,7 +16,7 @@ replay tool and goldens are kept.
 | 1 engine over the kernel | built and tested headlessly (`836a4da`); only the human GUI confirmation is open, see Blocked |
 | 2 expressions | done headlessly (`c5d134e`, `d6e9c0b`): golden `plot` hashes across processes and builds, `<f>.expr text` props bind through the runner so the bound value is committed as a kernel prop after a step (the inspector reads props, so it shows it; a human look is still open like phase 1's), and `diff.hpp` exists for phase 4 |
 | 3 force rules | done headlessly (`e1e30a5`): force and `set.<f>` rules under unary, pair and global scope with `select`, mass integrator, `pinned`, RULE-07 skips on the rule node, goldens `gravity` and `pair`, and `plugins/mathspace/presets/` with the plan's four presets plus the roadmap's `anger`, `gold`, `push`, each a `mathspace.preset.<id>` command; `presets.test.js` runs all seven on one engine build with no skip and the promised field change. The "in the app" clause joins the GUI checklist in Blocked |
-| 4 constraints | rod (`60c8346`) and the ddsim comparison (`60cd37e`) done; open: the contact preset and golden `contact`, then the phase is done headlessly |
+| 4 constraints | done headlessly (`60c8346`, `60cd37e`, `064966d`): `constraint.expr` + `compliance` by fixed XPBD passes over lifted symbolic gradients, goldens `rod` and `contact`, the `contact` preset, the `pendulum`/`rope-chain` comparison against ddsim (numbers under Learned). The "in the app" look joins the GUI checklist in Blocked |
 | 5 views | not started |
 | 6 metrics | not started |
 | 7 fold ddsim | not started |
@@ -28,19 +28,29 @@ viewer; it is theirs to edit.)
 
 ## Next
 
-1. **Phase 4 third slice: Point-vs-Shape contact as a preset,
-   `C = max(0, shape(pos))`. Decide how a Shape note exposes `shape(pos)`
-   (design: a scalar expression over `pos`; simplest is a unary rule whose
-   `constraint` is `max(0, r - norm(self.pos - node(nS).pos))` for a
-   circle of radius r at note S, i.e. "stay outside" or `min(0, ...)` for
-   "stay inside"); note `diff.hpp`'s `max` derivative is the branch taken,
-   so a zero branch gives a flat gradient and the visit is silently
-   skipped, exactly "no contact". Preset `contact` in
-   `plugins/mathspace/presets/` + `presets.test.js` case, golden `contact`
-   via `golden_test.cpp` under `MS_WRITE_FIXTURES=1`, six `.sha256`,
-   Debug/Release/UBSan. Then phase 4's done condition is met: say so in
-   Phases and README.
-2. **GUI confirmation of phases 1 to 4 (human, or a session that can
+1. **Phase 5 first slice: `mathspace/view@1` nodes with `project.expr`,
+   engine side.** Read `mathspace_design.md` lines 191-215 and the plan's
+   phase 5. Smallest step: a View is a Note of kind `View` (add
+   `NoteKind::View` to `note.hpp` if the enum lacks it; check the walk
+   and `ms_c.cpp` for kind handling) in a space, with a bound field
+   `project` whose program takes `self.pos`-shaped input and yields dim 2.
+   The engine does not evaluate `project` in `step()` (rendering never
+   enters the hash; a View's bound field must be skipped by the bound-
+   field pass like a Rule's). Add a C ABI call `ms_project(world, view
+   id, note id, out[2])` that evaluates the view's program with `self` =
+   the note (so `project.expr` is written in terms of `self.pos`) and
+   returns the two lanes without touching state; `MS_ABI_VERSION` 3;
+   doctest + `c_abi_test` case; the plugin's `image.js` maps
+   `mathspace/view@1` nodes to kind View and binds `project.expr` like a
+   rule's; `Engine.project(viewId, noteId)` in `engine.js`; one runner
+   test. No surface yet.
+2. Phase 5 second slice: `plugins/mathspace/surface/` stage surface (copy
+   `plugins/data-drawing/surface/`, placement `stage`), reading the
+   engine snapshot from a module Worker and drawing notes at
+   `project(pos)` with three.js; then default views as presets (identity
+   2D, perspective and three orthographic 3D, axis-pair picker for N > 3).
+   Done when one 4D space is viewable through two View nodes at once.
+3. **GUI confirmation of phases 1 to 4 (human, or a session that can
    drive Electron).** `npm install` at the root (or symlink node_modules,
    see Learned), `npm run build:native` in `app/` if
    `app/native/build/Release/tapestry_addon.node` is missing, `npm run
@@ -57,6 +67,10 @@ viewer; it is theirs to edit.)
 
 ## Done
 
+- `064966d` ms4 contact: `presets/contact.json` (gravity, bumper and
+  floor rules plus a ball; the bumper rule sits at its shape's centre),
+  golden `contact` (120 ticks, never inside either shape), the preset
+  test now allows more than one rule per preset.
 - `60cd37e` ms4 comparison: `tests/mathspace/rope_chain_test.cpp` replays
   ddsim's `pendulum` and `rope-chain` goldens through `ddsim::Sim`
   (hashes checked) and as mathspace notes with a pair rod rule
@@ -95,6 +109,12 @@ viewer; it is theirs to edit.)
 
 ## Decisions
 
+- Contact (`064966d`) needs no engine change: `max(0, shape(pos))` as a
+  unary `constraint` is zero with a flat gradient outside the shape,
+  which the solver skips silently, and pushes out along `grad(shape)`
+  inside; a `.tree` preset cannot name node ids, so the bumper's centre
+  is a literal vector in the expression. Presets may hold several rule
+  nodes (the phase 3 one-rule check was a convention, not a rule).
 - Constraints (`60c8346`). The engine holds bytecode only, so the
   gradient comes from lifting the program back to an Ast (`lift.hpp`),
   differentiating per `pos` lane and compiling against `RuleDims`, once
