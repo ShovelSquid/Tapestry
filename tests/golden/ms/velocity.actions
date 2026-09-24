@@ -1,6 +1,6 @@
 # velocity — the phase 1 bootstrap rule: one 2-space (id 1), one note
 # (id 2) at pos (0, 0) with velocity (1, 2), stepped 60 ticks. Pins
-# MS_RULE_INTEGRATE_VERSION 1: pos is (10, 20) at tick 10 and (60, 120)
+# MS_STEP_VERSION's integrate rule: pos is (10, 20) at tick 10 and (60, 120)
 # at tick 60. Bytes are hand-written from action.hpp; golden_test.cpp
 # checks them against the encoders.
 seed 1

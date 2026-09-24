@@ -13,6 +13,8 @@
 //                        | code; the same record the hash walk writes)
 //   Kind 35 DeleteNote:  u64 note
 //   Kind 36 DeleteField: u64 note | u8 name_len | name
+//   Kind 37 BindField:   u64 note | u8 name_len | name | u32 code_len | code
+//                        (code is expr::encode's bytes; empty unbinds)
 //
 // World::apply (world.hpp) decodes into locals, refuses any byte the
 // grammar does not account for (Error::BadAction), and only then calls
@@ -40,6 +42,7 @@ enum class ActionKind : std::uint8_t {
     SetField = 34,
     DeleteNote = 35,
     DeleteField = 36,
+    BindField = 37,
 };
 
 inline constexpr std::uint8_t ACTION_VERSION = 1;
@@ -50,5 +53,7 @@ std::vector<std::uint8_t> encode_create_note(NoteId id, SpaceId space, NoteKind 
 std::vector<std::uint8_t> encode_set_field(NoteId note, const Field& field);
 std::vector<std::uint8_t> encode_delete_note(NoteId note);
 std::vector<std::uint8_t> encode_delete_field(NoteId note, std::string_view name);
+std::vector<std::uint8_t> encode_bind_field(NoteId note, std::string_view name,
+                                            const std::vector<std::uint8_t>& bytecode);
 
 } // namespace mathspace

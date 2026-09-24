@@ -85,6 +85,16 @@ Bytes encode_delete_field(NoteId note, std::string_view name) {
     return with_header(ActionKind::DeleteField, std::move(p));
 }
 
+Bytes encode_bind_field(NoteId note, std::string_view name, const std::vector<std::uint8_t>& bytecode) {
+    Bytes p;
+    wire::put_u64(p, note.value);
+    wire::put_u8(p, static_cast<std::uint8_t>(name.size()));
+    wire::put_bytes(p, name.data(), name.size());
+    wire::put_u32(p, static_cast<std::uint32_t>(bytecode.size()));
+    wire::put_bytes(p, bytecode.data(), bytecode.size());
+    return with_header(ActionKind::BindField, std::move(p));
+}
+
 Error World::apply(const std::uint8_t* bytes, std::size_t len) {
     if (bytes == nullptr || len < ACTION_HEADER_BYTES) {
         return Error::BadAction;
@@ -137,6 +147,17 @@ Error World::apply(const std::uint8_t* bytes, std::size_t len) {
             return Error::BadAction;
         }
         return delete_field(note, name);
+    }
+    case ActionKind::BindField: {
+        NoteId note;
+        std::string name;
+        std::uint32_t code_len = 0;
+        if (!r.read_u64(note.value) || !read_name(r, name) || !r.read_u32(code_len) ||
+            code_len > wire::MAX_BYTECODE || r.remaining() != code_len) {
+            return Error::BadAction;
+        }
+        std::vector<std::uint8_t> code(r.cursor(), r.cursor() + code_len);
+        return bind_field(note, name, std::move(code));
     }
     }
     return Error::BadAction;

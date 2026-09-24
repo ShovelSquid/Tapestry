@@ -9,7 +9,7 @@
 //
 // Walk (mathspace_plan.md):
 //   "MSP1" | u32 FORMAT_VERSION | u32 DD_FX_FORMAT_ID
-//   | u32 MS_RULE_INTEGRATE_VERSION (the compiled-in rule, version.hpp)
+//   | u32 MS_STEP_VERSION (what step() does, version.hpp)
 //   | u64 seed | u64 tick
 //   | u32 note_count, per note in id order:
 //       u64 id | u64 space_id | u8 kind
@@ -83,7 +83,7 @@ bool read_world(const std::uint8_t* bytes, std::size_t len, World& w) {
             return false;
         }
     }
-    for (const std::uint32_t expected : {FORMAT_VERSION, ddsim::DD_FX_FORMAT_ID, MS_RULE_INTEGRATE_VERSION}) {
+    for (const std::uint32_t expected : {FORMAT_VERSION, ddsim::DD_FX_FORMAT_ID, MS_STEP_VERSION}) {
         std::uint32_t got = 0;
         if (!r.read_u32(got) || got != expected) {
             return false;
@@ -115,7 +115,7 @@ std::vector<std::uint8_t> serialize(const World& w) {
     put_bytes(out, MAGIC, sizeof MAGIC);
     put_u32(out, FORMAT_VERSION);
     put_u32(out, ddsim::DD_FX_FORMAT_ID);
-    put_u32(out, MS_RULE_INTEGRATE_VERSION);
+    put_u32(out, MS_STEP_VERSION);
     put_u64(out, w.seed);
     put_u64(out, w.tick);
     put_u32(out, static_cast<std::uint32_t>(w.notes.size()));

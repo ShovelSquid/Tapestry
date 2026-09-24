@@ -5,12 +5,24 @@
 
 #include "mathspace/action.hpp"
 #include "mathspace/world.hpp"
+#include "mathspace/expr/parser.hpp"
+#include "mathspace/expr/vm.hpp"
 
 #include <vector>
 
 using namespace mathspace;
 
 namespace {
+
+// The encoded program for `text` compiled on `self` in `w`; the tests
+// need real bytecode now that set_field validates it.
+std::vector<std::uint8_t> code_for(const World& w, NoteId self, const char* text) {
+    const expr::ParseResult p = expr::parse(text);
+    REQUIRE_MESSAGE(p.ok(), text << ": " << expr::parse_error_name(p.error));
+    const expr::CompileResult c = expr::compile(p.ast, expr::WorldDims{w, *w.find(self)});
+    REQUIRE_MESSAGE(c.ok(), text << ": " << expr::compile_error_name(c.error));
+    return expr::encode(c.program);
+}
 
 using Bytes = std::vector<std::uint8_t>;
 
@@ -114,7 +126,7 @@ TEST_CASE("SetField through apply equals the direct call") {
     const World w = base(&s, &n);
     Field f = vec("vel", 2, 4, -5);
     f.bound = true;
-    f.bytecode = {9, 8, 7};
+    f.bytecode = code_for(w, n, "[4, -5]");
     World direct = w;
     REQUIRE(direct.set_field(n, f) == Error::Ok);
 
@@ -135,6 +147,68 @@ TEST_CASE("SetField through apply equals the direct call") {
     Bytes b = encode_set_field(n, vec("a", 1));
     b[ACTION_HEADER_BYTES + 8 + 1 + 1 + 1] = 2;
     apply_checked(w, b, Error::BadAction);
+    // Bytecode is validated by the mutator: garbage, a dim that differs
+    // from the field's, bytecode on an unbound field, none on a bound one.
+    Field bad = vec("a", 1);
+    bad.bound = true;
+    bad.bytecode = {9, 8, 7};
+    apply_checked(w, encode_set_field(n, bad), Error::BadBytecode);
+    bad.bytecode = code_for(w, n, "[1, 2]");
+    apply_checked(w, encode_set_field(n, bad), Error::BadBytecode);
+    bad.bound = false;
+    apply_checked(w, encode_set_field(n, bad), Error::BadBytecode);
+    bad.bytecode.clear();
+    bad.bound = true;
+    apply_checked(w, encode_set_field(n, bad), Error::BadBytecode);
+}
+
+TEST_CASE("BindField through apply equals the direct call") {
+    NoteId s, n;
+    const World w = base(&s, &n);
+    const Bytes code = code_for(w, n, "[1, 2] * 3");
+    World direct = w;
+    REQUIRE(direct.bind_field(n, "vel", code) == Error::Ok);
+    World got = apply_checked(w, encode_bind_field(n, "vel", code), Error::Ok);
+    CHECK(got == direct);
+    const Field* vel = find_field(*got.find(n), "vel");
+    REQUIRE(vel != nullptr);
+    CHECK(vel->bound);
+    CHECK(vel->dim == 2);
+    CHECK(vel->bytecode == code);
+    CHECK(vel->value[0].raw == 0);
+
+    // Rebinding at the same dim keeps the lanes; a new dim zeroes them.
+    REQUIRE(got.set_field(n, vec("vel", 2, 7, 8)) == Error::Ok);
+    got = apply_checked(got, encode_bind_field(n, "vel", code), Error::Ok);
+    CHECK(find_field(*got.find(n), "vel")->value[0] == fx64::from_int(7));
+    CHECK(find_field(*got.find(n), "vel")->bound);
+    got = apply_checked(got, encode_bind_field(n, "vel", code_for(got, n, "5")), Error::Ok);
+    CHECK(find_field(*got.find(n), "vel")->dim == 1);
+    CHECK(find_field(*got.find(n), "vel")->value[0].raw == 0);
+
+    // Unbind keeps dim and lanes, drops the bytecode.
+    World unbound = apply_checked(got, encode_bind_field(n, "vel", {}), Error::Ok);
+    const Field* u = find_field(*unbound.find(n), "vel");
+    REQUIRE(u != nullptr);
+    CHECK_FALSE(u->bound);
+    CHECK(u->bytecode.empty());
+    CHECK(u->dim == 1);
+    World direct2 = got;
+    REQUIRE(direct2.bind_field(n, "vel", {}) == Error::Ok);
+    CHECK(unbound == direct2);
+
+    // Content errors.
+    apply_checked(w, encode_bind_field(n, "nothere", {}), Error::NoSuchField);
+    apply_checked(w, encode_bind_field(NoteId{9}, "vel", code), Error::NoSuchNote);
+    apply_checked(w, encode_bind_field(n, "", code), Error::BadName);
+    apply_checked(w, encode_bind_field(n, "vel", {1, 2, 3}), Error::BadBytecode);
+    // pos keeps its dim rule: a dim-1 program cannot bind pos in a 2-space.
+    apply_checked(w, encode_bind_field(n, "pos", code_for(w, n, "5")), Error::PosDimMismatch);
+    apply_checked(w, encode_bind_field(n, "pos", code_for(w, n, "[5, 6]")), Error::Ok);
+    // Oversized code length is a grammar error.
+    Bytes big = encode_bind_field(n, "vel", code);
+    big[ACTION_HEADER_BYTES + 8 + 1 + 3 + 2] = 0x01; // code_len byte 2 -> 65536 + n
+    apply_checked(w, big, Error::BadAction);
 }
 
 TEST_CASE("DeleteNote and DeleteField through apply equal the direct calls") {
@@ -214,13 +288,15 @@ TEST_CASE("every kind rejects a truncated or extended payload") {
     NoteId s, n;
     const World w = base(&s, &n);
     Field f = vec("vel", 2, 1, 2);
-    f.bytecode = {1, 2};
+    f.bound = true;
+    f.bytecode = code_for(w, n, "[1, 2]");
     const Bytes actions[] = {
         encode_create_space(NoteId{3}, 3),
         encode_create_note(NoteId{3}, space_of(s), NoteKind::Note),
         encode_set_field(n, f),
         encode_delete_note(n),
         encode_delete_field(n, "pos"),
+        encode_bind_field(n, "vel", f.bytecode),
     };
     for (const Bytes& a : actions) {
         CAPTURE(a[0]);

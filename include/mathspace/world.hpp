@@ -44,6 +44,8 @@ enum class Error : std::uint8_t {
     TooManyFields,   // set_field of a new name on a note that already has MAX_FIELDS
     BadBytes,        // restore: bytes are not a canonical walk of a well-formed world
     BadAction,       // apply: header, kind, or payload bytes malformed (action.hpp)
+    BadBytecode,     // a bound field whose bytecode does not decode, or whose dim differs
+                     // from the program's; unbind of a field that is not there
 };
 
 const char* error_name(Error e);
@@ -69,7 +71,14 @@ struct World {
 
     Error create_space(NoteId id, std::uint8_t dim);
     Error create_note(NoteId id, SpaceId space, NoteKind kind);
+    // A bound field must carry bytecode that expr::decode accepts at the
+    // field's dim, and an unbound one none (Error::BadBytecode otherwise).
     Error set_field(NoteId note, Field field);
+    // Binds `name` on `note` to `bytecode` (the encoded Program): the field
+    // takes the program's dim, keeps its lanes when the dim is unchanged
+    // and starts at zero otherwise. Empty bytecode unbinds, keeping the
+    // lanes and the dim (NoSuchField when there is nothing to unbind).
+    Error bind_field(NoteId note, std::string_view name, std::vector<std::uint8_t> bytecode);
     Error delete_note(NoteId note);
     Error delete_field(NoteId note, std::string_view name);
 
@@ -78,7 +87,8 @@ struct World {
     Error apply(const std::uint8_t* bytes, std::size_t len);
     Error apply(const std::vector<std::uint8_t>& bytes) { return apply(bytes.data(), bytes.size()); }
 
-    // One tick: the bootstrap integrate rule (step.cpp), then ++tick.
+    // One tick (step.cpp): the bootstrap integrate rule, then every bound
+    // field evaluated in id then name order, then ++tick.
     void step();
 
     // Sorted, unique ids and well-formed fields; the tests' invariant check.
@@ -110,7 +120,8 @@ inline constexpr std::string_view VELOCITY_FIELD = "velocity";
 
 // Bumped whenever the canonical walk (hash.cpp) changes shape. Pinned in
 // the walk itself so old bytes are rejected instead of misread.
-//   1: initial walk. 2: next_group dropped, MS_RULE_INTEGRATE_VERSION added.
+//   1: initial walk. 2: next_group dropped, the step version pin added
+//   (named MS_RULE_INTEGRATE_VERSION then, MS_STEP_VERSION now, same slot).
 inline constexpr std::uint32_t FORMAT_VERSION = 2u;
 
 // The canonical walk (hash.cpp): serialize() is exactly the bytes that

@@ -4,6 +4,8 @@
 #include <doctest.h>
 
 #include "mathspace/world.hpp"
+#include "mathspace/expr/parser.hpp"
+#include "mathspace/expr/vm.hpp"
 
 #include <array>
 #include <string>
@@ -11,6 +13,16 @@
 using namespace mathspace;
 
 namespace {
+
+// The encoded program for `text` compiled on `self` in `w`; the tests
+// need real bytecode now that set_field validates it.
+std::vector<std::uint8_t> code_for(const World& w, NoteId self, const char* text) {
+    const expr::ParseResult p = expr::parse(text);
+    REQUIRE_MESSAGE(p.ok(), text << ": " << expr::parse_error_name(p.error));
+    const expr::CompileResult c = expr::compile(p.ast, expr::WorldDims{w, *w.find(self)});
+    REQUIRE_MESSAGE(c.ok(), text << ": " << expr::compile_error_name(c.error));
+    return expr::encode(c.program);
+}
 
 using Digest = std::array<std::uint8_t, 32>;
 
@@ -44,7 +56,7 @@ World sample() {
     REQUIRE(w.set_field(a, vec("mass", 1, 5)) == Error::Ok);
     Field bound = vec("vel", 2, 1, 1);
     bound.bound = true;
-    bound.bytecode = {0x01, 0x02, 0x03};
+    bound.bytecode = code_for(w, b, "[1, 1] * 2");
     REQUIRE(w.set_field(b, bound) == Error::Ok);
     REQUIRE(w.set_field(c, vec("pos", 3, 9)) == Error::Ok);
     REQUIRE(w.delete_note(gone) == Error::Ok);
@@ -200,13 +212,14 @@ TEST_CASE("hash changes with every part of the state operator== sees") {
         World w = base;
         Field f = vec("mass", 1, 5);
         f.bound = true;
+        f.bytecode = code_for(w, a, "5");
         REQUIRE(w.set_field(a, f) == Error::Ok);
         CHECK(digest(w) != h);
     }
     SUBCASE("field bytecode") {
         World w = base;
         Field f = *find_field(*w.find(base.notes[3].id), "vel");
-        f.bytecode.push_back(0x04);
+        f.bytecode = code_for(w, base.notes[3].id, "[1, 1] * 3"); // same dim, different program
         REQUIRE(w.set_field(base.notes[3].id, f) == Error::Ok);
         CHECK(digest(w) != h);
     }

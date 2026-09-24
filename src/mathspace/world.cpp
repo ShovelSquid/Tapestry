@@ -4,6 +4,8 @@
 // Nothing is written before the last check has passed.
 #include "mathspace/world.hpp"
 
+#include "mathspace/expr/bytecode.hpp"
+
 #include <algorithm>
 
 namespace mathspace {
@@ -24,6 +26,7 @@ const char* error_name(Error e) {
     case Error::TooManyFields: return "TooManyFields";
     case Error::BadBytes: return "BadBytes";
     case Error::BadAction: return "BadAction";
+    case Error::BadBytecode: return "BadBytecode";
     }
     return "?";
 }
@@ -125,12 +128,28 @@ Error World::create_note(NoteId id, SpaceId space, NoteKind kind) {
     return Error::Ok;
 }
 
+// A bound field's bytecode decodes (which verifies it) to a program of
+// the field's dim; an unbound field carries no bytecode. Checked once on
+// the way in, so step() can rely on it.
+bool bytecode_consistent(const Field& f) {
+    if (!f.bound) {
+        return f.bytecode.empty();
+    }
+    expr::Program p;
+    std::uint32_t where = 0;
+    return expr::decode(f.bytecode.data(), f.bytecode.size(), p, where) == expr::CompileError::Ok &&
+           p.dim == f.dim;
+}
+
 Error World::set_field(NoteId note_id, Field field) {
     if (!valid_field_name(field.name)) {
         return Error::BadName;
     }
     if (!valid_dim(field.dim)) {
         return Error::BadDim;
+    }
+    if (!bytecode_consistent(field)) {
+        return Error::BadBytecode;
     }
     Note* note = find(note_id);
     if (note == nullptr) {
@@ -150,6 +169,39 @@ Error World::set_field(NoteId note_id, Field field) {
     mathspace::set_field(*note, std::move(field));
     notes_dirty = true;
     return Error::Ok;
+}
+
+Error World::bind_field(NoteId note_id, std::string_view name, std::vector<std::uint8_t> bytecode) {
+    if (!valid_field_name(name)) {
+        return Error::BadName;
+    }
+    const Note* note = find(note_id);
+    if (note == nullptr) {
+        return Error::NoSuchNote;
+    }
+    const Field* existing = find_field(*note, name);
+    Field f;
+    f.name = std::string(name);
+    if (bytecode.empty()) {
+        if (existing == nullptr) {
+            return Error::NoSuchField;
+        }
+        f.dim = existing->dim;
+        f.value = existing->value;
+        return set_field(note_id, std::move(f));
+    }
+    expr::Program p;
+    std::uint32_t where = 0;
+    if (expr::decode(bytecode.data(), bytecode.size(), p, where) != expr::CompileError::Ok) {
+        return Error::BadBytecode;
+    }
+    f.dim = p.dim;
+    f.bound = true;
+    f.bytecode = std::move(bytecode);
+    if (existing != nullptr && existing->dim == p.dim) {
+        f.value = existing->value;
+    }
+    return set_field(note_id, std::move(f));
 }
 
 Error World::delete_note(NoteId note_id) {
@@ -187,6 +239,11 @@ bool World::well_formed() const {
         const Note& n = notes[i];
         if (!n.id.assigned() || !fields_well_formed(n)) {
             return false;
+        }
+        for (const Field& f : n.fields) {
+            if (!bytecode_consistent(f)) {
+                return false;
+            }
         }
         if (i > 0 && !(notes[i - 1].id < n.id)) {
             return false;
