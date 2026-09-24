@@ -2,11 +2,15 @@
  * SettingsStore — `userData/settings.json`, the app's small persistent
  * preferences file.
  *
- * It holds the user name that signs every human commit (D-07) and whether
- * agents may connect. Until phase 2.6 it also held the trees open in the space
- * with their frame positions; from 2.6 that arrangement moves to the forest
- * tree (2.6 D-01 supersedes 2.2 D-18), and the `trees` list here becomes the
- * readable backup it was imported from.
+ * It holds the user name that signs every human commit (D-07), whether
+ * agents may connect, and the pointer to the Tapestry tree (2.6 D-02). Until
+ * phase 2.6 it also held the trees open in the space with their frame
+ * positions; from 2.6 that arrangement lives in the forest tree (2.6 D-01
+ * supersedes 2.2 D-18), and the `trees` list here is the readable backup it
+ * was imported from. Nothing in this build writes that list: the old tree
+ * writers (`addTree`, `setTreeFrame`, `removeTree`, `migrateLastOpened`) were
+ * deleted at the end of 2.6 (D-10, answer 2.2), and it is read only by the
+ * one-time import (`readLegacyTrees`).
  *
  * The file is user-editable plain JSON, so nothing read from it is trusted:
  * a hand-edited `userName` with a space or a line break would otherwise be
@@ -15,10 +19,11 @@
  *
  * Writes are a passthrough, not a rewrite. Every top-level key this build does
  * not understand is written back with its value, and the raw `trees` value is
- * written back exactly as found unless a legacy tree writer replaced it. So
- * the old list stays an untouched backup (2.6 D-10), and a file written by a
- * newer or older build sharing this userData is not damaged by this one
- * (2.6 RESEARCH Pitfall 6). `version` is read from the file and never lowered.
+ * always written back exactly as found, even if a mutator returns a different
+ * list; a file with no `trees` key keeps none. So the old list stays an
+ * untouched backup (2.6 D-10), and a file written by a newer or older build
+ * sharing this userData is not damaged by this one (2.6 RESEARCH Pitfall 6).
+ * `version` is read from the file and never lowered.
  */
 
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'fs'
@@ -30,13 +35,13 @@ import { SETTINGS_POINTER_KEY, SETTINGS_VERSION } from './space/shapes'
 // Types
 // ---------------------------------------------------------------------------
 
-/** Where a tree's frame sits in the space (D-15). */
+/** Where a tree's frame sat in the space before 2.6 (D-15). Read only. */
 export interface TreeFrameSetting {
   x: number
   y: number
 }
 
-/** One tree open in the space. */
+/** One entry of the legacy `trees` list, as the one-time import reads it. */
 export interface TreeSetting {
   /** Absolute path of the `.tree` file. */
   path: string
@@ -155,8 +160,8 @@ function validateSettings(parsed: Record<string, unknown> | null): AppSettings {
  * The old file is untrusted input: a corrupted or unreadable file, a path that
  * is not a safe absolute `.tree` path, or a file that has since been deleted
  * or moved all read as nothing, rather than failing the launch this is only
- * meant to improve. Shared by `migrateLastOpened` and the 2.6 forest import
- * (answer 2.5), so both apply the same checks.
+ * meant to improve. Read by the 2.6 forest import (answer 2.5), which folds
+ * it into the forest when `trees` is empty.
  */
 export function readLastOpenedTree(lastOpenedFile: string): string | null {
   let treePath: unknown
@@ -276,74 +281,14 @@ export class SettingsStore {
   }
 
   /**
-   * Record a tree as open in the space, ignoring a path already listed.
+   * Read, transform and write back, returning what the mutator returned.
    *
-   * Reopening a path that is already recorded must not move its frame: the
-   * stored position is where the user put it.
-   */
-  addTree(entry: TreeSetting): void {
-    this.update((settings) => {
-      if (settings.trees.some((tree) => tree.path === entry.path)) return settings
-      return { ...settings, trees: [...settings.trees, entry] }
-    })
-  }
-
-  /** Move a tree's frame. A path that is not listed is left alone. */
-  setTreeFrame(path: string, frame: TreeFrameSetting): void {
-    this.update((settings) => ({
-      ...settings,
-      trees: settings.trees.map((tree) =>
-        tree.path === path ? { ...tree, frame: { x: frame.x, y: frame.y } } : tree,
-      ),
-    }))
-  }
-
-  /** Forget a tree. Its file and history are untouched — this is the space. */
-  removeTree(path: string): void {
-    this.update((settings) => ({
-      ...settings,
-      trees: settings.trees.filter((tree) => tree.path !== path),
-    }))
-  }
-
-  /**
-   * Adopt a Phase 2 `last-opened.json` as the first entry in `trees` (D-18).
-   *
-   * Superseded in 2.6 by the forest import (`space/migrate.ts`, answer 2.5),
-   * which folds last-opened.json into the forest instead; kept until Plan 03
-   * stops index.ts calling it. Before 2.6 the open trees lived here. Someone
-   * upgrading has one world recorded in the old file, and losing it on upgrade
-   * would look exactly like losing the world. It is placed at frame (0, 0), so
-   * a single migrated tree renders where the single-tree canvas used to.
-   *
-   * Runs at most once without needing a flag: a non-empty `trees` means the
-   * migration has already happened (or the user has since opened something),
-   * and either way the old file is no longer the truth. Returns whether it
-   * migrated, so the caller can tell a first upgrade from an ordinary launch.
-   */
-  migrateLastOpened(lastOpenedFile: string): boolean {
-    if (this.read().trees.length > 0) return false
-
-    const treePath = readLastOpenedTree(lastOpenedFile)
-    if (treePath === null) return false
-
-    this.update((settings) => ({
-      ...settings,
-      trees: [{ path: treePath, kind: 'native', frame: { x: 0, y: 0 } }],
-    }))
-    return true
-  }
-
-  /**
-   * Read, transform and write back, returning the written settings.
-   *
-   * Only a mutator that returns a new `trees` array (the legacy tree writers)
-   * rewrites the list; every other write leaves the raw `trees` value alone.
+   * The mutator's `trees` is ignored: the raw `trees` value on disk is written
+   * back unchanged whatever it returns (D-10).
    */
   update(mutator: (settings: AppSettings) => AppSettings): AppSettings {
-    const current = this.read()
-    const next = mutator(current)
-    this.write(next, { treesReplaced: next.trees !== current.trees })
+    const next = mutator(this.read())
+    this.write(next)
     return next
   }
 
@@ -353,14 +298,15 @@ export class SettingsStore {
    * the target. A crash mid-write leaves the previous settings intact instead
    * of a truncated file.
    *
-   * Unknown top-level keys keep their values and their order. `trees` is the
-   * raw value from disk unless the mutator replaced it. `version` is never
-   * written lower than a valid version already in the file.
+   * Unknown top-level keys keep their values and their order. `trees` is
+   * always the raw value from disk, or absent when the file has none: this
+   * build never writes it (D-10). `version` is never written lower than a
+   * valid version already in the file.
    *
    * Failures propagate. Silently swallowing them would let the app report a
    * saved name that was never written.
    */
-  private write(settings: AppSettings, opts: { treesReplaced: boolean }): void {
+  private write(settings: AppSettings): void {
     const raw = this.readRaw() ?? {}
     const merged: Record<string, unknown> = { ...raw }
 
@@ -372,10 +318,6 @@ export class SettingsStore {
     const fileVersion = validVersion(raw.version)
     if (fileVersion !== null && fileVersion > settings.version) {
       merged.version = fileVersion
-    }
-
-    if (opts.treesReplaced || !Object.prototype.hasOwnProperty.call(raw, 'trees')) {
-      merged.trees = settings.trees
     }
 
     this.writeRaw(merged)
