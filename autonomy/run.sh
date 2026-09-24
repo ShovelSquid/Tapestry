@@ -11,6 +11,10 @@
 # (hung) or runs past SESSION_TIMEOUT (runaway). Output is streamed as
 # JSON events, so every tool call and text chunk counts as progress.
 #
+# To stop gently, `touch autonomy/STOP`: the running session finishes and
+# commits, then the loop exits (and removes STOP) instead of starting the
+# next one. Ctrl-C also works but kills the session mid-task.
+#
 # Stops when autonomy/DONE exists (the phase is finished), when
 # autonomy/WAITING exists (a plan reached a human checkpoint: read it, do
 # what it asks, delete it, rerun), when MAX_SESSIONS is reached, or on
@@ -88,6 +92,11 @@ stall=0
 while :; do
     if [ -f "$ROOT/autonomy/DONE" ]; then
         echo "run.sh: autonomy/DONE present, stopping."
+        break
+    fi
+    if [ -f "$ROOT/autonomy/STOP" ]; then
+        echo "run.sh: autonomy/STOP present, stopping after the last session (removing STOP so the next run starts normally)."
+        rm -f "$ROOT/autonomy/STOP"
         break
     fi
     if [ -f "$ROOT/autonomy/WAITING" ]; then

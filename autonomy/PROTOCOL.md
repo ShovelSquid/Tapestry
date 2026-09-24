@@ -12,6 +12,8 @@ the difference is that the work list comes from GSD, not a hand-kept list.
 1. **Orient.** Run `git status` and `git log --oneline -8`. Read
    `autonomy/STATE.md`, then `.planning/STATE.md` (its `current_phase` is
    the phase to work on).
+   - `autonomy/STOP` is the operator's gentle stop, handled by the driver
+     between sessions. Never create, delete or commit it.
    - If `autonomy/WAITING` exists, a human has not answered yet: print
      `SESSION: no commit, still WAITING` and exit.
    - If the tree is dirty, the previous session was cut off. Read the
