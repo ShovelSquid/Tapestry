@@ -15,7 +15,7 @@ replay tool and goldens are kept.
 | --- | --- |
 | 1 engine over the kernel | built and tested headlessly (`836a4da`); only the human GUI confirmation is open, see Blocked |
 | 2 expressions | done headlessly (`c5d134e`, `d6e9c0b`): golden `plot` hashes across processes and builds, `<f>.expr text` props bind through the runner so the bound value is committed as a kernel prop after a step (the inspector reads props, so it shows it; a human look is still open like phase 1's), and `diff.hpp` exists for phase 4 |
-| 3 force rules | engine (`22bc70c`, `f90b3c7`, `872831b`, `919c06e`): unary force and `set.<f>` rules with `select`, mass integrator, `pinned`, `RuleDims`, golden `gravity`; plugin side (`204ced5`): rule nodes, `mathspace.error` for compile-time failures; open: pair/global, runtime-skip reporting, presets |
+| 3 force rules | engine (`22bc70c`, `f90b3c7`, `872831b`, `919c06e`, `e0b6942`): force and `set.<f>` rules under unary, pair and global scope with `select`, mass integrator, `pinned`, `RuleDims`, goldens `gravity` and `pair`; plugin side (`204ced5`): rule nodes, `mathspace.error` for compile-time failures; open: runtime-skip reporting (RULE-07), presets, then the plan's done condition check |
 | 4 constraints | not started |
 | 5 views | not started |
 | 6 metrics | not started |
@@ -28,24 +28,23 @@ viewer; it is theirs to edit.)
 
 ## Next
 
-1. **Phase 3, slice 5: `scope pair` and `global`.** `other` bound,
-   unordered pairs ascending id; decide whether a pair force applies to
-   `self` only or to both with negation (design says "each unordered
-   pair"; the gravity example writes `self.position - other.position`,
-   which reads as a force on `self` with the pair visited both ways, so
-   ordered pairs (a,b) and (b,a) with `self` receiving is the likely
-   reading; record the choice). `global` runs once per tick with `self`
-   = the rule note? Decide and record. Version bump + goldens as above.
-2. **RULE-07 runtime errors.** The engine skips silently at runtime;
-   the plugin writes only compile-time problems. Add a per-rule skip
-   count or a last-error code to the snapshot or a new `ms_errors` ABI
-   call (not in the hash), and have `runner.js` fold it into
-   `mathspace.error` (its `errorOps` already diffs against what the
-   kernel holds, so only the text source changes).
-3. Presets under `plugins/mathspace/presets/` and the roadmap examples;
+1. **RULE-07 runtime errors.** The engine skips silently at runtime
+   (a per-visit eval error, a `set.<f>` the target lacks, a rule whose
+   program is at the wrong dim or whose `scope`/`select` is malformed);
+   the plugin writes only compile-time problems. Add an `ms_errors`
+   C ABI call (not in the hash, not in the snapshot bytes): per rule id,
+   a skip count for the last tick and the last `VmError`/reason code,
+   collected in `step.cpp` into a `std::vector` on `World` that step()
+   resets (it is not serialized, so `restore`/`==` ignore it; the
+   forbidden-token gate allows `vector`). Then `Engine.errors()` in
+   `engine.js` and have `runner.js` fold `rule <id>: skipped N targets
+   (<reason>)` into `mathspace.error` via `errorOps` (its diff against
+   the kernel's text already dedups). Test: doctest on the counts, a
+   runner test with a rule reading `self.nope`. Bump `MS_ABI_VERSION`.
+2. Presets under `plugins/mathspace/presets/` and the roadmap examples;
    then the GUI checklist (phase 1 item, phase 2 `y.expr`, and a gravity
    rule) for a human.
-4. **GUI confirmation of phases 1 and 2 (human, or a session that can
+3. **GUI confirmation of phases 1 and 2 (human, or a session that can
    drive Electron).** `npm install` at the root (or symlink node_modules,
    see Learned), `npm run build:native` in `app/` if
    `app/native/build/Release/tapestry_addon.node` is missing, `npm run
@@ -56,24 +55,18 @@ viewer; it is theirs to edit.)
 
 ## Done
 
+- `e0b6942` ms3 pair and global scope (`MS_STEP_VERSION` 7): ordered
+  pairs with `other` bound in law and `select`, global visits the rule
+  once; golden `gravity` loses its dormant pair rule, golden `pair` added.
 - `919c06e` ms3 `set.<f>`: a rule's bound `set.<f>` fields assign the
   target's existing `f` after the integrator (`MS_STEP_VERSION` 6);
   golden `gravity` gains rule 8; force and set passes share
   `for_each_target` in `step.cpp`; runner test, no runner change.
-- `872831b` ms3 `pinned`: the integrator skips a nonzero scalar `pinned`
-  (`MS_STEP_VERSION` 5); `image.js` maps `pinned bool true` to it.
-- `204ced5` ms3 plugin side: `mathspace/rule@1` nodes enter the image as
-  `NoteKind::Rule`, `scope text` → scalar, `set.<f>.expr` allowed on
-  rules, rule fields never committed back, `mathspace.error text`
-  written/unset on rule nodes from compile-time problems; manifest
-  declares the two node types.
-- `f90b3c7` ms3 `select`: a bound scalar `select` on a rule gates each
-  target (`MS_STEP_VERSION` 4); golden `gravity` gains a lift rule.
-- `22bc70c` ms3 engine: `step.cpp` rewritten (force pass, mass
-  integrator, bound fields skip Rule notes), `expr::RuleDims`,
-  `ms_compile` picks it for Rule notes, goldens re-recorded under
-  `MS_STEP_VERSION` 3, golden `gravity` generated by `golden_test.cpp`
-  (`fixtureText`/`checkFixtureText` shared with `plot`).
+- Earlier ms3, one line each: `872831b` `pinned` (`MS_STEP_VERSION` 5);
+  `204ced5` plugin side (rule nodes, `mathspace.error` from compile-time
+  problems, manifest node types); `f90b3c7` `select` (version 4);
+  `22bc70c` engine (force pass, mass integrator, `RuleDims`, golden
+  `gravity`, version 3).
 - Phase 2 plugin/ABI (ms2), one line each: `d6e9c0b` `diff.hpp`
   symbolic d/d(self.field.lane) checked against finite differences;
   `c5d134e` `<f>.expr` props bound through the runner's second pass;
@@ -96,6 +89,21 @@ viewer; it is theirs to edit.)
 
 ## Decisions
 
+- Pair and global scope (`e0b6942`). Pair visits ordered pairs (a,b) and
+  (b,a), `self` receives: the design's gravity example is a force on
+  `self` in terms of `other`, so Newton's third law is the user's
+  symmetric formula, not the engine's; the cost is two evals per
+  unordered pair, accepted for now. `select` is evaluated per visit with
+  both bound and gates only that visit (the design's "pair of selected
+  notes" would need both sides selected; a user writes
+  `self.mass > 0` times `other.mass > 0` for that). A pair `set.<f>`
+  visits `self` once per `other`, each visit reading what the last
+  wrote, so a running min/sum over others is one expression. Global
+  visits the rule note itself as `self`: a global force is collected by
+  the rule (the integrator does not move a note without `velocity`), a
+  global set writes the rule's own field, visible to `node(nN).f` only
+  since rule fields are never committed back. `scope` bound, vector or
+  outside 0..2 skips the rule whole.
 - `set.<f>` (`919c06e`): runs after the integrator (so `self.pos` is this
   tick's) and before the phase 2 bound-field pass (so a body's own bound
   field still wins over a rule's set on the same field, as it evaluates
@@ -106,26 +114,14 @@ viewer; it is theirs to edit.)
   field's dim; `bind_field` already reshapes the rule's own `set.<f>` to
   the program's dim, which is harmless (never committed back).
 - Plugin side of rules (`204ced5`): a rule node's membership is like a
-  note's (a `space` ref, else its `position` puts it in the implicit
-  space; the app gives every node a position). Its numeric props go in
-  as fields too (harmless: it is never a target and has no velocity).
-  An unknown `scope` text keeps the rule out of the image rather than
-  run it under a scope the user did not write. A rule's bound fields
-  are never committed back (`diff()` takes a skip set of rule ids):
-  its `force` is per target, so the store's value for it means nothing
-  and would be `.tree` noise. `mathspace.error` is the rule's problems
-  as `key: reason` lines in key order joined by `; `; the runner diffs
-  against what the kernel holds (`image.rules`) so an unchanged error
-  is not re-sent, and unsets it when the problems are gone. Error ops
-  ride the next commit, so they appear after the first tick, not on
-  rebuild alone. The `set.<f>.expr` binding name in the engine is the
-  dotted `set.<f>` (field names allow dots); slice 4 reads that prefix.
-- `pinned` (`872831b`) is engine-side, not a plugin-side write filter:
-  filtering the diff would let the engine's copy drift from the kernel's
-  and other rules would see the drifted body. The plugin sends `pinned`
-  1 only when the app's bool is true, so an unpinned note's action bytes
-  are unchanged. A pinned note still collects force (nothing reads the
-  accumulator for it yet).
+  note's; its numeric props enter as fields (it is never a target); an
+  unknown `scope` text keeps it out of the image; its bound fields are
+  never committed back (`diff()` skips rule ids); `mathspace.error` is
+  its problems as `key: reason` in key order joined by `; `, diffed
+  against the kernel's text and unset when gone, riding the next commit.
+- `pinned` (`872831b`) is engine-side, not a plugin-side write filter
+  (a filtered diff would let the engine's copy drift from the kernel's).
+  The plugin sends `pinned` 1 only when the app's bool is true.
 - Rule notes in the engine (`22bc70c`, `f90b3c7`): the law is the
   rule's bound fields evaluated with `self` = each target, never the
   rule itself; `scope` is a scalar field (0/1/2, absent = unary);
@@ -163,13 +159,11 @@ viewer; it is theirs to edit.)
 
 ## Learned
 
-- Learned facts now written into code comments were dropped from here:
-  the Ast's contiguous post-order runs (`ast.hpp`, `diff.cpp`), the
-  decimal overflow guard (`parser.cpp`), the three-part 2 pi reduction
-  (`fxmath.hpp`).
-- Goldens with bytecode (`plot`, `gravity`) are generated by
-  `golden_test.cpp` and rewritten under `MS_WRITE_FIXTURES=1`; `.sha256`
-  via `ms_replay --write-golden`. macOS has no `timeout`.
+- Goldens with bytecode (`plot`, `gravity`, `pair`) are generated by
+  `golden_test.cpp` and rewritten under `MS_WRITE_FIXTURES=1` (a new one
+  needs an empty `.actions` and `.sha256` touched first, then the
+  rewrite, then the six `.sha256` via `ms_replay --write-golden`).
+  macOS has no `timeout`. The grammar has no `and`: multiply predicates.
 - doctest: `MESSAGE` ignores `std::hex`; wrap a `const char*` first
   token of `CHECK_MESSAGE` in `std::string`; a helper named `apply`
   collides with `std::apply` via ADL.
@@ -198,8 +192,6 @@ viewer; it is theirs to edit.)
   (`bound`/`bytecode` are in `operator==`): compare lanes in tests.
   `World::notes` is a vector, so a `RuleDims`/`WorldDims` built before
   `create_note` holds a dangling note reference; build it per query.
-- The kernel alone: `cmake -S tapestry -B build/tapestry-kernel
-  -DTAPESTRY_BUILD_RENDER=OFF -DTAPESTRY_BUILD_APP=OFF`, 59 tests, ~2 s.
 - The app stores positions as `position.x`/`position.y` reals measured
   from the note's tree frame origin, plus `pinned bool`
   (`app/src/renderer/layout/placement.ts`). Match these keys exactly.
