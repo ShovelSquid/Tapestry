@@ -159,6 +159,11 @@ interface TreeFrameProps {
   /** The frame's world rect, already computed from content bounds. */
   rect: FrameRect
   zoom: number
+  /**
+   * The drawn camera roll, in degrees. Cards need it, with zoom, to turn
+   * screen deltas into world deltas; the frame header does not.
+   */
+  roll: number
   /** Per-note UI state, keyed by nodeKey so two trees cannot collide. */
   editingKey: string | null
   hoveredKey: string | null
@@ -191,6 +196,7 @@ export default function TreeFrame({
   tree,
   rect,
   zoom,
+  roll,
   editingKey,
   hoveredKey,
   selectedKey,
@@ -443,6 +449,7 @@ export default function TreeFrame({
               isEditing={editingKey === keyFor(node.id)}
               isHovered={isCenterHovered}
               zoom={zoom}
+              roll={roll}
               onStartEditing={() => handlers.onStartEditing(refFor(node.id))}
               onSave={(nodeId, body2, title) => handlers.onSave(refFor(nodeId), body2, title)}
               onMarkDirty={(nodeId) => handlers.onMarkDirty(refFor(nodeId))}
@@ -468,6 +475,7 @@ export default function TreeFrame({
                 node={node}
                 isSelected={selectedKey === key}
                 zoom={zoom}
+                roll={roll}
                 provenance={tree.history?.nodes[node.id]}
                 onBorderSelect={() => handlers.onBorderSelect(refFor(node.id))}
                 onHover={(hovered) => handlers.onHover(refFor(node.id), hovered)}
@@ -493,6 +501,7 @@ export default function TreeFrame({
                 isConnectTarget={connectingHoverKey === key}
                 isConnecting={isConnecting}
                 zoom={zoom}
+                roll={roll}
                 provenance={tree.history?.nodes[node.id]}
                 currentUserActorId={currentUserActorId}
                 onStartEditing={() => handlers.onStartEditing(refFor(node.id))}
@@ -528,6 +537,7 @@ export default function TreeFrame({
               isSelected={selectedKey === key}
               isHovered={hoveredKey === key}
               zoom={zoom}
+              roll={roll}
               onBorderSelect={() => handlers.onBorderSelect(refFor(node.id))}
               onHover={(hovered) => handlers.onHover(refFor(node.id), hovered)}
               onPositionChange={writePosition}

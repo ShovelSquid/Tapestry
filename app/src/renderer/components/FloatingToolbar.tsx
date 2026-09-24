@@ -22,6 +22,7 @@ import {
   getActiveBlockType,
 } from '../editor/toolbar-commands'
 import { TEXT_COLORS, FONT_FAMILIES } from '../editor/schema'
+import { screenToElementLocal } from '../layout/camera'
 
 const ALIGNMENTS = [
   { label: 'Left', value: null },
@@ -36,17 +37,20 @@ interface FloatingToolbarProps {
   view: EditorView | null
   containerRef: React.RefObject<HTMLElement | null>
   /**
-   * Canvas zoom of the ancestor `transform: scale(zoom)` container. Screen
-   * (getBoundingClientRect) deltas must be divided by it to become local
-   * offsets for `position: absolute` inside that container.
+   * Canvas zoom and roll (degrees) of the ancestor
+   * `rotate(roll) scale(zoom)` container. Screen (getBoundingClientRect)
+   * points must be un-rotated and divided by the zoom to become local offsets
+   * for `position: absolute` inside the card. Roll defaults to 0.
    */
   zoom?: number
+  roll?: number
 }
 
 export default function FloatingToolbar({
   view,
   containerRef,
   zoom = 1,
+  roll = 0,
 }: FloatingToolbarProps): React.ReactElement | null {
   const [visible, setVisible] = useState(false)
   const [position, setPosition] = useState({ top: 0, left: 0 })
@@ -98,9 +102,16 @@ export default function FloatingToolbar({
 
       const containerRect = container.getBoundingClientRect()
       const scale = zoom > 0 ? zoom : 1
+      const local = screenToElementLocal(
+        { x: (start.left + end.left) / 2, y: start.top },
+        containerRect,
+        { width: container.offsetWidth, height: container.offsetHeight },
+        scale,
+        roll,
+      )
       setPosition({
-        top: (start.top - containerRect.top) / scale - TOOLBAR_OFFSET,
-        left: ((start.left + end.left) / 2 - containerRect.left) / scale,
+        top: local.y - TOOLBAR_OFFSET,
+        left: local.x,
       })
       setVisible(true)
     }
@@ -116,7 +127,7 @@ export default function FloatingToolbar({
       view.dom.removeEventListener('mouseup', onMouseUp)
       view.dom.removeEventListener('keyup', onKeyUp)
     }
-  }, [view, containerRef, zoom])
+  }, [view, containerRef, zoom, roll])
 
   if (!visible || !view) return null
 

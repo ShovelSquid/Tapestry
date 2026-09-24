@@ -21,6 +21,7 @@ import type { EditorView } from 'prosemirror-view'
 import { useProseMirror } from '../editor/use-prosemirror'
 import { tapestrySchema } from '../editor/schema'
 import FloatingToolbar from './FloatingToolbar'
+import { layoutSize, screenDeltaToWorld } from '../layout/camera'
 
 interface ThreadCenterProps {
   nodeId: string
@@ -33,6 +34,12 @@ interface ThreadCenterProps {
   isEditing: boolean
   isHovered: boolean
   zoom: number
+  /**
+   * The drawn camera roll, in degrees. With zoom, it turns screen deltas into
+   * world deltas, so a drag stays under the pointer on a rolled canvas.
+   * Defaults to 0 (unrolled).
+   */
+  roll?: number
   onStartEditing: () => void
   onSave: (nodeId: string, body: string, title: string) => Promise<void>
   onMarkDirty: (nodeId: string) => void
@@ -78,6 +85,7 @@ export default function ThreadCenterNode({
   isEditing,
   isHovered,
   zoom,
+  roll = 0,
   onStartEditing,
   onSave,
   onMarkDirty,
@@ -127,10 +135,10 @@ export default function ThreadCenterNode({
 
   useEffect(() => {
     if (cardRef.current) {
-      const rect = cardRef.current.getBoundingClientRect()
-      onRegisterDims(nodeId, rect.width / zoom, rect.height / zoom)
+      const size = layoutSize(cardRef.current, zoom, roll)
+      onRegisterDims(nodeId, size.width, size.height)
     }
-  }, [nodeId, zoom, body, onRegisterDims])
+  }, [nodeId, zoom, roll, body, onRegisterDims])
 
   const handlePointerDown = useCallback(
     (e: React.PointerEvent) => {
@@ -148,11 +156,15 @@ export default function ThreadCenterNode({
   const handlePointerMove = useCallback(
     (e: React.PointerEvent) => {
       if (!isDraggingRef.current) return
-      const dx = (e.clientX - dragStartRef.current.mx) / zoom
-      const dy = (e.clientY - dragStartRef.current.my) / zoom
-      setLocalPos({ x: dragStartRef.current.ox + dx, y: dragStartRef.current.oy + dy })
+      const d = screenDeltaToWorld(
+        e.clientX - dragStartRef.current.mx,
+        e.clientY - dragStartRef.current.my,
+        zoom,
+        roll,
+      )
+      setLocalPos({ x: dragStartRef.current.ox + d.x, y: dragStartRef.current.oy + d.y })
     },
-    [zoom],
+    [zoom, roll],
   )
 
   const handlePointerUp = useCallback(
@@ -208,7 +220,7 @@ export default function ThreadCenterNode({
     >
       <div ref={editorRef} className="thread-center-editor" />
       {/* Floating formatting toolbar (D-24/D-26) */}
-      {isEditing && <FloatingToolbar view={editorView} containerRef={cardRef} zoom={zoom} />}
+      {isEditing && <FloatingToolbar view={editorView} containerRef={cardRef} zoom={zoom} roll={roll} />}
     </div>
   )
 }

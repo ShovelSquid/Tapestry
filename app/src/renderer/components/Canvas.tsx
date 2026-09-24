@@ -876,6 +876,7 @@ function Canvas({
               tree={tree}
               rect={rect}
               zoom={view.zoom}
+              roll={view.roll}
               editingKey={editingRef ? nodeKey(editingRef) : null}
               hoveredKey={hoveredRef ? nodeKey(hoveredRef) : null}
               selectedKey={selectedRef ? nodeKey(selectedRef) : null}
