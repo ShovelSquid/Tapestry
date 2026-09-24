@@ -42,6 +42,12 @@ After 01-08 is approved, finishing Phase 01 is its verification. Phase 2
   `data-drawing` checked out; ignored build outputs (node_modules,
   `data-drawing/sim/build`, `plugins/data-drawing/surface/wasm` and `dist`,
   `app/out`, `app/native/build`) were not carried over.
+- `node_modules`, `app/node_modules` and `plugins/data-drawing/node_modules`
+  are symlinks into `~/Tapestry` (installed while it was on data-drawing;
+  it is on `main` now). Everything else was built fresh here.
+- Baseline at `c322f2e`: sim 75/75 ctest on native-debug, native-release
+  and native-ubsan; plugin 9 files, 90 tests; app 21 files, 443 tests;
+  plugin and app typecheck clean; Wasm, surface and app builds green.
 - `.planning/STATE.md` said "Stopped at: Completed 01-07" and 0% when this
   driver was ported, although 01-08 Task 1 had landed. Check its Current
   Position by hand after each plan.
