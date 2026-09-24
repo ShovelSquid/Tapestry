@@ -22,30 +22,33 @@ Nothing. (`autonomy/watch.py` is the operator's log viewer, committed in
 
 ## Next
 
-1. **Actions** `include/mathspace/action.hpp` + `src/mathspace/action.cpp`:
-   kinds 32 to 36 (CreateSpace, CreateNote, SetField, DeleteNote,
-   DeleteField) with the ddsim header layout `u8 kind | u8 version | u16
-   reserved | u32 payload_len | payload` (reuse `ddsim::ByteReader` and
-   `ddsim::decode_header` from `ddsim/action.hpp` if its error codes fit,
-   else mirror it). Payloads: CreateSpace `u8 dim`; CreateNote `u64 space
-   | u8 kind`; SetField `u64 note | u8 name_len | name | u8 dim | u8 bound
-   | dim x i64 | u32 code_len | code` (same field record as the hash
-   walk, so share the reader in hash.cpp by moving it to a small internal
-   header `src/mathspace/wire.hpp`); DeleteNote `u64 note`; DeleteField
-   `u64 note | u8 name_len | name`. `World::apply(const uint8_t*, size_t,
-   NoteId* created) -> Error` decodes into locals, rejects any trailing
-   byte (`Error::BadAction`), then calls the matching mutator. Encoders
-   `encode_create_space(...)` etc. returning `std::vector<uint8_t>` so
-   tests and the replay tool build fixtures without hand-packing. Tests in
-   `tests/mathspace/action_test.cpp`: each kind round-trips through
-   encode/apply and equals the direct mutator call; truncated, oversized,
-   wrong-version, unknown-kind, and trailing-byte payloads are
-   `BadAction` and leave the world untouched.
-2. **Replay tool and goldens**: `tools/ms_replay/main.cpp`, fixture format
-   shared with `tests/golden_support.hpp` where possible,
-   `tests/golden/ms/empty.actions` and `two-notes.actions` with `.sha256`,
-   wired into the two-process CTest loop in `CMakeLists.txt`.
-3. **Tapestry Space page** (phase 1 done condition): `PageKind::Space`,
+1. **Replay tool and goldens** (phase 1 needs goldens that pass two-process
+   and Debug-vs-Release). `tools/ms_replay/main.cpp`, same CLI as
+   `tools/ddsim_replay/main.cpp` (`<fixture>`, `--compare <golden>`,
+   `--write-golden <out>`, `--roundtrip`; exit 0/1/2 the same way) but
+   driving `mathspace::World` directly (`apply`, `step`, `hash`,
+   `serialize`, `restore`; there is no C ABI yet and none is needed).
+   Fixture text is the ddsim format from `tests/golden_support.hpp`
+   (`seed <u64>` | `action <tick> <hex bytes>` | `checkpoint <tick>` |
+   `#` comments; replay rule: for t = 0..max apply that tick's actions
+   in file order, record the hash if t is a checkpoint, then step).
+   Put a mathspace copy of the parser in `tests/mathspace/fixture.hpp`
+   rather than including `golden_support.hpp`, which drags in ddsim's
+   action writer; keep the grammar identical so a later merge is a
+   delete. Fixtures in `tests/golden/ms/`: `empty.actions` (seed 42,
+   checkpoints 0, 1, 60) and `two-notes.actions` (create a 2-space at
+   tick 0, two notes with `pos` at ticks 0 and 1, SetField pos again at
+   tick 2, DeleteNote one at tick 3; checkpoints 0..4). Write the hex by
+   hand from `encode_*` (a doctest in `tests/mathspace/golden_test.cpp`
+   that builds the same log via the encoders and checks it equals the
+   fixture's bytes keeps the hex honest). CMake: `ms_replay` target next
+   to `ddsim_replay`, a second `file(GLOB ...)` loop over
+   `tests/golden/ms/*.actions` naming tests `ms_golden_two_process_<n>`
+   and reusing `cmake/two_process.cmake` with `-DREPLAY=ms_replay`
+   (check that its `ddsim_replay` in error text is only a message).
+   Produce `.sha256` with `--write-golden` from native-release, then
+   confirm native-debug agrees, then commit both.
+2. **Tapestry Space page** (phase 1 done condition): `PageKind::Space`,
    page owns a mathspace `World`, notes drawn as labelled dots, drag
    issues `SetField pos`, `.tapestry` delta line `mspace <page> <base64
    actions>`; reload and compare hash. Link `mathspace` into
@@ -58,6 +61,10 @@ its oracle tests.
 
 ## Done
 
+- `0978fb6` ms1 step 5: `action.hpp` kinds 32..36 + encoders,
+  `action.cpp` `World::apply` (`Error::BadAction` for grammar, mutator
+  errors for content), `wire.hpp` shared field record. 8 tests incl.
+  every truncation/extension of every kind and log-replay == direct.
 - `4c8a5de` ms1 step 4: `hash.cpp` walk + `hash`/`serialize`/`restore`
   (strict, local-then-swap, `Error::BadBytes`), `MAX_FIELDS` 255 cap with
   `Error::TooManyFields`. 9 tests incl. every-single-byte tamper.
@@ -110,6 +117,18 @@ its oracle tests.
   re-implemented in hash.cpp since ddsim's are TU-local.
 - A bound field's value lanes are still written to the walk (the phase 2
   evaluated value is state until the next tick overwrites it).
+
+- **`apply` reports grammar and content separately.** Bytes the grammar
+  cannot account for (short, bad header, unknown kind, trailing byte, dim
+  above 8, bound byte not 0/1) are `BadAction`; anything that decodes is
+  handed to the mutator and gets its error (`BadDim`, `BadName`,
+  `NoSuchNote`...). So a replayed log and a direct build agree on every
+  result code, which the replay tool will rely on.
+- `src/mathspace/wire.hpp` is library-internal (not under include/): the
+  field record and LE writers shared by the walk and SetField. Public
+  callers use `serialize`/`restore` and the `encode_*` functions.
+- Encoders do not validate; they exist so tests and tools never hand-pack
+  bytes. Validation happens once, in `apply`.
 
 ## Learned
 
