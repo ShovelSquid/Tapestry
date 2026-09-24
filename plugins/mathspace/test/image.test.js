@@ -13,7 +13,7 @@ import { describe, expect, it } from 'vitest'
 import { Engine, hexOf, loadModule } from './engine-cjs.js'
 import {
   IMPLICIT_SPACE_ID, SPACE_TYPE, buildImage, diff, encodeCreateNote, encodeCreateSpace, encodeSetField,
-  laneKey, nodeIdToU64, parseKey, parseSnapshot, rawToReal, realToRaw, u64ToNodeId,
+  engineSource, laneKey, nodeIdToU64, parseKey, parseSnapshot, rawToReal, realToRaw, u64ToNodeId,
 } from './image-cjs.js'
 import { parseActions } from './fixture-replay.js'
 
@@ -185,5 +185,25 @@ describe('checkpoint fixture through the engine', () => {
     } finally {
       engine.destroy()
     }
+  })
+})
+
+describe('engineSource', () => {
+  it('rewrites .position after a ref head and maps offsets back', () => {
+    const { text, back } = engineSource('self.position.x + node(n3).position.y * other.position + positionless + x.position')
+    expect(text).toBe('self.pos.x + node(n3).pos.y * other.pos + positionless + x.position')
+    expect(back(0)).toBe(0)
+    expect(back(7)).toBe(7) // inside the first `pos`
+    expect(back(8)).toBe(13) // the `.` after it
+    expect(back(9)).toBe(14) // the `x`
+    expect(text.indexOf('*')).toBe(28)
+    expect(back(28)).toBe(38)
+    expect(back(text.indexOf('positionless'))).toBe('self.position.x + node(n3).position.y * other.position + '.length)
+  })
+
+  it('counts bytes, not code points, before a rewrite', () => {
+    const { text, back } = engineSource('π + self.position')
+    expect(text).toBe('π + self.pos')
+    expect(back(Buffer.byteLength(text, 'utf8'))).toBe(Buffer.byteLength('π + self.position', 'utf8'))
   })
 })

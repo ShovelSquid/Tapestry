@@ -167,3 +167,90 @@ describe('Runner', () => {
     runner.dispose()
   })
 })
+
+describe('Runner with bound expressions', () => {
+  const nodes = [
+    {
+      id: 'n2',
+      type: 'tapestry.notes/note@1',
+      props: {
+        'position.x': { type: 'real', value: 1 },
+        'position.y': { type: 'real', value: 0 },
+        'velocity.x': { type: 'real', value: 1 },
+        'velocity.y': { type: 'real', value: 0 },
+        k: { type: 'real', value: 3 },
+        'y.expr': { type: 'text', value: 'self.position.x * self.k' },
+        'v.expr': { type: 'text', value: '[self.position.x, node(n3).k]' },
+      },
+    },
+    {
+      id: 'n3',
+      type: 'tapestry.notes/note@1',
+      props: {
+        'position.x': { type: 'real', value: 0 },
+        'position.y': { type: 'real', value: 0 },
+        k: { type: 'real', value: 0.5 },
+        'bad.expr': { type: 'text', value: 'self.k +' },
+        'worse.expr': { type: 'text', value: 'self.nope' },
+      },
+    },
+  ]
+
+  it('binds <f>.expr props after the image and commits their values; failures are logged problems', async () => {
+    const kernel = fakeKernel(nodes)
+    const logs = []
+    const { runner } = makeRunner({ log: (m) => logs.push(m) })
+    await runner.stepOnce(kernel)
+    expect(runner.image.bindings.map((b) => `${b.node} ${b.name}`)).toEqual(['n2 v', 'n2 y', 'n3 bad', 'n3 worse'])
+    expect(runner.image.problems).toEqual([
+      { id: 'n3', key: 'bad.expr', reason: 'parse:UnexpectedEnd at 8' },
+      { id: 'n3', key: 'worse.expr', reason: expect.stringMatching(/^compile:UnknownRef at \d+$/) },
+    ])
+    expect(logs.filter((m) => m.startsWith('skipping n3'))).toHaveLength(2)
+    expect(kernel.state.commits).toHaveLength(1)
+    // After one tick: position.x = 2, y = 2 * 3, v = [2, 0.5]; n3 unchanged.
+    expect(kernel.state.commits[0].ops).toEqual([
+      { op: 'setProperty', target: 'n2', key: 'position.x', type: 'real', value: 2 },
+      { op: 'setProperty', target: 'n2', key: 'v.x', type: 'real', value: 2 },
+      { op: 'setProperty', target: 'n2', key: 'v.y', type: 'real', value: 0.5 },
+      { op: 'setProperty', target: 'n2', key: 'y', type: 'real', value: 6 },
+      { op: 'advance', ticks: 1 },
+    ])
+    // The committed values round-trip: a rebuild sets y then binds it, and
+    // the next tick moves on from the committed state.
+    await runner.stepOnce(kernel)
+    expect(kernel.state.commits[1].ops).toEqual([
+      { op: 'setProperty', target: 'n2', key: 'position.x', type: 'real', value: 3 },
+      { op: 'setProperty', target: 'n2', key: 'v.x', type: 'real', value: 3 },
+      { op: 'setProperty', target: 'n2', key: 'y', type: 'real', value: 9 },
+      { op: 'advance', ticks: 1 },
+    ])
+    runner.dispose()
+  })
+
+  it('a bound field takes the expression\'s dim (the store zeroes it on a shape change); a bad key is a problem', async () => {
+    const kernel = fakeKernel([
+      {
+        id: 'n2',
+        type: 'tapestry.notes/note@1',
+        props: {
+          'position.x': { type: 'real', value: 0 },
+          'position.y': { type: 'real', value: 0 },
+          'w.x': { type: 'real', value: 1 },
+          'w.y': { type: 'real', value: 1 },
+          'w.expr': { type: 'text', value: 'self.position.x' },
+          'x.y.expr': { type: 'text', value: '1' },
+        },
+      },
+    ])
+    const { runner } = makeRunner()
+    await runner.stepOnce(kernel)
+    expect(runner.image.problems).toEqual([{ id: 'n2', key: 'x.y.expr', reason: '"x.y" is not a field name' }])
+    // w was [1, 1]; bound as a scalar it restarts at zero and evaluates to position.x.
+    expect(kernel.state.commits[0].ops).toEqual([
+      { op: 'setProperty', target: 'n2', key: 'w', type: 'real', value: 0 },
+      { op: 'advance', ticks: 1 },
+    ])
+    runner.dispose()
+  })
+})

@@ -24,7 +24,7 @@
  */
 
 const { Engine } = require('./engine')
-const { buildImage, diff, parseSnapshot } = require('./image')
+const { buildImage, diff, encodeBindField, engineSource, kernelName, parseSnapshot } = require('./image')
 
 const ENGINE_SEED = 1n
 
@@ -61,7 +61,6 @@ class Runner {
     const nodes = await this.kernel.getNodes()
     const status = await this.kernel.status()
     const image = buildImage(nodes)
-    for (const p of image.problems) this.log(`skipping ${p.id} ${p.key}: ${p.reason}`)
     const mod = await this.loadModule()
     const engine = new Engine(mod, ENGINE_SEED)
     for (const action of image.actions) {
@@ -71,6 +70,21 @@ class Runner {
         throw new Error(`engine rejected an image action with code ${rc}`)
       }
     }
+    // Second pass: every note and field exists now, so refs resolve.
+    // A binding that fails is a problem on that node, never a rebuild
+    // failure: the rest of the world still runs.
+    for (const b of image.bindings) {
+      const key = `${kernelName(b.name)}.expr`
+      const src = engineSource(b.text)
+      const r = engine.compile(b.id, src.text)
+      if (r.error !== undefined) {
+        image.problems.push({ id: b.node, key, reason: `${r.error} at ${src.back(r.where)}` })
+        continue
+      }
+      const rc = engine.apply(encodeBindField(b.id, b.name, r.code))
+      if (rc !== 0) image.problems.push({ id: b.node, key, reason: `bind rejected with code ${rc}` })
+    }
+    for (const p of image.problems) this.log(`skipping ${p.id} ${p.key}: ${p.reason}`)
     if (this.engine) this.engine.destroy()
     this.engine = engine
     this.image = image

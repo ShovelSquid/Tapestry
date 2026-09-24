@@ -221,6 +221,59 @@ function fieldsOf(node, spaceDim, problems) {
 }
 
 /**
+ * A node's `<f>.expr text "<source>"` props: the field `<f>` is bound to
+ * the expression. The image only records them; compiling needs the engine
+ * with every note present (refs resolve against the live world), so the
+ * runner binds them in a second pass after the image's actions. Any
+ * numeric `<f>` props still set the field first, so a bound field keeps
+ * its committed value until the first step.
+ * Returns [{ name, text }] in name order.
+ */
+function bindingsOf(node, problems) {
+  const out = []
+  for (const key of Object.keys(node.props).sort()) {
+    if (!key.endsWith('.expr')) continue
+    const prop = node.props[key]
+    if (!prop || prop.type !== 'text' || typeof prop.value !== 'string') continue
+    const base = key.slice(0, -'.expr'.length)
+    if (!validFieldName(base) || base.includes('.')) {
+      problems.push({ id: node.id, key, reason: `${JSON.stringify(base)} is not a field name` })
+      continue
+    }
+    out.push({ name: engineName(base), text: prop.value })
+  }
+  out.sort((a, b) => compareNames(a.name, b.name))
+  return out
+}
+
+/**
+ * Expression text in the .tree uses the app's field names (`self.position`,
+ * mathspace_design.md's example) while the engine's grammar sees store
+ * names (`self.pos`). Rewrite the one renamed field after a ref head and
+ * return a map from byte offsets in the rewritten text back to the
+ * original, so a parse error points at what the user wrote.
+ * @returns {{text: string, back: (offset: number) => number}}
+ */
+function engineSource(text) {
+  const re = /\b(self|other|space|world|node\(n\d+\))\.position\b/g
+  const cuts = [] // [byte offset in the rewritten text, bytes removed there]
+  let out = ''
+  let last = 0
+  for (const m of text.matchAll(re)) {
+    out += text.slice(last, m.index) + m[1] + '.pos'
+    cuts.push([Buffer.byteLength(out, 'utf8'), 'position'.length - 'pos'.length])
+    last = m.index + m[0].length
+  }
+  out += text.slice(last)
+  const back = (offset) => {
+    let o = offset
+    for (const [at, removed] of cuts) if (offset >= at) o += removed
+    return o
+  }
+  return { text: out, back }
+}
+
+/**
  * Build the engine image of a tree.
  *
  * @param {Array<{id: string, type: string, props: object}>} nodes
@@ -229,8 +282,11 @@ function fieldsOf(node, spaceDim, problems) {
  *   fields: Map<bigint, Map<string, bigint[]>>,
  *   types: Map<string, 'real'|'int'>,
  *   problems: Array<{id: string, key: string, reason: string}>,
+ *   bindings: Array<{id: bigint, node: string, name: string, text: string}>,
  * }} actions in apply order; fields is the before-image diff() needs;
- *   types remembers `int` props so they come back as ints.
+ *   types remembers `int` props so they come back as ints; bindings are
+ *   the `<f>.expr` props for the runner to compile once the actions are
+ *   applied, in id then name order.
  */
 function buildImage(nodes) {
   const problems = []
@@ -275,7 +331,7 @@ function buildImage(nodes) {
       problems.push({ id: node.id, key: 'position', reason: `position has ${pos.dim} lanes, space has ${dim}` })
       fields.delete('pos')
     }
-    notes.push({ id: nodeIdToU64(node.id), space, fields })
+    notes.push({ id: nodeIdToU64(node.id), space, fields, node: node.id, bindings: bindingsOf(node, problems) })
   }
 
   const byId = (a, b) => (a < b ? -1 : a > b ? 1 : 0)
@@ -301,7 +357,11 @@ function buildImage(nodes) {
     }
     image.set(n.id, before)
   }
-  return { actions, fields: image, types, problems }
+  const bindings = []
+  for (const n of notes) {
+    for (const b of n.bindings) bindings.push({ id: n.id, node: n.node, name: b.name, text: b.text })
+  }
+  return { actions, fields: image, types, problems, bindings }
 }
 
 // ---------------------------------------------------------------------------
@@ -361,7 +421,7 @@ function diff(before, after, types = new Map()) {
 
 module.exports = {
   FX_ONE, IMPLICIT_SPACE_ID, IMPLICIT_SPACE_DIM, SPACE_TYPE,
-  realToRaw, rawToReal, nodeIdToU64, u64ToNodeId, parseKey, laneKey,
+  realToRaw, rawToReal, nodeIdToU64, u64ToNodeId, parseKey, laneKey, kernelName,
   encodeCreateSpace, encodeCreateNote, encodeSetField, encodeBindField,
-  buildImage, parseSnapshot, diff,
+  buildImage, parseSnapshot, diff, engineSource,
 }
