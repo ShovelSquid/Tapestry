@@ -15,7 +15,7 @@ replay tool and goldens are kept.
 | --- | --- |
 | 1 engine over the kernel | built and tested headlessly (`836a4da`); only the human GUI confirmation is open, see Blocked |
 | 2 expressions | done headlessly (`c5d134e`, `d6e9c0b`): golden `plot` hashes across processes and builds, `<f>.expr text` props bind through the runner so the bound value is committed as a kernel prop after a step (the inspector reads props, so it shows it; a human look is still open like phase 1's), and `diff.hpp` exists for phase 4 |
-| 3 force rules | engine (`22bc70c`, `f90b3c7`, `872831b`): unary force rules with `select`, mass integrator, `pinned`, `RuleDims`, golden `gravity`; plugin side (`204ced5`): rule nodes, `mathspace.error` for compile-time failures; open: `set.<f>` rules, pair/global, runtime-skip reporting, presets |
+| 3 force rules | engine (`22bc70c`, `f90b3c7`, `872831b`, `919c06e`): unary force and `set.<f>` rules with `select`, mass integrator, `pinned`, `RuleDims`, golden `gravity`; plugin side (`204ced5`): rule nodes, `mathspace.error` for compile-time failures; open: pair/global, runtime-skip reporting, presets |
 | 4 constraints | not started |
 | 5 views | not started |
 | 6 metrics | not started |
@@ -28,27 +28,7 @@ viewer; it is theirs to edit.)
 
 ## Next
 
-1. **Phase 3, slice 4: `set.<f>` rules.** In `step.cpp`, after the
-   integrator and before the phase 2 bound-field pass: for each Rule
-   note in id order (unary scope, `select` gating as for `force`), for
-   each bound field named `set.<f>` (the plugin already binds
-   `set.<f>.expr` under that dotted name, `204ced5`; add a
-   `SET_PREFIX = "set."` constant in `world.hpp`), evaluate against each
-   target and write the lanes into the target's existing field `f` when
-   the dims match (a missing or reshaped `f` is a per-target skip; the
-   rule never creates fields, same as force). Pinned targets are
-   skipped (RULE-08 says "every rule's writes"). Two rules writing one
-   field is RULE-07's error; for now last rule wins in id order and the
-   report waits for the runtime-error channel (item 3). `RuleDims` must
-   resolve `self.<f>` for the target's own field; check that
-   `ms_compile` on a Rule note gives a `set.k` program the dim of `k`
-   on the first note that has it (it should, nothing is name-special).
-   Bump `MS_STEP_VERSION` to 6, add a set rule to golden `gravity`'s
-   generator (`golden_test.cpp` `gravityLog`, then `MS_WRITE_FIXTURES=1`
-   and re-record the five `.sha256`), doctest in `step_test.cpp`, and a
-   runner test (`set.heat.expr text "self.position.x"` on a rule node
-   commits `heat` on the body). Then `npm run engine:wasm` + `npm test`.
-2. **Phase 3, slice 5: `scope pair` and `global`.** `other` bound,
+1. **Phase 3, slice 5: `scope pair` and `global`.** `other` bound,
    unordered pairs ascending id; decide whether a pair force applies to
    `self` only or to both with negation (design says "each unordered
    pair"; the gravity example writes `self.position - other.position`,
@@ -56,16 +36,16 @@ viewer; it is theirs to edit.)
    ordered pairs (a,b) and (b,a) with `self` receiving is the likely
    reading; record the choice). `global` runs once per tick with `self`
    = the rule note? Decide and record. Version bump + goldens as above.
-3. **RULE-07 runtime errors.** The engine skips silently at runtime;
+2. **RULE-07 runtime errors.** The engine skips silently at runtime;
    the plugin writes only compile-time problems. Add a per-rule skip
    count or a last-error code to the snapshot or a new `ms_errors` ABI
    call (not in the hash), and have `runner.js` fold it into
    `mathspace.error` (its `errorOps` already diffs against what the
    kernel holds, so only the text source changes).
-4. Presets under `plugins/mathspace/presets/` and the roadmap examples;
+3. Presets under `plugins/mathspace/presets/` and the roadmap examples;
    then the GUI checklist (phase 1 item, phase 2 `y.expr`, and a gravity
    rule) for a human.
-5. **GUI confirmation of phases 1 and 2 (human, or a session that can
+4. **GUI confirmation of phases 1 and 2 (human, or a session that can
    drive Electron).** `npm install` at the root (or symlink node_modules,
    see Learned), `npm run build:native` in `app/` if
    `app/native/build/Release/tapestry_addon.node` is missing, `npm run
@@ -76,6 +56,10 @@ viewer; it is theirs to edit.)
 
 ## Done
 
+- `919c06e` ms3 `set.<f>`: a rule's bound `set.<f>` fields assign the
+  target's existing `f` after the integrator (`MS_STEP_VERSION` 6);
+  golden `gravity` gains rule 8; force and set passes share
+  `for_each_target` in `step.cpp`; runner test, no runner change.
 - `872831b` ms3 `pinned`: the integrator skips a nonzero scalar `pinned`
   (`MS_STEP_VERSION` 5); `image.js` maps `pinned bool true` to it.
 - `204ced5` ms3 plugin side: `mathspace/rule@1` nodes enter the image as
@@ -112,6 +96,15 @@ viewer; it is theirs to edit.)
 
 ## Decisions
 
+- `set.<f>` (`919c06e`): runs after the integrator (so `self.pos` is this
+  tick's) and before the phase 2 bound-field pass (so a body's own bound
+  field still wins over a rule's set on the same field, as it evaluates
+  last). Set fields on one rule run in name order, so `set.b` can read
+  what `set.a` just wrote. Two rules setting one field: last in id order
+  wins silently until the runtime-error channel exists. A set on `pos` or
+  `velocity` is not forbidden. The program's dim must equal the target
+  field's dim; `bind_field` already reshapes the rule's own `set.<f>` to
+  the program's dim, which is harmless (never committed back).
 - Plugin side of rules (`204ced5`): a rule node's membership is like a
   note's (a `space` ref, else its `position` puts it in the implicit
   space; the app gives every node a position). Its numeric props go in
