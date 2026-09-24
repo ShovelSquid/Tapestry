@@ -3,7 +3,8 @@
 // The mathspace twin of tools/ddsim_replay/main.cpp: same CLI, same exit
 // codes, same fixture grammar (tests/mathspace/fixture.hpp), but it drives
 // mathspace::World directly (apply / step / hash / serialize / restore).
-// There is no C ABI for mathspace yet and none is needed for the goldens.
+// The C ABI (mathspace_c.h) is exercised by tests/mathspace/c_abi_test.cpp
+// instead; the goldens do not need it.
 //
 //   ms_replay <fixture.actions>                        print "<tick> <sha256>" per checkpoint, exit 0
 //   ms_replay <fixture.actions> --compare <golden>     exit 0 if equal, else
