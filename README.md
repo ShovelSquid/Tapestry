@@ -71,6 +71,21 @@ folded into it. Also not here yet:
 - Any C ABI / Wasm export of particles or constraints — there's no
   consumer yet.
 
+## Mathspace (current work)
+
+This branch is building **mathspace**, a deterministic engine over
+Tapestry's kernel that gives spatial notes expressions, rules, constraints,
+views and metric spaces, hosted as the plugin `plugins/mathspace/`. See
+`mathspace_design.md`, `mathspace_plan.md` and `autonomy/STATE.md`.
+
+Status (2026-09-24): plan phase 1 (the engine over the kernel) is built and
+tested headlessly: the `mathspace` library (`include/mathspace`,
+`src/mathspace`), its C ABI and Wasm module, goldens under
+`tests/golden/ms`, and the plugin (`engine.js`, `image.js`, `runner.js`)
+whose tests run the real kernel and the real Wasm and check the `.tree`.
+The one remaining phase 1 item is a human confirming the note moves in the
+Electron app under the Run command. Phases 2 to 7 are not started.
+
 ## Build
 
 ```bash
