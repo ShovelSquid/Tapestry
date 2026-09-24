@@ -104,6 +104,17 @@ describe('buildImage', () => {
     expect(hexOf(img.actions[1])).toBe(hexOf(encodeCreateNote(4n, IMPLICIT_SPACE_ID, 1)))
     expect(img.actions).toHaveLength(1 + 3 + 3)
   })
+  it('pads a lane-addressed field to the space dim and leaves scalars alone', () => {
+    const img = buildImage([
+      { id: 'n1', type: 'tapestry.notes/note@1', props: { 'position.x': real(0), 'position.y': real(0), 'velocity.x': real(1), mass: real(2) } },
+      { id: 'n2', type: 'tapestry.notes/note@1', props: { space: { type: 'ref', value: 'n3' }, 'q.2': real(1) } },
+      { id: 'n3', type: SPACE_TYPE, props: { dim: int(5) } },
+    ])
+    expect(img.problems).toEqual([])
+    expect(img.fields.get(1n).get('velocity')).toEqual([ONE, 0n])
+    expect(img.fields.get(1n).get('mass')).toEqual([2n * ONE])
+    expect(img.fields.get(2n).get('q')).toEqual([0n, 0n, ONE, 0n, 0n])
+  })
   it('records an inexact real as a problem and drops that whole field', () => {
     const img = buildImage([
       { id: 'n1', type: 'tapestry.notes/note@1', props: { 'position.x': real(0.1), 'position.y': real(2), 'velocity.x': real(1) } },
@@ -118,12 +129,15 @@ describe('buildImage', () => {
       { id: 'n7', type: SPACE_TYPE, props: { dim: int(3) } },
       { id: 'n8', type: 'tapestry.notes/note@1', props: { space: { type: 'ref', value: 'n7' }, 'position.x': real(1), 'position.y': real(1) } },
       { id: 'n10', type: 'tapestry.notes/note@1', props: { space: { type: 'ref', value: 'n99' }, 'position.x': real(1), 'position.y': real(1) } },
+      { id: 'n11', type: 'tapestry.notes/note@1', props: { 'position.x': real(1), 'position.y': real(1), 'position.z': real(1) } },
     ])
-    expect(img.problems.map((p) => p.id).sort()).toEqual(['n10', 'n8'])
+    // n10 names a space that is not one; n11 has three lanes in the implicit 2-space.
+    expect(img.problems.map((p) => p.id).sort()).toEqual(['n10', 'n11'])
     expect(hexOf(img.actions[0])).toBe(hexOf(encodeCreateSpace(7n, 3)))
-    expect([...img.fields.keys()]).toEqual([8n, 9n])
-    expect(img.fields.get(8n).has('pos')).toBe(false)
+    expect([...img.fields.keys()]).toEqual([8n, 9n, 11n])
+    expect(img.fields.get(8n).get('pos')).toEqual([ONE, ONE, 0n]) // padded to the 3-space
     expect(img.fields.get(9n).get('pos')).toEqual([ONE, ONE, ONE])
+    expect(img.fields.get(11n).has('pos')).toBe(false)
   })
 })
 

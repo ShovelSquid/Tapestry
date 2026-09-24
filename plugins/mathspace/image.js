@@ -11,8 +11,11 @@
  *
  * Key conventions (plan, "Property conventions"): a vector field `f` of
  * dim N is `f.x f.y f.z f.w` for N ≤ 4 and `f.0 … f.(N-1)` above; a scalar
- * is the bare name. The app's `position.x`/`position.y` is the engine's
- * `pos`. Membership is `space ref n<k>`; a node with a position and no
+ * is the bare name. A lane-addressed field is a vector in the note's
+ * space, so it is padded with zero lanes to the space's dim: `velocity.x
+ * real 1` alone on a note in a 2-space is the vector (1, 0), which is
+ * what the integrate rule (step.cpp) needs to see. The app's
+ * `position.x`/`position.y` is the engine's `pos`. Membership is `space ref n<k>`; a node with a position and no
  * space lives in the implicit space of its tree (one per image, since the
  * SDK's kernel is one tree), a 2-space under a reserved id no kernel node
  * can hold.
@@ -172,12 +175,14 @@ function encodeSetField(note, field) {
 const isNumericProp = (p) => p && (p.type === 'real' || p.type === 'int') && typeof p.value === 'number'
 
 /**
- * Gather a node's numeric props into engine fields. Any lane that fails
- * conversion drops the whole field (a half-converted vector would be a
- * wrong position, not a missing one) and is reported in `problems`.
- * Returns Map name → { dim, lanes, types: key per lane }.
+ * Gather a node's numeric props into engine fields. A lane-addressed
+ * field is at least `spaceDim` wide (zero-padded); a bare name is a
+ * scalar. Any lane that fails conversion drops the whole field (a
+ * half-converted vector would be a wrong position, not a missing one)
+ * and is reported in `problems`.
+ * Returns Map name → { dim, lanes, types: type per lane }.
  */
-function fieldsOf(node, problems) {
+function fieldsOf(node, spaceDim, problems) {
   const fields = new Map()
   const bad = new Set()
   for (const key of Object.keys(node.props).sort()) {
@@ -195,7 +200,7 @@ function fieldsOf(node, problems) {
     }
     let f = fields.get(parsed.field)
     if (!f) { f = { dim: 1, lanes: [], types: [] }; fields.set(parsed.field, f) }
-    f.dim = Math.max(f.dim, parsed.lane + 1)
+    f.dim = Math.max(f.dim, parsed.lane + 1, key.includes('.') ? spaceDim : 1)
     f.lanes[parsed.lane] = raw
     f.types[parsed.lane] = prop.type
   }
@@ -254,8 +259,8 @@ function buildImage(nodes) {
     } else {
       continue
     }
-    const fields = fieldsOf(node, problems)
     const dim = space === IMPLICIT_SPACE_ID ? IMPLICIT_SPACE_DIM : spaces.get(space)
+    const fields = fieldsOf(node, dim, problems)
     const pos = fields.get('pos')
     if (pos && pos.dim !== dim) {
       problems.push({ id: node.id, key: 'position', reason: `position has ${pos.dim} lanes, space has ${dim}` })
