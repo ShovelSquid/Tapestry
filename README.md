@@ -112,8 +112,14 @@ canvas panel per View (seen in a headless browser), and the presets
 `view-4d` (`[x, y]` and `[z, w]` over one 4-space, the done condition)
 are checked by projecting every note through every view after a run.
 Shapes and rule regions in the surface are optional polish; a human look
-at the panel in the Electron app is still open. Phases 6 and 7 are not
-started.
+at the panel in the Electron app is still open.
+Plan phase 6 (metric spaces) is in progress: a `metric.expr` on a
+`mathspace/space@1` node (the diagonal of the chart's metric in
+`self.position`) is bound through the plugin and applied by the engine's
+geodesic step, with compile problems and `BadMetric` reported on the
+space as `mathspace.error`; golden `poincare` and the `poincare` preset
+exist, while the `sphere` preset, `embed` and `identify` are open. Phase
+7 is not started.
 
 ## Build
 

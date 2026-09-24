@@ -39,6 +39,7 @@ const LANE_LETTERS = ['x', 'y', 'z', 'w']
 const IMPLICIT_SPACE_ID = 1n << 63n
 const IMPLICIT_SPACE_DIM = 2
 const SPACE_TYPE = 'mathspace/space@1'
+const METRIC_FIELD = 'metric' // world.hpp METRIC_FIELD: the one field a space binds
 const RULE_TYPE = 'mathspace/rule@1'
 /** A View: `project.expr` maps a note of its space to the page plane. */
 const VIEW_TYPE = 'mathspace/view@1'
@@ -313,10 +314,11 @@ function engineSource(text) {
  * }} actions in apply order; fields is the before-image diff() needs;
  *   types remembers `int` props so they come back as ints; bindings are
  *   the `<f>.expr` props for the runner to compile once the actions are
- *   applied, in id then name order; rules maps every `mathspace/rule@1`
- *   and `mathspace/view@1` node id (in the image or not) to the
- *   `mathspace.error` text it carries now, null when none, so the runner
- *   can write only changes (and never commits their bound fields back);
+ *   applied, in id then name order; rules maps every `mathspace/rule@1`,
+ *   `mathspace/view@1` and `mathspace/space@1` node id (in the image or
+ *   not) to the `mathspace.error` text it carries now, null when none, so
+ *   the runner can write only changes (and never commits their bound
+ *   fields back): it is the set of nodes that carry mathspace.error;
  *   notes and views are the ids of the Note-kind and View-kind notes that
  *   made it into the image, in id order, for the surface's projection.
  *
@@ -338,14 +340,31 @@ function engineSource(text) {
  * (dim 2, in terms of `self.position`) is bound like a rule's law and
  * evaluated only on demand through Engine.project(view, note). Its
  * failures are reported in `mathspace.error` like a rule's.
+ *
+ * A space node is created by CreateSpace, never CreateNote, and carries
+ * no fields of its own except the one binding the engine reads there:
+ * `metric.expr` (plan phase 6), the diagonal of the chart's metric in
+ * terms of `self.position`, which the engine's geodesic step applies to
+ * every note of the space. It compiles like a rule's law (the space's
+ * own `pos` has the space dim, so `self.position` resolves) and its
+ * failures, compile-time or the engine's BadMetric/VmError skips, are
+ * reported on the space node in `mathspace.error`. Any other `<f>.expr`
+ * on a space is a problem there, not a silent no-op.
  */
 function buildImage(nodes) {
   const problems = []
   const spaces = new Map() // u64 → dim
   const notes = [] // { id, space, fields }
+  const rules = new Map() // node id → its mathspace.error text now (null when none)
+  const errorText = (node) => {
+    const err = node.props[ERROR_KEY]
+    return err && err.type === 'text' && typeof err.value === 'string' ? err.value : null
+  }
+  const spaceBindings = [] // { id, node, name, text }
 
   for (const node of nodes) {
     if (node.type !== SPACE_TYPE) continue
+    rules.set(node.id, errorText(node))
     const id = nodeIdToU64(node.id)
     const dimProp = node.props['dim']
     const dim = isNumericProp(dimProp) ? dimProp.value : IMPLICIT_SPACE_DIM
@@ -354,18 +373,21 @@ function buildImage(nodes) {
       continue
     }
     spaces.set(id, dim)
+    for (const b of bindingsOf(node, problems)) {
+      if (b.name !== METRIC_FIELD) {
+        problems.push({ id: node.id, key: `${kernelName(b.name)}.expr`, reason: `a space binds only ${METRIC_FIELD}.expr` })
+        continue
+      }
+      spaceBindings.push({ id, node: node.id, name: b.name, text: b.text })
+    }
   }
 
   let usesImplicit = false
-  const rules = new Map()
   for (const node of nodes) {
     if (node.type === SPACE_TYPE) continue
     const isRule = node.type === RULE_TYPE
     const isView = node.type === VIEW_TYPE
-    if (isRule || isView) {
-      const err = node.props[ERROR_KEY]
-      rules.set(node.id, err && err.type === 'text' && typeof err.value === 'string' ? err.value : null)
-    }
+    if (isRule || isView) rules.set(node.id, errorText(node))
     const spaceProp = node.props['space']
     let space
     if (spaceProp && spaceProp.type === 'ref') {
@@ -434,10 +456,11 @@ function buildImage(nodes) {
     }
     image.set(n.id, before)
   }
-  const bindings = []
+  const bindings = spaceBindings.slice()
   for (const n of notes) {
     for (const b of n.bindings) bindings.push({ id: n.id, node: n.node, name: b.name, text: b.text })
   }
+  bindings.sort((a, b) => byId(a.id, b.id) || compareNames(a.name, b.name))
   const noteIds = notes.filter((n) => n.kind === NOTE_KIND_NOTE).map((n) => n.node)
   const viewIds = notes.filter((n) => n.kind === NOTE_KIND_VIEW).map((n) => n.node)
   return { actions, fields: image, types, problems, bindings, rules, notes: noteIds, views: viewIds }

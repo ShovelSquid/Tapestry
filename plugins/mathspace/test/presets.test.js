@@ -103,7 +103,7 @@ const byId = Object.fromEntries(presets.map((p) => [p.id, p]))
 
 describe('presets', () => {
   it('ships the plan\'s presets, the three roadmap examples and the default views, one command each, listed in the manifest', () => {
-    expect(presets.map((p) => p.id)).toEqual(['anger', 'contact', 'drag', 'gold', 'gravity-field', 'nbody', 'push', 'spring-to-anchor', 'view-2d', 'view-3d', 'view-4d'])
+    expect(presets.map((p) => p.id)).toEqual(['anger', 'contact', 'drag', 'gold', 'gravity-field', 'nbody', 'poincare', 'push', 'spring-to-anchor', 'view-2d', 'view-3d', 'view-4d'])
     const manifest = require('../tapestry.plugin.json')
     for (const p of presets) {
       expect(manifest.contributions.commands).toContain(COMMAND_PREFIX + p.id)
@@ -188,6 +188,24 @@ describe('presets', () => {
     const ey = early.prop(early.after, 'Ball', 'position.y')
     expect(Math.hypot(ex, ey - 100)).toBeGreaterThanOrEqual(59.9)
     expect(ey).toBeLessThan(100)
+  })
+
+  it('poincare: a metric on the space bends both paths toward the rim, which they never reach', async () => {
+    const { before, after, prop, presetCommits, ops } = await runPreset(byId.poincare, 240)
+    expect(presetCommits).toBe(2)
+    expect(ops.filter((o) => o.key === 'mathspace.error')).toEqual([])
+    const radius = (nodes, title) => Math.hypot(prop(nodes, title, 'position.x'), prop(nodes, title, 'position.y'))
+    for (const title of ['Upward', 'Leftward']) {
+      expect(radius(after, title)).toBeGreaterThan(radius(before, title))
+      expect(radius(after, title)).toBeLessThan(100)
+    }
+    // Curved, not straight: the lane the note did not move along has changed.
+    expect(prop(after, 'Upward', 'position.x')).not.toBe(30)
+    expect(prop(after, 'Leftward', 'position.y')).not.toBe(60)
+    // The identity view shows the chart as drawn.
+    const seen = await projectNodes(after)
+    expect(seen.errors).toEqual([])
+    expect(seen.points.Upward.Disk).toEqual([prop(after, 'Upward', 'position.x'), prop(after, 'Upward', 'position.y')])
   })
 
   it('view presets: the space comes one commit before its members, and $0 is the space\'s id', async () => {

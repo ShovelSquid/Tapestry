@@ -170,7 +170,20 @@ describe('buildImage', () => {
     expect([...img.fields.keys()]).toEqual([2n, 3n, 4n])
     expect(hexOf(img.actions[4])).toBe(hexOf(encodeCreateNote(3n, 1n, 3)))
     expect(img.bindings.map((b) => `${b.node} ${b.name}`)).toEqual(['n3 project'])
-    expect(img.rules).toEqual(new Map([['n3', 'old'], ['n4', null]]))
+    expect(img.rules).toEqual(new Map([['n1', null], ['n3', 'old'], ['n4', null]]))
+  })
+  it('space nodes: metric.expr is a binding on the space, sorted by id with the rest; any other .expr is a problem there', () => {
+    const img = buildImage([
+      { id: 'n5', type: RULE_TYPE, props: { space: { type: 'ref', value: 'n1' }, 'force.expr': { type: 'text', value: '[0, 0]' } } },
+      { id: 'n1', type: SPACE_TYPE, props: { dim: { type: 'int', value: 2 }, 'metric.expr': { type: 'text', value: '[1, 1]' }, [ERROR_KEY]: { type: 'text', value: 'stale' } } },
+      { id: 'n2', type: 'tapestry.notes/note@1', props: { space: { type: 'ref', value: 'n1' }, 'position.x': real(1), 'position.y': real(0) } },
+      { id: 'n3', type: SPACE_TYPE, props: { dim: { type: 'int', value: 2 }, 'force.expr': { type: 'text', value: '[1, 1]' } } },
+    ])
+    expect(img.problems).toEqual([{ id: 'n3', key: 'force.expr', reason: 'a space binds only metric.expr' }])
+    expect(img.bindings.map((b) => `${b.node} ${b.name} ${b.text}`)).toEqual(['n1 metric [1, 1]', 'n5 force [0, 0]'])
+    expect(img.bindings[0].id).toBe(1n)
+    expect(img.rules).toEqual(new Map([['n1', 'stale'], ['n3', null], ['n5', null]]))
+    expect([...img.fields.keys()]).toEqual([2n, 5n]) // spaces carry no before-image: diff() never commits their lanes
   })
   it('maps pinned bool true to the scalar pinned 1 and sends nothing for false', () => {
     const img = buildImage([

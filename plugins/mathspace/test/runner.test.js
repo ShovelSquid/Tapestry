@@ -474,3 +474,63 @@ describe('Runner with rule nodes', () => {
     runner.dispose()
   })
 })
+
+describe('Runner with a metric on a space', () => {
+  const SPACE = 'mathspace/space@1'
+  const text = (value) => ({ type: 'text', value })
+  const real = (value) => ({ type: 'real', value })
+  const body = (space, extra = {}) => ({ space: { type: 'ref', value: space }, 'position.x': real(0), 'position.y': real(0), 'velocity.x': real(1), 'velocity.y': real(0), ...extra })
+  const nodes = [
+    // Euclidean written out: steps exactly as no metric would.
+    { id: 'n1', type: SPACE, props: { dim: { type: 'int', value: 2 }, 'metric.expr': text('[1, 1]'), 'mathspace.error': text('stale') } },
+    { id: 'n2', type: 'tapestry.notes/note@1', props: body('n1') },
+    // Wrong dim for a 2-space: BadMetric on the space, its notes step Euclidean.
+    { id: 'n3', type: SPACE, props: { dim: { type: 'int', value: 2 }, 'metric.expr': text('self.position.x') } },
+    { id: 'n4', type: 'tapestry.notes/note@1', props: body('n3') },
+    // Does not parse: a compile problem on the space, with the offset in what the user wrote.
+    { id: 'n5', type: SPACE, props: { dim: { type: 'int', value: 2 }, 'metric.expr': text('[1, self.position.q]') } },
+    { id: 'n6', type: 'tapestry.notes/note@1', props: body('n5') },
+  ]
+
+  it('binds metric.expr on the space and reports the engine\'s BadMetric there', async () => {
+    const kernel = fakeKernel(nodes)
+    const { runner } = makeRunner()
+    await runner.stepOnce(kernel)
+    expect(runner.image.bindings.map((b) => `${b.node} ${b.name}`)).toEqual(['n1 metric', 'n3 metric', 'n5 metric'])
+    expect(runner.image.problems).toEqual([{ id: 'n5', key: 'metric.expr', reason: 'parse:BadComponent at 18' }]) // 18 in what the user wrote, not in the rewritten `self.pos.q`
+    expect(kernel.state.commits[0].ops).toEqual([
+      { op: 'unsetProperty', target: 'n1', key: 'mathspace.error' },
+      { op: 'setProperty', target: 'n3', key: 'mathspace.error', type: 'text', value: 'step: skipped 1 visit (BadMetric)' },
+      { op: 'setProperty', target: 'n5', key: 'mathspace.error', type: 'text', value: 'metric.expr: parse:BadComponent at 18' },
+      { op: 'setProperty', target: 'n2', key: 'position.x', type: 'real', value: 1 },
+      { op: 'setProperty', target: 'n4', key: 'position.x', type: 'real', value: 1 },
+      { op: 'setProperty', target: 'n6', key: 'position.x', type: 'real', value: 1 },
+      { op: 'advance', ticks: 1 },
+    ])
+    // The space's own lanes are never committed, and a repeated failure with the same text is not rewritten.
+    await runner.stepOnce(kernel)
+    expect(kernel.state.commits[1].ops.map((o) => `${o.target ?? ''} ${o.key ?? o.op}`)).toEqual([
+      'n2 position.x', 'n4 position.x', 'n6 position.x', ' advance',
+    ])
+  })
+
+  it('a Poincaré metric bends a straight path and keeps the note inside the disk', async () => {
+    const disk = [
+      { id: 'n1', type: SPACE, props: { dim: { type: 'int', value: 2 }, 'metric.expr': text('4 / pow(1 - dot(self.position, self.position) / 10000, 2) * [1, 1]') } },
+      { id: 'n2', type: 'tapestry.notes/note@1', props: body('n1', { 'position.x': real(30), 'velocity.x': real(0), 'velocity.y': real(1) }) },
+    ]
+    const kernel = fakeKernel(disk)
+    const { runner } = makeRunner({ commitEvery: 1000 })
+    await runner.start(kernel)
+    for (let i = 0; i < 240; i++) runner.tick()
+    await runner.pause(kernel)
+    expect(kernel.state.commits).toHaveLength(1)
+    expect(kernel.state.commits[0].ops.filter((o) => o.key === 'mathspace.error')).toEqual([])
+    const n2 = kernel.state.nodes.find((n) => n.id === 'n2').props
+    const r = Math.hypot(n2['position.x'].value, n2['position.y'].value)
+    expect(r).toBeGreaterThan(30)
+    expect(r).toBeLessThan(100)
+    expect(n2['position.x'].value).not.toBe(30) // curved, not the straight line x = 30
+    runner.dispose()
+  })
+})
