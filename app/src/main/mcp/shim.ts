@@ -26,6 +26,20 @@ import { buildMcpServer, type ToolCaller, type ToolCallResult } from './tools'
 /** A single tool call gets this long before it is abandoned. */
 const CALL_TIMEOUT_MS = 30_000
 
+/**
+ * D-20: how often the shim says hello while its client runs.
+ *
+ * Well inside the socket server's 120 s CONNECTED_WINDOW_MS, so an idle but
+ * running client keeps reading as `Connected now`.
+ */
+export const HELLO_INTERVAL_MS = 60_000
+
+/** A hello is a small bookkeeping call; it gives up quickly. */
+const HELLO_TIMEOUT_MS = 5_000
+
+/** Tests may shorten the interval; it never goes below this. */
+const MIN_HELLO_INTERVAL_MS = 100
+
 const NO_TOKEN_MESSAGE =
   'TAPESTRY_AGENT_TOKEN is not set. Connect this agent from the Agents panel in Tapestry.'
 const NOT_RUNNING_MESSAGE = 'Tapestry is not running. Open Tapestry, then try again.'
@@ -53,7 +67,25 @@ class SocketCaller implements ToolCaller {
     if (!this.userDataDir) {
       return Promise.resolve({ ok: false, error: NO_USER_DATA_MESSAGE })
     }
+    return this.request({ token: this.token, tool, args }, CALL_TIMEOUT_MS)
+  }
 
+  /**
+   * D-20: tell Tapestry this agent's MCP client is running.
+   *
+   * Resolves true when Tapestry accepted the hello. Never rejects and never
+   * writes to stdout: a hello that fails (Tapestry not running, a revoked
+   * token) is simply retried by the next keep-alive.
+   */
+  async hello(onFailure?: (error: string) => void): Promise<boolean> {
+    if (!this.token || !this.userDataDir) return false
+    const result = await this.request({ token: this.token, type: 'hello' }, HELLO_TIMEOUT_MS)
+    if (!result.ok) onFailure?.(result.error)
+    return result.ok
+  }
+
+  /** One connection, one JSON line out, one JSON line back. */
+  private request(payload: Record<string, unknown>, timeoutMs: number): Promise<ToolCallResult> {
     const id = this.nextId++
     const socketPath = agentSocketPath(this.userDataDir)
 
@@ -68,14 +100,14 @@ class SocketCaller implements ToolCaller {
       }
 
       const timer = setTimeout(() => {
-        finish({ ok: false, error: `Tapestry did not answer within ${CALL_TIMEOUT_MS / 1000}s` })
-      }, CALL_TIMEOUT_MS)
+        finish({ ok: false, error: `Tapestry did not answer within ${timeoutMs / 1000}s` })
+      }, timeoutMs)
 
       const socket = connect(socketPath)
       let buffer = ''
 
       socket.on('connect', () => {
-        socket.write(`${JSON.stringify({ id, token: this.token, tool, args })}\n`)
+        socket.write(`${JSON.stringify({ id, ...payload })}\n`)
       })
 
       socket.on('data', (chunk: Buffer) => {
@@ -117,6 +149,40 @@ const caller = new SocketCaller(
   process.env.TAPESTRY_AGENT_TOKEN ?? '',
   process.env.TAPESTRY_USER_DATA ?? '',
 )
+
+/**
+ * The keep-alive interval: TAPESTRY_HELLO_INTERVAL_MS (tests only), clamped to
+ * at least 100 ms, else HELLO_INTERVAL_MS.
+ */
+function helloInterval(): number {
+  const raw = process.env.TAPESTRY_HELLO_INTERVAL_MS
+  if (raw === undefined || raw.trim() === '') return HELLO_INTERVAL_MS
+  const parsed = Number.parseInt(raw, 10)
+  if (!Number.isFinite(parsed)) return HELLO_INTERVAL_MS
+  return Math.max(MIN_HELLO_INTERVAL_MS, parsed)
+}
+
+/** Failure kinds already reported on stderr, so each is said at most once. */
+const reportedHelloFailures = new Set<string>()
+
+function reportHelloFailure(error: string): void {
+  if (reportedHelloFailures.has(error)) return
+  reportedHelloFailures.add(error)
+  // stderr only: stdout is the protocol.
+  console.error('[tapestry-mcp] hello:', error)
+}
+
+function sayHello(): void {
+  void caller.hello(reportHelloFailure)
+}
+
+// D-20: the Agents panel shows this agent as connected as soon as its client
+// starts the shim, not only after its first tool call. The timer is unref'd,
+// so it never keeps the shim alive once the client has gone.
+if (process.env.TAPESTRY_AGENT_TOKEN && process.env.TAPESTRY_USER_DATA) {
+  sayHello()
+  setInterval(sayHello, helloInterval()).unref()
+}
 
 serveStdio(() => buildMcpServer(caller), {
   onerror: (error: Error) => {

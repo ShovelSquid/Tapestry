@@ -351,3 +351,104 @@ describe('MCP shim over stdio', () => {
     expect(statSync(treePath).size).toBe(sizeBefore)
   }, 30000)
 })
+
+/** Poll until `check` is true or the time runs out. */
+async function waitFor(check: () => boolean, timeoutMs: number): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    if (check()) return true
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 25))
+  }
+  return check()
+}
+
+describe('MCP shim connect-on-start (D-20)', () => {
+  const cleanups: Array<() => Promise<void> | void> = []
+
+  afterAll(async () => {
+    while (cleanups.length > 0) {
+      await cleanups.pop()!()
+    }
+  })
+
+  function spawnShim(
+    dir: string,
+    token: string,
+    extraEnv: Record<string, string> = {},
+  ): { child: ChildProcessWithoutNullStreams; stdout: () => string } {
+    let stdout = ''
+    const shim = spawn(process.execPath, [SHIM_PATH], {
+      env: { ...process.env, TAPESTRY_AGENT_TOKEN: token, TAPESTRY_USER_DATA: dir, ...extraEnv },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+    shim.stdout.on('data', (chunk: Buffer) => {
+      stdout += chunk.toString('utf-8')
+    })
+    shim.stderr.on('data', () => {
+      // A failed hello may say so once on stderr; that is allowed.
+    })
+    cleanups.push(() => {
+      shim.kill()
+    })
+    return { child: shim, stdout: () => stdout }
+  }
+
+  it('shows the agent connected before any tool call or MCP initialize', async () => {
+    const dir = makeTempDir('mcp-hello')
+    cleanups.push(() => rmSync(dir, { recursive: true, force: true }))
+    const agents = new AgentRegistry(join(dir, 'agents.json'))
+    const { token } = agents.create('claude')
+    const calls: string[] = []
+    const helloServer = new AgentSocketServer({
+      socketPath: agentSocketPath(dir),
+      agents,
+      dispatch: (_name, tool) => {
+        calls.push(tool)
+        return { ok: true, value: null }
+      },
+    })
+    await helloServer.listen()
+    cleanups.push(() => helloServer.close())
+
+    const shim = spawnShim(dir, token)
+
+    const connected = await waitFor(
+      () => helloServer.connectionStates().find((a) => a.name === 'claude')?.connected === true,
+      3000,
+    )
+    expect(connected).toBe(true)
+    expect(calls).toEqual([])
+    // No initialize was sent, so the protocol has nothing to say yet.
+    expect(shim.stdout()).toBe('')
+  }, 15000)
+
+  it('retries its hello until Tapestry starts, with nothing but protocol on stdout', async () => {
+    const dir = makeTempDir('mcp-hello-late')
+    cleanups.push(() => rmSync(dir, { recursive: true, force: true }))
+    const agents = new AgentRegistry(join(dir, 'agents.json'))
+    const { token } = agents.create('claude')
+
+    // The shim starts first, so its first hello finds no socket.
+    const shim = spawnShim(dir, token, { TAPESTRY_HELLO_INTERVAL_MS: '200' })
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 400))
+
+    const lateServer = new AgentSocketServer({
+      socketPath: agentSocketPath(dir),
+      agents,
+      dispatch: () => ({ ok: true, value: null }),
+    })
+    await lateServer.listen()
+    cleanups.push(() => lateServer.close())
+
+    const connected = await waitFor(
+      () => lateServer.connectionStates().find((a) => a.name === 'claude')?.connected === true,
+      2000,
+    )
+    expect(connected).toBe(true)
+
+    for (const line of shim.stdout().split('\n').filter((l) => l.trim().length > 0)) {
+      expect(JSON.parse(line).jsonrpc).toBe('2.0')
+    }
+    expect(shim.stdout()).toBe('')
+  }, 15000)
+})
