@@ -23,32 +23,37 @@ Nothing. (`autonomy/watch.py` is the operator's log viewer, committed in
 ## Next
 
 The Tapestry Space page (phase 1 done condition) is split into three
-slices; 2a is done, 2b and 2c remain, one per session unless quick.
+slices; 2a and 2b are done, 2c remains.
 
-1. **2b render.** In `tapestry/render/Pages.cpp`, for `PageKind::Space`
-   pages draw the page's notes as labelled dots: `world.space(page.id)`
-   (nullptr until the first action; draw nothing then), iterate
-   `space->world.notes` in id order, skip `NoteKind::Space`, read the
-   `pos` field (`find_field(note, POS_FIELD)`) lanes 0 and 1 as fx64 and
-   convert with `raw / 2^32` to a double only at the draw call (a 3-space
-   draws x,y and ignores z for now); map page-local units to the body
-   rect with the body's top-left as origin and 1 unit = 1 world unit.
-   Label the i-th note (id order) with the i-th line of `page.body`.
-   Check `render/Pages.cpp`'s draw entry point takes the tapestry `World`
-   or only a `Page`; if only a Page, thread the `SpaceState*` through.
-   Headless smoke: `build/tapestry/tapestry --headless --frames 3`.
-2. **2c input.** In `tapestry/app/main.cpp`: a "new 2D space" / "new 3D
-   space" command creating a Space page and applying CreateSpace(dim);
-   click in the body creates a note (CreateNote + SetField pos); dragging
-   a dot issues SetField pos on release (one action per drag, not per
-   frame). Then check phase 1's done condition (2D and 3D spaces created,
-   notes placed and dragged, saved, reopened, hash equal) and mark it in
-   Phases and README.md.
+1. **2c input.** In `tapestry/app/main.cpp`: a "new 2D space" / "new 3D
+   space" command (menu entry or key, next to wherever new Note pages are
+   made) creating a Space page and applying
+   `encode_create_space(dim)`; click in a Space page's body creates a
+   note (`encode_create_note(space_of(spaceId), NoteKind::Note)` then
+   `encode_set_field(id, pos)` with pos = click point minus the body's
+   top-left, in world units, `fx64::from_int` or q16 rounding); dragging
+   a dot issues one SetField pos on release (not per frame). The
+   space's id is the id of the world's single `NoteKind::Space` note.
+   Body geometry: top-left is `page.rect.x + kPadding`,
+   `page.rect.y + kPageTitleBarHeight + kPadding/2` (Pages.cpp), dot
+   radius 4 world units; a hit-test helper next to `pageTextRegionAt`
+   in Pages.hpp keeps input and render on the same geometry. Body text
+   editing on a Space page is now label editing (one line per note);
+   decide whether a click on a dot vs. blank body still opens the body
+   editor. Then check phase 1's done condition (2D and 3D spaces
+   created, notes placed and dragged, saved, reopened, hash equal) and
+   mark it in Phases and README.md.
 
 Then phase 2, per the plan, starting with `include/ddsim/fxmath.hpp` and
 its oracle tests.
 
 ## Done
+
+- `a118cba` ms1 step 7 (Space page 2b): `drawPages` threads
+  `world.space(page.id)` into `drawPage`; `drawSpaceBody` draws each
+  non-Space note in id order as a dot at `pos` lanes 0,1 (fx64 raw/2^32
+  to double only at the nanovg call) labelled with the i-th body line.
+  Verified by a windowed `--screenshot` over a generated fixture.
 
 - `bdf03eb` ms1 step 7 (Space page 2a): tapestry CMake bridge to root
   `mathspace`, `PageKind::Space`, `core/Space.hpp` SpaceState (World +
@@ -159,6 +164,14 @@ its oracle tests.
 - The token gate scans comments too: writing the name of the forbidden
   container family in a header comment fails configure. Say "hash
   containers".
+- Rendering is not exercised headless (`gfx.vg` is null, so drawPages is
+  never called). To see a Space page: generate a `.tapestry` with a
+  throwaway program linked against `build/tapestry/libtapestry_core.a`
+  + `physics-engine/libmathspace.a` + `libddsim.a` + `third_party/
+  libnanovg.a` (`-I tapestry -I include`), then run
+  `tapestry --file F --frames 5 --size 640x480 --screenshot out.png`
+  under a `perl -e 'alarm 60; exec @ARGV'` cap; a cocoa window opens
+  fine on this machine unattended and the run takes ~2 s. Read the PNG.
 - `mathspace_tests` and `ms_replay` get `MATHSPACE_GOLDEN_DIR` =
   `tests/golden/ms`. New fixtures there are picked up at configure
   (GLOB CONFIGURE_DEPENDS); write the `.sha256` from native-release,
