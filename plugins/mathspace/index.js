@@ -11,10 +11,10 @@
  *   mathspace.step   one tick, then commit
  *
  * Plugins are plain CommonJS so the host can require() them, and import
- * only from @tapestry/sdk (PLUG-03). This file is the composition file;
- * engine.js wraps the Wasm ABI and image.js (next) maps kernel nodes to
- * engine actions. The handlers below are the skeleton: they load the
- * engine and log, and the run loop lands with image.js.
+ * only from @tapestry/sdk (PLUG-03). This file is the composition file:
+ * engine.js wraps the Wasm ABI, image.js maps kernel nodes to engine
+ * actions and snapshots back to ops, runner.js is the loop and the
+ * commit cadence.
  */
 
 /** @typedef {import('@tapestry/sdk').TapestryPlugin} TapestryPlugin */
@@ -22,34 +22,30 @@
 /** @typedef {import('@tapestry/sdk').CommandContribution} CommandContribution */
 
 const { loadModule } = require('./engine')
+const { Runner } = require('./runner')
+
+/** One run loop for the plugin's lifetime; each command hands it the kernel. */
+const runner = new Runner({ loadModule })
 
 /** @type {CommandContribution} */
 const runCommand = {
   id: 'mathspace.run',
   displayName: 'Mathspace: Run',
-  handler: async () => {
-    const mod = await loadModule()
-    console.log(`[mathspace] engine ABI ${mod._ms_version()} loaded; run loop not wired yet`)
-  },
+  handler: (context) => runner.start(context.kernel),
 }
 
 /** @type {CommandContribution} */
 const pauseCommand = {
   id: 'mathspace.pause',
   displayName: 'Mathspace: Pause',
-  handler: async () => {
-    console.log('[mathspace] pause: nothing running')
-  },
+  handler: (context) => runner.pause(context.kernel),
 }
 
 /** @type {CommandContribution} */
 const stepCommand = {
   id: 'mathspace.step',
   displayName: 'Mathspace: Step',
-  handler: async () => {
-    const mod = await loadModule()
-    console.log(`[mathspace] engine ABI ${mod._ms_version()} loaded; step not wired yet`)
-  },
+  handler: (context) => runner.stepOnce(context.kernel),
 }
 
 /** @type {TapestryPlugin} */
@@ -65,7 +61,7 @@ const mathspacePlugin = {
   },
 
   deactivate() {
-    // No timers yet; the run loop will clear its interval here.
+    runner.dispose()
   },
 }
 
