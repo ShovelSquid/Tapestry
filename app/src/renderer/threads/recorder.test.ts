@@ -15,7 +15,7 @@ import { tapestrySchema } from '../editor/schema'
 import { toggleBold } from '../editor/toolbar-commands'
 import { applyPassageLink } from '../editor/passage-plugin'
 import { LetterIndex } from '../../shared/threads/letters'
-import { causeOf, collapsedCompositionStep, graphemes, insertedTextOf, threadRedo, threadUndo } from './recorder'
+import { causeOf, collapsedCompositionStep, graphemes, insertedTextOf, stripMarksFromSlice, threadRedo, threadUndo } from './recorder'
 
 function freshState(): EditorState {
   return EditorState.create({ schema: tapestrySchema, plugins: [history()] })
@@ -237,5 +237,31 @@ describe('insertedTextOf', () => {
     state = state.apply(state.tr.insertText('hello'))
     const delTr = state.tr.delete(1, 3)
     expect(insertedTextOf(delTr.steps[0])).toBe('')
+  })
+})
+
+describe('stripMarksFromSlice (T-02.3-05-01: a paste cannot import another actor\'s attribution)', () => {
+  it('removes a passage mark from a copied slice, keeping other marks intact', () => {
+    let state = freshState()
+    state = state.apply(state.tr.insertText('hello'))
+    const passage = tapestrySchema.marks.passage.create({ anchorId: 'anchor-1' })
+    const strong = tapestrySchema.marks.strong.create()
+    state = state.apply(state.tr.addMark(1, 6, passage).addMark(1, 6, strong))
+    expect(state.doc.rangeHasMark(1, 6, tapestrySchema.marks.passage)).toBe(true)
+
+    const copied = state.doc.slice(1, 6)
+    const stripped = stripMarksFromSlice(copied, [tapestrySchema.marks.passage])
+
+    // The passage mark is gone...
+    stripped.content.descendants((node) => {
+      expect(tapestrySchema.marks.passage.isInSet(node.marks)).toBeFalsy()
+    })
+    // ...but formatting (and the text itself) survives the strip.
+    let sawStrong = false
+    stripped.content.descendants((node) => {
+      if (tapestrySchema.marks.strong.isInSet(node.marks)) sawStrong = true
+    })
+    expect(sawStrong).toBe(true)
+    expect(stripped.content.textBetween(0, stripped.content.size)).toBe('hello')
   })
 })

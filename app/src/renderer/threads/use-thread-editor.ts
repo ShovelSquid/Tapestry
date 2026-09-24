@@ -29,7 +29,7 @@ import { history } from 'prosemirror-history'
 import { collab, getVersion, receiveTransaction } from 'prosemirror-collab'
 import { Step } from 'prosemirror-transform'
 import { tapestrySchema } from '../editor/schema'
-import { causeOf, collapsedCompositionStep, insertedTextOf, threadRedo, threadUndo } from './recorder'
+import { causeOf, collapsedCompositionStep, insertedTextOf, stripMarksFromSlice, threadRedo, threadUndo } from './recorder'
 import type { ThreadCause } from '../../shared/threads/grammar'
 
 export type ThreadPushResult =
@@ -167,6 +167,13 @@ export function useThreadEditor({
     const view = new EditorView(editorRef.current, {
       state,
       editable: () => editable,
+      // T-02.3-05-01: a paste cannot import another actor's attribution.
+      // There is no author mark in this schema (authorship is derived from
+      // the host-stamped commit actor); `passage` is the one mark type
+      // pasted content could otherwise carry in.
+      transformPasted(slice) {
+        return stripMarksFromSlice(slice, [tapestrySchema.marks.passage])
+      },
       dispatchTransaction(tr) {
         const beforeDoc = view.state.doc
         const newState = view.state.apply(tr)

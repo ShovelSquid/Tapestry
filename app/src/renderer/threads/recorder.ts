@@ -13,7 +13,7 @@
 
 import { isHistoryTransaction, redo, undo } from 'prosemirror-history'
 import type { Command, Transaction } from 'prosemirror-state'
-import type { Node as ProseMirrorNode } from 'prosemirror-model'
+import { Fragment, Slice, type MarkType, type Node as ProseMirrorNode } from 'prosemirror-model'
 import type { Step } from 'prosemirror-transform'
 import { ReplaceStep } from 'prosemirror-transform'
 import type { ThreadCause } from '../../shared/threads/grammar'
@@ -128,4 +128,29 @@ export function collapsedCompositionStep(startDoc: ProseMirrorNode, endDoc: Pros
   if (endB < start) endB = start
   const slice = endDoc.slice(start, endB)
   return new ReplaceStep(start, endA, slice)
+}
+
+/**
+ * Removes `markTypes` from every node in `slice`, recursively (T-02.3-05-01:
+ * "author and passage marks are stripped from pasted content in the
+ * recorder, so a paste cannot import another actor's attribution").
+ *
+ * There is no author *mark* in this schema -- authorship is derived from
+ * the host-stamped commit actor, never a document mark (RESEARCH: "no actor
+ * in the grammar") -- so `passage` is the one mark type this actually
+ * strips today; the function is written to take any set of mark types so a
+ * schema that later adds another cross-document-meaning mark strips it the
+ * same way, without a second copy of this tree-walk.
+ */
+export function stripMarksFromSlice(slice: Slice, markTypes: readonly MarkType[]): Slice {
+  function stripFragment(fragment: Fragment): Fragment {
+    const children: ProseMirrorNode[] = []
+    fragment.forEach((node) => {
+      let marks = node.marks
+      for (const markType of markTypes) marks = markType.removeFromSet(marks)
+      children.push(node.copy(stripFragment(node.content)).mark(marks))
+    })
+    return Fragment.fromArray(children)
+  }
+  return new Slice(stripFragment(slice.content), slice.openStart, slice.openEnd)
 }
