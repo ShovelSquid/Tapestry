@@ -45,9 +45,10 @@ import { readStageTokens } from './stage/tokens'
 import { loadSessions, formatDuration, useSessions } from './SessionBridge'
 import DateScrubber from './DateScrubber'
 import { NAV_KEYS, dayIndexOf, dayStartMs, flyTo, gravityStep, zoomStep, type NavAction } from './navigation'
+import DocAtTimeView, { BRANCHING_NOTICE } from './DocAtTimeView'
 import { parseThreadFrame, parseThreadSettings, type ThreadFrame, type ThreadNodeProps } from '../../shared/threads/settings'
 import { parseSlowdown, type SlowdownCurve } from '../../shared/threads/slowdown'
-import { docAt, type ThreadCommitEntry, type ThreadLetter } from '../../shared/threads/replay'
+import { createDocAtCache, docAt, type DocAtCache, type ReplayResult, type ThreadCommitEntry, type ThreadLetter } from '../../shared/threads/replay'
 import type { DerivedSession } from '../../shared/threads/sessions'
 
 const STATUS_DELAY_MS = 400
@@ -215,6 +216,24 @@ export default function ThreadOverlay({
   const lastSideSnapshotAtRef = useRef(0)
   const lastZoomAnnounceAtRef = useRef(0)
   const flyToCancelRef = useRef<(() => void) | null>(null)
+  /** Click vs. drag on the stage: set on pointerdown, compared against
+   * pointerup's own position -- a small movement is a click (open the
+   * moment under it), a larger one was already handled as a pan. */
+  const clickCandidateRef = useRef<{ x: number; y: number } | null>(null)
+
+  // D-08/D-18: the read-only past stage. `pastMomentReplay` is only ever
+  // overwritten once a fresh `docAt` result is ready -- while a lookup is
+  // in flight the previously shown stage stays exactly as it was (UI-SPEC
+  // "Loading and catch-up" rule 5: "the text never blanks or flickers").
+  const [pastMomentMs, setPastMomentMs] = useState<number | null>(null)
+  const [pastMomentReplay, setPastMomentReplay] = useState<ReplayResult | null>(null)
+  const [findingSlow, setFindingSlow] = useState(false)
+  const [writeNotice, setWriteNotice] = useState<string | null>(null)
+  const docAtCacheRef = useRef<DocAtCache | null>(null)
+  const momentRequestIdRef = useRef(0)
+  const momentRafRef = useRef<number | null>(null)
+  const latestMomentAtMsRef = useRef<number | null>(null)
+  const writeNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const stageContainerRef = useRef<HTMLDivElement>(null)
   const stageRuntimeRef = useRef<StageRuntime | null>(null)
@@ -256,6 +275,10 @@ export default function ThreadOverlay({
         setSaveState('saved')
         setNotSavedReason(null)
       }
+      // D-18: a new commit landed, so any doc-at-T cache built from the
+      // commits fetched before it is now stale -- drop it; the next
+      // openMomentAt call rebuilds it from a fresh fetch.
+      docAtCacheRef.current = null
     })
   }, [treeId, nodeId])
 
@@ -333,22 +356,111 @@ export default function ThreadOverlay({
   // `state.sideCenter = t0/2; state.sideSeconds = max(60, t0*1.05)`,
   // generalized to this plan's 1.1x duration factor).
   // -------------------------------------------------------------------
+  // -------------------------------------------------------------------
+  // "Return to now" (D-09, D-15, D-18): the one handler both the header's
+  // side-view toggle and a past stage's own "Return to now" call --
+  // UI-SPEC's side-view table describes leaving a past stage as returning
+  // "to the live document", exactly what leaving the side view itself does,
+  // so there is only one real action here, not two.
+  // -------------------------------------------------------------------
+  const handleReturnToNow = useCallback(() => {
+    viewRef.current = 'live'
+    setViewState('live')
+    setFocusedSessionIndex(null)
+    setFocusedMarkerIndex(-1)
+    momentRequestIdRef.current += 1 // invalidate any in-flight doc-at-T lookup
+    if (momentRafRef.current !== null) {
+      cancelAnimationFrame(momentRafRef.current)
+      momentRafRef.current = null
+    }
+    setPastMomentMs((was) => {
+      if (was !== null) setAnnouncement('Back to now. You can write again.')
+      return null
+    })
+    setPastMomentReplay(null)
+    setFindingSlow(false)
+  }, [])
+
   const handleToggleView = useCallback(() => {
+    if (viewRef.current === 'side') {
+      handleReturnToNow()
+      return
+    }
     const stage = stageRuntimeRef.current
     if (!stage) return
-    if (viewRef.current === 'live') {
-      const nowSeconds = secondsSince(stage.threadStartMs, Date.now())
-      const initialSpan = Math.max(60, nowSeconds * SIDE_ZOOM_DURATION_FACTOR)
-      stage.sideView.setView(nowSeconds / 2, initialSpan, nowSeconds)
-      viewRef.current = 'side'
-      setViewState('side')
-      setSideSnapshot({ centerMs: stage.threadStartMs + (nowSeconds / 2) * 1000, spanMs: initialSpan * 1000 })
-    } else {
-      viewRef.current = 'live'
-      setViewState('live')
-      setFocusedSessionIndex(null)
-      setFocusedMarkerIndex(-1)
-    }
+    const nowSeconds = secondsSince(stage.threadStartMs, Date.now())
+    const initialSpan = Math.max(60, nowSeconds * SIDE_ZOOM_DURATION_FACTOR)
+    stage.sideView.setView(nowSeconds / 2, initialSpan, nowSeconds)
+    viewRef.current = 'side'
+    setViewState('side')
+    setSideSnapshot({ centerMs: stage.threadStartMs + (nowSeconds / 2) * 1000, spanMs: initialSpan * 1000 })
+  }, [handleReturnToNow])
+
+  // -------------------------------------------------------------------
+  // D-18: the document at any moment, read-only. `ensureDocAtCache` fetches
+  // the thread's full commit history once per open (cached in
+  // `docAtCacheRef`, invalidated whenever a new commit lands); `openMomentAt`
+  // throttles the actual replay to at most one per animation frame no
+  // matter how many times a drag or scrub calls it within that frame
+  // (`latestMomentAtMsRef` always holds the most recent request, so a
+  // frame that fires after several calls replays only the last one).
+  // -------------------------------------------------------------------
+  const ensureDocAtCache = useCallback(async (): Promise<DocAtCache> => {
+    if (docAtCacheRef.current) return docAtCacheRef.current
+    const commits = await loadThreadCommits(treeId, nodeId)
+    const cache = createDocAtCache(commits)
+    docAtCacheRef.current = cache
+    return cache
+  }, [treeId, nodeId])
+
+  const computeMoment = useCallback(
+    async (atMs: number) => {
+      const requestId = ++momentRequestIdRef.current
+      const findingTimer = setTimeout(() => {
+        if (momentRequestIdRef.current === requestId) setFindingSlow(true)
+      }, STATUS_DELAY_MS)
+      try {
+        const cache = await ensureDocAtCache()
+        if (momentRequestIdRef.current !== requestId) return // superseded while awaiting
+        const result = cache.docAt(atMs)
+        if (momentRequestIdRef.current === requestId) {
+          setPastMomentReplay(result)
+          setFindingSlow(false)
+        }
+      } catch (err: unknown) {
+        console.error('[ThreadOverlay] doc-at-time lookup failed:', err)
+      } finally {
+        clearTimeout(findingTimer)
+      }
+    },
+    [ensureDocAtCache],
+  )
+
+  const openMomentAt = useCallback(
+    (atMs: number) => {
+      setPastMomentMs((was) => {
+        if (was === null) {
+          setAnnouncement(
+            `Showing the document as it was on ${new Date(atMs).toLocaleDateString()} at ${new Date(atMs).toLocaleTimeString()}. Read-only.`,
+          )
+        }
+        return atMs
+      })
+      latestMomentAtMsRef.current = atMs
+      if (momentRafRef.current !== null) return
+      momentRafRef.current = requestAnimationFrame(() => {
+        momentRafRef.current = null
+        const latest = latestMomentAtMsRef.current
+        if (latest !== null) void computeMoment(latest)
+      })
+    },
+    [computeMoment],
+  )
+
+  const handlePastStageWriteAttempt = useCallback(() => {
+    setWriteNotice(BRANCHING_NOTICE)
+    if (writeNoticeTimerRef.current) clearTimeout(writeNoticeTimerRef.current)
+    writeNoticeTimerRef.current = setTimeout(() => setWriteNotice(null), 6000)
   }, [])
 
   // -------------------------------------------------------------------
@@ -429,6 +541,7 @@ export default function ThreadOverlay({
   const handleStagePointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     if (viewRef.current !== 'side') return
     dragRef.current = { x: e.clientX }
+    clickCandidateRef.current = { x: e.clientX, y: e.clientY }
     e.currentTarget.setPointerCapture(e.pointerId)
   }, [])
 
@@ -461,9 +574,27 @@ export default function ThreadOverlay({
     [syncSideSnapshot],
   )
 
-  const handleStagePointerUp = useCallback(() => {
-    dragRef.current = null
-  }, [])
+  // D-18: "click any point on the line opens the document at that moment."
+  // A pointerup within a small radius of its own pointerdown (never moved
+  // enough to count as a pan) is a click; anything further was already
+  // handled as a drag by handleStagePointerMove.
+  const CLICK_MOVEMENT_THRESHOLD_PX = 5
+
+  const handleStagePointerUp = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      const stage = stageRuntimeRef.current
+      const candidate = clickCandidateRef.current
+      dragRef.current = null
+      clickCandidateRef.current = null
+      if (!stage || viewRef.current !== 'side' || !candidate) return
+      const movedPx = Math.hypot(e.clientX - candidate.x, e.clientY - candidate.y)
+      if (movedPx > CLICK_MOVEMENT_THRESHOLD_PX) return
+      const rect = e.currentTarget.getBoundingClientRect()
+      const atSeconds = stage.sideView.screenXToTime(e.clientX - rect.left)
+      openMomentAt(stage.threadStartMs + atSeconds * 1000)
+    },
+    [openMomentAt],
+  )
 
   const handleStagePointerLeave = useCallback(() => {
     pointerRef.current = null
@@ -495,9 +626,7 @@ export default function ThreadOverlay({
       switch (action) {
         case 'return-to-now': {
           e.preventDefault()
-          viewRef.current = 'live'
-          setViewState('live')
-          setAnnouncement('Back to now. You can write again.')
+          handleReturnToNow()
           return
         }
         case 'prev-session':
@@ -558,9 +687,17 @@ export default function ThreadOverlay({
           return
         }
         case 'open-focused': {
-          // Wired to doc-at-T in this plan's own next task; a documented
-          // no-op seam until then.
+          // D-18: "Enter on a focused point or session: the same as
+          // clicking it." A focused marker is the more specific fact when
+          // both exist (the marker itself is a specific moment on the
+          // line); otherwise fall back to the focused session's own start.
           e.preventDefault()
+          const allMarkers = stage.sessions.flatMap((s) => s.markers)
+          if (focusedMarkerIndex >= 0 && focusedMarkerIndex < allMarkers.length) {
+            openMomentAt(allMarkers[focusedMarkerIndex].atMs)
+          } else if (focusedSessionIndex !== null && focusedSessionIndex < stage.sessions.length) {
+            openMomentAt(stage.sessions[focusedSessionIndex].startMs)
+          }
           return
         }
         case 'toggle-separate-authors': {
@@ -573,7 +710,7 @@ export default function ThreadOverlay({
           return
       }
     },
-    [announceZoomThrottled, flyToSession, focusedMarkerIndex, focusedSessionIndex, syncSideSnapshot],
+    [announceZoomThrottled, flyToSession, focusedMarkerIndex, focusedSessionIndex, handleReturnToNow, openMomentAt, syncSideSnapshot],
   )
 
   const handleClose = useCallback(() => {
@@ -582,6 +719,15 @@ export default function ThreadOverlay({
       .catch((err: unknown) => console.error('[ThreadOverlay] close failed:', err))
       .finally(onClose)
   }, [treeId, nodeId, onClose])
+
+  // Cleans up the doc-at-T rAF throttle and the branching-notice timer on
+  // unmount -- neither has any other owner.
+  useEffect(() => {
+    return () => {
+      if (momentRafRef.current !== null) cancelAnimationFrame(momentRafRef.current)
+      if (writeNoticeTimerRef.current) clearTimeout(writeNoticeTimerRef.current)
+    }
+  }, [])
 
   // -------------------------------------------------------------------
   // The stage: build once, tear down on unmount. Rebuilds its buffers from
@@ -873,24 +1019,35 @@ export default function ThreadOverlay({
 
       <div style={styles.panel} role="dialog" aria-label={title || 'Untitled thread'}>
         <header style={styles.header}>
-          <span style={styles.title}>{title || 'Untitled thread'}</span>
+          {pastMomentMs !== null ? (
+            <>
+              {/* D-08/D-18: "Reading [date], [time] — read-only" replaces the
+                  ordinary title while a past stage is open (UI-SPEC "Thread
+                  overlay header"). */}
+              <span style={styles.title}>
+                {`Reading ${new Date(pastMomentMs).toLocaleDateString()}, ${new Date(pastMomentMs).toLocaleTimeString()} — read-only`}
+              </span>
+              <button type="button" onClick={handleReturnToNow} style={styles.closeButton}>
+                Return to now
+              </button>
+            </>
+          ) : (
+            <>
+              <span style={styles.title}>{title || 'Untitled thread'}</span>
 
-          {showStatus && ready === null && (
-            <span style={styles.statusLabel}>{`Catching up (${totalChanges} of ${totalChanges} changes)`}</span>
+              {showStatus && ready === null && (
+                <span style={styles.statusLabel}>{`Catching up (${totalChanges} of ${totalChanges} changes)`}</span>
+              )}
+
+              {ready !== null && <span style={styles.statusLabel}>{saveLabel}</span>}
+
+              {/* D-09/D-15: "Read the thread back" in the live view, "Return
+                  to now" in the side view (UI-SPEC "Thread overlay header"). */}
+              <button type="button" onClick={handleToggleView} disabled={ready === null} style={styles.closeButton}>
+                {view === 'live' ? 'Read the thread back' : 'Return to now'}
+              </button>
+            </>
           )}
-
-          {ready !== null && <span style={styles.statusLabel}>{saveLabel}</span>}
-
-          {/* D-09/D-15: "Read the thread back" in the live view, "Return to
-              now" in the side view (UI-SPEC "Thread overlay header"). */}
-          <button
-            type="button"
-            onClick={handleToggleView}
-            disabled={ready === null}
-            style={styles.closeButton}
-          >
-            {view === 'live' ? 'Read the thread back' : 'Return to now'}
-          </button>
 
           <button
             type="button"
@@ -919,13 +1076,32 @@ export default function ThreadOverlay({
 
         {openError && <div style={styles.error}>Couldn't finish reading this thread's history — {openError}</div>}
 
-        <div ref={editorRef} style={styles.typer} />
+        {/* D-08/D-18: the live typer never unmounts (its own EditorView
+            lifecycle is unrelated to browsing history) -- a past stage
+            overlays it instead, so ProseMirror's collab-bound view is never
+            torn down and recreated just for reading an old moment. */}
+        <div style={styles.typerWrap}>
+          <div ref={editorRef} style={{ ...styles.typer, visibility: pastMomentMs !== null ? 'hidden' : 'visible' }} />
+          {pastMomentMs !== null && (
+            <div style={styles.pastStageOverlay}>
+              {pastMomentReplay ? (
+                <DocAtTimeView atMs={pastMomentMs} replay={pastMomentReplay} onWriteAttempt={handlePastStageWriteAttempt} />
+              ) : (
+                findingSlow && (
+                  <div style={styles.underTyperLine}>{`Finding the document at ${new Date(pastMomentMs).toLocaleTimeString()}…`}</div>
+                )
+              )}
+            </div>
+          )}
+        </div>
 
-        {showStatus && ready === null && !openError && (
+        {pastMomentMs === null && showStatus && ready === null && !openError && (
           <div style={styles.underTyperLine}>
             This is the last saved text. Writing starts when the history has finished loading.
           </div>
         )}
+
+        {pastMomentMs !== null && writeNotice && <div style={styles.underTyperLine}>{writeNotice}</div>}
 
         {notSavedReason && <div style={styles.error}>Not saved — {notSavedReason}</div>}
 
@@ -1039,12 +1215,28 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '4px 10px',
     cursor: 'pointer',
   },
-  typer: {
+  typerWrap: {
+    position: 'relative',
     flex: '0 1 auto',
-    maxHeight: '44vh',
-    minHeight: 160,
     width: 'min(688px, 92vw)',
     alignSelf: 'center',
+  },
+  typer: {
+    maxHeight: '44vh',
+    minHeight: 160,
+    width: '100%',
+    overflowY: 'auto',
+    padding: '12px 16px',
+    fontSize: 16,
+    lineHeight: 1.5,
+    background: 'var(--tap-surface, #FFFFFF)',
+    borderRadius: 12,
+  },
+  pastStageOverlay: {
+    position: 'absolute',
+    inset: 0,
+    maxHeight: '44vh',
+    minHeight: 160,
     overflowY: 'auto',
     padding: '12px 16px',
     fontSize: 16,

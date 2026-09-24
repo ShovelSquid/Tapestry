@@ -63,6 +63,13 @@ export interface ReplayResult {
   document: string
   /** Every letter ever seen in this replay, live or deleted, in insertion order. */
   letters: ThreadLetter[]
+  /** Live letter ids in **document order** (excludes deleted letters) —
+   * `document` itself is exactly `liveOrder.map(id => letters[id].grapheme).join('')`.
+   * `letters` is insertion-order, not document order (a splice can move a
+   * letter's position without changing its id), so a caller needing "where
+   * does letter X sit in the document" (D-18's highlight) reads this rather
+   * than re-deriving splice order itself. */
+  liveOrder: number[]
 }
 
 // ---------------------------------------------------------------------------
@@ -136,7 +143,7 @@ export function replayTo(checkpointDoc: string, records: readonly TimedThreadRec
     // mark+ / mark- / step / marker / in / out: no effect on flat text.
   }
 
-  return { document: live.map((id) => letters[id].grapheme).join(''), letters }
+  return { document: live.map((id) => letters[id].grapheme).join(''), letters, liveOrder: live.slice() }
 }
 
 // ---------------------------------------------------------------------------
@@ -165,19 +172,19 @@ interface CheckpointAnchor {
   value: string
 }
 
+interface CommitIndex {
+  allRecords: TimedThreadRecord[]
+  checkpoints: CheckpointAnchor[]
+}
+
 /**
- * The document at absolute time `tMs`, from a thread's full commit history
- * in commit order (D-08).
- *
- * Finds the last `body` checkpoint whose own moment is at or before `tMs` —
- * a checkpoint's moment is the time of the last record it reflects (or
- * `-Infinity` for a checkpoint with no records before it at all, which is
- * therefore always valid as a fallback) — then replays only the records
- * after that checkpoint, up to `tMs`. This never replays more than one
- * checkpoint interval: the checkpoint's own stored text already accounts
- * for everything before it.
+ * Parses `commits` into one flat, commit-order record list plus the
+ * checkpoint anchors within it — the one-time cost `docAt` and
+ * `createDocAtCache` both build on. Splitting this out is what lets the
+ * cache below parse a thread's full history exactly once per open, no
+ * matter how many moments the caller scrubs through afterward.
  */
-export function docAt(commits: readonly ThreadCommitEntry[], tMs: number): ReplayResult {
+function buildCommitIndex(commits: readonly ThreadCommitEntry[]): CommitIndex {
   const allRecords: TimedThreadRecord[] = []
   // The implicit empty checkpoint before any real one is ever written: it is
   // always valid (its moment is -Infinity), so a `tMs` before the thread's
@@ -192,17 +199,92 @@ export function docAt(commits: readonly ThreadCommitEntry[], tMs: number): Repla
     }
   }
 
-  // "The last checkpoint at or before tMs" means the latest one *in commit
-  // order* that qualifies — not the one with the largest moment, which a
-  // rebase spanning a checkpoint boundary could make non-monotonic. So this
-  // scans every checkpoint rather than stopping at the first failure.
-  let chosen = checkpoints[0]
-  for (const checkpoint of checkpoints) {
-    const momentMs = checkpoint.afterRecordCount === 0 ? -Infinity : allRecords[checkpoint.afterRecordCount - 1].atMs
+  return { allRecords, checkpoints }
+}
+
+/**
+ * The last checkpoint at or before `tMs`, from an already-built
+ * `CommitIndex`. "At or before" means the latest one *in commit order* that
+ * qualifies — not the one with the largest moment, which a rebase spanning
+ * a checkpoint boundary could make non-monotonic — so this scans every
+ * checkpoint rather than stopping at the first failure.
+ */
+function chooseCheckpoint(index: CommitIndex, tMs: number): CheckpointAnchor {
+  let chosen = index.checkpoints[0]
+  for (const checkpoint of index.checkpoints) {
+    const momentMs =
+      checkpoint.afterRecordCount === 0 ? -Infinity : index.allRecords[checkpoint.afterRecordCount - 1].atMs
     if (momentMs <= tMs) {
       chosen = checkpoint
     }
   }
+  return chosen
+}
 
-  return replayTo(chosen.value, allRecords.slice(chosen.afterRecordCount), tMs)
+/**
+ * The document at absolute time `tMs`, from a thread's full commit history
+ * in commit order (D-08).
+ *
+ * Finds the last `body` checkpoint whose own moment is at or before `tMs` —
+ * a checkpoint's moment is the time of the last record it reflects (or
+ * `-Infinity` for a checkpoint with no records before it at all, which is
+ * therefore always valid as a fallback) — then replays only the records
+ * after that checkpoint, up to `tMs`. This never replays more than one
+ * checkpoint interval: the checkpoint's own stored text already accounts
+ * for everything before it.
+ *
+ * Parses `commits` fresh on every call — fine for a single lookup, but a
+ * caller scrubbing through many moments of the same thread (D-18's side
+ * view) should use `createDocAtCache` instead, which parses once and reuses
+ * the result across calls.
+ */
+export function docAt(commits: readonly ThreadCommitEntry[], tMs: number): ReplayResult {
+  const index = buildCommitIndex(commits)
+  const chosen = chooseCheckpoint(index, tMs)
+  return replayTo(chosen.value, index.allRecords.slice(chosen.afterRecordCount), tMs)
+}
+
+// ---------------------------------------------------------------------------
+// createDocAtCache: parse once, replay per moment (D-18 scrubbing)
+// ---------------------------------------------------------------------------
+
+export interface DocAtCache {
+  /**
+   * The document at absolute time `tMs`, reusing this cache's own
+   * already-parsed commit index. Two calls with the identical `tMs` return
+   * the exact same `ReplayResult` object (no recomputation at all, checked
+   * by reference) — scrubbing back and forth over one moment, or a caller
+   * re-rendering on an unrelated state change, costs nothing extra.
+   */
+  docAt(tMs: number): ReplayResult
+}
+
+/**
+ * Builds a `DocAtCache` over `commits`, parsed exactly once regardless of
+ * how many moments `docAt` is later called with. This is the "checkpoint
+ * cache" 02.3-07-PLAN.md's Task 3 asks for: `docAt` itself already never
+ * replays more than one checkpoint interval (the checkpoint's own stored
+ * text already accounts for everything before it — see `docAt`'s own
+ * header), so the cache's own job is narrower and cheaper: never re-parse
+ * `commits` into records, and never redo the replay for a moment already
+ * computed. Throttling *how often* a caller invokes this to at most once
+ * per animation frame is `DocAtTimeView.tsx`'s job (a DOM/rAF concern this
+ * module, kept Electron/Node/DOM-free per this file's own header, must not
+ * own).
+ */
+export function createDocAtCache(commits: readonly ThreadCommitEntry[]): DocAtCache {
+  const index = buildCommitIndex(commits)
+  let lastTMs: number | null = null
+  let lastResult: ReplayResult | null = null
+
+  return {
+    docAt(tMs: number): ReplayResult {
+      if (lastResult !== null && lastTMs === tMs) return lastResult
+      const chosen = chooseCheckpoint(index, tMs)
+      const result = replayTo(chosen.value, index.allRecords.slice(chosen.afterRecordCount), tMs)
+      lastTMs = tMs
+      lastResult = result
+      return result
+    },
+  }
 }

@@ -9,7 +9,7 @@
 
 import { describe, expect, it } from 'vitest'
 import { formatBlock } from './grammar'
-import { docAt, replayTo, type ThreadCommitEntry, type TimedThreadRecord } from './replay'
+import { createDocAtCache, docAt, replayTo, type ThreadCommitEntry, type TimedThreadRecord } from './replay'
 
 describe('replayTo', () => {
   it('replays ins/del onto an empty checkpoint, in the order given', () => {
@@ -80,6 +80,30 @@ describe('replayTo', () => {
     expect(timeSorted.document).toBe('XY')
     expect(timeSorted.document).not.toBe(commitOrder.document)
   })
+
+  it('liveOrder gives the document-order id sequence, distinct from insertion order (D-18 highlight)', () => {
+    // Insert "b" first, then insert "a" *before* it -- insertion order is
+    // [b, a] (ids 0, 1) but document order is "ab" (ids [1, 0]).
+    const records: TimedThreadRecord[] = [
+      { verb: 'ins', offsetMs: 0, cause: null, pos: 1, text: 'b', marks: [], atMs: 0 },
+      { verb: 'ins', offsetMs: 100, cause: null, pos: 1, text: 'a', marks: [], atMs: 100 },
+    ]
+    const result = replayTo('', records, Infinity)
+    expect(result.document).toBe('ab')
+    expect(result.liveOrder).toEqual([1, 0])
+    expect(result.liveOrder.map((id) => result.letters[id].grapheme).join('')).toBe(result.document)
+  })
+
+  it('liveOrder excludes deleted letters', () => {
+    const records: TimedThreadRecord[] = [
+      { verb: 'ins', offsetMs: 0, cause: null, pos: 1, text: 'Hey', marks: [], atMs: 0 },
+      { verb: 'del', offsetMs: 100, cause: null, from: 2, to: 3, text: 'e', atMs: 100 },
+    ]
+    const result = replayTo('', records, Infinity)
+    expect(result.document).toBe('Hy')
+    // 'e' (id 1) was deleted -- liveOrder holds only ids 0 ('H') and 2 ('y').
+    expect(result.liveOrder).toEqual([0, 2])
+  })
 })
 
 describe('docAt', () => {
@@ -142,5 +166,64 @@ describe('docAt', () => {
       { kind: 'checkpoint', value: 'Hi' },
     ]
     expect(docAt(commits, ANCHOR_A + 5000).document).toBe('Hi')
+  })
+})
+
+describe('createDocAtCache', () => {
+  const ANCHOR_A = Date.parse('2026-01-01T00:00:00.000Z')
+  const ANCHOR_B = Date.parse('2026-01-01T00:05:00.000Z')
+
+  function block(anchorMs: number, versionBefore: number, lines: string[]): string {
+    return [`thread 1 v${versionBefore}`, `at ${new Date(anchorMs).toISOString()}`, ...lines].join('\n')
+  }
+
+  function twoCheckpointCommits(): ThreadCommitEntry[] {
+    const log1 = block(ANCHOR_A, 0, ['+0.000 ins 1 "a"', '+0.100 ins 2 "b"'])
+    const log2 = block(ANCHOR_B, 2, ['+0.000 ins 3 "c"', '+0.200 ins 4 "d"'])
+    return [
+      { kind: 'log', value: log1 },
+      { kind: 'checkpoint', value: 'ab' },
+      { kind: 'log', value: log2 },
+      { kind: 'checkpoint', value: 'abcd' },
+    ]
+  }
+
+  it('matches plain docAt at every moment tested against it', () => {
+    const commits = twoCheckpointCommits()
+    const cache = createDocAtCache(commits)
+    for (const tMs of [ANCHOR_A - 1, ANCHOR_A + 100, ANCHOR_B, ANCHOR_B + 200]) {
+      expect(cache.docAt(tMs).document).toBe(docAt(commits, tMs).document)
+    }
+  })
+
+  it('docAt at the same moment twice recomputes nothing (same object, by reference)', () => {
+    const commits = twoCheckpointCommits()
+    const cache = createDocAtCache(commits)
+    const first = cache.docAt(ANCHOR_B)
+    const second = cache.docAt(ANCHOR_B)
+    expect(second).toBe(first) // reference equality: no recomputation happened
+  })
+
+  it('a different moment produces a fresh result, not the cached one', () => {
+    const commits = twoCheckpointCommits()
+    const cache = createDocAtCache(commits)
+    const first = cache.docAt(ANCHOR_B)
+    const second = cache.docAt(ANCHOR_B + 200)
+    expect(second).not.toBe(first)
+    expect(second.document).not.toBe(first.document)
+  })
+
+  it('a scrub across a checkpoint boundary (forward, then back) replays correctly from the nearer checkpoint each time', () => {
+    const commits = twoCheckpointCommits()
+    const cache = createDocAtCache(commits)
+    // Forward across the boundary at ANCHOR_B (the second checkpoint's own
+    // moment is ANCHOR_B + 200): before it, still on the first checkpoint's
+    // side; after it, replaying from the second checkpoint.
+    expect(cache.docAt(ANCHOR_B - 1).document).toBe('ab')
+    expect(cache.docAt(ANCHOR_B + 200).document).toBe('abcd')
+    // ...and back again -- the cache must not have latched onto whichever
+    // checkpoint the previous call resolved to. ANCHOR_A+50 sits between
+    // log1's two records (+0.000 and +0.100), so only the first has landed.
+    expect(cache.docAt(ANCHOR_A + 50).document).toBe('a')
   })
 })
