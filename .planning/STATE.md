@@ -135,7 +135,11 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-None yet.
+3 pending in `.planning/todos/pending/` (captured 2026-09-24):
+
+- Make pan and zoom far more sensitive (minor, quick task)
+- Trees as folders: notes anywhere, drag in and out (major, phase-sized; overlaps Phase 2.6)
+- Run Claude in the app with an ask and respond channel (major, new inserted phase; slice before Phase 6)
 
 ### Blockers/Concerns
 
