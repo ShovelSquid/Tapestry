@@ -220,6 +220,51 @@ interface TapestryRedoDiscarded {
   actorId: string
 }
 
+/** Why a chat turn failed (main/chat/engine.ts ChatErrorKind). */
+type TapestryChatErrorKind =
+  | 'not-installed'
+  | 'signed-out'
+  | 'crashed'
+  | 'protocol'
+  | 'bridge-off'
+  | 'tools-unavailable'
+  | 'session-lost'
+  | 'timeout'
+  | 'no-key'
+  | 'refused'
+
+/** One thing that happened in a chat (main/chat/engine.ts ChatEvent). */
+type TapestryChatEvent =
+  | { type: 'session'; sessionId: string }
+  | { type: 'user'; text: string }
+  | { type: 'text-delta'; text: string }
+  | { type: 'text'; text: string }
+  | { type: 'tool-call'; id: string; name: string; input: unknown }
+  | { type: 'tool-result'; id: string; isError: boolean; text: string }
+  | { type: 'notice'; text: string }
+  | { type: 'error'; kind: TapestryChatErrorKind; message: string }
+  | { type: 'done'; ok: boolean; reason?: string }
+
+type TapestryChatResult<T> = { ok: true; value: T } | { ok: false; error: string }
+
+interface TapestryChatOpenState {
+  /** The workspace's name. */
+  workspace: string
+  sessionId: string | null
+  transcript: TapestryChatEvent[]
+  busy: boolean
+  /** The conversation continues one from an earlier launch. */
+  resumed: boolean
+}
+
+/** The in-app chat (02.7 D-12). No token or file path ever comes back. */
+interface TapestryChatAPI {
+  open(treeId: string): Promise<TapestryChatResult<TapestryChatOpenState>>
+  send(treeId: string, text: string): Promise<TapestryChatResult<null>>
+  stop(treeId: string): Promise<TapestryChatResult<null>>
+  newChat(treeId: string): Promise<TapestryChatResult<null>>
+}
+
 interface TapestryAPI {
   kernel: TapestryKernelAPI
   trees: TapestryTreesAPI
@@ -229,6 +274,9 @@ interface TapestryAPI {
   dialog: TapestryDialogAPI
   settings: TapestrySettingsAPI
   agents: TapestryAgentsAPI
+  chat: TapestryChatAPI
+  /** Something happened in a workspace's chat. */
+  onChatEvent(callback: (payload: { treeId: string; event: TapestryChatEvent }) => void): () => void
   /** The set of open trees changed: one opened, one closed, or the space restored. */
   onTreesChanged(callback: () => void): () => void
   /** A commit landed in a tree from outside the renderer (an agent, a plugin). */

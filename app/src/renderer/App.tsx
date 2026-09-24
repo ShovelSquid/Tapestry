@@ -25,7 +25,9 @@ import { LiveAnnouncer } from './components/LiveAnnouncer'
 import TransientNotice from './components/TransientNotice'
 import PluginErrorNotification from './components/PluginErrorNotification'
 import NamePromptDialog from './components/NamePromptDialog'
+import ChatPanel from './components/ChatPanel'
 import { useForest, type NodeRef } from './state/use-forest'
+import { ChatContext, type ChatContextValue } from './state/chat'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -85,6 +87,17 @@ export default function App(): React.ReactElement {
   // the forest bar's label and the panel's rows can never disagree.
   const [agents, setAgents] = useState<TapestryAgentSummary[]>([])
   const [agentsEnabled, setAgentsEnabled] = useState(true)
+
+  // The workspace whose chat panel is open (02.7 D-12), or null.
+  const [chatTreeId, setChatTreeId] = useState<string | null>(null)
+  const chatContext = React.useMemo<ChatContextValue>(
+    () => ({
+      openTreeId: chatTreeId,
+      openChat: (treeId: string) => setChatTreeId(treeId),
+      closeChat: () => setChatTreeId(null),
+    }),
+    [chatTreeId],
+  )
 
   // A passing message about something that already happened (UA-14).
   const [notice, setNotice] = useState<string | null>(null)
@@ -692,6 +705,14 @@ export default function App(): React.ReactElement {
     return () => window.removeEventListener('keydown', handler)
   }, [handleUndo, handleRedo])
 
+  // A chat panel belongs to an open workspace: when that tree leaves the
+  // space (Close tree), its panel goes too.
+  useEffect(() => {
+    if (chatTreeId === null) return
+    const tree = trees.find((t) => t.id === chatTreeId)
+    if (!tree || tree.kind !== 'workspace' || tree.status !== 'ok') setChatTreeId(null)
+  }, [trees, chatTreeId])
+
   // -----------------------------------------------------------------------
   // Render
   // -----------------------------------------------------------------------
@@ -704,73 +725,78 @@ export default function App(): React.ReactElement {
     // One pair of live regions for the whole space, mounted above everything
     // that announces into them (UI-SPEC screen-reader announcements).
     <LiveAnnouncer>
-      <div className="tapestry-app">
-        {/* Top-left chrome: add a tree, agents, and the name changes are
-            signed with. Save state lives in each frame's header now. */}
-        <ForestBar
-          agents={agents}
-          agentsEnabled={agentsEnabled}
-          userName={userName}
-          onSaveUserName={handleSaveUserName}
-          onAgentsRefresh={refreshAgents}
-          onAddVault={handleAddVault}
-          onAddWorkspace={handleAddWorkspace}
-          onOpenWorld={handleOpenWorld}
-          onNewWorld={handleNewWorld}
-        />
-
-        {/* An agent write ended a rewound state (UA-14) */}
-        {notice && <TransientNotice message={notice} onHide={() => setNotice(null)} />}
-
-        {/* Plugin error notification (D-34) */}
-        {pluginError && (
-          <PluginErrorNotification
-            pluginName={pluginError.pluginName}
-            displayName={pluginError.displayName}
-            message={pluginError.message}
-            canRestart={pluginError.canRestart}
-            onRestart={handlePluginRestart}
-            onDismiss={handlePluginErrorDismiss}
+      <ChatContext.Provider value={chatContext}>
+        <div className="tapestry-app">
+          {/* Top-left chrome: add a tree, agents, and the name changes are
+              signed with. Save state lives in each frame's header now. */}
+          <ForestBar
+            agents={agents}
+            agentsEnabled={agentsEnabled}
+            userName={userName}
+            onSaveUserName={handleSaveUserName}
+            onAgentsRefresh={refreshAgents}
+            onAddVault={handleAddVault}
+            onAddWorkspace={handleAddWorkspace}
+            onOpenWorld={handleOpenWorld}
+            onNewWorld={handleNewWorld}
           />
-        )}
 
-        {/* First-run name prompt (D-07). Its overlay covers the canvas, so no
-            change can be made before a name exists to sign it with. */}
-        {nameLoaded && userName === null && (
-          <NamePromptDialog
-            mode="first-run"
-            initialName={suggestedName}
-            onSave={handleSaveUserName}
+          {/* An agent write ended a rewound state (UA-14) */}
+          {notice && <TransientNotice message={notice} onHide={() => setNotice(null)} />}
+
+          {/* Plugin error notification (D-34) */}
+          {pluginError && (
+            <PluginErrorNotification
+              pluginName={pluginError.pluginName}
+              displayName={pluginError.displayName}
+              message={pluginError.message}
+              canRestart={pluginError.canRestart}
+              onRestart={handlePluginRestart}
+              onDismiss={handlePluginErrorDismiss}
+            />
+          )}
+
+          {/* First-run name prompt (D-07). Its overlay covers the canvas, so no
+              change can be made before a name exists to sign it with. */}
+          {nameLoaded && userName === null && (
+            <NamePromptDialog
+              mode="first-run"
+              initialName={suggestedName}
+              onSave={handleSaveUserName}
+            />
+          )}
+
+          {/* The space: one frame per open tree, with pan/zoom and connections */}
+          <Canvas
+            ref={canvasRef}
+            trees={trees}
+            editingRef={editingRef}
+            pluginNodeViews={pluginNodeViews}
+            currentUserActorId={currentUserActorId}
+            selectedTreeId={selectedTreeId}
+            onSelectTree={setSelectedTreeId}
+            onStartEditing={(ref) => setEditingRef(ref)}
+            onStopEditing={() => setEditingRef(null)}
+            onCanvasDoubleClick={handleCanvasDoubleClick}
+            onSelectedNoteChange={setSelectedRef}
+            onSave={handleNoteSave}
+            onMarkDirty={markDirty}
+            onMarkClean={markClean}
+            onPositionChange={handlePositionChange}
+            onTakeOverPosition={handleTakeOverPosition}
+            onWidthChange={handleWidthChange}
+            onHeightChange={handleHeightChange}
+            onPinnedPositionChange={handlePinnedPositionChange}
+            onEdgeCreate={handleEdgeCreate}
+            onDeleteNote={handleDeleteNote}
+            onPropertyEdit={handlePropertyEdit}
+            onFrameMove={setFrameLocal}
           />
-        )}
 
-        {/* The space: one frame per open tree, with pan/zoom and connections */}
-        <Canvas
-          ref={canvasRef}
-          trees={trees}
-          editingRef={editingRef}
-          pluginNodeViews={pluginNodeViews}
-          currentUserActorId={currentUserActorId}
-          selectedTreeId={selectedTreeId}
-          onSelectTree={setSelectedTreeId}
-          onStartEditing={(ref) => setEditingRef(ref)}
-          onStopEditing={() => setEditingRef(null)}
-          onCanvasDoubleClick={handleCanvasDoubleClick}
-          onSelectedNoteChange={setSelectedRef}
-          onSave={handleNoteSave}
-          onMarkDirty={markDirty}
-          onMarkClean={markClean}
-          onPositionChange={handlePositionChange}
-          onTakeOverPosition={handleTakeOverPosition}
-          onWidthChange={handleWidthChange}
-          onHeightChange={handleHeightChange}
-          onPinnedPositionChange={handlePinnedPositionChange}
-          onEdgeCreate={handleEdgeCreate}
-          onDeleteNote={handleDeleteNote}
-          onPropertyEdit={handlePropertyEdit}
-          onFrameMove={setFrameLocal}
-        />
-      </div>
+          {/* Claude beside the canvas, for one workspace (02.7 D-12) */}
+          {chatTreeId !== null && <ChatPanel key={chatTreeId} treeId={chatTreeId} />}
+        </div>
+      </ChatContext.Provider>
     </LiveAnnouncer>
   )
 }

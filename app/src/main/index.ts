@@ -32,6 +32,7 @@ import { WorkspaceFileCommands } from './commands/file-tools'
 import { WorkspaceService } from './workspace/workspace-service'
 import { AgentRegistry, agentSocketPath } from './agents/registry'
 import { AgentSocketServer } from './agents/socket-server'
+import { ChatService } from './chat/chat-service'
 
 // ---------------------------------------------------------------------------
 // Window management
@@ -147,6 +148,8 @@ const registry = new TreeRegistry()
 
 let pluginHost: PluginHost
 let agentServer: AgentSocketServer | null = null
+/** The in-app chat panel (02.7 D-12), one chat per open workspace. */
+let chatService: ChatService | null = null
 
 /** A tree id is exactly what the registry mints: `sha256:` + 64 hex digits. */
 const TREE_ID_PATTERN = /^sha256:[0-9a-f]{64}$/
@@ -333,6 +336,71 @@ app.whenReady().then(async () => {
   if (settings.read().agentsEnabled) {
     await startAgentBridgeSafely()
   }
+
+  // -------------------------------------------------------------------------
+  // In-app chat (02.7 D-12..D-16): the person's own claude, confined to
+  // Tapestry's workspace tools, signing as agent.claude-chat
+  // -------------------------------------------------------------------------
+
+  const chat = new ChatService({
+    userDataDir: app.getPath('userData'),
+    agents,
+    workspaces: workspaceService,
+    launch: {
+      isPackaged: app.isPackaged,
+      appPath: app.getAppPath(),
+      execPath: process.execPath,
+      resourcesPath: process.resourcesPath,
+    },
+    isBridgeEnabled: () => settings.read().agentsEnabled,
+    emit: (treeId, event) => mainWindow?.webContents.send('chat-event', { treeId, event }),
+  })
+  chatService = chat
+
+  /** A chat is addressed by its workspace tree's id, checked like every tree id. */
+  function chatTreeId(treeId: unknown): string {
+    if (typeof treeId !== 'string' || !TREE_ID_PATTERN.test(treeId)) {
+      throw new Error(`Unknown tree ${String(treeId)}`)
+    }
+    return treeId
+  }
+
+  ipcMain.handle('chat:open', (_event, treeId: unknown) => {
+    try {
+      return { ok: true, value: chat.open(chatTreeId(treeId)) }
+    } catch (err) {
+      return { ok: false, error: errorMessage(err) }
+    }
+  })
+
+  ipcMain.handle('chat:send', async (_event, treeId: unknown, text: unknown) => {
+    try {
+      const id = chatTreeId(treeId)
+      if (typeof text !== 'string') return { ok: false, error: 'A message must be text' }
+      await chat.send(id, text)
+      return { ok: true, value: null }
+    } catch (err) {
+      return { ok: false, error: errorMessage(err) }
+    }
+  })
+
+  ipcMain.handle('chat:stop', async (_event, treeId: unknown) => {
+    try {
+      await chat.stop(chatTreeId(treeId))
+      return { ok: true, value: null }
+    } catch (err) {
+      return { ok: false, error: errorMessage(err) }
+    }
+  })
+
+  ipcMain.handle('chat:new', async (_event, treeId: unknown) => {
+    try {
+      await chat.newChat(chatTreeId(treeId))
+      return { ok: true, value: null }
+    } catch (err) {
+      return { ok: false, error: errorMessage(err) }
+    }
+  })
 
   // -------------------------------------------------------------------------
   // Agents IPC — connect, list, remove, and the bridge switch

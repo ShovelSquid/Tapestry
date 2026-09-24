@@ -1398,3 +1398,166 @@ html, body, #root {
   outline: 2px solid #4A7CFF;
   outline-offset: 2px;
 }
+
+/* ------------------------------------------------------------------------ */
+/* Chat panel -- Claude beside the canvas (02.7 D-12)                        */
+/* ------------------------------------------------------------------------ */
+
+.tapestry-chat-panel {
+  position: absolute;
+  top: 64px;
+  right: 16px;
+  bottom: 16px;
+  width: 420px;
+  z-index: 150;
+  display: flex;
+  flex-direction: column;
+  background: #FFFFFF;
+  border: 1px solid #E0DDD7;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  text-align: left;
+}
+
+.tapestry-chat-header {
+  padding: 12px 16px;
+  border-bottom: 1px solid #E0DDD7;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tapestry-chat-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Note Title role: 18/600/1.25 */
+.tapestry-chat-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tapestry-chat-subtitle,
+.tapestry-chat-notice {
+  font-size: 13px;
+  line-height: 1.4;
+  color: #6B6B6B;
+}
+
+.tapestry-chat-transcript {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tapestry-chat-user,
+.tapestry-chat-assistant {
+  font-size: 14px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.tapestry-chat-user {
+  align-self: flex-end;
+  max-width: 85%;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: #F0EDE8;
+}
+
+.tapestry-chat-tool {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #6B6B6B;
+  overflow-wrap: anywhere;
+}
+
+.tapestry-chat-tool--refused {
+  color: #B4232A;
+}
+
+.tapestry-chat-error {
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid #E5484D;
+  background: #FFF1F1;
+  color: #B4232A;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.tapestry-chat-error-hint {
+  margin-top: 4px;
+  color: #2C2C2C;
+}
+
+.tapestry-chat-composer {
+  padding: 12px 16px;
+  border-top: 1px solid #E0DDD7;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tapestry-chat-input {
+  width: 100%;
+  resize: none;
+  padding: 8px;
+  border: 1px solid #E0DDD7;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.tapestry-chat-input:focus-visible {
+  outline: 2px solid #4A7CFF;
+  outline-offset: 1px;
+}
+
+.tapestry-chat-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* Chat with Claude in a workspace frame's header. */
+.tapestry-frame-chat-button {
+  flex: none;
+  /* Sits with Tree options at the row's end, not centered between. */
+  margin-left: auto;
+  height: 24px;
+  padding: 0 8px;
+  background: #FFFFFF;
+  border: 1px solid #E0DDD7;
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #2C2C2C;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.tapestry-frame-chat-button:hover {
+  border-color: #B0ADA6;
+}
+
+.tapestry-frame-chat-button:focus-visible {
+  outline: 2px solid #4A7CFF;
+  outline-offset: 2px;
+}

@@ -12,8 +12,9 @@
  * without dragging the frame out from under the pointer.
  */
 
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import React, { useCallback, useContext, useEffect, useRef, useState } from 'react'
 import type { TreeSaveState } from '../state/use-forest'
+import { ChatContext } from '../state/chat'
 
 interface FrameHeaderProps {
   /** The tree this header belongs to; Tree options acts on it by id. */
@@ -70,6 +71,7 @@ export default function FrameHeader({
   onPointerDown,
 }: FrameHeaderProps): React.ReactElement {
   const [isMenuOpen, setIsMenuOpen] = useState(false)
+  const { openChat } = useContext(ChatContext)
 
   const buttonRef = useRef<HTMLButtonElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -171,6 +173,17 @@ export default function FrameHeader({
         >
           {name}
         </span>
+
+        {kind === 'workspace' && (
+          <button
+            type="button"
+            className="tapestry-frame-chat-button"
+            title="Talk to Claude in this workspace, beside the canvas"
+            onClick={() => openChat(treeId)}
+          >
+            Chat with Claude
+          </button>
+        )}
 
         <span className="tapestry-frame-menu-wrap">
           <button
