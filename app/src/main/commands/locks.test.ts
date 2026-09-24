@@ -886,6 +886,61 @@ describe('locks through NoteCommands', () => {
     expect(worldFingerprint()).toEqual(before)
     expect(bodyTextOf('n1')).toBe('Allowed in')
   })
+
+  /**
+   * No existing command is gated on layout (quick 260924-0ii, Q-04). Claude
+   * created claudeNote, so text and delete pass for either value of
+   * AGENT_NOTES_OPEN_TO_AGENTS; only the layout lock names someone else.
+   */
+  it('a lock.layout alone gates no existing command', () => {
+    setLockProp(claudeNote, 'lock.layout', 'user.kaelen')
+
+    const updated = notes.updateNote(CLAUDE, {
+      tree: 'locks',
+      note: claudeNote,
+      text: 'Layout lock is not a text lock',
+    })
+    expect(updated.ok).toBe(true)
+    expect(bodyTextOf(claudeNote)).toBe('Layout lock is not a text lock')
+
+    const renamed = notes.renameNote(CLAUDE, { tree: 'locks', note: claudeNote, title: 'Moved not' })
+    expect(renamed.ok).toBe(true)
+    expect(titleOf(claudeNote)).toBe('Moved not')
+
+    const deleted = notes.deleteNote(CLAUDE, { tree: 'locks', note: claudeNote })
+    expect(deleted.ok).toBe(true)
+    expect(tree.bridge.getNode(claudeNote)).toBeNull()
+  })
+
+  /** Aspects are independent (D-02): an open layout lock opens nothing else. */
+  it('lock.layout open on a person\'s note opens neither text nor delete', () => {
+    setLockProp('n1', 'lock.layout', 'open')
+    setLockProp('n1', 'lock.layout.allow', 'agent.claude')
+    const before = worldFingerprint()
+
+    const updated = notes.updateNote(CLAUDE, { tree: 'locks', note: 'n1', text: 'Should not land' })
+    expect(updated.ok).toBe(false)
+    expect(updated.ok === false && updated.error).toBe('n1 text is locked by user.kaelen')
+
+    const renamed = notes.renameNote(CLAUDE, { tree: 'locks', note: 'n1', title: 'Not renamed' })
+    expect(renamed.ok).toBe(false)
+    expect(renamed.ok === false && renamed.error).toBe('n1 text is locked by user.kaelen')
+
+    expect(worldFingerprint()).toEqual(before)
+    expect(bodyTextOf('n1')).toBe('Written by Kaelen')
+    expect(titleOf('n1')).toBe('Seed')
+
+    const deleted = notes.deleteNote(CLAUDE, { tree: 'locks', note: 'n1' })
+    if (NON_AGENT_NOTES_DELETE_LOCKED) {
+      expect(deleted.ok).toBe(false)
+      expect(deleted.ok === false && deleted.error).toBe('n1 delete is locked by user.kaelen')
+      expect(worldFingerprint()).toEqual(before)
+      expect(tree.bridge.getNode('n1')).not.toBeNull()
+    } else {
+      expect(deleted.ok).toBe(true)
+      expect(tree.bridge.getNode('n1')).toBeNull()
+    }
+  })
   // -------------------------------------------------------------------------
   // Characterization: behaviour Plan 01 already implements
   // -------------------------------------------------------------------------
