@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # build-wasm.sh — build the ddsim Wasm module with the pinned Emscripten and
 # copy ddsim.mjs + ddsim.wasm into surface/wasm/ (gitignored) for the worker,
-# the dev page and the Vitest golden test.
+# the dev page and the Vitest golden test. Also builds the mathspace engine
+# (the root project's wasm-release preset) and copies mathspace.mjs +
+# mathspace.wasm beside them: the bridge test (ms-bridge.test.ts) replays
+# the fixtures through both, and 7e's worker loads mathspace instead.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -24,6 +27,9 @@ echo "using $(emcc --version | head -1)"
 
 (cd "$SIM" && cmake --preset wasm-release && cmake --build --preset wasm-release)
 
+(cd "$REPO" && cmake --preset wasm-release && cmake --build --preset wasm-release --target mathspace_wasm)
+
 mkdir -p "$SURFACE/wasm"
 cp "$SIM/build/wasm-release/ddsim.mjs" "$SIM/build/wasm-release/ddsim.wasm" "$SURFACE/wasm/"
-echo "copied ddsim.mjs and ddsim.wasm to $SURFACE/wasm/"
+cp "$REPO/build/wasm-release/mathspace.mjs" "$REPO/build/wasm-release/mathspace.wasm" "$SURFACE/wasm/"
+echo "copied ddsim.mjs, ddsim.wasm, mathspace.mjs and mathspace.wasm to $SURFACE/wasm/"
