@@ -103,7 +103,9 @@ target_link_libraries(ddsim PUBLIC ddsim_settings)
 # ddsim for fx64.hpp and sha256_bytes only; ddsim itself stays untouched
 # until plan phase 7.
 # ---------------------------------------------------------------------------
-file(GLOB MATHSPACE_SOURCES CONFIGURE_DEPENDS ${PROJECT_SOURCE_DIR}/src/mathspace/*.cpp)
+file(GLOB MATHSPACE_SOURCES CONFIGURE_DEPENDS
+    ${PROJECT_SOURCE_DIR}/src/mathspace/*.cpp
+    ${PROJECT_SOURCE_DIR}/src/mathspace/expr/*.cpp)
 add_library(mathspace STATIC ${MATHSPACE_SOURCES})
 target_include_directories(mathspace PUBLIC ${PROJECT_SOURCE_DIR}/include)
 target_link_libraries(mathspace PUBLIC ddsim_settings ddsim)
