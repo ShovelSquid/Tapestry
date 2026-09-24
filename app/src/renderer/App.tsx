@@ -25,9 +25,10 @@ import { LiveAnnouncer } from './components/LiveAnnouncer'
 import TransientNotice from './components/TransientNotice'
 import PluginErrorNotification from './components/PluginErrorNotification'
 import NamePromptDialog from './components/NamePromptDialog'
-import ChatPanel from './components/ChatPanel'
+import ChatPanel, { type ChatPanelState } from './components/ChatPanel'
+import { ContextMenuProvider } from './components/ContextMenu'
 import { useForest, type NodeRef } from './state/use-forest'
-import { ChatContext, type ChatContextValue } from './state/chat'
+import { ChatContext, chatWorkspaceFor, type ChatContextValue, type ChatTarget } from './state/chat'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -88,15 +89,46 @@ export default function App(): React.ReactElement {
   const [agents, setAgents] = useState<TapestryAgentSummary[]>([])
   const [agentsEnabled, setAgentsEnabled] = useState(true)
 
-  // The workspace whose chat panel is open (02.7 D-12), or null.
-  const [chatTreeId, setChatTreeId] = useState<string | null>(null)
+  // The chat panel (02.7 D-12, D-19): a workspace's chat, a chooser when
+  // several workspaces could be meant, or a note that none is open.
+  const [chatPanel, setChatPanel] = useState<ChatPanelState | null>(null)
+  // The last workspace chatted in, so a click that names none goes back there.
+  const [lastChatTreeId, setLastChatTreeId] = useState<string | null>(null)
+  const chatTreeId = chatPanel?.kind === 'chat' ? chatPanel.treeId : null
+
+  const openChat = useCallback(
+    (target: ChatTarget = {}) => {
+      const openTrees = trees
+        .filter((tree) => tree.status === 'ok')
+        .map((tree) => ({ id: tree.id, name: tree.name, kind: tree.kind }))
+      const choice = chatWorkspaceFor(target, openTrees, lastChatTreeId)
+      const attachment = target.attachment ?? null
+      if ('treeId' in choice) {
+        setLastChatTreeId(choice.treeId)
+        setChatPanel((previous) => ({
+          kind: 'chat',
+          treeId: choice.treeId,
+          attachment,
+          // A new attachment replaces the chip even when this chat is open.
+          seq: (previous?.kind === 'chat' ? previous.seq : 0) + 1,
+        }))
+      } else if ('choose' in choice) {
+        setChatPanel({ kind: 'choose', options: choice.choose, attachment })
+      } else {
+        setChatPanel({ kind: 'none' })
+      }
+    },
+    [trees, lastChatTreeId],
+  )
+
   const chatContext = React.useMemo<ChatContextValue>(
     () => ({
       openTreeId: chatTreeId,
-      openChat: (treeId: string) => setChatTreeId(treeId),
-      closeChat: () => setChatTreeId(null),
+      openChat,
+      closeChat: () => setChatPanel(null),
+      treeName: (treeId: string) => trees.find((tree) => tree.id === treeId)?.name ?? '',
     }),
-    [chatTreeId],
+    [chatTreeId, openChat, trees],
   )
 
   // A passing message about something that already happened (UA-14).
@@ -710,7 +742,7 @@ export default function App(): React.ReactElement {
   useEffect(() => {
     if (chatTreeId === null) return
     const tree = trees.find((t) => t.id === chatTreeId)
-    if (!tree || tree.kind !== 'workspace' || tree.status !== 'ok') setChatTreeId(null)
+    if (!tree || tree.kind !== 'workspace' || tree.status !== 'ok') setChatPanel(null)
   }, [trees, chatTreeId])
 
   // -----------------------------------------------------------------------
@@ -726,76 +758,78 @@ export default function App(): React.ReactElement {
     // that announces into them (UI-SPEC screen-reader announcements).
     <LiveAnnouncer>
       <ChatContext.Provider value={chatContext}>
-        <div className="tapestry-app">
-          {/* Top-left chrome: add a tree, agents, and the name changes are
-              signed with. Save state lives in each frame's header now. */}
-          <ForestBar
-            agents={agents}
-            agentsEnabled={agentsEnabled}
-            userName={userName}
-            onSaveUserName={handleSaveUserName}
-            onAgentsRefresh={refreshAgents}
-            onAddVault={handleAddVault}
-            onAddWorkspace={handleAddWorkspace}
-            onOpenWorld={handleOpenWorld}
-            onNewWorld={handleNewWorld}
-          />
-
-          {/* An agent write ended a rewound state (UA-14) */}
-          {notice && <TransientNotice message={notice} onHide={() => setNotice(null)} />}
-
-          {/* Plugin error notification (D-34) */}
-          {pluginError && (
-            <PluginErrorNotification
-              pluginName={pluginError.pluginName}
-              displayName={pluginError.displayName}
-              message={pluginError.message}
-              canRestart={pluginError.canRestart}
-              onRestart={handlePluginRestart}
-              onDismiss={handlePluginErrorDismiss}
+        <ContextMenuProvider>
+          <div className="tapestry-app">
+            {/* Top-left chrome: add a tree, agents, and the name changes are
+                signed with. Save state lives in each frame's header now. */}
+            <ForestBar
+              agents={agents}
+              agentsEnabled={agentsEnabled}
+              userName={userName}
+              onSaveUserName={handleSaveUserName}
+              onAgentsRefresh={refreshAgents}
+              onAddVault={handleAddVault}
+              onAddWorkspace={handleAddWorkspace}
+              onOpenWorld={handleOpenWorld}
+              onNewWorld={handleNewWorld}
             />
-          )}
 
-          {/* First-run name prompt (D-07). Its overlay covers the canvas, so no
-              change can be made before a name exists to sign it with. */}
-          {nameLoaded && userName === null && (
-            <NamePromptDialog
-              mode="first-run"
-              initialName={suggestedName}
-              onSave={handleSaveUserName}
+            {/* An agent write ended a rewound state (UA-14) */}
+            {notice && <TransientNotice message={notice} onHide={() => setNotice(null)} />}
+
+            {/* Plugin error notification (D-34) */}
+            {pluginError && (
+              <PluginErrorNotification
+                pluginName={pluginError.pluginName}
+                displayName={pluginError.displayName}
+                message={pluginError.message}
+                canRestart={pluginError.canRestart}
+                onRestart={handlePluginRestart}
+                onDismiss={handlePluginErrorDismiss}
+              />
+            )}
+
+            {/* First-run name prompt (D-07). Its overlay covers the canvas, so no
+                change can be made before a name exists to sign it with. */}
+            {nameLoaded && userName === null && (
+              <NamePromptDialog
+                mode="first-run"
+                initialName={suggestedName}
+                onSave={handleSaveUserName}
+              />
+            )}
+
+            {/* The space: one frame per open tree, with pan/zoom and connections */}
+            <Canvas
+              ref={canvasRef}
+              trees={trees}
+              editingRef={editingRef}
+              pluginNodeViews={pluginNodeViews}
+              currentUserActorId={currentUserActorId}
+              selectedTreeId={selectedTreeId}
+              onSelectTree={setSelectedTreeId}
+              onStartEditing={(ref) => setEditingRef(ref)}
+              onStopEditing={() => setEditingRef(null)}
+              onCanvasDoubleClick={handleCanvasDoubleClick}
+              onSelectedNoteChange={setSelectedRef}
+              onSave={handleNoteSave}
+              onMarkDirty={markDirty}
+              onMarkClean={markClean}
+              onPositionChange={handlePositionChange}
+              onTakeOverPosition={handleTakeOverPosition}
+              onWidthChange={handleWidthChange}
+              onHeightChange={handleHeightChange}
+              onPinnedPositionChange={handlePinnedPositionChange}
+              onEdgeCreate={handleEdgeCreate}
+              onDeleteNote={handleDeleteNote}
+              onPropertyEdit={handlePropertyEdit}
+              onFrameMove={setFrameLocal}
             />
-          )}
 
-          {/* The space: one frame per open tree, with pan/zoom and connections */}
-          <Canvas
-            ref={canvasRef}
-            trees={trees}
-            editingRef={editingRef}
-            pluginNodeViews={pluginNodeViews}
-            currentUserActorId={currentUserActorId}
-            selectedTreeId={selectedTreeId}
-            onSelectTree={setSelectedTreeId}
-            onStartEditing={(ref) => setEditingRef(ref)}
-            onStopEditing={() => setEditingRef(null)}
-            onCanvasDoubleClick={handleCanvasDoubleClick}
-            onSelectedNoteChange={setSelectedRef}
-            onSave={handleNoteSave}
-            onMarkDirty={markDirty}
-            onMarkClean={markClean}
-            onPositionChange={handlePositionChange}
-            onTakeOverPosition={handleTakeOverPosition}
-            onWidthChange={handleWidthChange}
-            onHeightChange={handleHeightChange}
-            onPinnedPositionChange={handlePinnedPositionChange}
-            onEdgeCreate={handleEdgeCreate}
-            onDeleteNote={handleDeleteNote}
-            onPropertyEdit={handlePropertyEdit}
-            onFrameMove={setFrameLocal}
-          />
-
-          {/* Claude beside the canvas, for one workspace (02.7 D-12) */}
-          {chatTreeId !== null && <ChatPanel key={chatTreeId} treeId={chatTreeId} />}
-        </div>
+            {/* Claude beside the canvas, for one workspace (02.7 D-12) */}
+            {chatPanel !== null && <ChatPanel state={chatPanel} />}
+          </div>
+        </ContextMenuProvider>
       </ChatContext.Provider>
     </LiveAnnouncer>
   )

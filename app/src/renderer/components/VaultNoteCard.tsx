@@ -15,12 +15,16 @@
  * to the vault tree and never touches the file (D-14).
  */
 
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import React, { useCallback, useContext, useEffect, useRef, useState } from 'react'
+import { AskClaudeButton, useContextMenu } from './ContextMenu'
+import { ChatContext } from '../state/chat'
 import type { NodeInfo } from './Canvas'
 import ProvenanceBadge, { actorSpokenText } from './ProvenanceBadge'
 
 interface VaultNoteCardProps {
   node: NodeInfo
+  /** The vault tree this note is in, for Ask Claude… (D-19). */
+  treeId?: string
   isSelected: boolean
   zoom: number
   /** Who recorded this note, derived from the journal (D-05, D-21). */
@@ -53,6 +57,7 @@ export function vaultNoteTitle(path: string): string {
 
 export default function VaultNoteCard({
   node,
+  treeId,
   isSelected,
   zoom,
   provenance,
@@ -168,6 +173,27 @@ export default function VaultNoteCard({
 
   const width = storedWidth > 0 ? storedWidth : DEFAULT_VAULT_CARD_WIDTH
 
+  // Ask Claude… about this note (D-19): the chat opens for the workspace
+  // under the pointer or the last one used, with the note attached.
+  const { openChat, treeName } = useContext(ChatContext)
+  const openContextMenu = useContextMenu()
+  const noteTitle = vaultNoteTitle(path)
+  const askClaude = useCallback(() => {
+    if (!treeId) {
+      openChat({})
+      return
+    }
+    openChat({
+      treeId,
+      attachment: { kind: 'note', treeId, treeName: treeName(treeId), noteId: node.id, title: noteTitle },
+    })
+  }, [openChat, treeName, treeId, node.id, noteTitle])
+
+  const handleContextMenu = useCallback(
+    (e: React.MouseEvent) => openContextMenu(e, [{ label: 'Ask Claude…', run: askClaude }]),
+    [openContextMenu, askClaude],
+  )
+
   return (
     <div
       ref={cardRef}
@@ -180,6 +206,7 @@ export default function VaultNoteCard({
       }}
       onPointerEnter={() => onHover(true)}
       onPointerLeave={() => onHover(false)}
+      onContextMenu={handleContextMenu}
     >
       <div
         className="tapestry-note-drag-handle"
@@ -190,17 +217,22 @@ export default function VaultNoteCard({
         }}
       />
 
-      {/* Note Title (18/600/1.25) — the file name without .md (UI-SPEC) */}
-      <div
-        style={{
-          fontSize: 18,
-          fontWeight: 600,
-          lineHeight: 1.25,
-          color: '#2C2C2C',
-          marginBottom: 8,
-        }}
-      >
-        {vaultNoteTitle(path)}
+      {/* Note Title (18/600/1.25) — the file name without .md (UI-SPEC),
+          with the chat button beside it (D-19) */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 4, marginBottom: 8 }}>
+        <div
+          style={{
+            flex: 1,
+            minWidth: 0,
+            fontSize: 18,
+            fontWeight: 600,
+            lineHeight: 1.25,
+            color: '#2C2C2C',
+          }}
+        >
+          {noteTitle}
+        </div>
+        <AskClaudeButton label={`Ask Claude about ${noteTitle}`} onAsk={askClaude} />
       </div>
 
       {/* Body (16/400/1.5), pre-wrap — the file's own characters, unaltered */}

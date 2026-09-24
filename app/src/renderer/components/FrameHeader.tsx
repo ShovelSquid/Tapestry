@@ -179,7 +179,7 @@ export default function FrameHeader({
             type="button"
             className="tapestry-frame-chat-button"
             title="Talk to Claude in this workspace, beside the canvas"
-            onClick={() => openChat(treeId)}
+            onClick={() => openChat({ treeId })}
           >
             Chat with Claude
           </button>

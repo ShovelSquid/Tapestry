@@ -19,14 +19,21 @@ import { createContext, useCallback, useEffect, useMemo, useState } from 'react'
 export interface ChatContextValue {
   /** The workspace tree whose chat panel is open, or null. */
   openTreeId: string | null
-  openChat: (treeId: string) => void
+  /**
+   * Open the chat for where the person asked (D-19): a tree clicked in and
+   * what was clicked. Which workspace that means is chatWorkspaceFor's rule.
+   */
+  openChat: (target?: ChatTarget) => void
   closeChat: () => void
+  /** A tree's name, for building an attachment; '' when it is not open. */
+  treeName: (treeId: string) => string
 }
 
 export const ChatContext = createContext<ChatContextValue>({
   openTreeId: null,
   openChat: () => undefined,
   closeChat: () => undefined,
+  treeName: () => '',
 })
 
 // ---------------------------------------------------------------------------
@@ -56,19 +63,50 @@ export type ChatWorkspaceChoice =
   | { choose: Array<{ treeId: string; name: string }> }
   | { none: true }
 
-export function formatAttachment(_attachment: ChatAttachment): string {
-  return ''
+/** A title as one line, safe inside double quotes. */
+function quoteTitle(title: string): string {
+  return title.replace(/\r\n|\r|\n/g, ' ').replace(/\\/g, '\\\\').replace(/"/g, '\\"')
 }
 
-export function composeFirstMessage(_attachment: ChatAttachment | null, _text: string): string {
-  return ''
+/**
+ * The attachment as the line that starts the first message. Text only: an
+ * attachment never goes anywhere but the message the person sends.
+ */
+export function formatAttachment(attachment: ChatAttachment): string {
+  if (attachment.kind === 'file') {
+    return `Context: the file ${attachment.path} in the workspace ${attachment.workspaceName}.`
+  }
+  return `Context: the note ${attachment.noteId} "${quoteTitle(attachment.title)}" in the tree ${attachment.treeName} (${attachment.treeId}). Read it with read_note.`
 }
 
+/** The attachment line, a blank line, then what the person typed. */
+export function composeFirstMessage(attachment: ChatAttachment | null, text: string): string {
+  return attachment ? `${formatAttachment(attachment)}\n\n${text}` : text
+}
+
+/**
+ * Which workspace's chat a click opens (D-19): a file's own workspace, else
+ * the workspace clicked in, else the last chat used while it is still open,
+ * else the only open workspace; several open means asking, none means saying so.
+ */
 export function chatWorkspaceFor(
-  _target: ChatTarget,
-  _openTrees: ChatTreeRef[],
-  _lastChatTreeId: string | null,
+  target: ChatTarget,
+  openTrees: ChatTreeRef[],
+  lastChatTreeId: string | null,
 ): ChatWorkspaceChoice {
+  const workspaces = openTrees.filter((tree) => tree.kind === 'workspace')
+  const isOpen = (id: string | null | undefined): id is string =>
+    typeof id === 'string' && workspaces.some((tree) => tree.id === id)
+
+  if (target.attachment?.kind === 'file' && isOpen(target.attachment.workspaceTreeId)) {
+    return { treeId: target.attachment.workspaceTreeId }
+  }
+  if (isOpen(target.treeId)) return { treeId: target.treeId }
+  if (isOpen(lastChatTreeId)) return { treeId: lastChatTreeId }
+  if (workspaces.length === 1) return { treeId: workspaces[0].id }
+  if (workspaces.length > 1) {
+    return { choose: workspaces.map((tree) => ({ treeId: tree.id, name: tree.name })) }
+  }
   return { none: true }
 }
 

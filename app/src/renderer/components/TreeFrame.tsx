@@ -501,6 +501,7 @@ export default function TreeFrame({
             return (
               <VaultNoteCard
                 key={node.id}
+                treeId={tree.id}
                 node={node}
                 isSelected={selectedKey === key}
                 zoom={zoom}
@@ -521,6 +522,7 @@ export default function TreeFrame({
             return (
               <NoteCard
                 key={node.id}
+                treeId={tree.id}
                 node={node}
                 displayPosition={displayPositions.get(node.id)?.followSpot ?? undefined}
                 isEditing={editingKey === key}

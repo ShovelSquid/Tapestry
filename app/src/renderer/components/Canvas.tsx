@@ -20,6 +20,7 @@
 import React, {
   forwardRef,
   useCallback,
+  useContext,
   useEffect,
   useImperativeHandle,
   useRef,
@@ -39,6 +40,8 @@ import {
   type PositionedRect,
 } from '../layout/frames'
 import { displayPositions, type DisplaySpot } from '../layout/placement'
+import { useContextMenu } from './ContextMenu'
+import { ChatContext } from '../state/chat'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -623,6 +626,29 @@ function Canvas({
     [onStopEditing, selectNote, onSelectTree],
   )
 
+  // -----------------------------------------------------------------------
+  // Right-click on the space itself: Ask Claude… (D-19). Cards and notes
+  // open their own menu, carrying what was clicked.
+  // -----------------------------------------------------------------------
+
+  const openContextMenu = useContextMenu()
+  const { openChat } = useContext(ChatContext)
+
+  const handleContextMenu = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      if (!isBackground(e.target as HTMLElement, viewportRef.current)) return
+      const world = pointerWorld(e.clientX, e.clientY)
+      const tree = world ? treeAt(world.x, world.y) : null
+      openContextMenu(e, [
+        {
+          label: 'Ask Claude…',
+          run: () => openChat(tree && tree.kind === 'workspace' ? { treeId: tree.id } : {}),
+        },
+      ])
+    },
+    [pointerWorld, treeAt, openContextMenu, openChat],
+  )
+
   const handleDoubleClick = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
       if (!isBackground(e.target as HTMLElement, viewportRef.current)) return
@@ -788,6 +814,7 @@ function Canvas({
       onPointerUp={handlePointerUp}
       onClick={handleClick}
       onDoubleClick={handleDoubleClick}
+      onContextMenu={handleContextMenu}
     >
       {/* Empty state (UI-SPEC copywriting) */}
       {trees.length === 0 && (

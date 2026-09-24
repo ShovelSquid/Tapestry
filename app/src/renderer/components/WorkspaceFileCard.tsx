@@ -17,9 +17,11 @@
  * Non-text files (binary, too large, symlinks) show only name, type and size.
  */
 
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import React, { useCallback, useContext, useEffect, useRef, useState } from 'react'
 import type { NodeInfo } from './Canvas'
 import ProvenanceBadge, { actorSpokenText } from './ProvenanceBadge'
+import { AskClaudeButton, useContextMenu } from './ContextMenu'
+import { ChatContext } from '../state/chat'
 
 export const WORKSPACE_SAVE_DEBOUNCE_MS = 1000
 
@@ -350,21 +352,45 @@ export default function WorkspaceFileCard({
   const defaultWidth = isText ? 280 : 240
   const width = isOpen ? OPEN_WIDTH : storedWidth > 0 ? storedWidth : defaultWidth
 
+  // Ask Claude… about this file (D-19): the chat for its workspace, with the
+  // file's path attached to the first message.
+  const { openChat, treeName } = useContext(ChatContext)
+  const openContextMenu = useContextMenu()
+  const askClaude = useCallback(() => {
+    openChat({
+      treeId,
+      attachment: { kind: 'file', workspaceTreeId: treeId, workspaceName: treeName(treeId), path },
+    })
+  }, [openChat, treeName, treeId, path])
+
+  const handleContextMenu = useCallback(
+    (e: React.MouseEvent) => {
+      // Inside the open file's text, the native menu stays for copy and paste.
+      if ((e.target as HTMLElement).closest('textarea')) return
+      openContextMenu(e, [{ label: 'Ask Claude…', run: askClaude }])
+    },
+    [openContextMenu, askClaude],
+  )
+
   const title = (
-    <div
-      title={path}
-      style={{
-        fontSize: 15,
-        fontWeight: 600,
-        lineHeight: 1.3,
-        color: '#2C2C2C',
-        marginBottom: 6,
-        overflow: 'hidden',
-        textOverflow: 'ellipsis',
-        whiteSpace: 'nowrap',
-      }}
-    >
-      {baseName(path)}
+    <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 6 }}>
+      <div
+        title={path}
+        style={{
+          flex: 1,
+          minWidth: 0,
+          fontSize: 15,
+          fontWeight: 600,
+          lineHeight: 1.3,
+          color: '#2C2C2C',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        {baseName(path)}
+      </div>
+      <AskClaudeButton label={`Ask Claude about ${baseName(path)}`} onAsk={askClaude} />
     </div>
   )
 
@@ -533,6 +559,7 @@ export default function WorkspaceFileCard({
       }}
       onPointerEnter={() => onHover(true)}
       onPointerLeave={() => onHover(false)}
+      onContextMenu={handleContextMenu}
     >
       <div
         className="tapestry-note-drag-handle"
