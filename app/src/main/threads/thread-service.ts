@@ -8,15 +8,22 @@
  * or `body` keys — the renderer's collab plugin pushes steps here and never
  * touches the kernel directly.
  *
- * Flush cadence (D-06, Pitfall 1): idle 300ms OR a max-wait of ~1s OR close
- * OR an actor switch. The max-wait exists because a continuous typist resets
- * the idle timer on every keystroke and would otherwise never get a commit —
- * "a crash loses at most a moment" requires the periodic flush regardless of
- * whether typing ever pauses.
+ * Flush cadence (D-06, Pitfall 1): idle 300ms OR a max-wait of ~1s OR a
+ * detected time-out OR close OR an actor switch. The max-wait exists because
+ * a continuous typist resets the idle timer on every keystroke and would
+ * otherwise never get a commit — "a crash loses at most a moment" requires
+ * the periodic flush regardless of whether typing ever pauses.
  *
- * Sessions in this plan are minimal by design (02.3-02-PLAN.md Task 2): one
- * `in` record opens the first batch of a thread's lifetime in this process;
- * time-out detection and `out` records are Plan 04's job.
+ * Sessions (D-07, D-10, 02.3-06-PLAN.md Task 1): a per-thread timer, read
+ * from the node's own `thread.timeout`/`thread.slowdown` properties at open,
+ * fires `out` once `detectTimeout` (sessions.ts) says the gap since the last
+ * applied step has actually elapsed, then flushes it immediately. The next
+ * push() after that writes the `in` that opens the next session. Reopening
+ * within the still-live timeout window resumes the same session rather than
+ * minting a new one; reopening after it (deriveSessions finds the last
+ * session unclosed and detectTimeout says it is in the past) means a crash
+ * left the `out` unwritten, so the reader derives its boundary and this
+ * service writes the missing `out` as its own commit on the very next write.
  */
 
 import type { Node as ProseMirrorNode } from 'prosemirror-model'
@@ -29,6 +36,8 @@ import {
   type ThreadCause,
   type ThreadRecord,
 } from '../../shared/threads/grammar'
+import { deriveSessions, detectTimeout, type AuthoredThreadRecord } from '../../shared/threads/sessions'
+import { parseThreadSettings } from '../../shared/threads/settings'
 import type { Actor } from '../commands/actor'
 import type { KernelBridge } from '../kernel-bridge'
 
@@ -91,6 +100,28 @@ interface ThreadHandle {
 
   idleTimer: ReturnType<typeof setTimeout> | null
   maxWaitTimer: ReturnType<typeof setTimeout> | null
+
+  /** D-10/D-13: this thread's own timeout, read from its node properties at
+   * open. Never re-read afterwards -- a settings change from the popover
+   * takes effect on the *next* open (the popover's own recorded-outcome
+   * note: "New settings apply from now on"), which matches every other
+   * per-thread setting's honesty rule (D-06/T-02.3-06-02): a live session
+   * never has its already-running timeout window silently shortened or
+   * lengthened out from under it mid-pause. */
+  timeoutSeconds: number
+  /** The moment (absolute ms) the current session's time-out timer counts
+   * from -- the last applied step's own time, not `Date.now()` at schedule
+   * time, so a resumed session (reopened within its old timeout window)
+   * schedules for the *remaining* time rather than a fresh full window. */
+  lastActivityMs: number | null
+  /** Set at open() when the last session on disk has no closing `out` and
+   * `detectTimeout` says it is unambiguously in the past (a crash) -- the
+   * absolute moment that session's own last record actually happened.
+   * Flushed as its own tiny `out`-only commit on the very next push(),
+   * before that push's own batch (D-06: "the reader derives one, and the
+   * service writes it on the next write"). */
+  pendingDerivedOutMs: number | null
+  timeoutTimer: ReturnType<typeof setTimeout> | null
 }
 
 // ---------------------------------------------------------------------------
@@ -274,18 +305,23 @@ export class ThreadService {
 
     const entries = bridge.getPropertyValues(nodeId, 'thread.log')
     const blocks = entries.map((entry) => String(entry.value.value))
+    const node = bridge.getNode(nodeId)
+    const timeoutSeconds = parseThreadSettings(node?.props ?? {}).timeout
 
     let doc: ProseMirrorNode
     let version = 0
-    let sessionCount = 0
+    const authoredRecords: AuthoredThreadRecord[] = []
     try {
       doc = docFromFlatText(replayFlatText(blocks))
-      for (const block of blocks) {
+      for (const entry of entries) {
+        const block = String(entry.value.value)
         const header = parseBlockHeader(block)
         const records = parseBlock(block)
         const stepCount = records.filter((r) => r.verb !== 'in' && r.verb !== 'out').length
         version = header.versionBefore + stepCount
-        sessionCount += records.filter((r) => r.verb === 'in').length
+        for (const record of records) {
+          authoredRecords.push({ ...record, atMs: header.anchorMs + record.offsetMs, actor: entry.actor.id })
+        }
       }
     } catch (err) {
       // A malformed thread.log must never become the base for a new commit
@@ -296,7 +332,6 @@ export class ThreadService {
       // with the plugin disabled entirely, so a thread degrades to the same
       // honest state whether the plugin is missing or its history cannot be
       // parsed.
-      const node = bridge.getNode(nodeId)
       const checkpointText = node ? String(node.props.body?.value ?? '') : ''
       return {
         version: 0,
@@ -307,7 +342,33 @@ export class ThreadService {
       }
     }
 
-    this.handles.set(key, {
+    // Recorded outcomes (D-07/T-02.3-06-02): reconstruct sessions from the
+    // records that exist, never from timestamps and the current setting.
+    const sessions = deriveSessions(authoredRecords)
+    const lastSession = sessions[sessions.length - 1] ?? null
+
+    let sessionStarted = false
+    let nextSessionNumber = sessions.length + 1
+    let lastActivityMs: number | null = null
+    let pendingDerivedOutMs: number | null = null
+
+    if (lastSession && !lastSession.closed) {
+      if (detectTimeout(lastSession.endMs, Date.now(), timeoutSeconds)) {
+        // Unambiguously in the past: a crash left this session's `out`
+        // unwritten. The reader derives the boundary at the session's own
+        // last known moment; ThreadService writes it on the very next write.
+        pendingDerivedOutMs = lastSession.endMs
+      } else {
+        // Still inside the timeout window: closing and reopening a thread
+        // is not itself a time-out (D-07). Resume this same session rather
+        // than minting a new one.
+        sessionStarted = true
+        nextSessionNumber = lastSession.index
+        lastActivityMs = lastSession.endMs
+      }
+    }
+
+    const handle: ThreadHandle = {
       bridge,
       actor,
       treeId,
@@ -318,11 +379,21 @@ export class ThreadService {
       pending: [],
       batchAnchorMs: null,
       batchVersionBefore: version,
-      sessionStarted: false,
-      nextSessionNumber: sessionCount + 1,
+      sessionStarted,
+      nextSessionNumber,
       idleTimer: null,
       maxWaitTimer: null,
-    })
+      timeoutSeconds,
+      lastActivityMs,
+      pendingDerivedOutMs,
+      timeoutTimer: null,
+    }
+    this.handles.set(key, handle)
+    if (sessionStarted) {
+      // A resumed session's timer must count down from the *remaining* time
+      // (schedule reads handle.lastActivityMs), not a fresh full window.
+      this.scheduleTimeout(handle)
+    }
 
     return { version, doc: doc.toJSON(), totalChanges: entries.length }
   }
@@ -350,6 +421,23 @@ export class ThreadService {
     const handle = this.handles.get(this.key(treeId, nodeId))
     if (!handle) {
       throw new Error(`Thread not open: ${treeId} ${nodeId}`)
+    }
+
+    // D-06/D-07: a session that crashed before its `out` could be written is
+    // repaired on the very next write, as its own tiny commit landing before
+    // this push's own batch -- never folded into it, so the recovered `out`
+    // keeps the crashed session's own honest moment rather than borrowing
+    // this write's anchor.
+    if (handle.pendingDerivedOutMs !== null) {
+      const outBlock = formatBlock([{ verb: 'out', offsetMs: 0 }], handle.pendingDerivedOutMs, handle.version)
+      try {
+        handle.bridge.submitAs(actor, 'Thread recovered time-out', [
+          { op: 'setProperty', target: handle.nodeId, key: 'thread.log', type: 'text', value: outBlock },
+        ])
+      } catch (err) {
+        console.error('[ThreadService] failed to write recovered out record:', err)
+      }
+      handle.pendingDerivedOutMs = null
     }
 
     // D-06: a commit never mixes authors. An actor switch flushes whatever
@@ -418,8 +506,10 @@ export class ThreadService {
     handle.steps.push(...appliedSteps)
     handle.doc = doc
     handle.version += stepsJson.length
+    handle.lastActivityMs = timesMs[timesMs.length - 1] ?? Date.now()
 
     this.scheduleFlush(handle)
+    this.scheduleTimeout(handle)
 
     return { confirmed: true, version: handle.version }
   }
@@ -449,6 +539,7 @@ export class ThreadService {
 
     if (handle.idleTimer) clearTimeout(handle.idleTimer)
     if (handle.maxWaitTimer) clearTimeout(handle.maxWaitTimer)
+    if (handle.timeoutTimer) clearTimeout(handle.timeoutTimer)
     this.handles.delete(key)
   }
 
@@ -466,6 +557,53 @@ export class ThreadService {
     if (!handle.maxWaitTimer) {
       handle.maxWaitTimer = setTimeout(() => this.flush(handle), MAX_WAIT_FLUSH_MS)
     }
+  }
+
+  /**
+   * (Re)schedules the D-10 time-out timer for the *remaining* window from
+   * `handle.lastActivityMs` -- so a reopen that resumed a session (open()'s
+   * "still inside the timeout window" branch) counts down the time actually
+   * left, never a fresh full `timeoutSeconds`. Called after every push() and
+   * once from open() when a session is resumed.
+   */
+  private scheduleTimeout(handle: ThreadHandle): void {
+    if (handle.timeoutTimer) clearTimeout(handle.timeoutTimer)
+    const lastActivity = handle.lastActivityMs ?? Date.now()
+    const elapsedMs = Date.now() - lastActivity
+    const delayMs = Math.max(0, handle.timeoutSeconds * 1000 - elapsedMs)
+    handle.timeoutTimer = setTimeout(() => this.handleTimeout(handle), delayMs)
+  }
+
+  /**
+   * The time-out is one of this thread's flush triggers (D-06/D-07,
+   * RESEARCH's five triggers: idle, max-wait, time-out, close, actor
+   * switch). Fires only when `detectTimeout` still agrees a full timeout
+   * has actually elapsed against `lastActivityMs` -- a timer that fired a
+   * little early (setTimeout drift, or a `scheduleTimeout` call that raced
+   * a fresher `lastActivityMs`) reschedules for the true remaining time
+   * instead of writing an `out` too soon.
+   */
+  private handleTimeout(handle: ThreadHandle): void {
+    handle.timeoutTimer = null
+    if (!handle.sessionStarted) return // Already ended, or never started.
+
+    const lastActivity = handle.lastActivityMs ?? Date.now()
+    if (!detectTimeout(lastActivity, Date.now(), handle.timeoutSeconds)) {
+      this.scheduleTimeout(handle)
+      return
+    }
+
+    const nowMs = Date.now()
+    const startingNewBatch = handle.pending.length === 0
+    if (startingNewBatch) {
+      handle.batchAnchorMs = nowMs
+      handle.batchVersionBefore = handle.version
+    }
+    const anchorMs = handle.batchAnchorMs ?? nowMs
+    handle.pending.push({ verb: 'out', offsetMs: Math.max(0, nowMs - anchorMs) })
+    handle.sessionStarted = false
+    handle.nextSessionNumber += 1
+    this.flush(handle)
   }
 
   private flush(handle: ThreadHandle): void {
