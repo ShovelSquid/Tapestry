@@ -135,6 +135,12 @@ interface CanvasProps {
    * space can settle around the frame's new size.
    */
   onToggleFolder: (treeId: string, folderId: string, collapsed: boolean, dimsOf: DimsOf) => Promise<void>
+  /**
+   * A folder frame was dropped at `local` (in its parent's space): one commit
+   * moving it, and whatever it displaced (02.7 D-21). Resolves once the tree
+   * has been refreshed, so the live drag position can be let go without a jump.
+   */
+  onFolderDrop: (treeId: string, folderId: string, local: Point, dimsOf: DimsOf) => Promise<void>
   /** The selected frame, which is the space's focal point and undo target. */
   selectedTreeId: string | null
   onSelectTree: (treeId: string | null) => void
@@ -239,6 +245,7 @@ function Canvas({
   onPropertyEdit,
   onFrameMove,
   onToggleFolder,
+  onFolderDrop,
   selectedTreeId,
   onSelectTree,
 }: CanvasProps, ref: React.ForwardedRef<CanvasHandle>): React.ReactElement {
@@ -269,6 +276,12 @@ function Canvas({
   const [draggingTreeId, setDraggingTreeId] = useState<string | null>(null)
   const [hoveredTreeId, setHoveredTreeId] = useState<string | null>(null)
   const frameDragRef = useRef({ startX: 0, startY: 0, originX: 0, originY: 0, moved: false })
+
+  // A folder frame dragged by its header (02.7 D-21). Its live local position
+  // rides in dragPositions, like a card's, so the frame, its contents and the
+  // workspace frame's bounds all follow the pointer together.
+  const [draggingFolder, setDraggingFolder] = useState<NodeRef | null>(null)
+  const folderDragRef = useRef({ startX: 0, startY: 0, originX: 0, originY: 0, moved: false })
 
   // Trees the renderer has already placed with real bounds, so a frame is
   // repositioned once when it appears and not on every later render.
@@ -347,7 +360,11 @@ function Canvas({
     if (tree.kind === 'workspace') {
       const positions: ReadonlyMap<string, Point> = overrides
       const layout = subspaceRects(tree.nodes, dimsOfTree(tree.id), undefined, positions)
-      treeSubspaces.set(tree.id, { layout, positions, draggingFolderId: null })
+      treeSubspaces.set(tree.id, {
+        layout,
+        positions,
+        draggingFolderId: draggingFolder?.treeId === tree.id ? draggingFolder.nodeId : null,
+      })
       // The workspace root's cards and top-level folder frames, plus any note
       // made in the workspace tree that is not a workspace file.
       const others: ContentBox[] = tree.nodes
@@ -564,6 +581,17 @@ function Canvas({
 
   const handlePointerMove = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
+      // A folder drag moves the folder's local origin; its contents follow.
+      if (draggingFolder) {
+        const dx = (e.clientX - folderDragRef.current.startX) / view.zoom
+        const dy = (e.clientY - folderDragRef.current.startY) / view.zoom
+        if (Math.abs(dx) > 2 || Math.abs(dy) > 2) folderDragRef.current.moved = true
+        if (folderDragRef.current.moved) {
+          handleDragMove(draggingFolder, folderDragRef.current.originX + dx, folderDragRef.current.originY + dy)
+        }
+        return
+      }
+
       // A frame drag moves the whole tree with its notes and connections, so
       // it is applied to the frame origin rather than to any note.
       if (draggingTreeId) {
@@ -593,7 +621,7 @@ function Canvas({
         panY: panStartRef.current.panY + dy,
       }))
     },
-    [connectingFrom, pointerWorld, draggingTreeId, onFrameMove, view.zoom],
+    [connectingFrom, pointerWorld, draggingTreeId, draggingFolder, handleDragMove, onFrameMove, view.zoom],
   )
 
   // Not memoised: the drop needs this render's frame rects, and a stale
@@ -603,6 +631,23 @@ function Canvas({
       if (isPanningRef.current) {
         isPanningRef.current = false
         ;(e.target as HTMLElement).releasePointerCapture(e.pointerId)
+      }
+
+      if (draggingFolder) {
+        const folderRef = draggingFolder
+        const local = dragPositions[nodeKey(folderRef)]
+        setDraggingFolder(null)
+        if (folderDragRef.current.moved && local) {
+          void onFolderDrop(folderRef.treeId, folderRef.nodeId, local, dimsOfTree(folderRef.treeId))
+            .catch(() => undefined)
+            .then(() => {
+              handleDragEnd(folderRef)
+              requestSettle(folderRef.treeId)
+            })
+        } else {
+          handleDragEnd(folderRef)
+        }
+        return
       }
 
       if (draggingTreeId) {
@@ -849,9 +894,24 @@ function Canvas({
         .then(() => requestSettle(folderRef.treeId))
         .catch(() => undefined)
     },
-    onFolderHeaderPointerDown: (_folderRef, e) => {
-      // A folder header is not canvas background: pressing it must not pan.
+    onFolderHeaderPointerDown: (folderRef, e) => {
+      if (e.button !== 0) return
+      // A folder header is not canvas background: dragging it must not pan.
       e.stopPropagation()
+      e.preventDefault()
+      const tree = trees.find((t) => t.id === folderRef.treeId)
+      const node = tree?.nodes.find((n) => n.id === folderRef.nodeId)
+      if (!node) return
+      const live = dragPositions[nodeKey(folderRef)]
+      folderDragRef.current = {
+        startX: e.clientX,
+        startY: e.clientY,
+        originX: live ? live.x : Number(node.props['position.x']?.value ?? 0),
+        originY: live ? live.y : Number(node.props['position.y']?.value ?? 0),
+        moved: false,
+      }
+      setDraggingFolder(folderRef)
+      e.currentTarget.setPointerCapture(e.pointerId)
     },
   }
 

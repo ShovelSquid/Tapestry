@@ -29,7 +29,7 @@ import ChatPanel, { type ChatPanelState } from './components/ChatPanel'
 import { ContextMenuProvider } from './components/ContextMenu'
 import { useForest, type NodeRef } from './state/use-forest'
 import { ChatContext, chatWorkspaceFor, type ChatContextValue, type ChatTarget } from './state/chat'
-import { COLLAPSED_KEY, settleSubspace, type DimsOf } from './layout/subspaces'
+import { COLLAPSED_KEY, settleSubspace, type DimsOf, type Point } from './layout/subspaces'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -662,6 +662,35 @@ export default function App(): React.ReactElement {
     [trees, folderPathOf, submitChange, refreshTree, reportSaveError],
   )
 
+  /**
+   * A folder frame dropped at `local` (its parent's space): one commit by the
+   * person writing the folder's position and the positions of whatever yields
+   * (settleSubspace, up to the workspace frame). The folder's files keep their
+   * local positions, so none of them is named.
+   */
+  const handleFolderDrop = useCallback(
+    async (treeId: string, folderId: string, local: Point, dimsOf: DimsOf) => {
+      const tree = trees.find((t) => t.id === treeId)
+      if (!tree) return
+      const path = folderPathOf(treeId, folderId)
+      const displaced = settleSubspace(tree.nodes, dimsOf, folderId, {
+        positions: new Map([[folderId, local]]),
+      }).filter((op) => op.target !== folderId)
+      const ops = [
+        { op: 'setProperty', target: folderId, key: 'position.x', type: 'real', value: local.x },
+        { op: 'setProperty', target: folderId, key: 'position.y', type: 'real', value: local.y },
+        ...displaced,
+      ]
+      try {
+        await submitChange(treeId, `Move folder ${path}`, ops)
+        await refreshTree(treeId)
+      } catch (err) {
+        reportSaveError('Failed to move folder', err)
+      }
+    },
+    [trees, folderPathOf, submitChange, refreshTree, reportSaveError],
+  )
+
   // -----------------------------------------------------------------------
   // Plugin error handlers (D-34)
   // -----------------------------------------------------------------------
@@ -870,6 +899,7 @@ export default function App(): React.ReactElement {
               onPropertyEdit={handlePropertyEdit}
               onFrameMove={setFrameLocal}
               onToggleFolder={handleToggleFolder}
+              onFolderDrop={handleFolderDrop}
             />
 
             {/* Claude beside the canvas, for one workspace (02.7 D-12) */}
