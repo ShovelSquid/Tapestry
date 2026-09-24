@@ -1,0 +1,1 @@
+{"content":"MDN Secure Contexts: origins with scheme https, wss or file, host 127.0.0.0/8, ::1, localhost are potentially trustworthy; file:///path is listed as secure.","source":"web","provider":"webfetch","confidence":"MEDIUM","fetched_at":"2026-09-22T22:59:59.850Z","ttl":86400000,"kind":"web"}

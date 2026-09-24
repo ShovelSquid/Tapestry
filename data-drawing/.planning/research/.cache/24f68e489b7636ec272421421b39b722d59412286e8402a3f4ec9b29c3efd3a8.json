@@ -1,0 +1,1 @@
+{"content":"cppreference: since C++20, a >> b on signed a is arithmetic right shift (rounded toward negative infinity); a << b is the value congruent to a*2^b modulo 2^N.","source":"web","provider":"webfetch","confidence":"MEDIUM","fetched_at":"2026-09-22T22:59:59.927Z","ttl":86400000,"kind":"web"}
