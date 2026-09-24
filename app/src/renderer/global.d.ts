@@ -82,9 +82,11 @@ type TapestryTreeStatus = 'ok' | 'damaged' | 'locked' | 'missing'
 interface TapestryTreeSummary {
   id: string
   name: string
-  kind: 'native' | 'vault'
+  kind: 'native' | 'vault' | 'workspace'
   path: string
   vaultRoot?: string
+  /** For a workspace tree, the folder it mirrors (02.7). */
+  workspaceRoot?: string
   /** Where the tree's frame origin sits in world space (D-18). */
   frame: { x: number; y: number }
   /** A tree that would not open stays in the space with its reason. */
@@ -144,6 +146,8 @@ interface TapestryDialogAPI {
   showOpenTree(): Promise<{ canceled: boolean; filePath?: string }>
   /** Pick an Obsidian vault folder to mirror as a tree (D-10, D-13). */
   showOpenVaultFolder(): Promise<{ canceled: boolean; folderPath?: string }>
+  /** Pick a workspace folder to mirror as a tree (02.7 D-01). */
+  showOpenWorkspaceFolder(): Promise<{ canceled: boolean; folderPath?: string }>
 }
 
 /** Where a vault import has got to (D-20). */
@@ -157,6 +161,29 @@ interface TapestryVaultStatus {
 interface TapestryVaultAPI {
   /** Mirror the vault folder as its own tree. Main refuses an unpicked root. */
   add(root: string): Promise<{ ok: boolean; treeId?: string; error?: string }>
+}
+
+/** What a window save did (02.7 D-04, D-05). */
+interface TapestryWorkspaceSaveValue {
+  note: string
+  path: string
+  written: boolean
+  /** The file changed before the edit was written; the file's text won. */
+  fileWins: boolean
+  sha256: string | null
+  seq: number
+}
+
+interface TapestryWorkspaceAPI {
+  /** Mirror a workspace folder as its own tree. Main refuses an unpicked root. */
+  add(root: string): Promise<{ ok: boolean; treeId?: string; error?: string }>
+  /** Save a person's edit to the file a workspace note shows. */
+  saveFile(
+    treeId: string,
+    nodeId: string,
+    text: string,
+    baseSha256: string | null,
+  ): Promise<{ ok: true; value: TapestryWorkspaceSaveValue } | { ok: false; error: string }>
 }
 
 interface TapestrySettingsAPI {
@@ -197,6 +224,7 @@ interface TapestryAPI {
   kernel: TapestryKernelAPI
   trees: TapestryTreesAPI
   vault: TapestryVaultAPI
+  workspace: TapestryWorkspaceAPI
   plugins: TapestryPluginsAPI
   dialog: TapestryDialogAPI
   settings: TapestrySettingsAPI

@@ -33,7 +33,8 @@ import {
 } from '../mirror/plan'
 import { TAPESTRY_TMP_MARKER } from '../mirror/atomic-write'
 import type { OpenTree, TreeEntry, TreeRegistry, UnavailableTree } from '../trees/registry'
-import type { OpenWorkspace, WorkspaceLookup, WorkspaceTarget } from './sandbox'
+import { resolveWorkspaceTarget, type OpenWorkspace, type WorkspaceLookup, type WorkspaceTarget } from './sandbox'
+import type { CommandResult } from '../commands/notes'
 import {
   FILE_PATH,
   isIgnoredWorkspacePath,
@@ -358,6 +359,99 @@ export class WorkspaceService implements WorkspaceLookup {
     const existing = this.noteForPath(tree, rel)
     const note = existing?.id ?? result.nodeIds[result.nodeIds.length - 1] ?? ''
     return { note, seq: result.seq }
+  }
+
+  // -------------------------------------------------------------------------
+  // The human save path (D-04, D-05)
+  // -------------------------------------------------------------------------
+
+  /**
+   * Save a person's edit from a file window. The edit is committed first, as
+   * the person; then, if the file still matches the text the window started
+   * from (`baseSha256`), it is written. Otherwise the file wins: nothing is
+   * written, the file's state is recorded as observed, and the person's edit
+   * stays in history (02.2 D-11). The path comes from the note, never the
+   * caller (T-02.7-07).
+   */
+  saveFile(
+    actor: Actor,
+    treeId: string,
+    nodeId: string,
+    text: string,
+    baseSha256: string | null,
+  ): CommandResult<{
+    note: string
+    path: string
+    written: boolean
+    fileWins: boolean
+    sha256: string | null
+    seq: number
+  }> {
+    try {
+      const ws = this.workspaceFor(treeId)
+      if (!ws) return { ok: false, error: `${treeId} is not an open workspace` }
+      const tree = ws.tree
+      const node = tree.bridge.getNode(nodeId)
+      if (!node || node.type !== WORKSPACE_TEXT_TYPE) {
+        return { ok: false, error: `${nodeId} is not a text file in ${tree.name}` }
+      }
+      const pathProp = node.props[FILE_PATH]
+      if (!pathProp || typeof pathProp.value !== 'string') {
+        return { ok: false, error: `${nodeId} has no file path` }
+      }
+      const rel = pathProp.value
+
+      const resolved = resolveWorkspaceTarget(this, { workspace: tree.id, path: rel }, 'write')
+      if (!resolved.ok) return resolved
+      const target = resolved.value
+
+      const invalid = validateWorkspaceText(text)
+      if (invalid) return { ok: false, error: invalid }
+
+      this.requireHealthy(tree)
+      prepareWriteFor(tree, actor, this.hooks)
+      const disk = readPathState(ws.realRoot, rel)
+
+      // The person's edit goes into history first, whatever happens next.
+      const sha256 = sha256Hex(text)
+      const edited = this.recordText(actor, tree, rel, text, sha256, `edit ${rel}`)
+
+      if (disk.kind !== 'text' || disk.sha256 !== baseSha256) {
+        const observed = this.recordObserved(
+          ws,
+          rel,
+          disk,
+          "the file changed before Tapestry's edit was written; the file wins",
+        )
+        const current = this.noteForPath(tree, rel)
+        return {
+          ok: true,
+          value: {
+            note: current?.id ?? edited.note,
+            path: rel,
+            written: false,
+            fileWins: true,
+            sha256: disk.kind === 'text' ? disk.sha256 : null,
+            seq: observed?.seq ?? edited.seq,
+          },
+        }
+      }
+
+      try {
+        writeFileAtomicSync(target.abs, text)
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : String(err)
+        this.recordObserved(ws, rel, readPathState(ws.realRoot, rel), `Tapestry's write failed: ${reason}`)
+        return { ok: false, error: `Could not write ${rel} -- ${reason}. Your edit is kept in history.` }
+      }
+
+      return {
+        ok: true,
+        value: { note: edited.note, path: rel, written: true, fileWins: false, sha256, seq: edited.seq },
+      }
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) }
+    }
   }
 
   // -------------------------------------------------------------------------

@@ -63,9 +63,10 @@ const tapestryAPI = {
       Array<{
         id: string
         name: string
-        kind: 'native' | 'vault'
+        kind: 'native' | 'vault' | 'workspace'
         path: string
         vaultRoot?: string
+        workspaceRoot?: string
         frame: { x: number; y: number }
       }>
     > => ipcRenderer.invoke('trees:list'),
@@ -133,6 +134,9 @@ const tapestryAPI = {
     /** Pick an Obsidian vault folder to mirror as a tree (D-10, D-13). */
     showOpenVaultFolder: (): Promise<{ canceled: boolean; folderPath?: string }> =>
       ipcRenderer.invoke('dialog:showOpenVaultFolder'),
+    /** Pick a workspace folder to mirror as a tree (02.7 D-01). */
+    showOpenWorkspaceFolder: (): Promise<{ canceled: boolean; folderPath?: string }> =>
+      ipcRenderer.invoke('dialog:showOpenWorkspaceFolder'),
   },
 
   /**
@@ -144,6 +148,34 @@ const tapestryAPI = {
   vault: {
     add: (root: string): Promise<{ ok: boolean; treeId?: string; error?: string }> =>
       ipcRenderer.invoke('vault:add', root),
+  },
+
+  /**
+   * Workspace folders (02.7): add one the user just picked, and save a
+   * person's edit from a file window. Main takes the path from the note.
+   */
+  workspace: {
+    add: (root: string): Promise<{ ok: boolean; treeId?: string; error?: string }> =>
+      ipcRenderer.invoke('workspace:add', root),
+    saveFile: (
+      treeId: string,
+      nodeId: string,
+      text: string,
+      baseSha256: string | null,
+    ): Promise<
+      | {
+          ok: true
+          value: {
+            note: string
+            path: string
+            written: boolean
+            fileWins: boolean
+            sha256: string | null
+            seq: number
+          }
+        }
+      | { ok: false; error: string }
+    > => ipcRenderer.invoke('workspace:saveFile', treeId, nodeId, text, baseSha256),
   },
 
   settings: {

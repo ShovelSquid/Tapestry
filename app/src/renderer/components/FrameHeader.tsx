@@ -19,7 +19,7 @@ interface FrameHeaderProps {
   /** The tree this header belongs to; Tree options acts on it by id. */
   treeId: string
   name: string
-  kind: 'native' | 'vault'
+  kind: 'native' | 'vault' | 'workspace'
   saveState: TreeSaveState
   /** The canvas zoom, which decides whether the name has to counter-scale. */
   zoom: number
@@ -37,9 +37,10 @@ interface FrameHeaderProps {
 const NAME_MIN_LEGIBLE_ZOOM = 0.72
 
 /** What kind of tree this is, in the person's words rather than the code's. */
-const kindLabels: Record<'native' | 'vault', string> = {
+const kindLabels: Record<'native' | 'vault' | 'workspace', string> = {
   native: 'Tapestry world',
   vault: 'Obsidian vault',
+  workspace: 'Workspace folder',
 }
 
 /** Carried from SaveIndicator: the three states a native tree can be in. */

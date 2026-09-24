@@ -28,6 +28,8 @@ import { NoteCommands, type CommandHooks } from './commands/notes'
 import { ConnectionCommands } from './commands/connections'
 import { SpatialCommands } from './commands/spatial'
 import { runAgentTool, type AgentCommands } from './commands/agent-tools'
+import { WorkspaceFileCommands } from './commands/file-tools'
+import { WorkspaceService } from './workspace/workspace-service'
 import { AgentRegistry, agentSocketPath } from './agents/registry'
 import { AgentSocketServer } from './agents/socket-server'
 
@@ -118,6 +120,16 @@ function validateTreePath(filePath: string): boolean {
  * accept are the ones a person picked in a dialog (T-02.2-37).
  */
 const approvedVaultRoots = new Set<string>()
+
+/**
+ * Workspace folders chosen through the folder dialog this session, or
+ * restored from settings (T-02.7-08). `workspace:add` accepts no other root.
+ */
+const approvedWorkspaceRoots = new Set<string>()
+
+/** Node ids the kernel issues: `n1`, `n2`, ... */
+const NODE_ID_PATTERN = /^n[1-9][0-9]*$/
+const SHA256_PATTERN = /^[0-9a-f]{64}$/
 
 /** Absolute, non-empty, no `..` segment. The shape check before the dialog check. */
 function isWellFormedVaultRoot(folderPath: unknown): folderPath is string {
@@ -276,10 +288,18 @@ app.whenReady().then(async () => {
     },
   }
 
+  // Workspace trees (02.7): folders mirrored into trees kept in app data,
+  // never inside the folder, so a git worktree stays clean.
+  const workspaceService = new WorkspaceService(registry, {
+    treesDir: join(app.getPath('userData'), 'workspaces'),
+    hooks: commandHooks,
+  })
+
   const agentCommands: AgentCommands = {
     notes: new NoteCommands(registry, commandHooks),
     connections: new ConnectionCommands(registry, commandHooks),
     spatial: new SpatialCommands(registry, commandHooks),
+    files: new WorkspaceFileCommands(workspaceService),
   }
 
   agentServer = new AgentSocketServer({
@@ -628,6 +648,72 @@ app.whenReady().then(async () => {
     }
   })
 
+  ipcMain.handle('dialog:showOpenWorkspaceFolder', async () => {
+    if (!mainWindow) return { canceled: true, folderPath: undefined }
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Choose a workspace folder',
+      properties: ['openDirectory'],
+    })
+    if (result.canceled || result.filePaths.length === 0) {
+      return { canceled: true, folderPath: undefined }
+    }
+    const folderPath = resolve(result.filePaths[0])
+    approvedWorkspaceRoots.add(folderPath)
+    return { canceled: false, folderPath }
+  })
+
+  /** Add a workspace folder as a tree (02.7 D-01). */
+  ipcMain.handle('workspace:add', async (_event, root: unknown) => {
+    if (!isWellFormedVaultRoot(root)) {
+      return { ok: false, error: 'Invalid workspace folder path' }
+    }
+    const target = resolve(root)
+    if (!approvedWorkspaceRoots.has(target)) {
+      return { ok: false, error: 'Choose the folder with Add Workspace Folder... first.' }
+    }
+    try {
+      const tree = await workspaceService.addWorkspace(target)
+      settings.addTree({
+        path: tree.path,
+        kind: 'workspace',
+        workspaceRoot: target,
+        frame: placeNewFrameFromSettings(),
+      })
+      notifyTreesChanged()
+      return { ok: true, treeId: tree.id }
+    } catch (err) {
+      return { ok: false, error: errorMessage(err) }
+    }
+  })
+
+  /**
+   * A person's edit in a file window (02.7 D-04, D-05). The renderer sends
+   * only ids, the text and the hash it started from; the path comes from the
+   * note, and the actor is main's (T-02.7-07).
+   */
+  ipcMain.handle(
+    'workspace:saveFile',
+    async (_event, treeId: unknown, nodeId: unknown, text: unknown, baseSha256: unknown) => {
+      if (typeof treeId !== 'string' || !TREE_ID_PATTERN.test(treeId)) {
+        return { ok: false, error: 'Invalid tree id' }
+      }
+      if (typeof nodeId !== 'string' || !NODE_ID_PATTERN.test(nodeId)) {
+        return { ok: false, error: 'Invalid note id' }
+      }
+      if (typeof text !== 'string') return { ok: false, error: 'text must be a string' }
+      if (baseSha256 !== null && (typeof baseSha256 !== 'string' || !SHA256_PATTERN.test(baseSha256))) {
+        return { ok: false, error: 'Invalid base hash' }
+      }
+      let actor: Actor
+      try {
+        actor = getHumanActor()
+      } catch (err) {
+        return { ok: false, error: errorMessage(err) }
+      }
+      return workspaceService.saveFile(actor, treeId, nodeId, text, baseSha256)
+    },
+  )
+
   // Save dialog for creating new .tree files
   ipcMain.handle('dialog:showSave', async () => {
     if (!mainWindow) return { canceled: true, filePath: undefined }
@@ -678,6 +764,16 @@ app.whenReady().then(async () => {
   settings.migrateLastOpened(getLastOpenedPath())
 
   for (const tree of settings.read().trees) {
+    if (tree.kind === 'workspace' && tree.workspaceRoot) {
+      // Restored from settings: this folder was chosen in an earlier session.
+      const root = resolve(tree.workspaceRoot)
+      approvedWorkspaceRoots.add(root)
+      void workspaceService
+        .openWorkspace(root, tree.path)
+        .then(() => notifyTreesChanged())
+        .catch((err) => console.error('[Main] could not restore workspace:', err))
+      continue
+    }
     if (tree.kind !== 'native') continue
     // These paths were chosen by the user in an earlier session.
     approvedPaths.add(resolve(tree.path))
