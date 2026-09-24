@@ -82,39 +82,14 @@ viewer; it is theirs to edit.)
   SetField after its CreateSpace, binds `identify.expr`, and flags any
   other numeric field or binding on a space; runner test through the
   kernel (99 + 2 at half-width 100 commits as -99).
-- `c49dd84` ms6 `sphere` preset: chart (theta, phi), metric
-  `[1, pow(sin(self.position.x), 2)]`, an equator note (theta 1.5) and a
-  pole note (theta 0.25) both moving along +phi at 1/64 per tick, and a
-  `Side` view embedding the chart; test over 240 ticks (numbers under
-  Learned).
-- `566ff24` ms6 plugin side: `buildImage` collects a space node's
-  `metric.expr` as a binding (any other `.expr` on a space is a problem
-  on the space) and puts every space id in `image.rules`, so compile
-  problems and the engine's BadMetric/VmError reports on the space are
-  written to it as `mathspace.error`; spaces still have no before-image,
-  so `diff()` never commits their lanes. Runner tests: Euclidean metric
-  steps as before and clears a stale error, a dim-1 metric on a 2-space
-  gives `step: skipped 1 visit (BadMetric)`, a parse error maps its
-  offset back to the user's text; the Poincaré disk keeps a note inside
-  radius 100 over 240 ticks. `presets/poincare.json` (space then members
-  over two commits, an identity `Disk` view) with a presets test.
-- `02481a2` ms6 engine side: `METRIC_FIELD` on a Space note (bound, dim N,
-  the diagonal g_kk in `self.pos`), `prepare_metric` (lift, diff per pos
-  lane, compile under `WorldDims` on the space note) and
-  `geodesic_correction` in `step.cpp`, `Skip::BadMetric`,
-  `MS_METRIC_EPS_RAW`, `MS_STEP_VERSION` 10, all goldens re-recorded,
-  golden `poincare` (radius-100 disk, 240 ticks), four step tests
-  (Euclidean metric bit-identical to none; polar geodesics straight to
-  2 percent; bad metric reported on the space; degenerate point silent).
-  Debug, Release, UBSan and the plugin (wasm rebuilt) all green.
-- `b27808a` ms5 default views as presets and the done condition:
-  `presets/view-2d.json` (identity over the implicit space),
-  `view-3d.json` (one 3-space, perspective `[x, y] * 400 / (z + 400)` and
-  xy/xz/yz views), `view-4d.json` (one 4-space, `[x, y]` and `[z, w]`);
-  `presets.js` resolves `$<index>` refs over two commits (`applyPreset`);
-  `presets.test.js` projects every view preset after 60 ticks and checks
-  the two-commit shape; `projection.test.js` dim-4 case; manifest lists
-  the three commands.
+- Phase 6 (ms6) earlier, one line each: `c49dd84` `sphere` preset
+  (chart (theta, phi), equator and pole notes, numbers under Learned);
+  `566ff24` plugin side (`metric.expr` bound through `buildImage`,
+  errors on the space, `poincare` preset); `02481a2` engine side
+  (diagonal `metric`, `prepare_metric`, `geodesic_correction`,
+  `Skip::BadMetric`, `MS_STEP_VERSION` 10, golden `poincare`).
+- `b27808a` ms5 default views as presets (`view-2d`/`view-3d`/`view-4d`,
+  `$<index>` refs over two commits) and the done condition.
 - Phase 5 (ms5) earlier, one line each: `4acdaab` surface runs in a
   browser (`image.js` without `Buffer`, dev page mounts `dist/surface.js`,
   verified headlessly); `24f1dbb` stage surface first cut
