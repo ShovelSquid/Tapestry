@@ -39,6 +39,7 @@ export async function startHandsAndFace({ video, canvas, metricsEl, onLandmarks,
     baseOptions: { modelAssetPath: FACE_MODEL, delegate: "GPU" },
     runningMode: "VIDEO",
     numFaces: 1,
+    outputFaceBlendshapes: true,
   });
 
   let lastFrameTime = performance.now();
@@ -78,13 +79,24 @@ export async function startHandsAndFace({ video, canvas, metricsEl, onLandmarks,
     }
     ctx.restore();
 
+    const blendshapeCategories = faceResult.faceBlendshapes?.[0]?.categories ?? [];
+    const topBlendshapes = blendshapeCategories
+      .filter((c) => c.categoryName !== "_neutral")
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 6);
+    const blendshapesSummary =
+      topBlendshapes.length > 0
+        ? topBlendshapes.map((c) => `${c.categoryName}:${c.score.toFixed(2)}`).join(" ")
+        : "none";
+
     metricsEl.textContent = `hands: ${handResult.landmarks?.length ?? 0}    faces: ${
       faceResult.faceLandmarks?.length ?? 0
-    }    fps: ${fps}`;
+    }    fps: ${fps}\nblendshapes: ${blendshapesSummary}`;
 
     onLandmarks?.({
       handsWorld: handResult.worldLandmarks ?? [],
       faceLandmarksList: faceResult.faceLandmarks ?? [],
+      faceBlendshapes: faceResult.faceBlendshapes ?? [],
     });
 
     requestAnimationFrame(frame);
