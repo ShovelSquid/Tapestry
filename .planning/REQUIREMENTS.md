@@ -41,7 +41,7 @@ The first phase must prove an actual plugin-authored interaction and readable sa
 
 ### History and replay
 
-- [ ] **HIST-01**: User can inspect an ordered history of accepted changes and navigate to an earlier state.
+- [x] **HIST-01**: User can inspect an ordered history of accepted changes and navigate to an earlier state.
 - [ ] **HIST-02**: User can edit an earlier state to create a new branch while retaining the original future.
 - [ ] **HIST-03**: User can name/select branches and see their parent/fork relationship.
 - [ ] **HIST-04**: User can replay a saved branch to the same verified core state within the declared engine/numeric compatibility envelope.
@@ -172,7 +172,7 @@ Each v1 requirement has one owning phase; later phases may exercise it through i
 | TREE-02 | Phase 1 | Complete |
 | TREE-03 | Phase 1 | Complete |
 | TREE-04 | Phase 1 | Complete |
-| HIST-01 | Phase 3 | Pending |
+| HIST-01 | Phase 3 | Complete |
 | HIST-02 | Phase 3 | Pending |
 | HIST-03 | Phase 3 | Pending |
 | HIST-04 | Phase 3 | Pending |

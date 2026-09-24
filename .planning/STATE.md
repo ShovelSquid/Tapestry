@@ -4,16 +4,16 @@ milestone: v1.0
 current_phase: "02.3"
 current_phase_name: Time Threads (INSERTED)
 status: executing
-stopped_at: Completed 02.3-05-PLAN.md
-last_updated: "2026-09-24T21:00:06.599Z"
+stopped_at: Completed 02.3-06-PLAN.md
+last_updated: "2026-09-24T21:37:08.418Z"
 last_activity: 2026-09-24
 last_activity_desc: Phase 02.3 Plan 03 executed (grammar published, replay, readable fallback)
-state_head: 30825b24c2c0754beb64375c01965e642bf83358
+state_head: 5d8a3cd838aaed7d6bd8b646de6fc5e6c2c1a2e3
 progress:
   total_phases: 10
   completed_phases: 0
   total_plans: 38
-  completed_plans: 22
+  completed_plans: 23
 ---
 
 # Project State
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-09-08)
 ## Current Position
 
 Phase: 02.3 (Time Threads (INSERTED)) — EXECUTING
-Plan: 5 of 9
+Plan: 6 of 9
 Status: Ready to execute (Plan 04 next — Wave 3, blocked on Wave 2)
 Last activity: 2026-09-24 — Phase 02.3 Plan 03 executed (grammar published, replay, readable fallback)
 
@@ -72,6 +72,7 @@ Progress: [█████░░░░░] 53%
 | Phase 02.3 P03 | 25 min | 3 tasks | 17 files |
 | Phase 02.3 P04 | 71 min | 2 tasks | 20 files |
 | Phase 02.3 P05 | 90 min | 3 tasks | 13 files |
+| Phase 02.3 P06 | 62 min | 3 tasks | 15 files |
 
 ## Accumulated Context
 
@@ -131,6 +132,8 @@ Recent decisions affecting current work:
 - [Phase 02.3]: [Phase 02.3]: MSDF stays deferred (Kaelen, 2026-09-16); glyph-cache.ts's atlas paging is a bounded 4-page pool (4096 cells), not true LRU eviction -- spike 007 is the queued verdict for real eviction
 - [Phase 02.3]: [Phase 02.3]: LetterIndex (letters.ts) is complete and property-tested but deliberately unwired into thread-service.ts/ThreadOverlay.tsx -- D-22 enforcement and live ghost population are 02.3-06/07's job per their own file lists
 - [Phase 02.3]: Markers get their own MarkerLayer draw call (same doubling-capacity/update-range pattern as GlyphLayer, not its literal buffers) and five procedural signed-distance shapes at a fixed 6-8px screen-space size, never accent colour
+- [Phase 02.3]: [Phase 02.3]: deriveSessions carries no timeoutSeconds parameter -- session boundaries come from in/out records alone, never re-derived from the current thread.timeout, so a settings change can never move a dash already on the line (T-02.3-06-02)
+- [Phase 02.3]: [Phase 02.3]: ThreadService's per-thread time-out timer is a fifth flush trigger; reopening within the still-live window resumes the same session, reopening after it repairs a crash-missing out as its own honestly-timestamped commit before the next write's own batch
 
 ### Pending Todos
 
@@ -175,6 +178,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-24T21:00:06.532Z
-Stopped at: Completed 02.3-05-PLAN.md
+Last session: 2026-09-24T21:37:08.344Z
+Stopped at: Completed 02.3-06-PLAN.md
 Resume file: None
