@@ -111,7 +111,8 @@ interface TapestryTreesAPI {
   reveal(treeId: string): Promise<{ ok: boolean; error?: string }>
   /** Try a damaged, locked or missing tree again (UI-SPEC "Reopen tree"). */
   reopen(treeId: string): Promise<{ ok: boolean; treeId?: string; error?: string }>
-  setFrame(treeId: string, x: number, y: number): Promise<{ ok: boolean; error?: string }>
+  /** An automatic correction, recorded by the system only when it moves the frame (D-12). */
+  fitFrame(treeId: string, x: number, y: number): Promise<{ ok: boolean; committed?: boolean; error?: string }>
   /** One drop, the dragged frame first, as one forest commit. Main signs it; no actor is sent. */
   moveFrames(moves: TapestryFrameMove[]): Promise<{ ok: boolean; committed?: boolean; error?: string }>
   /** Put the last drop back as a new signed forest commit, never a rewind (D-08, D-09). */

@@ -45,6 +45,7 @@ import {
 } from './migrate'
 import {
   addTreeMessage,
+  fitFrameMessage,
   forgetDuplicateMessage,
   moveFrameMessage,
   recordIdentityMessage,
@@ -142,6 +143,11 @@ export class SpaceService {
   private undoSteps: FrameStep[] = []
   private redoSteps: FrameStep[] = []
 
+  // Stand-ins the system may still fit this session (D-12, T-2.6-01): every
+  // member restored at launch or added since, each until its one fit is spent
+  // or the person moves its frame.
+  private fitEligible = new Set<string>()
+
   constructor(options: SpaceServiceOptions) {
     this.registry = options.registry
     this.settings = options.settings
@@ -208,6 +214,7 @@ export class SpaceService {
       refusal: reservedFileRefusal,
     })
     const restored = await this.restoreMembers(opened.forest)
+    for (const member of opened.forest.members()) this.fitEligible.add(member.nodeId)
     return { problem: null, restored }
   }
 
@@ -402,6 +409,47 @@ export class SpaceService {
       entries: changes.map(({ edgeId, x, y, before }) => ({ edgeId, before, after: { x, y } })),
     })
     this.redoSteps = []
+    // Once the person has placed a frame, the system never moves it again
+    // this session (D-12).
+    for (const { edgeId } of changes) {
+      const member = members.find((m) => m.placement?.edgeId === edgeId)
+      if (member) this.fitEligible.delete(member.nodeId)
+    }
+    return { committed: true }
+  }
+
+  /**
+   * The renderer's automatic correction: a frame it found crowding a
+   * neighbour when it first measured it, moved clear (D-12). Recorded as the
+   * system's, and only when the origin actually changes, so opening a space
+   * where nothing moves adds no history (RESEARCH Pitfall 7).
+   *
+   * Each member gets at most one fit per session, spent even when nothing
+   * changes (matching the renderer's once-per-tree guard), and none once the
+   * person has moved its frame: a fit never overrides the person. A fit does
+   * not touch the frame-undo stacks; an undo whose frame was fitted since is
+   * skipped by the rule that the current origin must still be the step's.
+   *
+   * Residual risk (T-2.6-01): a renderer could spend a member's one fit to
+   * sign a move of its choosing as the system, but only for a frame the
+   * person has not moved this session, and only once.
+   */
+  fitFrame(treeId: unknown, x: unknown, y: unknown): { committed: boolean } {
+    const forest = this.requireReady()
+    if (typeof treeId !== 'string') throw new Error('A frame fit needs a tree id')
+    if (typeof x !== 'number' || !Number.isFinite(x) || typeof y !== 'number' || !Number.isFinite(y)) {
+      throw new Error(`The frame for ${treeId} needs finite x and y`)
+    }
+    const entry = this.registry.entry(treeId)
+    const member = entry ? this.memberFor(entry, forest.members()) : undefined
+    const placement = member?.placement
+    if (!entry || !member || !placement) throw new Error(`Unknown tree ${treeId}`)
+
+    if (!this.fitEligible.has(member.nodeId)) return { committed: false }
+    this.fitEligible.delete(member.nodeId)
+    if (placement.x === x && placement.y === y) return { committed: false }
+
+    forest.setOrigins([{ edgeId: placement.edgeId, x, y }], SYSTEM_ACTOR, fitFrameMessage(entry.name))
     return { committed: true }
   }
 
@@ -516,6 +564,9 @@ export class SpaceService {
       origin: nextFrameOrigin(members),
     }
     const { nodeId } = forest.addMember(seed, actor, addTreeMessage(entry.name))
+    // Its provisional origin cannot know the real frame sizes; the renderer
+    // may fit it once (D-12).
+    this.fitEligible.add(nodeId)
     if (isOpen(entry)) this.settleIdentity(nodeId, entry)
     return { committed: true }
   }
@@ -697,6 +748,7 @@ export class SpaceService {
     this.home = null
     this.undoSteps = []
     this.redoSteps = []
+    this.fitEligible.clear()
   }
 
   /** The forest, or the approved 4.9 refusal when the space is not open. */

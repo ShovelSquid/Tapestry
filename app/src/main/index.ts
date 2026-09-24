@@ -477,8 +477,9 @@ app.whenReady().then(async () => {
   // Frames live in the forest tree, one placement edge per member (2.6 D-01,
   // D-04). `trees:list` reads them there and `trees:moveFrames` writes them
   // there. `trees:open`, `trees:create`, `trees:close` and `vault:add` record
-  // membership there too (Plan 04); only `trees:setFrame` still writes the old
-  // settings list, until Plan 05.
+  // membership there too (Plan 04), and `trees:undoFrames`, `trees:redoFrames`
+  // and `trees:fitFrame` write there as well (Plan 05). Nothing writes frame
+  // positions to settings.json any more.
   // -------------------------------------------------------------------------
 
   // The space folder (D-06): ~/Documents/Tapestry, unless a development build
@@ -697,22 +698,23 @@ app.whenReady().then(async () => {
   })
 
   /**
-   * Persist a frame position (D-18).
+   * The renderer's automatic correction of a frame it found crowding a
+   * neighbour when first measured (2.6 D-12). Signed by the system, never the
+   * person; the service writes only when the origin changes, at most once per
+   * member per session, and never over a frame the person moved (T-2.6-01).
+   * Needs no name, since the person is not signing it.
    *
    * Deliberately does not emit 'trees-changed': the renderer already has the
-   * position it just sent, and echoing it back would refresh every tree on
-   * every drop.
+   * position it just sent.
    */
-  ipcMain.handle('trees:setFrame', (_event, treeId: unknown, x: unknown, y: unknown) => {
-    if (typeof treeId !== 'string') return { ok: false, error: 'Unknown tree' }
-    if (!Number.isFinite(x) || !Number.isFinite(y)) {
-      return { ok: false, error: 'A frame position must be two finite numbers' }
+  ipcMain.handle('trees:fitFrame', (_event, treeId: unknown, x: unknown, y: unknown) => {
+    try {
+      if (!space || !space.ready) return { ok: false, error: SPACE_NOT_OPEN }
+      const { committed } = space.fitFrame(treeId, x, y)
+      return { ok: true, committed }
+    } catch (err) {
+      return { ok: false, error: errorMessage(err) }
     }
-    const tree = registry.get(treeId)
-    if (!tree) return { ok: false, error: `Unknown tree ${treeId}` }
-
-    settings.setTreeFrame(tree.path, { x: x as number, y: y as number })
-    return { ok: true }
   })
 
   // -------------------------------------------------------------------------

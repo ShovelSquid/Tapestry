@@ -467,7 +467,15 @@ function Canvas({
    * Main puts a new tree at a provisional frame computed from stored positions
    * alone, which cannot know how large the existing frames actually are. Once
    * the renderer has measured them, a frame that landed within the gap of
-   * another is moved clear and the corrected position is persisted.
+   * another is moved clear, and main records the fit as the system's, only
+   * when the origin actually changes (2.6 D-12).
+   *
+   * The placedRef guard runs this once per tree id per renderer session, and
+   * main relies on it: it gives each member one fit per session. The
+   * correction runs at the first render that holds the tree, usually before
+   * its notes load, so it measures minimum-size rects at the stored origins.
+   * That keeps it deterministic across launches, so a relaunch asks for the
+   * spot already stored and writes nothing (RESEARCH Pitfall 7).
    */
   useEffect(() => {
     if (trees.length === 0) return
@@ -494,7 +502,7 @@ function Canvas({
       const x = tree.frame.x + (spot.x - mine.x)
       const y = tree.frame.y + (spot.y - mine.y)
       onFrameMove(tree.id, x, y)
-      void window.tapestry.trees.setFrame(tree.id, x, y)
+      void window.tapestry.trees.fitFrame(tree.id, x, y)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [trees, onFrameMove])

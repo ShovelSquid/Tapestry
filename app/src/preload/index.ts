@@ -91,12 +91,17 @@ const tapestryAPI = {
     reopen: (treeId: string): Promise<{ ok: boolean; treeId?: string; error?: string }> =>
       ipcRenderer.invoke('trees:reopen', treeId),
 
-    setFrame: (
+    /**
+     * An automatic correction, recorded by the system only when it moves the
+     * frame (D-12). Main signs it; no actor is sent.
+     */
+    fitFrame(
       treeId: string,
       x: number,
       y: number,
-    ): Promise<{ ok: boolean; error?: string }> =>
-      ipcRenderer.invoke('trees:setFrame', treeId, x, y),
+    ): Promise<{ ok: boolean; committed?: boolean; error?: string }> {
+      return ipcRenderer.invoke('trees:fitFrame', treeId, x, y)
+    },
 
     /** One drop, with every frame it pushed aside, is one forest commit (D-11). */
     moveFrames: (
