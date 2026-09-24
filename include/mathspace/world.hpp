@@ -45,6 +45,8 @@ enum class Error : std::uint8_t {
     SpaceNotEmpty,   // delete_note of a Space that still holds notes
     LockedField,     // delete_field `pos` on a Space note
     IdExhausted,     // group ordinal space (32 bits) used up
+    TooManyFields,   // set_field of a new name on a note that already has MAX_FIELDS
+    BadBytes,        // restore: bytes are not a canonical walk of a well-formed world
 };
 
 const char* error_name(Error e);
@@ -90,5 +92,20 @@ struct World {
 
 // The one field name the store knows; see the header comment.
 inline constexpr std::string_view POS_FIELD = "pos";
+
+// Bumped whenever the canonical walk (hash.cpp) changes shape. Pinned in
+// the walk itself so old bytes are rejected instead of misread.
+inline constexpr std::uint32_t FORMAT_VERSION = 1u;
+
+// The canonical walk (hash.cpp): serialize() is exactly the bytes that
+// hash() digests, restore() is their strict inverse. restore decodes into
+// a local World, checks well_formed(), and swaps only on success, so a
+// failed restore leaves `world` byte-identical.
+void hash(const World& world, std::uint8_t out[32]);
+std::vector<std::uint8_t> serialize(const World& world);
+Error restore(World& world, const std::uint8_t* bytes, std::size_t len);
+inline Error restore(World& world, const std::vector<std::uint8_t>& bytes) {
+    return restore(world, bytes.data(), bytes.size());
+}
 
 } // namespace mathspace

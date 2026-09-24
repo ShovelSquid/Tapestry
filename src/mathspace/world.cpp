@@ -21,6 +21,8 @@ const char* error_name(Error e) {
     case Error::SpaceNotEmpty: return "SpaceNotEmpty";
     case Error::LockedField: return "LockedField";
     case Error::IdExhausted: return "IdExhausted";
+    case Error::TooManyFields: return "TooManyFields";
+    case Error::BadBytes: return "BadBytes";
     }
     return "?";
 }
@@ -151,6 +153,9 @@ Error World::set_field(NoteId note_id, Field field) {
         if (field.dim != dim) {
             return Error::PosDimMismatch;
         }
+    }
+    if (note->fields.size() >= MAX_FIELDS && find_field(*note, field.name) == nullptr) {
+        return Error::TooManyFields;
     }
     mathspace::set_field(*note, std::move(field));
     return Error::Ok;

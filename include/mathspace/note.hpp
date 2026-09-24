@@ -34,6 +34,8 @@ using ddsim::fx64;
 
 inline constexpr std::size_t MAX_FIELD_NAME = 31;
 inline constexpr std::uint8_t MAX_DIM = 8;
+// The hash walk counts a note's fields in one byte.
+inline constexpr std::size_t MAX_FIELDS = 255;
 
 enum class NoteKind : std::uint8_t { Space = 0, Note = 1, Rule = 2, View = 3 };
 
@@ -94,14 +96,15 @@ Field* find_field(Note& note, std::string_view name);
 
 // Insert `field` in name order or replace the field of the same name.
 // Lanes beyond `field.dim` are zeroed. Returns false, leaving the note
-// untouched, when the field is not valid.
+// untouched, when the field is not valid or a new name would exceed
+// MAX_FIELDS.
 bool set_field(Note& note, Field field);
 
 // Returns false when there is no such field.
 bool erase_field(Note& note, std::string_view name);
 
-// True when fields are strictly ascending by name and each is valid, with
-// its unused lanes zero. The debugging check the tests and restore use.
+// True when there are at most MAX_FIELDS fields, strictly ascending by
+// name, each valid with its unused lanes zero. The debugging check the tests and restore use.
 bool fields_well_formed(const Note& note);
 
 } // namespace mathspace

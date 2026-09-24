@@ -35,6 +35,9 @@ bool set_field(Note& note, Field field) {
     if (i < note.fields.size() && note.fields[i].name == field.name) {
         note.fields[i] = std::move(field);
     } else {
+        if (note.fields.size() >= MAX_FIELDS) {
+            return false;
+        }
         note.fields.insert(note.fields.begin() + static_cast<std::ptrdiff_t>(i), std::move(field));
     }
     return true;
@@ -50,6 +53,9 @@ bool erase_field(Note& note, std::string_view name) {
 }
 
 bool fields_well_formed(const Note& note) {
+    if (note.fields.size() > MAX_FIELDS) {
+        return false;
+    }
     for (std::size_t i = 0; i < note.fields.size(); ++i) {
         const Field& f = note.fields[i];
         if (!f.valid()) {
