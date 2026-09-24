@@ -346,7 +346,7 @@ Plans:
   7. A per-chat "Allow shell" switch, off by default and labelled not sandboxed, enables Claude Code's shell and built-in file tools in the workspace; edits made that way are recorded as observed changes
   8. The panel talks to a `ChatEngine` interface, so a later API-key engine (Anthropic SDK over the same sandboxed tools) plugs in without changing the panel
 
-**Plans**: 3 plans
+**Plans**: 6 plans
 
 Plans:
 **Wave 1**
@@ -355,11 +355,23 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 02.7-02-PLAN.md — Full agent file tools (list_files, write_file, open_file), the D-08 refusal matrix, file locks (D-09), and guards that keep workspace trees from diverging
+- [ ] 02.7-02-PLAN.md — In-app chat panel on the Claude Code CLI (D-12..D-14) behind the ChatEngine seam (D-16): stream-json, --resume, only Tapestry's sandboxed tools as agent.claude-chat, token-free fake-CLI tests, chat checkpoint
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 02.7-03-PLAN.md — Live watching of outside changes, grouped per moment and signed workspace.bridge, with self-healing watch errors, Retry write and scale measures
+- [ ] 02.7-03-PLAN.md — Per-chat "Allow shell (not sandboxed)" switch (D-15): off by default and after every relaunch, confirmed, recorded in the chat, shell edits caught up as observed changes after each turn
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 02.7-04-PLAN.md — Full agent file tools (list_files, write_file, open_file), the D-08 refusal matrix, file locks (D-09), and guards that keep workspace trees from diverging
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
+- [ ] 02.7-05-PLAN.md — Live watching of outside changes, grouped per moment and signed workspace.bridge, with self-healing watch errors, Retry write and scale measures
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
+- [ ] 02.7-06-PLAN.md — API-key chat engine (D-16): @anthropic-ai/sdk tool runner over the same sandboxed tools in-process, engine picker, encrypted key storage; blocking package-legitimacy check first
 
 **UI hint**: yes
 
