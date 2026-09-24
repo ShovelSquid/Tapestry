@@ -21,11 +21,15 @@ import { basename, dirname, isAbsolute, join, relative, resolve } from 'path'
  * - `~/House Party` — the Obsidian vault this phase bridges to
  * - `~/Documents`   — holds `we.tree`, the live Tapestry world
  * - `~/Tapestry Tales` — the shared memory vault
+ * - `~/Tapestrees` — the live git worktrees Tapestry is developed in (02.7)
+ * - `~/Tapestry` — the primary checkout; dogfooding opens it, tests never may
  */
 export const REAL_DATA_ROOTS: readonly string[] = Object.freeze([
   resolve(join(homedir(), 'House Party')),
   resolve(join(homedir(), 'Documents')),
   resolve(join(homedir(), 'Tapestry Tales')),
+  resolve(join(homedir(), 'Tapestrees')),
+  resolve(join(homedir(), 'Tapestry')),
 ])
 
 /**

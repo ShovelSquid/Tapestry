@@ -8,12 +8,21 @@
  * (T-02.2-34), and never transcodes bytes it cannot decode — a file that will
  * not fit the `.tree` limits is described in words rather than mangled into
  * something that would then be recorded as what the file "says".
+ *
+ * Since 02.7 the walking, bounded reading and decoding live in
+ * `../mirror/fs.ts`, shared with workspaces; this module keeps the vault's own
+ * names and its Markdown classification on top.
  */
 
-import { createHash } from 'crypto'
-import { lstatSync, readFileSync } from 'fs'
-import { lstat, readdir } from 'fs/promises'
 import { basename, join, resolve } from 'path'
+import {
+  decodeText,
+  MAX_MIRROR_READ_BYTES,
+  readBoundedBytes,
+  walkFolder,
+  type BoundedBytes,
+  type TextDecode,
+} from '../mirror/fs'
 
 // ---------------------------------------------------------------------------
 // Where a vault's own files live (D-13)
@@ -84,135 +93,37 @@ export interface VaultEntry {
 }
 
 /**
- * Every path in the vault, sorted, with symlinks recorded but never followed.
- *
- * `lstat` rather than `stat` is the whole mitigation for T-02.2-33: a symlink
- * pointing at `~/.ssh` is a `symlink` entry the mirror will describe and refuse
- * to read, not a door out of the vault.
+ * Every path in the vault, sorted, with symlinks recorded but never followed
+ * (T-02.2-33). A file whose name ends in `.md` (any case) is an `md` entry.
  */
 export async function walkVault(root: string): Promise<VaultEntry[]> {
-  const base = resolve(root)
-  const out: VaultEntry[] = []
-
-  async function visit(dirAbs: string, dirRel: string): Promise<void> {
-    let names: string[]
-    try {
-      names = await readdir(dirAbs)
-    } catch {
-      // A folder that vanished or cannot be read mid-walk contributes nothing
-      // rather than failing the whole catch-up.
-      return
-    }
-
-    for (const name of names) {
-      const rel = dirRel.length > 0 ? `${dirRel}/${name}` : name
-      if (isIgnoredVaultPath(rel)) continue
-
-      const abs = join(dirAbs, name)
-      let stats
-      try {
-        stats = await lstat(abs)
-      } catch {
-        continue
-      }
-
-      if (stats.isSymbolicLink()) {
-        out.push({ rel, kind: 'symlink', size: stats.size, ino: stats.ino })
-        continue
-      }
-      if (stats.isDirectory()) {
-        out.push({ rel, kind: 'dir', size: stats.size, ino: stats.ino })
-        await visit(abs, rel)
-        continue
-      }
-      if (stats.isFile()) {
-        out.push({
-          rel,
-          kind: /\.md$/i.test(name) ? 'md' : 'file',
-          size: stats.size,
-          ino: stats.ino,
-        })
-      }
-      // Anything else (a socket, a device node) is not vault content.
-    }
-  }
-
-  await visit(base, '')
-  out.sort((a, b) => (a.rel < b.rel ? -1 : a.rel > b.rel ? 1 : 0))
-  return out
+  const entries = await walkFolder(root, isIgnoredVaultPath)
+  return entries.map((entry): VaultEntry => ({
+    rel: entry.rel,
+    kind: entry.kind === 'file' && /\.md$/i.test(entry.rel) ? 'md' : entry.kind,
+    size: entry.size,
+    ino: entry.ino,
+  }))
 }
 
 // ---------------------------------------------------------------------------
 // Reading
 // ---------------------------------------------------------------------------
 
-export type VaultBytes =
-  | { bytes: Buffer; sha256: string }
-  | { tooLarge: true; size: number }
+export type VaultBytes = BoundedBytes
 
 /** 16 MiB. A single `.md` larger than this is described, never loaded. */
-export const MAX_VAULT_READ_BYTES = 16 * 1024 * 1024
+export const MAX_VAULT_READ_BYTES = MAX_MIRROR_READ_BYTES
 
-/**
- * Read one vault file and hash it.
- *
- * The size is checked with `lstat` before a byte is allocated, so a 4 GiB file
- * dropped into the vault costs a stat rather than the heap (T-02.2-34).
- */
-export function readVaultBytes(
-  root: string,
-  rel: string,
-  maxBytes: number = MAX_VAULT_READ_BYTES,
-): VaultBytes {
-  const abs = join(resolve(root), ...rel.split('/'))
-  const stats = lstatSync(abs)
-  if (stats.size > maxBytes) {
-    return { tooLarge: true, size: stats.size }
-  }
-  const bytes = readFileSync(abs)
-  return { bytes, sha256: createHash('sha256').update(bytes).digest('hex') }
-}
+/** Read one vault file and hash it, bounded before allocation (T-02.2-34). */
+export const readVaultBytes: (root: string, rel: string, maxBytes?: number) => VaultBytes =
+  readBoundedBytes
 
 // ---------------------------------------------------------------------------
 // Decoding
 // ---------------------------------------------------------------------------
 
-/** FORMAT.md "Limits": a line is at most 1 MiB. */
-const MAX_LINE_BYTES = 1024 * 1024
+export type MarkdownDecode = TextDecode
 
-export type MarkdownDecode = { ok: true; text: string } | { ok: false; reason: string }
-
-/**
- * Decode a `.md` file's bytes, or say why it cannot be one note's text.
- *
- * Every refusal here mirrors a limit the kernel itself enforces, so a file that
- * decodes is a file that will commit. The alternative — a lenient decode with
- * replacement characters — would put bytes in `md.text` that the file does not
- * contain, which is exactly the claim D-10 forbids.
- */
-export function decodeMarkdown(bytes: Buffer): MarkdownDecode {
-  if (bytes.includes(0)) {
-    return { ok: false, reason: 'contains a NUL byte' }
-  }
-
-  let text: string
-  try {
-    text = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
-  } catch {
-    return { ok: false, reason: 'is not valid UTF-8' }
-  }
-
-  // Measured in bytes, not characters: the kernel's limit is a byte limit, and
-  // a line of 600,000 emoji is over it while being well under it in characters.
-  let lineStart = 0
-  for (let i = 0; i <= bytes.length; i += 1) {
-    if (i === bytes.length || bytes[i] === 0x0a) {
-      if (i - lineStart > MAX_LINE_BYTES) {
-        return { ok: false, reason: 'has a line longer than 1 MiB' }
-      }
-      lineStart = i + 1
-    }
-  }
-
-  return { ok: true, text }
-}
+/** Decode a `.md` file's bytes, or say why it cannot be one note's text. */
+export const decodeMarkdown: (bytes: Buffer) => MarkdownDecode = decodeText

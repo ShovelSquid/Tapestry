@@ -15,12 +15,20 @@ import { makeTempDir } from './temp-tree'
 import { rmSync } from 'fs'
 
 describe('assertNotRealData', () => {
-  it('names the three real-data roots', () => {
+  it('names the five real-data roots', () => {
     expect([...REAL_DATA_ROOTS]).toEqual([
       join(homedir(), 'House Party'),
       join(homedir(), 'Documents'),
       join(homedir(), 'Tapestry Tales'),
+      join(homedir(), 'Tapestrees'),
+      join(homedir(), 'Tapestry'),
     ])
+  })
+
+  it('throws for a path inside a live worktree', () => {
+    expect(() => assertNotRealData(join(homedir(), 'Tapestrees', 'windows', 'app'))).toThrow(
+      'Refusing to touch real user data',
+    )
   })
 
   it('throws for each root itself', () => {
