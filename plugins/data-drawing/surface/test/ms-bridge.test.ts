@@ -2,8 +2,9 @@
  * The bridge (kinds 1..4 into mathspace actions) against ddsim itself: the
  * committed .actions fixtures replayed through both Wasm modules in
  * lockstep must give the same brush body, raw bit for raw bit, on every
- * tick where the stroke has a target. Both modules come from surface/wasm/
- * (`npm run sim:wasm`); a mock would prove nothing here.
+ * tick where the stroke has a target, and the same node table (every
+ * emitted node's id and raw fields) after every tick. Both modules come
+ * from surface/wasm/ (`npm run sim:wasm`); a mock would prove nothing here.
  *
  * Only the one-sample-per-tick fixtures are compared: the bridge keeps one
  * engine step per tick (STATE.md Decisions), so `four-per-tick` diverges
@@ -19,6 +20,7 @@ import createMathspace from '../wasm/mathspace.mjs'
 import {
   BODY_STRIDE,
   INK_BRUSH,
+  NODE_STRIDE,
   encodeDefineBrush,
   encodeStrokeBegin,
   encodeStrokeEnd,
@@ -26,8 +28,17 @@ import {
   strokeIdOf,
   type DdsimModule,
 } from '../src/ddsim-abi'
-import { MsEngine, decodeSnapshot, fxFromQ16, FX_ONE, type MathspaceModule } from '../src/ms-abi'
-import { BODY_INDEX, BODY_RULE_ID, BODY_SPACE_ID, BridgeError, MsBridge, bodyNoteId, makeNodeId } from '../src/ms-bridge'
+import { MsEngine, decodeSnapshot, fxFromInt, fxFromQ16, FX_ONE, type MathspaceModule } from '../src/ms-abi'
+import {
+  BODY_INDEX,
+  BODY_RULE_ID,
+  BODY_SPACE_ID,
+  BridgeError,
+  MsBridge,
+  NODE_SPACE_ID,
+  bodyNoteId,
+  makeNodeId,
+} from '../src/ms-bridge'
 import { parseActions, type Fixture } from './fixture-replay'
 
 const GOLDEN_DIR = fileURLToPath(new URL('../../../../data-drawing/sim/tests/golden/', import.meta.url))
@@ -79,16 +90,82 @@ function ddBodies(mod: DdsimModule, sim: number): Map<bigint, RawBody> {
   return out
 }
 
+interface RawNode {
+  x: bigint; y: bigint; z: bigint; weight: bigint; dirX: bigint; dirY: bigint; vx: bigint; vy: bigint
+  tick: number; brush: number; scaleBand: number
+}
+
+/** The ddsim node table by id, raw Q32.32 (stride 88, the decodeNodes layout). */
+function ddNodes(mod: DdsimModule, sim: number): Map<bigint, RawNode> {
+  const count = mod._dd_node_count(sim)
+  const ptr = mod._dd_nodes_ptr(sim)
+  const bytes = mod.HEAPU8.slice(ptr, ptr + count * NODE_STRIDE)
+  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+  const out = new Map<bigint, RawNode>()
+  for (let i = 0; i < count; i++) {
+    const at = i * NODE_STRIDE
+    out.set(dv.getBigUint64(at, true), {
+      x: dv.getBigInt64(at + 8, true),
+      y: dv.getBigInt64(at + 16, true),
+      z: dv.getBigInt64(at + 24, true),
+      weight: dv.getBigInt64(at + 32, true),
+      dirX: dv.getBigInt64(at + 40, true),
+      dirY: dv.getBigInt64(at + 48, true),
+      vx: dv.getBigInt64(at + 56, true),
+      vy: dv.getBigInt64(at + 64, true),
+      tick: dv.getUint32(at + 72, true),
+      brush: dv.getUint32(at + 76, true),
+      scaleBand: dv.getUint32(at + 80, true),
+    })
+  }
+  return out
+}
+
+/** The emitted nodes of the mathspace world: every note above the setup ids that is not a body. */
+function msNodes(notes: ReturnType<MsEngine['notes']>): Map<bigint, Map<string, bigint[]>> {
+  const out = new Map<bigint, Map<string, bigint[]>>()
+  for (const [id, fields] of notes) {
+    if (id <= NODE_SPACE_ID || (id & 0xffffffn) === BigInt(BODY_INDEX)) continue
+    out.set(id, fields)
+  }
+  return out
+}
+
+/**
+ * Every ddsim node has a mathspace note with the same raw fields, and there
+ * are no others. Ids are compared every tick; fields once, on the tick a
+ * node appears (neither sim ever changes an emitted node), so a fixture of
+ * a few hundred nodes over a thousand ticks does not spend its time here.
+ */
+function expectSameNodes(t: number, dd: Map<bigint, RawNode>, ms: Map<bigint, Map<string, bigint[]>>, seen: Set<bigint>): void {
+  expect([...ms.keys()].sort(), `tick ${t}: node ids`).toEqual([...dd.keys()].sort())
+  for (const [id, n] of dd) {
+    if (seen.has(id)) continue
+    seen.add(id)
+    const note = ms.get(id)!
+    expect(note.get('pos'), `tick ${t} node ${id}: pos`).toEqual([n.x, n.y, n.z])
+    expect(note.get('weight'), `tick ${t} node ${id}: weight`).toEqual([n.weight])
+    expect(note.get('dir'), `tick ${t} node ${id}: dir`).toEqual([n.dirX, n.dirY])
+    expect(note.get('velocity'), `tick ${t} node ${id}: velocity`).toEqual([n.vx, n.vy])
+    expect(note.get('tick'), `tick ${t} node ${id}: tick`).toEqual([fxFromInt(n.tick)])
+    expect(note.get('brush'), `tick ${t} node ${id}: brush`).toEqual([fxFromInt(n.brush)])
+    expect(n.scaleBand, `tick ${t} node ${id}: scale band`).toBe(0)
+  }
+}
+
 /**
  * Replays `fixture` through ddsim and, via the bridge, through mathspace.
- * Returns the number of (tick, stroke) comparisons made and throws on the
- * first mismatch with the tick and field in the message.
+ * Returns the number of (tick, stroke) body comparisons made and the node
+ * count at the end, and throws on the first mismatch with the tick and
+ * field in the message.
  */
-function replayInLockstep(dd: DdsimModule, ms: MathspaceModule, fixture: Fixture): number {
+function replayInLockstep(dd: DdsimModule, ms: MathspaceModule, fixture: Fixture): { compared: number; nodes: number } {
   const sim = dd._dd_create(fixture.seed)
   const engine = new MsEngine(ms, fixture.seed)
   const bridge = new MsBridge()
   let compared = 0
+  let nodes = 0
+  const seen = new Set<bigint>()
   try {
     MsBridge.bootstrap(engine)
     let max = 0
@@ -108,8 +185,15 @@ function replayInLockstep(dd: DdsimModule, ms: MathspaceModule, fixture: Fixture
       dd._dd_step(sim)
       engine.step()
       expect(engine.errors(), `tick ${t}: the rule skipped something`).toEqual([])
+      for (const act of bridge.afterStep(engine.notes(), t)) {
+        expect(engine.apply(act), `tick ${t}: mathspace rejected an emission action`).toBe(0)
+      }
       const bodies = ddBodies(dd, sim)
       const notes = engine.notes()
+      const table = ddNodes(dd, sim)
+      expectSameNodes(t, table, msNodes(notes), seen)
+      expect(bridge.nodeCount, `tick ${t}: bridge node count`).toBe(table.size)
+      nodes = table.size
       for (const st of bridge.strokes.values()) {
         const body = bodies.get(st.id)
         expect(body, `tick ${t}: ddsim has no body for stroke ${st.id}`).toBeDefined()
@@ -134,16 +218,17 @@ function replayInLockstep(dd: DdsimModule, ms: MathspaceModule, fixture: Fixture
     engine.destroy()
     dd._dd_destroy(sim)
   }
-  return compared
+  return { compared, nodes }
 }
 
-describe('ms-bridge: body parity with ddsim', () => {
+describe('ms-bridge: body and node parity with ddsim', () => {
   for (const name of ONE_SAMPLE_FIXTURES) {
-    it(`${name}: the mathspace body equals ddsim's raw bits on every tick with a target`, async () => {
+    it(`${name}: the mathspace body and node table equal ddsim's raw bits on every tick`, async () => {
       const [dd, ms] = await Promise.all([loadDdsim(), loadMathspace()])
       const fixture = parseActions(readFileSync(join(GOLDEN_DIR, `${name}.actions`), 'utf8'))
-      const compared = replayInLockstep(dd, ms, fixture)
+      const { compared, nodes } = replayInLockstep(dd, ms, fixture)
       expect(compared).toBeGreaterThan(50)
+      expect(nodes).toBeGreaterThan(10)
     })
   }
 
@@ -251,7 +336,7 @@ describe('ms-bridge: ids', () => {
     try {
       MsBridge.bootstrap(engine)
       const snap = decodeSnapshot(engine.notesBytes())
-      expect([...snap.keys()]).toEqual([BODY_SPACE_ID, BODY_RULE_ID])
+      expect([...snap.keys()]).toEqual([BODY_SPACE_ID, BODY_RULE_ID, NODE_SPACE_ID])
       expect(snap.get(BODY_RULE_ID)!.get('scope')).toEqual([0n])
     } finally {
       engine.destroy()

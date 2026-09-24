@@ -107,18 +107,51 @@ export function fxFromQ16(q: number): bigint {
 }
 
 /**
- * div_q32: the sign-magnitude long division of fx64.hpp, so the quotient
- * truncates toward zero (BigInt `/` does the same); b == 0 gives 0, the
- * contract-violation value every build returns.
+ * div_q32: floor(a * 2^32 / b) exactly. fx64.hpp divides magnitudes and,
+ * when the signs differ and the remainder is nonzero, subtracts one from
+ * the negated quotient, so a negative result floors where BigInt `/`
+ * would truncate. b == 0 gives 0, the contract-violation value every
+ * build returns.
  */
 export function fxDiv(a: bigint, b: bigint): bigint {
   if (b === 0n) return 0n
-  return fxWrap((a << 32n) / b)
+  const n = a << 32n
+  let q = n / b
+  if ((n < 0n) !== (b < 0n) && q * b !== n) q -= 1n
+  return fxWrap(q)
 }
 
 /** mul_q32: floor(a * b / 2^32) exactly (an arithmetic shift of the 128-bit product). */
 export function fxMul(a: bigint, b: bigint): bigint {
   return fxWrap((a * b) >> 32n)
+}
+
+/**
+ * isqrt128 of fx64.hpp over one BigInt: floor(sqrt(x)) for 0 <= x < 2^128
+ * by the same restoring digit-by-digit method, a fixed 64 iterations (two
+ * input bits per output bit). floor(sqrt) is unique, so this is bit-equal
+ * to the two-word C++ by construction, not by luck.
+ */
+export function isqrt128(x: bigint): bigint {
+  let root = 0n
+  let rem = 0n
+  for (let i = 0; i < 64; i++) {
+    rem = (rem << 2n) | ((x >> 126n) & 3n)
+    x = (x << 2n) & ((1n << 128n) - 1n)
+    root <<= 1n
+    const trial = (root << 1n) | 1n
+    if (rem >= trial) {
+      rem -= trial
+      root |= 1n
+    }
+  }
+  return root
+}
+
+/** fx64 sqrt: floor(sqrt(raw * 2^32)), 0 for a negative input (the contract-violation value every build returns). */
+export function fxSqrt(x: bigint): bigint {
+  if (x < 0n) return 0n
+  return isqrt128(x << 32n)
 }
 
 // ---------------------------------------------------------------------------

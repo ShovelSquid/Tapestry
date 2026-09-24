@@ -27,15 +27,34 @@
  *                 engine step per tick; STATE.md Decisions, sub-steps),
  *                 and on the first sample ever also `pos` = that first
  *                 sample and `velocity` = 0, where ddsim placed the body.
- *   StrokeEnd     DeleteNote for the body. Samples applied on the end tick
- *                 have already set `target`; ddsim integrated them in the
- *                 StrokeEnd itself, the engine's step for that tick never
- *                 sees the body (7d re-records the goldens).
+ *   StrokeEnd     DeleteNote for the body. ddsim integrated the end tick's
+ *                 samples inside the StrokeEnd and emitted from them, and
+ *                 skipped the tick entirely when the end tick had none. So:
+ *                 with no samples this tick the body is deleted at once
+ *                 (the step never sees it, as ddsim's never did); with
+ *                 samples the stroke is marked `ending` and the delete is
+ *                 returned by `afterStep`, after that tick's step and
+ *                 emission, so the end tick behaves like every other tick.
+ *
+ * Emission (plan phase 7d, ddsim/rules/emit.hpp ported): the engine has
+ * no field for path length or a per-stroke index, so `afterStep` runs
+ * once per tick after `engine.step()` over the notes snapshot. For each
+ * active stroke in id order it takes p0 = the body's pos as of the last
+ * pass (or the first sample, where ddsim placed the body), p1 = the
+ * body's `pos` now, updates the stroke's direction from `velocity` with
+ * DD_DIR_EPS exactly as body_substep did, and walks p0 -> p1 emitting a
+ * node every `spacing` of path with the tick's last pressure. Emitted
+ * nodes are notes of a second, dim-3 space (NODE_SPACE_ID) that holds no
+ * rule: `pos` is the plane transform of (u, v) (origin + u right + v up,
+ * fx64 from the stroke's recorded frame), plus `weight` (curve_weight),
+ * `dir`, `velocity`, `tick` and `brush`. Their `velocity` is dim 2 while
+ * their `pos` is dim 3, so the integrator never moves them. The node cap
+ * DD_MAX_NODES is the bridge's count (nothing deletes a node).
  *
  * Ids: the body note is make_node_id(branch, ordinal, BODY_INDEX) with
  * BODY_INDEX = 2^24 - 1, an emission index no stroke reaches
- * (DD_MAX_NODES is 2^20), so bodies and emitted nodes (7d) share the
- * ddsim id layout without colliding. The space, rule and the compile-time
+ * (DD_MAX_NODES is 2^20), so bodies and emitted nodes share the ddsim id
+ * layout without colliding. The spaces, rule and the compile-time
  * template note take the small ids no stroke id can produce (an ordinal
  * of at least 1 puts every stroke-derived id at or above 2^24).
  */
@@ -47,9 +66,14 @@ import {
   encodeDeleteNote,
   encodeSetField,
   fxDiv,
+  fxFromInt,
   fxFromQ16,
+  fxMul,
+  fxSqrt,
+  fxWrap,
   FX_ONE,
   type CompileResult,
+  type MsSnapshot,
 } from './ms-abi'
 import {
   ACTION_HEADER_BYTES,
@@ -84,11 +108,18 @@ export const BODY_SPACE_ID = 1n
 export const BODY_RULE_ID = 2n
 export const TEMPLATE_NOTE_ID = 3n
 export const BODY_SPACE_DIM = 2
+export const NODE_SPACE_ID = 4n
+export const NODE_SPACE_DIM = 3
 export const BRUSH_FORCE = 'self.k * (self.target - self.pos) - sqrt(self.k) * self.velocity'
 
 export const MAX_BRUSHES = 65535
 export const MAX_ACTIVE_STROKES = 8
 export const BODY_INDEX = 0xffffff
+/** DD_MAX_NODES: the emission cap, shared by every stroke. */
+export const MAX_NODES = 1 << 20
+const INDEX_MASK = 0xffffff
+/** DD_DIR_EPS: |v|^2 below this keeps the previous direction. */
+const DIR_EPS = FX_ONE >> 16n
 const STROKE_ID_MASK = (1n << 40n) - 1n
 const ORDINAL_MASK = 0xffffffffn
 const TILT_MAX = 90
@@ -131,6 +162,16 @@ export interface ActiveStroke {
   lastSampleTick: number
   lastSampleIndex: number
   pendingCount: number
+  /** The body's pos as of the last emission pass: p0 of the next segment. */
+  pos: [bigint, bigint]
+  /** ddsim's dir_x/dir_y: unit velocity, kept while |v|^2 < DD_DIR_EPS. */
+  dir: [bigint, bigint]
+  /** ddsim's path_accum: path carried past the last emitted node. */
+  pathAccum: bigint
+  /** ddsim's next_emission_index: per stroke from 0, never global. */
+  nextEmissionIndex: number
+  /** StrokeEnd arrived this tick with samples: delete after this tick's step and emission. */
+  ending: boolean
 }
 
 export interface Translation {
@@ -173,6 +214,21 @@ const reject = (code: number): Translation => ({ code, actions: [] })
 
 function fieldScalar(name: string, v: bigint) { return { name, lanes: [v] } }
 function fieldVec2(name: string, x: bigint, y: bigint) { return { name, lanes: [x, y] } }
+function fieldVec3(name: string, x: bigint, y: bigint, z: bigint) { return { name, lanes: [x, y, z] } }
+
+/**
+ * curve_weight: piecewise-linear over the 17 u16 knots with integer
+ * interpolation, i = p >> 12, frac = p & 4095, value = k[i] + ((k[i+1] -
+ * k[i]) * frac) >> 12 (arithmetic shift), weight = value / 65536 in Q32.32.
+ */
+export function curveWeight(curve: readonly number[], pressure: number): bigint {
+  const i = pressure >> 12
+  const frac = pressure & 4095
+  const k0 = curve[i]!
+  const k1 = curve[i + 1]!
+  const value = k0 + (((k1 - k0) * frac) >> 12)
+  return BigInt(value) << 16n
+}
 
 /**
  * The bridge's own state: the brush table and the active strokes. One per
@@ -181,6 +237,10 @@ function fieldVec2(name: string, x: bigint, y: bigint) { return { name, lanes: [
 export class MsBridge {
   readonly brushes: BrushEntry[] = []
   readonly strokes = new Map<bigint, ActiveStroke>()
+  /** Nodes emitted so far (ddsim's state.nodes.size()); the cap is MAX_NODES. */
+  nodeCount = 0
+  /** Stroke ids that have emitted a node: ddsim's stroke_in_use found them in the node table. */
+  readonly usedStrokes = new Set<bigint>()
 
   /**
    * Prepares a fresh world for the bridge: the body space, the rule with
@@ -194,6 +254,7 @@ export class MsBridge {
       if (rc !== 0) throw new Error(`ms-bridge bootstrap: ${what} rejected with ms_error ${rc}`)
     }
     must('CreateSpace', engine.apply(encodeCreateSpace(BODY_SPACE_ID, BODY_SPACE_DIM)))
+    must('CreateSpace nodes', engine.apply(encodeCreateSpace(NODE_SPACE_ID, NODE_SPACE_DIM)))
     must('CreateNote template', engine.apply(encodeCreateNote(TEMPLATE_NOTE_ID, BODY_SPACE_ID, MsNoteKind.Note)))
     must('template pos', engine.apply(encodeSetField(TEMPLATE_NOTE_ID, fieldVec2('pos', 0n, 0n))))
     must('template velocity', engine.apply(encodeSetField(TEMPLATE_NOTE_ID, fieldVec2('velocity', 0n, 0n))))
@@ -273,7 +334,9 @@ export class MsBridge {
     if (startTick !== tick) return reject(BridgeError.TickMismatch)
     if (brushId === 0 || brushId > this.brushes.length) return reject(BridgeError.BrushId)
     const ordinal = strokeId & ORDINAL_MASK
-    if (ordinal === 0n || (strokeId & ~STROKE_ID_MASK) !== 0n || this.strokes.has(strokeId)) return reject(BridgeError.StrokeState)
+    if (ordinal === 0n || (strokeId & ~STROKE_ID_MASK) !== 0n || this.strokes.has(strokeId) || this.usedStrokes.has(strokeId)) {
+      return reject(BridgeError.StrokeState)
+    }
     if (this.strokes.size >= MAX_ACTIVE_STROKES) return reject(BridgeError.Limit)
     const brush = this.brushes[brushId - 1]!
     this.strokes.set(strokeId, {
@@ -288,6 +351,11 @@ export class MsBridge {
       lastSampleTick: 0,
       lastSampleIndex: 0,
       pendingCount: 0,
+      pos: [0n, 0n],
+      dir: [FX_ONE, 0n],
+      pathAccum: 0n,
+      nextEmissionIndex: 0,
+      ending: false,
     })
     const body = bodyNoteId(strokeId)
     return {
@@ -306,8 +374,9 @@ export class MsBridge {
     if (strokeId === null || count === null) return reject(BridgeError.BadLength)
     if (r.remaining() !== count * SAMPLE_BYTES) return reject(BridgeError.BadLength)
     const st = this.strokes.get(strokeId)
-    if (st === undefined) return reject(BridgeError.StrokeState)
+    if (st === undefined || st.ending) return reject(BridgeError.StrokeState)
     if (count < 1 || count > MAX_SAMPLES_PER_ACTION) return reject(BridgeError.Limit)
+    const brush = this.brushes[st.brushId - 1]!
     const samples: Array<{ tick: number; index: number; pressure: number; u: number; v: number; inRange: boolean }> = []
     for (let i = 0; i < count; i++) {
       const sTick = r.u32()!
@@ -341,8 +410,12 @@ export class MsBridge {
     const body = bodyNoteId(strokeId)
     const actions: Uint8Array[] = []
     if (!st.hasTarget) {
-      // ddsim placed the body on the first sample ever, at rest.
-      actions.push(encodeSetField(body, fieldVec2('pos', fxFromQ16(first.u), fxFromQ16(first.v))))
+      // ddsim placed the body on the first sample ever, at rest, facing
+      // +u, with a full spacing carried so node 0 lands on the pen-down point.
+      st.pos = [fxFromQ16(first.u), fxFromQ16(first.v)]
+      st.dir = [FX_ONE, 0n]
+      st.pathAccum = brush.spacing
+      actions.push(encodeSetField(body, fieldVec2('pos', st.pos[0], st.pos[1])))
       actions.push(encodeSetField(body, fieldVec2('velocity', 0n, 0n)))
       st.hasTarget = true
     }
@@ -360,9 +433,118 @@ export class MsBridge {
     const strokeId = r.u64()!
     const endTick = r.u32()!
     const st = this.strokes.get(strokeId)
-    if (st === undefined) return reject(BridgeError.StrokeState)
+    if (st === undefined || st.ending) return reject(BridgeError.StrokeState)
     if (endTick !== tick) return reject(BridgeError.TickMismatch)
+    if (st.lastSampleTick === tick && st.pendingCount > 0) {
+      // ddsim integrated and emitted these samples inside the StrokeEnd;
+      // here the step does it, and afterStep deletes the body.
+      st.ending = true
+      return { code: BridgeError.Ok, actions: [] }
+    }
     this.strokes.delete(strokeId)
     return { code: BridgeError.Ok, actions: [encodeDeleteNote(bodyNoteId(strokeId))] }
+  }
+
+  /**
+   * The emission pass for the tick just stepped: reads each active body's
+   * `pos` and `velocity` from `notes` (the engine's snapshot after
+   * `step()`), walks the segment since the last pass, and returns the
+   * actions that create the emitted nodes, followed by the DeleteNote of
+   * every stroke that ended this tick. Strokes go in id order, as ddsim's
+   * sorted active list did. Apply the result before the next tick's actions.
+   */
+  afterStep(notes: MsSnapshot, tick: number): Uint8Array[] {
+    const actions: Uint8Array[] = []
+    const ids = [...this.strokes.keys()].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
+    for (const id of ids) {
+      const st = this.strokes.get(id)!
+      if (st.hasTarget) {
+        const body = notes.get(bodyNoteId(id))
+        if (body === undefined) throw new Error(`ms-bridge: no body note for stroke ${id} at tick ${tick}`)
+        const pos = body.get('pos')
+        const vel = body.get('velocity')
+        if (pos === undefined || vel === undefined || pos.length !== 2 || vel.length !== 2) {
+          throw new Error(`ms-bridge: body of stroke ${id} lost pos or velocity at tick ${tick}`)
+        }
+        const p1: [bigint, bigint] = [pos[0]!, pos[1]!]
+        // body_substep's direction update from the velocity after the step.
+        const v2 = fxWrap(fxMul(vel[0]!, vel[0]!) + fxMul(vel[1]!, vel[1]!))
+        if (v2 >= DIR_EPS) {
+          const mag = fxSqrt(v2)
+          st.dir = [fxDiv(vel[0]!, mag), fxDiv(vel[1]!, mag)]
+        }
+        this.emitSegment(st, st.pos, p1, [vel[0]!, vel[1]!], tick, actions)
+        st.pos = p1
+      }
+      if (st.ending) {
+        this.strokes.delete(id)
+        actions.push(encodeDeleteNote(bodyNoteId(id)))
+      }
+    }
+    return actions
+  }
+
+  /**
+   * emit_segment: walk p0 -> p1 and emit a node every `spacing` of path,
+   * carrying the leftover into the next segment. When the node table
+   * fills, the rest of the segment's path is discarded (pathAccum = 0) so
+   * a hostile spacing cannot spin the loop past the cap.
+   */
+  private emitSegment(st: ActiveStroke, p0: readonly [bigint, bigint], p1: readonly [bigint, bigint],
+                      vel: readonly [bigint, bigint], tick: number, out: Uint8Array[]): void {
+    const brush = this.brushes[st.brushId - 1]!
+    const spacing = brush.spacing
+    const dx = fxWrap(p1[0] - p0[0])
+    const dy = fxWrap(p1[1] - p0[1])
+    const seg = fxSqrt(fxWrap(fxMul(dx, dx) + fxMul(dy, dy)))
+    let carried = st.pathAccum
+    let remaining = seg
+    const pos: [bigint, bigint] = [p0[0], p0[1]]
+    let full = false
+    while (carried >= spacing) {
+      if (this.nodeCount >= MAX_NODES) { full = true; break }
+      this.emitNode(st, brush, pos, vel, tick, out)
+      carried = fxWrap(carried - spacing)
+    }
+    if (!full && seg > 0n) {
+      while (fxWrap(carried + remaining) >= spacing) {
+        if (this.nodeCount >= MAX_NODES) { full = true; break }
+        const d = fxWrap(spacing - carried)
+        const f = fxDiv(d, remaining)
+        pos[0] = fxWrap(pos[0] + fxMul(fxWrap(p1[0] - pos[0]), f))
+        pos[1] = fxWrap(pos[1] + fxMul(fxWrap(p1[1] - pos[1]), f))
+        this.emitNode(st, brush, pos, vel, tick, out)
+        remaining = fxWrap(remaining - d)
+        carried = 0n
+      }
+    }
+    st.pathAccum = full ? 0n : fxWrap(carried + remaining)
+  }
+
+  /**
+   * emit_node: one node at plane-local (u, v) with the stroke's direction
+   * and the body's velocity. Skipped, without consuming an index, when the
+   * table is full or the stroke has used every 24-bit index.
+   */
+  private emitNode(st: ActiveStroke, brush: BrushEntry, uv: readonly [bigint, bigint],
+                   vel: readonly [bigint, bigint], tick: number, out: Uint8Array[]): void {
+    if (this.nodeCount >= MAX_NODES || st.nextEmissionIndex > INDEX_MASK) return
+    const id = makeNodeId(Number((st.id >> 32n) & 0xffn), Number(st.id & ORDINAL_MASK), st.nextEmissionIndex)
+    st.nextEmissionIndex += 1
+    this.nodeCount += 1
+    this.usedStrokes.add(st.id)
+    const [u, v] = uv
+    const pl = st.plane
+    // plane[0..2] origin, plane[3..5] right, plane[6..8] up; left to right as ddsim added them.
+    const x = fxWrap(fxWrap(pl[0]! + fxMul(u, pl[3]!)) + fxMul(v, pl[6]!))
+    const y = fxWrap(fxWrap(pl[1]! + fxMul(u, pl[4]!)) + fxMul(v, pl[7]!))
+    const z = fxWrap(fxWrap(pl[2]! + fxMul(u, pl[5]!)) + fxMul(v, pl[8]!))
+    out.push(encodeCreateNote(id, NODE_SPACE_ID, MsNoteKind.Note))
+    out.push(encodeSetField(id, fieldVec3('pos', x, y, z)))
+    out.push(encodeSetField(id, fieldScalar('weight', curveWeight(brush.curve, st.lastPressure))))
+    out.push(encodeSetField(id, fieldVec2('dir', st.dir[0], st.dir[1])))
+    out.push(encodeSetField(id, fieldVec2('velocity', vel[0], vel[1])))
+    out.push(encodeSetField(id, fieldScalar('tick', fxFromInt(tick))))
+    out.push(encodeSetField(id, fieldScalar('brush', fxFromInt(st.brushId))))
   }
 }
