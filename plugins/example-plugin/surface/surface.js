@@ -9,9 +9,20 @@
  *   isSecureContext      the scheme is registered `secure`
  *   crossOriginIsolated  expected false (no COOP/COEP; no SharedArrayBuffer)
  *   gpu                  whether navigator.gpu exists (WebGPU available)
- *   worker               a module Worker spawned from this origin started
+ *   worker               a module Worker running this origin's worker script started
  *   wasm                 that worker instantiated a .wasm from this origin
  *   size                 host.onResize delivers width x height @ dpr
+ *
+ * Worker construction goes through a same-origin blob: trampoline. Chromium
+ * requires a Worker's script URL to be same-origin with the document (CORS
+ * headers cannot relax this), and the document is the renderer origin
+ * (http://localhost:5173 in dev, file:// when packaged) while this module is
+ * served from tapestry-plugin://. A blob: URL created by the document is
+ * same-origin with it, so a one-statement blob module that statically imports
+ * the absolute worker URL is accepted, and the real worker module plus the
+ * .wasm still load over tapestry-plugin:// with CORS. The worker module's own
+ * import.meta.url stays the tapestry-plugin:// URL, so it resolves spike.wasm
+ * relative to itself as before.
  *
  * globalThis.__exampleSurfaceMounts / __exampleSurfaceDisposes count
  * open/close cycles so mount and dispose can be checked to balance.
@@ -55,21 +66,39 @@ const surface = {
     }
     render()
 
-    // Module Worker from this same origin; it fetches and instantiates the .wasm.
+    // Module Worker running this origin's worker script, spawned through a
+    // same-origin blob: trampoline (see the header comment). The worker fetches
+    // and instantiates the .wasm.
     let worker = null
+    let blobUrl = null
+    const revokeBlobUrl = () => {
+      if (blobUrl) {
+        URL.revokeObjectURL(blobUrl)
+        blobUrl = null
+      }
+    }
     try {
-      worker = new Worker(new URL('./surface.worker.js', import.meta.url), { type: 'module' })
+      const workerUrl = new URL('./surface.worker.js', import.meta.url).href
+      const trampoline = new Blob([`import ${JSON.stringify(workerUrl)};`], {
+        type: 'text/javascript',
+      })
+      blobUrl = URL.createObjectURL(trampoline)
+      worker = new Worker(blobUrl, { type: 'module' })
       worker.onmessage = (event) => {
+        // The worker has started, so the blob: URL has been consumed.
+        revokeBlobUrl()
         facts.worker = String(event.data.worker)
         facts.wasm = String(event.data.wasm)
         render()
       }
       worker.onerror = (event) => {
+        revokeBlobUrl()
         facts.worker = 'error: ' + (event.message || 'worker error')
         facts.wasm = 'error: worker failed'
         render()
       }
     } catch (err) {
+      revokeBlobUrl()
       facts.worker = 'error: ' + (err instanceof Error ? err.message : String(err))
       facts.wasm = 'error: worker failed'
       render()
@@ -87,6 +116,7 @@ const surface = {
         disposed = true
         unsubscribeResize()
         if (worker) worker.terminate()
+        revokeBlobUrl()
         host.container.replaceChildren()
         globalThis.__exampleSurfaceDisposes = (globalThis.__exampleSurfaceDisposes ?? 0) + 1
       },
