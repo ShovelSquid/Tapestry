@@ -23,6 +23,7 @@ const char* error_name(Error e) {
     case Error::IdExhausted: return "IdExhausted";
     case Error::TooManyFields: return "TooManyFields";
     case Error::BadBytes: return "BadBytes";
+    case Error::BadAction: return "BadAction";
     }
     return "?";
 }

@@ -13,14 +13,9 @@
 //   | u64 seed | u64 tick | u32 next_group
 //   | u32 note_count, per note in id order:
 //       u64 id | u64 space_id | u8 kind
-//       | u8 field_count, per field in name order:
-//           u8 name_len | name | u8 dim | u8 bound | dim x i64 value
-//           | u32 bytecode_len | bytecode
-//
-// Only the first `dim` lanes are written; set_field keeps the rest zero,
-// so operator== on World agrees with byte equality of the walk. A bound
-// field still writes its lanes: in phase 2 they hold the last evaluated
-// value, which is state until the next tick overwrites it.
+//       | u8 field_count, per field in name order: the field record of
+//         wire.hpp (u8 name_len | name | u8 dim | u8 bound | dim x i64
+//         | u32 bytecode_len | bytecode)
 //
 // restore is strict: any byte the walk would not have produced (a
 // trailing byte, an out-of-order id, an invalid name, a count the buffer
@@ -30,6 +25,7 @@
 #include "ddsim/sim.hpp"
 #include "ddsim/state.hpp"
 #include "mathspace/world.hpp"
+#include "wire.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -39,61 +35,18 @@
 namespace mathspace {
 namespace {
 
+using wire::Bytes;
+using wire::put_bytes;
+using wire::put_u32;
+using wire::put_u64;
+using wire::put_u8;
+
 constexpr char MAGIC[4] = {'M', 'S', 'P', '1'};
 
-// Byte budget per record, used to refuse a count that the remaining
-// buffer cannot possibly hold before reserving for it.
+// Smallest possible note record, used to refuse a count that the
+// remaining buffer cannot possibly hold before reserving for it.
 constexpr std::size_t MIN_NOTE_BYTES = 8u + 8u + 1u + 1u;
-constexpr std::size_t MIN_FIELD_BYTES = 1u + 1u + 1u + 1u + 8u + 4u;
 constexpr std::uint32_t MAX_NOTES = 1u << 24;
-constexpr std::uint32_t MAX_BYTECODE = 1u << 16;
-
-void put_u8(std::vector<std::uint8_t>& out, std::uint8_t v) { out.push_back(v); }
-
-void put_u32(std::vector<std::uint8_t>& out, std::uint32_t v) {
-    for (unsigned i = 0; i < 4; ++i) {
-        out.push_back(static_cast<std::uint8_t>((v >> (8 * i)) & 0xffu));
-    }
-}
-
-void put_u64(std::vector<std::uint8_t>& out, std::uint64_t v) {
-    for (unsigned i = 0; i < 8; ++i) {
-        out.push_back(static_cast<std::uint8_t>((v >> (8 * i)) & 0xffu));
-    }
-}
-
-void put_fx(std::vector<std::uint8_t>& out, fx64 v) { put_u64(out, static_cast<std::uint64_t>(v.raw)); }
-
-void put_bytes(std::vector<std::uint8_t>& out, const void* data, std::size_t len) {
-    const auto* p = static_cast<const std::uint8_t*>(data);
-    out.insert(out.end(), p, p + len);
-}
-
-bool read_field(ddsim::ByteReader& r, Field& f) {
-    std::uint8_t name_len = 0;
-    if (!r.read_u8(name_len) || name_len == 0 || name_len > MAX_FIELD_NAME || r.remaining() < name_len) {
-        return false;
-    }
-    f.name.assign(reinterpret_cast<const char*>(r.cursor()), name_len);
-    r.skip(name_len);
-    std::uint8_t bound = 0;
-    if (!r.read_u8(f.dim) || !valid_dim(f.dim) || !r.read_u8(bound) || bound > 1) {
-        return false;
-    }
-    f.bound = bound == 1;
-    for (std::uint8_t i = 0; i < f.dim; ++i) {
-        if (!r.read_fx(f.value[i])) {
-            return false;
-        }
-    }
-    std::uint32_t code_len = 0;
-    if (!r.read_u32(code_len) || code_len > MAX_BYTECODE || r.remaining() < code_len) {
-        return false;
-    }
-    f.bytecode.assign(r.cursor(), r.cursor() + code_len);
-    r.skip(code_len);
-    return f.valid();
-}
 
 bool read_note(ddsim::ByteReader& r, Note& n) {
     std::uint8_t kind = 0;
@@ -103,13 +56,13 @@ bool read_note(ddsim::ByteReader& r, Note& n) {
         return false;
     }
     n.kind = static_cast<NoteKind>(kind);
-    if (static_cast<std::size_t>(field_count) * MIN_FIELD_BYTES > r.remaining()) {
+    if (static_cast<std::size_t>(field_count) * wire::MIN_FIELD_BYTES > r.remaining()) {
         return false;
     }
     n.fields.reserve(field_count);
     for (std::uint8_t i = 0; i < field_count; ++i) {
         Field f;
-        if (!read_field(r, f)) {
+        if (!wire::read_field(r, f)) {
             return false;
         }
         // Strictly ascending names: the walk never writes anything else.
@@ -157,7 +110,7 @@ bool read_world(const std::uint8_t* bytes, std::size_t len, World& w) {
 } // namespace
 
 std::vector<std::uint8_t> serialize(const World& w) {
-    std::vector<std::uint8_t> out;
+    Bytes out;
     put_bytes(out, MAGIC, sizeof MAGIC);
     put_u32(out, FORMAT_VERSION);
     put_u32(out, ddsim::DD_FX_FORMAT_ID);
@@ -171,15 +124,7 @@ std::vector<std::uint8_t> serialize(const World& w) {
         put_u8(out, static_cast<std::uint8_t>(n.kind));
         put_u8(out, static_cast<std::uint8_t>(n.fields.size()));
         for (const Field& f : n.fields) {
-            put_u8(out, static_cast<std::uint8_t>(f.name.size()));
-            put_bytes(out, f.name.data(), f.name.size());
-            put_u8(out, f.dim);
-            put_u8(out, f.bound ? 1u : 0u);
-            for (std::uint8_t i = 0; i < f.dim; ++i) {
-                put_fx(out, f.value[i]);
-            }
-            put_u32(out, static_cast<std::uint32_t>(f.bytecode.size()));
-            put_bytes(out, f.bytecode.data(), f.bytecode.size());
+            wire::write_field(out, f);
         }
     }
     return out;

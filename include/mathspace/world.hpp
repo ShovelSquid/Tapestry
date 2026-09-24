@@ -47,6 +47,7 @@ enum class Error : std::uint8_t {
     IdExhausted,     // group ordinal space (32 bits) used up
     TooManyFields,   // set_field of a new name on a note that already has MAX_FIELDS
     BadBytes,        // restore: bytes are not a canonical walk of a well-formed world
+    BadAction,       // apply: header, kind, or payload bytes malformed (action.hpp)
 };
 
 const char* error_name(Error e);
@@ -76,6 +77,14 @@ struct World {
     Error set_field(NoteId note, Field field);
     Error delete_note(NoteId note);
     Error delete_field(NoteId note, std::string_view name);
+
+    // Decodes one action (action.hpp) and calls the mutator it names.
+    // `created` receives the new id for CreateSpace/CreateNote; it may be
+    // null. Any outcome other than Ok leaves the world byte-identical.
+    Error apply(const std::uint8_t* bytes, std::size_t len, NoteId* created = nullptr);
+    Error apply(const std::vector<std::uint8_t>& bytes, NoteId* created = nullptr) {
+        return apply(bytes.data(), bytes.size(), created);
+    }
 
     // Advances tick only. Rules and bound expressions come in later phases.
     void step();
