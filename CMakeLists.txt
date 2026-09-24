@@ -225,7 +225,7 @@ if(EMSCRIPTEN)
         "-sEXPORTED_RUNTIME_METHODS=HEAPU8,HEAP32,HEAPU32")
 
     # The mathspace engine as its own module: same link options, its own
-    # factory name, and the eleven ms_* symbols from mathspace_c.h.
+    # factory name, and the thirteen ms_* symbols from mathspace_c.h.
     add_executable(mathspace_wasm wasm/mathspace_wasm.cpp)
     target_link_libraries(mathspace_wasm PRIVATE mathspace)
     set_target_properties(mathspace_wasm PROPERTIES OUTPUT_NAME mathspace SUFFIX .mjs)
@@ -239,6 +239,6 @@ if(EMSCRIPTEN)
         -sSTACK_SIZE=1048576
         -sEXPORT_NAME=createMathspace
         --no-entry
-        "-sEXPORTED_FUNCTIONS=_ms_version,_ms_create,_ms_destroy,_ms_apply,_ms_step,_ms_tick,_ms_hash,_ms_serialize,_ms_restore,_ms_notes_ptr,_ms_notes_len,_malloc,_free"
-        "-sEXPORTED_RUNTIME_METHODS=HEAPU8,HEAP32,HEAPU32")
+        "-sEXPORTED_FUNCTIONS=_ms_version,_ms_create,_ms_destroy,_ms_apply,_ms_step,_ms_tick,_ms_hash,_ms_serialize,_ms_restore,_ms_notes_ptr,_ms_notes_len,_ms_compile,_ms_compile_error_name,_malloc,_free"
+        "-sEXPORTED_RUNTIME_METHODS=HEAPU8,HEAP32,HEAPU32,UTF8ToString")
 endif()

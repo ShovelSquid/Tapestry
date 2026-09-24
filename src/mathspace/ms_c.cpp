@@ -4,11 +4,15 @@
 // drift without a compile error.
 #include "mathspace/mathspace_c.h"
 
+#include "mathspace/expr/bytecode.hpp"
+#include "mathspace/expr/parser.hpp"
+#include "mathspace/expr/vm.hpp"
 #include "mathspace/world.hpp"
 
 #include <cstdint>
 #include <cstring>
 #include <new>
+#include <string_view>
 #include <vector>
 
 struct ms_world {
@@ -34,6 +38,9 @@ static_assert(static_cast<int>(Error::DuplicateId) == MS_ERR_DUPLICATE_ID);
 static_assert(static_cast<int>(Error::TooManyFields) == MS_ERR_TOO_MANY_FIELDS);
 static_assert(static_cast<int>(Error::BadBytes) == MS_ERR_BAD_BYTES);
 static_assert(static_cast<int>(Error::BadAction) == MS_ERR_BAD_ACTION);
+static_assert(static_cast<int>(Error::BadBytecode) == MS_ERR_BAD_BYTECODE);
+
+int32_t failure(int stage, int code) { return -static_cast<int32_t>((stage << 8) | code); }
 
 int code(Error e) { return static_cast<int>(e); }
 
@@ -96,6 +103,83 @@ const uint8_t* ms_notes_ptr(const ms_world* w) { return w == nullptr ? nullptr :
 
 uint32_t ms_notes_len(const ms_world* w) {
     return w == nullptr ? 0 : static_cast<uint32_t>(w->world.notes_bytes().size());
+}
+
+int32_t ms_compile(const ms_world* w, uint64_t note, const char* text, uint32_t len, uint8_t* out, uint32_t cap,
+                   uint32_t* where) {
+    if (where != nullptr) {
+        *where = 0;
+    }
+    if (w == nullptr || (text == nullptr && len != 0)) {
+        return failure(MS_STAGE_WORLD, MS_ERR_BAD_BYTES);
+    }
+    const mathspace::Note* self = w->world.find(mathspace::NoteId{note});
+    if (self == nullptr) {
+        return failure(MS_STAGE_WORLD, MS_ERR_NO_SUCH_NOTE);
+    }
+    const mathspace::expr::ParseResult p = mathspace::expr::parse(std::string_view(text, len));
+    if (!p.ok()) {
+        if (where != nullptr) {
+            *where = p.offset;
+        }
+        return failure(MS_STAGE_PARSE, static_cast<int>(p.error));
+    }
+    const mathspace::expr::CompileResult c = mathspace::expr::compile(p.ast, mathspace::expr::WorldDims{w->world, *self});
+    if (!c.ok()) {
+        if (where != nullptr) {
+            *where = c.where;
+        }
+        return failure(MS_STAGE_COMPILE, static_cast<int>(c.error));
+    }
+    const std::vector<std::uint8_t> bytes = mathspace::expr::encode(c.program);
+    const uint32_t needed = static_cast<uint32_t>(bytes.size());
+    if (cap == 0) {
+        return static_cast<int32_t>(needed);
+    }
+    if (out == nullptr || cap < needed) {
+        return 0;
+    }
+    std::memcpy(out, bytes.data(), needed);
+    return static_cast<int32_t>(needed);
+}
+
+const char* ms_compile_error_name(int32_t result) {
+    if (result >= 0) {
+        return "ok";
+    }
+    const int packed = -result;
+    const int stage = packed >> 8;
+    const int c = packed & 0xff;
+    // Static tables so the pointer outlives the call (the Wasm side reads
+    // it with UTF8ToString). One entry per enumerator, in enum order.
+    static const char* const world_names[] = {
+        "ok", "world:BadDim", "world:BadName", "world:BadKind", "world:NoSuchSpace", "world:NoSuchNote",
+        "world:NoSuchField", "world:PosDimMismatch", "world:SpaceNotEmpty", "world:LockedField",
+        "world:DuplicateId", "world:TooManyFields", "world:BadBytes", "world:BadAction", "world:BadBytecode"};
+    static const char* const parse_names[] = {
+        "ok", "parse:UnexpectedChar", "parse:UnexpectedEnd", "parse:UnexpectedToken", "parse:TrailingInput",
+        "parse:InexactNumber", "parse:NumberTooLarge", "parse:UnknownFunction", "parse:BadArity",
+        "parse:BadComponent", "parse:BadNodeId", "parse:BadName", "parse:VectorTooLong", "parse:TooDeep",
+        "parse:TooManyNodes"};
+    static const char* const compile_names[] = {
+        "ok", "compile:DimMismatch", "compile:NotScalar", "compile:NestedVector", "compile:BadLane",
+        "compile:UnknownRef", "compile:EmptyAst", "compile:TooManyOps", "compile:StackTooDeep",
+        "compile:BadBytes", "compile:BadJump", "compile:BadStack"};
+    static_assert(sizeof(world_names) / sizeof(world_names[0]) == MS_ERR_BAD_BYTECODE + 1);
+    static_assert(sizeof(parse_names) / sizeof(parse_names[0]) ==
+                  static_cast<int>(mathspace::expr::ParseError::TooManyNodes) + 1);
+    static_assert(sizeof(compile_names) / sizeof(compile_names[0]) ==
+                  static_cast<int>(mathspace::expr::CompileError::BadStack) + 1);
+    switch (stage) {
+    case MS_STAGE_WORLD:
+        return c < static_cast<int>(sizeof(world_names) / sizeof(world_names[0])) ? world_names[c] : "world:?";
+    case MS_STAGE_PARSE:
+        return c < static_cast<int>(sizeof(parse_names) / sizeof(parse_names[0])) ? parse_names[c] : "parse:?";
+    case MS_STAGE_COMPILE:
+        return c < static_cast<int>(sizeof(compile_names) / sizeof(compile_names[0])) ? compile_names[c] : "compile:?";
+    default:
+        return "?";
+    }
 }
 
 } // extern "C"

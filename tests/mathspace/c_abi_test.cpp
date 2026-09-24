@@ -4,10 +4,15 @@
 #include <doctest.h>
 
 #include "mathspace/action.hpp"
+#include "mathspace/expr/bytecode.hpp"
+#include "mathspace/expr/parser.hpp"
+#include "mathspace/expr/vm.hpp"
 #include "mathspace/mathspace_c.h"
 #include "mathspace/world.hpp"
 
 #include <cstdint>
+#include <cstring>
+#include <string>
 #include <vector>
 
 using namespace mathspace;
@@ -136,4 +141,81 @@ TEST_CASE("null handles are inert") {
     CHECK(ms_restore(nullptr, nullptr, 0) == MS_ERR_BAD_BYTES);
     ms_step(nullptr);
     ms_destroy(nullptr);
+}
+
+TEST_CASE("ms_compile follows the cap protocol and matches the C++ compiler") {
+    Handle h(2);
+    World w(2);
+    for (const auto& a : {encode_create_space(S, 2), encode_create_note(A, space_of(S), NoteKind::Note),
+                          encode_set_field(A, vec("pos", 2, 1, 2)), encode_set_field(A, vec("k", 1, 3))}) {
+        REQUIRE(applyTo(h.w, a) == MS_OK);
+        REQUIRE(w.apply(a) == Error::Ok);
+    }
+    const std::string text = "self.pos * self.k + [1, 2]";
+    const expr::ParseResult p = expr::parse(text);
+    REQUIRE(p.ok());
+    const expr::CompileResult c = expr::compile(p.ast, expr::WorldDims{w, *w.find(A)});
+    REQUIRE(c.ok());
+    const std::vector<std::uint8_t> want = expr::encode(c.program);
+
+    const auto before = hashOf(h.w);
+    uint32_t where = 77;
+    const int32_t needed = ms_compile(h.w, A.value, text.data(), static_cast<uint32_t>(text.size()), nullptr, 0, &where);
+    REQUIRE(needed == static_cast<int32_t>(want.size()));
+    CHECK(where == 0);
+    std::vector<std::uint8_t> small(static_cast<std::size_t>(needed) - 1);
+    CHECK(ms_compile(h.w, A.value, text.data(), static_cast<uint32_t>(text.size()), small.data(),
+                     static_cast<uint32_t>(small.size()), nullptr) == 0);
+    std::vector<std::uint8_t> got(static_cast<std::size_t>(needed));
+    CHECK(ms_compile(h.w, A.value, text.data(), static_cast<uint32_t>(text.size()), got.data(),
+                     static_cast<uint32_t>(got.size()), &where) == needed);
+    CHECK(got == want);
+    CHECK(std::string(ms_compile_error_name(needed)) == "ok");
+
+    // The bytes bind through action 37 and evaluate on step.
+    REQUIRE(applyTo(h.w, encode_bind_field(A, "q", got)) == MS_OK);
+    REQUIRE(w.bind_field(A, "q", want) == Error::Ok);
+    ms_step(h.w);
+    w.step();
+    CHECK(hashOf(h.w) == hashOf(w));
+    CHECK(find_field(*w.find(A), "q")->value[0] == fx64::from_int(4)); // 1*3 + 1
+    CHECK(hashOf(h.w) != before);
+}
+
+TEST_CASE("ms_compile failures carry the stage, the code and where") {
+    Handle h(2);
+    REQUIRE(applyTo(h.w, encode_create_space(S, 2)) == MS_OK);
+    REQUIRE(applyTo(h.w, encode_create_note(A, space_of(S), NoteKind::Note)) == MS_OK);
+    REQUIRE(applyTo(h.w, encode_set_field(A, vec("pos", 2))) == MS_OK);
+    const auto before = hashOf(h.w);
+    uint32_t where = 0;
+    auto compile = [&](std::uint64_t note, const char* text) {
+        where = 99;
+        return ms_compile(h.w, note, text, static_cast<uint32_t>(std::strlen(text)), nullptr, 0, &where);
+    };
+
+    int32_t r = compile(42, "1");
+    CHECK(r == -((MS_STAGE_WORLD << 8) | MS_ERR_NO_SUCH_NOTE));
+    CHECK(std::string(ms_compile_error_name(r)) == "world:NoSuchNote");
+
+    r = compile(A.value, "1 + 0.1");
+    CHECK(r == -((MS_STAGE_PARSE << 8) | static_cast<int>(expr::ParseError::InexactNumber)));
+    CHECK(where == 4);
+    CHECK(std::string(ms_compile_error_name(r)) == "parse:InexactNumber");
+
+    r = compile(A.value, "self.pos + 1");
+    CHECK(r == -((MS_STAGE_COMPILE << 8) | static_cast<int>(expr::CompileError::DimMismatch)));
+    CHECK(std::string(ms_compile_error_name(r)) == "compile:DimMismatch");
+
+    r = compile(A.value, "self.nope");
+    CHECK(r == -((MS_STAGE_COMPILE << 8) | static_cast<int>(expr::CompileError::UnknownRef)));
+    CHECK(std::string(ms_compile_error_name(r)) == "compile:UnknownRef");
+
+    r = ms_compile(nullptr, A.value, "1", 1, nullptr, 0, nullptr);
+    CHECK(r == -((MS_STAGE_WORLD << 8) | MS_ERR_BAD_BYTES));
+    CHECK(ms_compile(h.w, A.value, nullptr, 3, nullptr, 0, nullptr) == r);
+    // Empty text is a parse error, not a crash.
+    CHECK(ms_compile(h.w, A.value, nullptr, 0, nullptr, 0, nullptr) < 0);
+    CHECK(std::string(ms_compile_error_name(-((7 << 8) | 1))) == "?");
+    CHECK(hashOf(h.w) == before);
 }

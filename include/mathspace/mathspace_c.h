@@ -50,7 +50,20 @@ enum ms_error {
     MS_ERR_DUPLICATE_ID = 10,
     MS_ERR_TOO_MANY_FIELDS = 11,
     MS_ERR_BAD_BYTES = 12,
-    MS_ERR_BAD_ACTION = 13
+    MS_ERR_BAD_ACTION = 13,
+    MS_ERR_BAD_BYTECODE = 14
+};
+
+/* ms_compile's failure code is -(stage << 8 | code): stage 0 is an
+ * ms_error (no such note, null argument), stage 1 an expr::ParseError with
+ * the byte offset in `where`, stage 2 an expr::CompileError with the Ast
+ * node index in `where`. ms_compile_error_name turns any of them into a
+ * static string such as "parse:InexactNumber" for the plugin's problems
+ * list; "ok" for a non-negative value. */
+enum ms_compile_stage {
+    MS_STAGE_WORLD = 0,
+    MS_STAGE_PARSE = 1,
+    MS_STAGE_COMPILE = 2
 };
 
 enum ms_layout {
@@ -78,6 +91,18 @@ MS_EXPORT int ms_restore(ms_world* w, const uint8_t* in, uint32_t len);
 
 MS_EXPORT const uint8_t* ms_notes_ptr(const ms_world* w);
 MS_EXPORT uint32_t ms_notes_len(const ms_world* w);
+
+/* Compiles the expression `text` (len bytes, no terminator) for a field
+ * of `note`, resolving `self` and `node(nN)` refs against the world as it
+ * is now, and writes the encoded bytecode (expr/bytecode.hpp) that a
+ * BindField action (kind 37) carries. Same cap protocol as ms_serialize:
+ * cap 0 returns the needed length and writes nothing; an insufficient
+ * cap returns 0 and writes nothing. A negative return is a failure (see
+ * ms_compile_stage); `where` may be null. Compiling never changes the
+ * world. */
+MS_EXPORT int32_t ms_compile(const ms_world* w, uint64_t note, const char* text, uint32_t len,
+                             uint8_t* out, uint32_t cap, uint32_t* where);
+MS_EXPORT const char* ms_compile_error_name(int32_t result);
 
 #ifdef __cplusplus
 } /* extern "C" */
