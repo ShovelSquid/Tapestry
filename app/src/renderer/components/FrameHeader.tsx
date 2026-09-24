@@ -15,11 +15,15 @@
  * 'folder': the same two rows and styles, with the folder's name and a
  * Collapse folder / Expand folder button in row 1, and "Folder · <n> files" in
  * row 2. It has no Tree options and no Chat with Claude.
+ *
+ * A workspace tree's status slot says whether its outside changes are being
+ * recorded (02.7 D-06): "Watching", or in the destructive color why not.
  */
 
 import React, { useCallback, useContext, useEffect, useRef, useState } from 'react'
 import type { TreeSaveState } from '../state/use-forest'
 import { ChatContext } from '../state/chat'
+import { useWorkspaceStatus, workspaceStatusLine } from '../state/workspace-status'
 
 interface FrameHeaderProps {
   /** The tree this header belongs to; Tree options acts on it by id. */
@@ -191,6 +195,14 @@ export default function FrameHeader({
   }
 
   const status = isFolder ? `${fileCount} ${fileCount === 1 ? 'file' : 'files'}` : statusText[saveState]
+  const workspaceStatus = useWorkspaceStatus(treeId)
+  const watchLine = !isFolder && kind === 'workspace' ? workspaceStatusLine(workspaceStatus) : null
+  // Not recording outside changes outranks the save state; a save error
+  // outranks "Watching". Before main has said anything, the save state shows.
+  const slot =
+    watchLine && (watchLine.tone === 'destructive' || saveState !== 'error')
+      ? { text: watchLine.text, error: watchLine.tone === 'destructive' }
+      : { text: status, error: saveState === 'error' }
   const toggleLabel = collapsed ? 'Expand folder' : 'Collapse folder'
 
   return (
@@ -295,13 +307,12 @@ export default function FrameHeader({
             <span className="tapestry-frame-kind">{kindLabels[kind]}</span>
             <span
               className={
-                saveState === 'error'
-                  ? 'tapestry-frame-status tapestry-frame-status--error'
-                  : 'tapestry-frame-status'
+                slot.error ? 'tapestry-frame-status tapestry-frame-status--error' : 'tapestry-frame-status'
               }
-              title={status}
+              title={slot.text}
+              role={slot.error ? 'status' : undefined}
             >
-              {status}
+              {slot.text}
             </span>
           </>
         )}

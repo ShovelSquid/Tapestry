@@ -14,6 +14,12 @@
  * deletes the note, Cmd+Z never rewinds the tree, and scrolling the text never
  * pans the canvas.
  *
+ * A save that fails shows "Not written to file" (the reason in its tooltip)
+ * and a Retry write button, in the window and on the closed card. Retrying
+ * sends the same text against the same base the edit started from, so a file
+ * that changed in the meantime still wins (D-05); the next keystroke retries
+ * too.
+ *
  * Non-text files (binary, too large, symlinks) show only name, type and size.
  */
 
@@ -306,6 +312,13 @@ export default function WorkspaceFileCard({
     openWindow()
   }, [openNonce, openWindow])
 
+  // Retry write: the same text, against the base the edit started from
+  // (baseRef is kept when a save fails), so the file still wins if it moved.
+  const retryWrite = useCallback(() => {
+    dirtyRef.current = true
+    void flush()
+  }, [flush])
+
   const closeWindow = useCallback(async () => {
     await flush()
     setIsOpen(false)
@@ -410,6 +423,35 @@ export default function WorkspaceFileCard({
     </div>
   )
 
+  // UI-SPEC "Write to file failed": destructive, the reason in the tooltip,
+  // and a verb + noun button. The edit itself is already in history.
+  const writeFailed = error ? (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+      <span
+        role="alert"
+        title={error}
+        aria-label={`Not written to file: ${error}`}
+        style={{ fontSize: 12, fontWeight: 600, color: DESTRUCTIVE, whiteSpace: 'nowrap' }}
+      >
+        Not written to file
+      </span>
+      <button
+        type="button"
+        style={buttonStyle}
+        title={`${error}. Your edit is kept in history.`}
+        disabled={status === 'writing'}
+        onPointerDown={isolatePointer}
+        onKeyDown={isolateKeys}
+        onClick={(e) => {
+          e.stopPropagation()
+          retryWrite()
+        }}
+      >
+        Retry write
+      </button>
+    </div>
+  ) : null
+
   let body: React.ReactElement
   if (!isText) {
     const ext = propString(node, 'file.ext')
@@ -457,6 +499,7 @@ export default function WorkspaceFileCard({
             Open file
           </button>
         </div>
+        {writeFailed && <div style={{ marginTop: 8 }}>{writeFailed}</div>}
       </>
     )
   } else {
@@ -541,9 +584,11 @@ export default function WorkspaceFileCard({
             gap: 8,
           }}
         >
-          <div aria-live="polite" style={{ fontSize: 12, color: error ? DESTRUCTIVE : MUTED }}>
-            {error ?? statusText}
-          </div>
+          {writeFailed ?? (
+            <div aria-live="polite" style={{ fontSize: 12, color: MUTED }}>
+              {statusText}
+            </div>
+          )}
           <button
             type="button"
             style={buttonStyle}

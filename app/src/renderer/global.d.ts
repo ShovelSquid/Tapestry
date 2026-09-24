@@ -174,6 +174,14 @@ interface TapestryWorkspaceSaveValue {
   seq: number
 }
 
+/** Whether a workspace's outside changes are being recorded (02.7 D-06). */
+type TapestryWorkspaceStatusValue =
+  | { kind: 'watching' }
+  | { kind: 'not-watching'; reason: string }
+  | { kind: 'folder-missing' }
+
+type TapestryWorkspaceStatus = { treeId: string } & TapestryWorkspaceStatusValue
+
 interface TapestryWorkspaceAPI {
   /** Mirror a workspace folder as its own tree. Main refuses an unpicked root. */
   add(root: string): Promise<{ ok: boolean; treeId?: string; error?: string }>
@@ -184,6 +192,8 @@ interface TapestryWorkspaceAPI {
     text: string,
     baseSha256: string | null,
   ): Promise<{ ok: true; value: TapestryWorkspaceSaveValue } | { ok: false; error: string }>
+  /** Every open workspace's current watching status. */
+  statuses(): Promise<TapestryWorkspaceStatus[]>
 }
 
 interface TapestrySettingsAPI {
@@ -287,6 +297,8 @@ interface TapestryAPI {
   onTreeChanged(callback: (treeId: string) => void): () => void
   /** A vault is being read, is catching up, or is up to date (D-20). */
   onVaultStatus(callback: (status: TapestryVaultStatus) => void): () => void
+  /** A workspace's watching status changed (D-06). */
+  onWorkspaceStatus(callback: (status: TapestryWorkspaceStatus) => void): () => void
   /** The agent list or a connection status changed. */
   onAgentsChanged(callback: () => void): () => void
   /** An agent asked to show a workspace file's note in its window (open_file). */

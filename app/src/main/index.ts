@@ -306,6 +306,10 @@ app.whenReady().then(async () => {
   const workspaceService = new WorkspaceService(registry, {
     treesDir: join(app.getPath('userData'), 'workspaces'),
     hooks: commandHooks,
+    // Watching, not watching, or folder missing: the frame header says which.
+    onStatus: (treeId, status) => {
+      mainWindow?.webContents.send('workspace-status', { treeId, ...status })
+    },
   })
   workspaceServiceRef = workspaceService
 
@@ -835,6 +839,9 @@ app.whenReady().then(async () => {
       return workspaceService.saveFile(actor, treeId, nodeId, text, baseSha256)
     },
   )
+
+  /** Current watching statuses, for a renderer that loaded after they were sent. */
+  ipcMain.handle('workspace:statuses', () => workspaceService.allStatuses())
 
   // Save dialog for creating new .tree files
   ipcMain.handle('dialog:showSave', async () => {

@@ -190,6 +190,14 @@ const tapestryAPI = {
         }
       | { ok: false; error: string }
     > => ipcRenderer.invoke('workspace:saveFile', treeId, nodeId, text, baseSha256),
+    /** Every open workspace's current watching status, for a renderer that loaded late. */
+    statuses: (): Promise<
+      Array<
+        | { treeId: string; kind: 'watching' }
+        | { treeId: string; kind: 'not-watching'; reason: string }
+        | { treeId: string; kind: 'folder-missing' }
+      >
+    > => ipcRenderer.invoke('workspace:statuses'),
   },
 
   settings: {
@@ -310,6 +318,31 @@ const tapestryAPI = {
     }
     ipcRenderer.on('vault-status', handler)
     return () => ipcRenderer.removeListener('vault-status', handler)
+  },
+
+  /**
+   * A workspace started or stopped recording outside changes, or its folder
+   * went missing (02.7 D-06). The frame header says which.
+   */
+  onWorkspaceStatus: (
+    callback: (
+      status:
+        | { treeId: string; kind: 'watching' }
+        | { treeId: string; kind: 'not-watching'; reason: string }
+        | { treeId: string; kind: 'folder-missing' },
+    ) => void,
+  ): (() => void) => {
+    const handler = (
+      _event: IpcRendererEvent,
+      payload:
+        | { treeId: string; kind: 'watching' }
+        | { treeId: string; kind: 'not-watching'; reason: string }
+        | { treeId: string; kind: 'folder-missing' },
+    ) => {
+      callback(payload)
+    }
+    ipcRenderer.on('workspace-status', handler)
+    return () => ipcRenderer.removeListener('workspace-status', handler)
   },
 
   /**

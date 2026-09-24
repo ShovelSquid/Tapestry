@@ -478,6 +478,11 @@ export class WorkspaceService implements WorkspaceLookup {
     return this.statuses.get(treeId) ?? null
   }
 
+  /** Every workspace's last reported status. */
+  allStatuses(): Array<{ treeId: string } & WorkspaceStatus> {
+    return [...this.statuses.entries()].map(([treeId, status]) => ({ treeId, ...status }))
+  }
+
   /**
    * A watcher failed. Watching restarts by itself after the restart delay,
    * with a full reconcile; until then the header says it is not watching

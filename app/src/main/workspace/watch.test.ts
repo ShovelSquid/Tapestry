@@ -6,15 +6,15 @@
  */
 
 import { afterEach, describe, expect, it } from 'vitest'
-import { appendFileSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'fs'
+import { appendFileSync, chmodSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { TreeRegistry, type OpenTree } from '../trees/registry'
 import { WorkspaceService, type WorkspaceServiceOptions, type WorkspaceStatus } from './workspace-service'
 import { groupMessages } from '../mirror/plan'
 import type { FolderWatcherHandlers } from '../mirror/watcher'
-import { FILE_PATH, FILE_TEXT } from './shapes'
+import { FILE_PATH, FILE_SHA256, FILE_TEXT } from './shapes'
 import type { NodeData } from '../kernel-bridge'
-import { agentActor } from '../commands/actor'
+import { agentActor, humanActor } from '../commands/actor'
 import { WorkspaceFileCommands } from '../commands/file-tools'
 import { makeTempWorkspace, type TempWorkspace } from '../../../test/helpers/temp-workspace'
 
@@ -334,5 +334,53 @@ describe('watch status and self-healing (D-06, T-02.7-25, T-02.7-26)', () => {
     await sleep(200)
     expect(fake.created.length).toBe(1)
     expect(service.isWatching(tree.id)).toBe(false)
+  })
+})
+
+describe('Retry write (D-05)', () => {
+  it('resends the same text against the original base: writes once possible, and the file still wins', async () => {
+    const { ws, service } = setup()
+    const tree = await service.addWorkspace(ws.root)
+    const kaelen = humanActor('kaelen')
+    const note = noteAt(tree, 'src/nested/deep.txt')!
+    const base = String(note.props[FILE_SHA256].value)
+    const folder = join(ws.root, 'src', 'nested')
+    cleanups.push(() => chmodSync(folder, 0o755))
+
+    // A read-only folder stops the atomic rename.
+    chmodSync(folder, 0o555)
+    const failed = service.saveFile(kaelen, tree.id, note.id, 'typed in the window\n', base)
+    expect(failed.ok).toBe(false)
+    expect(!failed.ok && failed.error).toMatch(/^Could not write src\/nested\/deep.txt -- .*Your edit is kept in history\.$/)
+    expect(readFileSync(join(folder, 'deep.txt'), 'utf-8')).toBe('deep text\n')
+
+    // Retry write, after the folder is writable again: the same text, the same base.
+    chmodSync(folder, 0o755)
+    const retried = service.saveFile(kaelen, tree.id, note.id, 'typed in the window\n', base)
+    expect(retried.ok && retried.value.written).toBe(true)
+    expect(readFileSync(join(folder, 'deep.txt'), 'utf-8')).toBe('typed in the window\n')
+  })
+
+  it('lets a file that changed before the retry win', async () => {
+    const { ws, service } = setup()
+    const tree = await service.addWorkspace(ws.root)
+    const kaelen = humanActor('kaelen')
+    const note = noteAt(tree, 'src/nested/deep.txt')!
+    const base = String(note.props[FILE_SHA256].value)
+    const folder = join(ws.root, 'src', 'nested')
+    cleanups.push(() => chmodSync(folder, 0o755))
+
+    chmodSync(folder, 0o555)
+    expect(service.saveFile(kaelen, tree.id, note.id, 'typed in the window\n', base).ok).toBe(false)
+    chmodSync(folder, 0o755)
+    writeFileSync(join(folder, 'deep.txt'), 'changed in an editor\n')
+
+    const retried = service.saveFile(kaelen, tree.id, note.id, 'typed in the window\n', base)
+    expect(retried.ok && retried.value.fileWins).toBe(true)
+    expect(retried.ok && retried.value.written).toBe(false)
+    expect(readFileSync(join(folder, 'deep.txt'), 'utf-8')).toBe('changed in an editor\n')
+    expect(textAt(tree, 'src/nested/deep.txt')).toBe('changed in an editor\n')
+    // Both attempts at the person's edit stay in history.
+    expect(commitBlocks(tree).filter((block) => block.includes('edit src/nested/deep.txt')).length).toBe(2)
   })
 })
