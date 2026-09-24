@@ -12,7 +12,7 @@
  * for a side effect of the refusal (D-11).
  */
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, expectTypeOf, it } from 'vitest'
 import { join } from 'node:path'
 import { readFileSync, rmSync, statSync } from 'node:fs'
 import { makeTempDir } from '../../../test/helpers/temp-tree'
@@ -35,6 +35,7 @@ import {
   lockKey,
   resolveLock,
   type ActorLike,
+  type LockAspect,
   type LockPolicy,
   type LockProps,
 } from './locks'
@@ -375,6 +376,261 @@ describe('allow lists (D-09, pure)', () => {
         nonAgentNotesDeleteLocked: true,
       }),
     ).toEqual({ locked: false })
+  })
+})
+
+/**
+ * Layout (quick 260924-0ii): the note's placement on the canvas, a third
+ * aspect whose defaults mirror text's (Q-02). No command checks layout yet;
+ * Phase 2.5 `place` is its first caller (Q-04). The resolver is aspect-generic
+ * at runtime, so the red for this block was type-level: `'layout'` was not a
+ * LockAspect until locks.ts widened the union.
+ */
+describe('layout aspect (pure)', () => {
+  const AGENT_GEMINI: ActorLike = { kind: 'plugin', id: 'agent.gemini' }
+  const NON_AGENT_CREATORS: ActorLike[] = [
+    HUMAN_KAELEN,
+    { kind: 'plugin', id: 'obsidian.bridge' },
+    { kind: 'plugin', id: 'tapestry-notes' },
+    { kind: 'system', id: 'tapestry' },
+    { kind: 'human', id: 'local' },
+  ]
+
+  /** One prop fixture, written under the given aspect's own keys. */
+  type Fixture = (aspect: LockAspect) => LockProps
+  const FIXTURES: Record<string, Fixture> = {
+    none: () => ({}),
+    open: (a) => ({ [lockKey(a)]: textProp('open') }),
+    owner: (a) => ({ [lockKey(a)]: textProp('user.kaelen') }),
+    int: (a) => ({ [lockKey(a)]: { type: 'int', value: 7 } }),
+    blank: (a) => ({ [lockKey(a)]: textProp('   ') }),
+    ownerWithAllow: (a) => ({
+      [lockKey(a)]: textProp('user.kaelen'),
+      [allowKey(a)]: textProp('agent.claude agent.chatgpt'),
+    }),
+    defaultWithAllow: (a) => ({ [allowKey(a)]: textProp('agent.claude') }),
+  }
+
+  it('is one of exactly three aspects; rank is still deferred (Q-05)', () => {
+    expectTypeOf<LockAspect>().toEqualTypeOf<'text' | 'delete' | 'layout'>()
+  })
+
+  it('builds the layout lock keys (Q-01)', () => {
+    expect(lockKey('layout')).toBe('lock.layout')
+    expect(allowKey('layout')).toBe('lock.layout.allow')
+  })
+
+  it('locks layout of a note no agent created to its creator under every policy', () => {
+    for (const creator of NON_AGENT_CREATORS) {
+      for (const policy of ALL_POLICIES) {
+        expect(resolveLock({}, creator, 'layout', policy)).toEqual({
+          locked: true,
+          owner: creator.id,
+          ownerKind: creator.kind,
+          allow: [],
+        })
+      }
+    }
+  })
+
+  it('opens layout of an agent\'s note only when agentNotesOpenToAgents is true', () => {
+    expect(
+      resolveLock({}, AGENT_CLAUDE, 'layout', {
+        agentNotesOpenToAgents: true,
+        nonAgentNotesDeleteLocked: true,
+      }),
+    ).toEqual({ locked: false })
+    expect(
+      resolveLock({}, AGENT_CLAUDE, 'layout', {
+        agentNotesOpenToAgents: false,
+        nonAgentNotesDeleteLocked: true,
+      }),
+    ).toEqual({ locked: true, owner: 'agent.claude', ownerKind: 'plugin', allow: [] })
+  })
+
+  it('resolves exactly as text does for every creator, policy and fixture (Q-02)', () => {
+    for (const creator of [...NON_AGENT_CREATORS, AGENT_CLAUDE]) {
+      for (const policy of ALL_POLICIES) {
+        for (const fixtureFor of Object.values(FIXTURES)) {
+          expect(resolveLock(fixtureFor('layout'), creator, 'layout', policy)).toEqual(
+            resolveLock(fixtureFor('text'), creator, 'text', policy),
+          )
+        }
+      }
+    }
+  })
+
+  it('honours an explicit layout lock over the default (D-08)', () => {
+    expect(resolveLock({ 'lock.layout': textProp('open') }, HUMAN_KAELEN, 'layout')).toEqual({
+      locked: false,
+    })
+    for (const policy of ALL_POLICIES) {
+      expect(
+        resolveLock({ 'lock.layout': textProp('agent.claude') }, AGENT_CLAUDE, 'layout', policy),
+      ).toEqual({ locked: true, owner: 'agent.claude', allow: [] })
+    }
+  })
+
+  it('fails closed on a malformed layout lock', () => {
+    expect(
+      resolveLock({ 'lock.layout': { type: 'int', value: 7 } }, AGENT_CLAUDE, 'layout'),
+    ).toEqual({ locked: true, owner: '7', allow: [] })
+    expect(
+      resolveLock({ 'lock.layout': { type: 'bool', value: true } }, AGENT_CLAUDE, 'layout'),
+    ).toEqual({ locked: true, owner: 'true', allow: [] })
+    expect(
+      resolveLock({ 'lock.layout': { type: 'ref', value: 'open' } }, AGENT_CLAUDE, 'layout')
+        .locked,
+    ).toBe(true)
+    for (const value of ['Open', ' open', 'open ']) {
+      expect(resolveLock({ 'lock.layout': textProp(value) }, AGENT_CLAUDE, 'layout')).toEqual({
+        locked: true,
+        owner: value,
+        allow: [],
+      })
+    }
+    for (const value of ['', '   ']) {
+      const props: LockProps = { 'lock.layout': textProp(value) }
+      expect(resolveLock(props, AGENT_CLAUDE, 'layout').locked).toBe(true)
+      expect(checkLock('n1', props, HUMAN_KAELEN, AGENT_CLAUDE, 'layout')).toBe(
+        'n1 layout is locked by (unknown)',
+      )
+    }
+  })
+
+  it('refuses an agent moving a note no agent made (Phase 2.5 D-15, D-12)', () => {
+    expect(checkLock('n1', {}, HUMAN_KAELEN, AGENT_CLAUDE, 'layout')).toBe(
+      'n1 layout is locked by user.kaelen',
+    )
+    expect(
+      checkLock('n1', {}, { kind: 'plugin', id: 'obsidian.bridge' }, AGENT_CLAUDE, 'layout'),
+    ).toBe('n1 layout is locked by obsidian.bridge')
+  })
+
+  it('lets the layout lock owner through and refuses others, never by prefix (D-10)', () => {
+    const props: LockProps = { 'lock.layout': textProp('agent.claude') }
+    expect(checkLock('n1', props, HUMAN_KAELEN, AGENT_CLAUDE, 'layout')).toBeNull()
+    expect(checkLock('n1', props, HUMAN_KAELEN, AGENT_CHATGPT, 'layout')).toBe(
+      'n1 layout is locked by agent.claude',
+    )
+    expect(
+      checkLock('n1', props, HUMAN_KAELEN, { kind: 'plugin', id: 'agent.claud' }, 'layout'),
+    ).toBe('n1 layout is locked by agent.claude')
+  })
+
+  it('honours lock.layout.allow on explicit and default locks (D-09)', () => {
+    const explicit: LockProps = {
+      'lock.layout': textProp('agent.chatgpt'),
+      'lock.layout.allow': textProp('agent.claude'),
+    }
+    expect(checkLock('n1', explicit, HUMAN_KAELEN, AGENT_CLAUDE, 'layout')).toBeNull()
+    expect(checkLock('n1', explicit, HUMAN_KAELEN, AGENT_GEMINI, 'layout')).toBe(
+      'n1 layout is locked by agent.chatgpt',
+    )
+
+    const byDefault: LockProps = { 'lock.layout.allow': textProp('agent.claude') }
+    expect(checkLock('n1', byDefault, HUMAN_KAELEN, AGENT_CLAUDE, 'layout')).toBeNull()
+    expect(checkLock('n1', byDefault, HUMAN_KAELEN, AGENT_CHATGPT, 'layout')).toBe(
+      'n1 layout is locked by user.kaelen',
+    )
+  })
+
+  it('splits lock.layout.allow on whitespace and matches exactly (D-09)', () => {
+    const padded: LockProps = {
+      'lock.layout': textProp('agent.claude'),
+      'lock.layout.allow': textProp('  agent.gemini\tagent.chatgpt \n'),
+    }
+    const state = resolveLock(padded, HUMAN_KAELEN, 'layout')
+    expect(state.locked && state.allow).toEqual(['agent.gemini', 'agent.chatgpt'])
+
+    const exact: LockProps = {
+      'lock.layout': textProp('agent.claude'),
+      'lock.layout.allow': textProp('agent.chatgpt'),
+    }
+    expect(
+      checkLock('n1', exact, HUMAN_KAELEN, { kind: 'plugin', id: 'agent.chat' }, 'layout'),
+    ).toBe('n1 layout is locked by agent.claude')
+  })
+
+  it('admits nobody through a non-text lock.layout.allow, and ignores it when open', () => {
+    const nonText: LockProps[string][] = [
+      { type: 'ref', value: 'agent.chatgpt' },
+      { type: 'int', value: 1 },
+    ]
+    for (const allow of nonText) {
+      const props: LockProps = { 'lock.layout': textProp('agent.claude'), 'lock.layout.allow': allow }
+      expect(resolveLock(props, HUMAN_KAELEN, 'layout')).toEqual({
+        locked: true,
+        owner: 'agent.claude',
+        allow: [],
+      })
+      expect(checkLock('n1', props, HUMAN_KAELEN, AGENT_CHATGPT, 'layout')).toBe(
+        'n1 layout is locked by agent.claude',
+      )
+    }
+    expect(
+      resolveLock(
+        { 'lock.layout': textProp('open'), 'lock.layout.allow': textProp('agent.claude') },
+        HUMAN_KAELEN,
+        'layout',
+      ),
+    ).toEqual({ locked: false })
+  })
+
+  it('matches a default layout owner on kind and id, not id alone (WR-01)', () => {
+    const lookalikes: ActorLike[] = [
+      { kind: 'human', id: 'agent.claude' },
+      { kind: 'system', id: 'agent.claude' },
+    ]
+    for (const creator of lookalikes) {
+      expect(
+        checkLock('n1', {}, creator, AGENT_CLAUDE, 'layout', {
+          agentNotesOpenToAgents: true,
+          nonAgentNotesDeleteLocked: true,
+        }),
+      ).toBe('n1 layout is locked by agent.claude')
+    }
+  })
+
+  it('does not check people or non-agent plugins against a layout lock (D-10)', () => {
+    const props: LockProps = { 'lock.layout': textProp('agent.claude') }
+    expect(checkLock('n1', props, HUMAN_KAELEN, HUMAN_KAELEN, 'layout')).toBeNull()
+    expect(
+      checkLock('n1', props, HUMAN_KAELEN, { kind: 'plugin', id: 'tapestry-notes' }, 'layout'),
+    ).toBeNull()
+  })
+
+  it('is independent of the text and delete locks, both ways (D-02)', () => {
+    const otherAspectsOpen: LockProps = {
+      'lock.text': textProp('open'),
+      'lock.delete': textProp('open'),
+      'lock.text.allow': textProp('agent.claude'),
+      'lock.delete.allow': textProp('agent.claude'),
+    }
+    expect(resolveLock(otherAspectsOpen, HUMAN_KAELEN, 'layout')).toEqual({
+      locked: true,
+      owner: 'user.kaelen',
+      ownerKind: 'human',
+      allow: [],
+    })
+    expect(checkLock('n1', otherAspectsOpen, HUMAN_KAELEN, AGENT_CLAUDE, 'layout')).toBe(
+      'n1 layout is locked by user.kaelen',
+    )
+
+    const layoutOpen: LockProps = {
+      'lock.layout': textProp('open'),
+      'lock.layout.allow': textProp('agent.claude'),
+    }
+    for (const policy of ALL_POLICIES) {
+      for (const aspect of ['text', 'delete'] as const) {
+        expect(resolveLock(layoutOpen, HUMAN_KAELEN, aspect, policy)).toEqual(
+          resolveLock({}, HUMAN_KAELEN, aspect, policy),
+        )
+      }
+    }
+    expect(checkLock('n1', layoutOpen, HUMAN_KAELEN, AGENT_CLAUDE, 'text')).toBe(
+      'n1 text is locked by user.kaelen',
+    )
   })
 })
 
