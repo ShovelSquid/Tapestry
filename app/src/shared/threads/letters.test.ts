@@ -467,3 +467,29 @@ describe('runsForDecorations / lettersIn', () => {
     expect(index.authorOf(99)).toBeUndefined()
   })
 })
+
+// ---------------------------------------------------------------------------
+// allAuthoredBy (D-22 read path)
+// ---------------------------------------------------------------------------
+
+describe('allAuthoredBy', () => {
+  it('is true only when every live letter in range was written by the given actor', () => {
+    const index = new LetterIndex()
+    let doc = tapestrySchema.node('doc', null, [tapestrySchema.node('paragraph')])
+
+    const insHuman = insertStep(1, 'ab')
+    doc = insHuman.apply(doc).doc!
+    index.applyStep(insHuman, 'ab', 'human.kaelen', 1)
+
+    const insAgent = insertStep(3, 'cd')
+    doc = insAgent.apply(doc).doc!
+    index.applyStep(insAgent, 'cd', 'agent.claude', 2)
+
+    expect(index.allAuthoredBy(1, 3, 'human.kaelen')).toBe(true)
+    expect(index.allAuthoredBy(3, 5, 'agent.claude')).toBe(true)
+    expect(index.allAuthoredBy(1, 5, 'human.kaelen')).toBe(false)
+    expect(index.allAuthoredBy(1, 5, 'agent.claude')).toBe(false)
+    // An empty range touches nothing, so it is vacuously authored by anyone.
+    expect(index.allAuthoredBy(2, 2, 'nobody')).toBe(true)
+  })
+})

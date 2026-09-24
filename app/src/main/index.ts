@@ -271,9 +271,15 @@ app.whenReady().then(async () => {
     },
   }
 
+  const agentNotes = new NoteCommands(registry, commandHooks)
   const agentCommands: AgentCommands = {
-    notes: new NoteCommands(registry, commandHooks),
+    notes: agentNotes,
     connections: new ConnectionCommands(registry, commandHooks),
+    // D-20..D-24 thread tools (Plan 08): only available once threadService
+    // exists, which it always does by this point in startup -- guarded
+    // rather than asserted so a future reordering fails soft (a clear "not
+    // available" refusal) instead of a startup crash.
+    threads: threadService ? { registry, threadService, notes: agentNotes } : undefined,
   }
 
   agentServer = new AgentSocketServer({

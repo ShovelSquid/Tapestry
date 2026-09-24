@@ -348,6 +348,17 @@ export class LetterIndex {
     return ids
   }
 
+  /**
+   * Whether every *live* letter in `[from, to)` was authored by `actorId` —
+   * the D-22 read path Plan 08's agent thread tools check before a delete or
+   * replace is allowed to touch the kernel at all. An empty or all-live-gap
+   * range (nothing there to touch) is vacuously true, matching `lettersIn`'s
+   * own "no live letters in range" case.
+   */
+  allAuthoredBy(from: number, to: number, actorId: string): boolean {
+    return this.lettersIn(from, to).every((id) => this.authorOf(id) === actorId)
+  }
+
   /** Live runs, in document order — the per-letter author wash Plan 08 renders. */
   runsForDecorations(): LetterRun[] {
     return this.runs.map((run) => ({

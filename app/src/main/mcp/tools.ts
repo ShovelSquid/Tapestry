@@ -12,8 +12,19 @@
  */
 
 import { McpServer } from '@modelcontextprotocol/server'
-import { TOOL_DEFINITIONS } from './schemas'
+import { TOOL_DEFINITIONS, type ToolDefinition } from './schemas'
+import { THREAD_TOOL_DEFINITIONS } from '../threads/thread-tools'
 import type { CommandResult } from '../commands/notes'
+
+/**
+ * Every tool the bridge advertises: the base note/connection tools plus the
+ * D-20..D-24 thread tools (Plan 08). `THREAD_TOOL_DEFINITIONS` imports only
+ * `zod` and main-process **types** (never electron, the kernel bridge or the
+ * native addon) at runtime, so merging it in here keeps this module — part
+ * of the stdio shim bundle `mcp/shim.ts` ships — exactly as free of those
+ * dependencies as it already was.
+ */
+const ALL_TOOL_DEFINITIONS: readonly ToolDefinition[] = Object.freeze([...TOOL_DEFINITIONS, ...THREAD_TOOL_DEFINITIONS])
 
 export type ToolCallResult = CommandResult<unknown>
 
@@ -31,7 +42,7 @@ export interface ToolCaller {
 export function buildMcpServer(caller: ToolCaller): McpServer {
   const server = new McpServer({ name: 'tapestry', version: '0.1.0' })
 
-  for (const definition of TOOL_DEFINITIONS) {
+  for (const definition of ALL_TOOL_DEFINITIONS) {
     server.registerTool(
       definition.name,
       {

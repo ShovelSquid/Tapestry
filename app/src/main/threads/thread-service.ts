@@ -26,9 +26,11 @@
  * service writes the missing `out` as its own commit on the very next write.
  */
 
-import type { Node as ProseMirrorNode } from 'prosemirror-model'
+import { Fragment, Slice, type Node as ProseMirrorNode } from 'prosemirror-model'
+import { Selection } from 'prosemirror-state'
 import { AddMarkStep, RemoveMarkStep, ReplaceStep, Step } from 'prosemirror-transform'
 import { tapestrySchema } from '../../renderer/editor/schema'
+import { insertedTextOf } from '../../renderer/threads/recorder'
 import {
   formatBlock,
   parseBlock,
@@ -36,6 +38,7 @@ import {
   type ThreadCause,
   type ThreadRecord,
 } from '../../shared/threads/grammar'
+import { LetterIndex } from '../../shared/threads/letters'
 import { deriveSessions, detectTimeout, type AuthoredThreadRecord } from '../../shared/threads/sessions'
 import { parseThreadSettings } from '../../shared/threads/settings'
 import type { Actor } from '../commands/actor'
@@ -91,6 +94,12 @@ interface ThreadHandle {
   /** Every step ever applied, in version order, so a version-mismatched push
    * can be told exactly which steps it is missing (Pattern 3 rebase path). */
   steps: Step[]
+  /** Per-letter authorship, built from replay at open() and kept exactly in
+   * step with `doc`/`version` afterwards (both `push` and `applyAgentEdit`
+   * update it once a batch of steps has fully succeeded, never partially --
+   * Plan 08's D-22 enforcement reads this before any delete/replace touches
+   * the kernel). */
+  letterIndex: LetterIndex
 
   pending: ThreadRecord[]
   batchAnchorMs: number | null
@@ -171,6 +180,73 @@ function docFromFlatText(text: string): ProseMirrorNode {
       line ? tapestrySchema.node('paragraph', null, [tapestrySchema.text(line)]) : tapestrySchema.node('paragraph'),
     )
   return tapestrySchema.node('doc', null, paragraphs)
+}
+
+// ---------------------------------------------------------------------------
+// LetterIndex replay (Plan 08, D-22): rebuilds authorship from the exact
+// same `ins`/`del` records `replayFlatText` above already reads, using the
+// records' own positions as synthetic `ReplaceStep`s. `LetterIndex.applyStep`
+// only calls `step.getMap()` -- pure position arithmetic -- so a step that
+// was never actually applied to a real document is a legitimate way to feed
+// it the same position history `replayFlatText` reconstructs into `doc`,
+// keeping the two in step with each other for exactly the positions this
+// tracer's flat, ins/del-only replay already supports (mark+/mark-/step/
+// marker/in/out carry no letter-position effect here, matching
+// replayFlatText's own scope).
+// ---------------------------------------------------------------------------
+
+function applyRecordToLetterIndex(index: LetterIndex, record: ThreadRecord, actorId: string, atMs: number): void {
+  if (record.verb === 'ins') {
+    if (record.text.length === 0) return
+    const step = new ReplaceStep(record.pos, record.pos, new Slice(Fragment.from(tapestrySchema.text(record.text)), 0, 0))
+    index.applyStep(step, record.text, actorId, atMs)
+  } else if (record.verb === 'del') {
+    if (record.to <= record.from) return
+    const step = new ReplaceStep(record.from, record.to, Slice.empty)
+    index.applyStep(step, '', actorId, atMs)
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Flat text + positions (Plan 08): the primitive an agent's quote-anchor
+// thread tools resolve against (RESEARCH: "quote anchors suit a language
+// model better than ProseMirror positions, which it cannot see"). Kept here,
+// alongside the rest of this file's ProseMirror knowledge, so thread-tools.ts
+// never needs to import ProseMirror itself -- it only ever sees plain text
+// and integer positions.
+// ---------------------------------------------------------------------------
+
+export interface FlatDocText {
+  /** Every text-node character in document order (block boundaries are not
+   * represented as characters -- a quote cannot span a paragraph break). */
+  text: string
+  /** `positions[i]` is the exact document position immediately before
+   * `text[i]`. */
+  positions: number[]
+  /** The valid insertion point at the very start of the document. */
+  startPos: number
+  /** The valid insertion point at the very end of the document. */
+  endPos: number
+}
+
+function flatTextOf(doc: ProseMirrorNode): FlatDocText {
+  const chars: string[] = []
+  const positions: number[] = []
+  doc.descendants((node, pos) => {
+    if (!node.isText) return true
+    const text = node.text ?? ''
+    for (let i = 0; i < text.length; i++) {
+      chars.push(text[i])
+      positions.push(pos + i)
+    }
+    return true
+  })
+  return {
+    text: chars.join(''),
+    positions,
+    startPos: Selection.atStart(doc).from,
+    endPos: Selection.atEnd(doc).from,
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -311,6 +387,7 @@ export class ThreadService {
     let doc: ProseMirrorNode
     let version = 0
     const authoredRecords: AuthoredThreadRecord[] = []
+    const letterIndex = new LetterIndex()
     try {
       doc = docFromFlatText(replayFlatText(blocks))
       for (const entry of entries) {
@@ -320,7 +397,9 @@ export class ThreadService {
         const stepCount = records.filter((r) => r.verb !== 'in' && r.verb !== 'out').length
         version = header.versionBefore + stepCount
         for (const record of records) {
-          authoredRecords.push({ ...record, atMs: header.anchorMs + record.offsetMs, actor: entry.actor.id })
+          const atMs = header.anchorMs + record.offsetMs
+          authoredRecords.push({ ...record, atMs, actor: entry.actor.id })
+          applyRecordToLetterIndex(letterIndex, record, entry.actor.id, atMs)
         }
       }
     } catch (err) {
@@ -376,6 +455,7 @@ export class ThreadService {
       doc,
       version,
       steps: [],
+      letterIndex,
       pending: [],
       batchAnchorMs: null,
       batchVersionBefore: version,
@@ -508,10 +588,164 @@ export class ThreadService {
     handle.version += stepsJson.length
     handle.lastActivityMs = timesMs[timesMs.length - 1] ?? Date.now()
 
+    // D-22 (Plan 08): the LetterIndex is only ever advanced once every step
+    // in this push has fully succeeded (the loop above already guarantees
+    // that -- a failing step returns before reaching here) -- never touched
+    // per-step inside the loop, so a rejected push leaves it exactly as it
+    // was, in step with `handle.doc`/`handle.version`'s own all-or-nothing
+    // update just above.
+    for (let i = 0; i < appliedSteps.length; i++) {
+      const step = appliedSteps[i]
+      handle.letterIndex.applyStep(step, insertedTextOf(step), actor.id, timesMs[i] ?? anchorMs)
+    }
+
     this.scheduleFlush(handle)
     this.scheduleTimeout(handle)
 
     return { confirmed: true, version: handle.version }
+  }
+
+  /**
+   * The current authoritative document's flat text and per-character
+   * positions (Plan 08) — the primitive an agent's quote-anchor thread tools
+   * (`thread-tools.ts`) resolve a request against, without needing to import
+   * ProseMirror at all. Opens the thread (replaying its history) first if it
+   * is not already open, so an agent can write into a thread nobody has the
+   * overlay open on.
+   */
+  readFlatText(bridge: KernelBridge, actor: Actor, treeId: string, nodeId: string): FlatDocText | { error: string } {
+    const resolved = this.ensureHandle(bridge, actor, treeId, nodeId)
+    if ('error' in resolved) return resolved
+    return flatTextOf(resolved.handle.doc)
+  }
+
+  /**
+   * The thread's current `LetterIndex` (D-22's read side) — `lettersIn` and
+   * `authorOf` are the exact primitives an agent's delete/replace thread
+   * tool (`thread-tools.ts`) checks a proposed range against *before* ever
+   * asking `applyAgentEdit` to touch the document. `applyAgentEdit` checks
+   * the identical invariant again itself, from the same index, as the
+   * actual security boundary — this reader lets a caller refuse early with
+   * a specific, per-letter reason, never as a substitute for that boundary.
+   */
+  getLetterIndex(bridge: KernelBridge, actor: Actor, treeId: string, nodeId: string): LetterIndex | { error: string } {
+    const resolved = this.ensureHandle(bridge, actor, treeId, nodeId)
+    if ('error' in resolved) return resolved
+    return resolved.handle.letterIndex
+  }
+
+  /**
+   * Applies one agent-originated edit — an insert (`from === to`), a delete
+   * (`insertText === ''`), or a replace (both) — to the thread's
+   * authoritative document (D-20..D-22, Plan 08).
+   *
+   * D-22 is enforced here, from `handle.letterIndex` (built from host-stamped
+   * journal commit actors, never from anything the caller supplied), and
+   * checked **before** any step is constructed or applied: a refusal touches
+   * neither the document nor the kernel, so the journal's last seq is
+   * provably unchanged.
+   */
+  applyAgentEdit(
+    bridge: KernelBridge,
+    actor: Actor,
+    treeId: string,
+    nodeId: string,
+    edit: { from: number; to: number; insertText: string },
+  ): { ok: true } | { ok: false; error: string } {
+    const resolved = this.ensureHandle(bridge, actor, treeId, nodeId)
+    if ('error' in resolved) return { ok: false, error: resolved.error }
+    const { handle } = resolved
+
+    if (edit.to > edit.from && !handle.letterIndex.allAuthoredBy(edit.from, edit.to, actor.id)) {
+      return {
+        ok: false,
+        error: `${actor.id} may only delete or replace letters it wrote; the given range includes a letter written by someone else`,
+      }
+    }
+
+    const slice =
+      edit.insertText.length > 0
+        ? new Slice(Fragment.from(tapestrySchema.text(edit.insertText)), 0, 0)
+        : Slice.empty
+    const step = new ReplaceStep(edit.from, edit.to, slice)
+
+    const before = handle.doc
+    let result
+    try {
+      result = step.apply(before)
+    } catch (err) {
+      return { ok: false, error: errorMessage(err) }
+    }
+    if (result.failed) {
+      return { ok: false, error: result.failed }
+    }
+
+    // D-06: a commit never mixes authors -- an actor switch flushes whatever
+    // the previous author left pending before this actor's edit joins it.
+    if (handle.pending.length > 0 && handle.actor.id !== actor.id) {
+      this.flush(handle)
+    }
+    handle.actor = actor
+
+    const nowMs = Date.now()
+    const startingNewBatch = handle.pending.length === 0
+    const anchorMs = startingNewBatch ? nowMs : handle.batchAnchorMs!
+    const newRecords: ThreadRecord[] = []
+    if (startingNewBatch) {
+      handle.batchAnchorMs = anchorMs
+      handle.batchVersionBefore = handle.version
+      if (!handle.sessionStarted) {
+        newRecords.push({ verb: 'in', offsetMs: 0, session: handle.nextSessionNumber })
+        handle.sessionStarted = true
+      }
+    }
+    const offsetMs = Math.max(0, nowMs - anchorMs)
+    const record = deriveRecord(step, before, offsetMs, null)
+
+    // Same all-or-nothing ordering as push(): the document and the version
+    // only move once the step has actually applied, and the LetterIndex
+    // moves in the same statement group, never ahead of or behind them.
+    handle.pending.push(...newRecords, record)
+    handle.steps.push(step)
+    handle.doc = result.doc!
+    handle.version += 1
+    handle.lastActivityMs = nowMs
+    handle.letterIndex.applyStep(step, insertedTextOf(step), actor.id, nowMs)
+
+    this.scheduleFlush(handle)
+    this.scheduleTimeout(handle)
+
+    return { ok: true }
+  }
+
+  /**
+   * Returns the handle for an already-open thread, or opens it (replaying
+   * its history) via `open()` itself, so this and the renderer's own
+   * `thread:open` share exactly one replay path. Returns `{ error }` rather
+   * than throwing when the history cannot be read (T-02.3-03-01) — an agent
+   * gets a clear refusal instead of a thrown exception crossing the socket.
+   */
+  private ensureHandle(
+    bridge: KernelBridge,
+    actor: Actor,
+    treeId: string,
+    nodeId: string,
+  ): { handle: ThreadHandle } | { error: string } {
+    const key = this.key(treeId, nodeId)
+    const existing = this.handles.get(key)
+    if (existing) return { handle: existing }
+
+    const result = this.open(bridge, actor, treeId, nodeId)
+    if (result.unreadable) {
+      return { error: result.unreadableReason ?? 'This thread\'s history could not be read' }
+    }
+    const handle = this.handles.get(key)
+    if (!handle) {
+      // open() always registers a handle on a non-unreadable result; this
+      // branch exists only so the return type stays a clean union.
+      return { error: 'Thread could not be opened' }
+    }
+    return { handle }
   }
 
   /** Flushes the pending batch (if any) and writes the `body` checkpoint,
