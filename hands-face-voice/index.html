@@ -116,6 +116,17 @@
     <div id="transcript"><span id="transcriptFinal"></span><span id="transcriptInterim" class="interim"></span></div>
     <p class="caveat">Transcription uses the browser's built-in speech recognition. In Chrome this sends audio to Google's speech service — not on-device. See README's privacy question.</p>
   </div>
+
+  <div class="panel">
+    <h2>Save Recording</h2>
+    <div class="controls" style="padding:0 0 8px;">
+      <button id="chooseFolder">Choose save folder</button>
+      <button id="startRecording" disabled>Start recording</button>
+      <button id="stopRecording" disabled>Stop recording</button>
+    </div>
+    <div id="recordStatus" class="status">no save folder chosen</div>
+    <p class="caveat">Records its own camera+mic stream to a local .webm file (plus a .json sidecar) in the folder you pick. Nothing leaves the device. Separate from the live views above — this is for spike 013's offline landmark extraction, not real-time recognition.</p>
+  </div>
 </main>
 
 <script type="module" src="./src/main.js"></script>

@@ -2,11 +2,16 @@ import { startHandsAndFace } from "./hands-face.js";
 import { startVoiceWaveform } from "./voice.js";
 import { startTranscription } from "./transcribe.js";
 import { createScene3D } from "./scene3d.js";
+import { chooseSaveFolder, startRecording } from "./record.js";
 
 const statusEl = document.getElementById("status");
 const errorBox = document.getElementById("errorBox");
 const startCameraBtn = document.getElementById("startCamera");
 const startMicBtn = document.getElementById("startMic");
+const chooseFolderBtn = document.getElementById("chooseFolder");
+const startRecordingBtn = document.getElementById("startRecording");
+const stopRecordingBtn = document.getElementById("stopRecording");
+const recordStatusEl = document.getElementById("recordStatus");
 
 function showError(context, err) {
   console.error(context, err);
@@ -61,5 +66,56 @@ startMicBtn.addEventListener("click", async () => {
     });
   } catch (err) {
     showError("Transcription", err);
+  }
+});
+
+function formatBytes(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+let activeRecording = null;
+
+chooseFolderBtn.addEventListener("click", async () => {
+  try {
+    const folderName = await chooseSaveFolder();
+    recordStatusEl.textContent = `save folder: ${folderName}`;
+    startRecordingBtn.disabled = false;
+  } catch (err) {
+    showError("Choose save folder", err);
+  }
+});
+
+startRecordingBtn.addEventListener("click", async () => {
+  startRecordingBtn.disabled = true;
+  chooseFolderBtn.disabled = true;
+  try {
+    activeRecording = await startRecording({
+      onStatus: ({ name, bytesWritten, recording }) => {
+        recordStatusEl.textContent = recording
+          ? `recording ${name} — ${formatBytes(bytesWritten)}`
+          : `saved ${name} — ${formatBytes(bytesWritten)}`;
+      },
+      onError: (err) => showError("Recording", err),
+    });
+    stopRecordingBtn.disabled = false;
+  } catch (err) {
+    startRecordingBtn.disabled = false;
+    chooseFolderBtn.disabled = false;
+    showError("Recording", err);
+  }
+});
+
+stopRecordingBtn.addEventListener("click", async () => {
+  stopRecordingBtn.disabled = true;
+  try {
+    await activeRecording.stop();
+  } catch (err) {
+    showError("Recording", err);
+  } finally {
+    activeRecording = null;
+    chooseFolderBtn.disabled = false;
+    startRecordingBtn.disabled = false;
   }
 });
