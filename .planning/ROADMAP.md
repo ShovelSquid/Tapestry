@@ -319,7 +319,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 and on Phase 2.4 being merged — starts with a blocking checkpoint)*
 
-- [ ] 02.5-04-PLAN.md — `place` tool under `lock.layout`; refusals commit nothing; a person's `pinned true` is never touched (D-04, D-11..D-13, D-15, D-17, D-19)
+- [x] 02.5-04-PLAN.md — `place` tool under `lock.layout`; refusals commit nothing; a person's `pinned true` is never touched (D-04, D-11..D-13, D-15, D-17, D-19)
 
 **Wave 5** *(blocked on Wave 4)*
 
