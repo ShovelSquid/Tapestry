@@ -21,27 +21,22 @@ Nothing. Tree is clean.
 
 ## Next
 
-1. **`include/mathspace/note.hpp`**: `Field` (name up to 31 bytes, dim 1
-   to 8, `fx64 value[8]`, `bound` flag, bytecode bytes empty for now),
-   `Note` (id, space id, kind enum Space/Note/Rule/View, sorted fields
-   vector). Helpers: `find_field`, `set_field` (insert sorted),
-   `erase_field`. Tests for sort order and replacement.
-2. **`include/mathspace/world.hpp` + `src/mathspace/world.cpp`**: `World`
+1. **`include/mathspace/world.hpp` + `src/mathspace/world.cpp`**: `World`
    with seed, tick, sorted notes vector, `next_group`. `create_space(dim)`,
    `create_note(space, kind, group?)`, `set_field`, `delete_note`,
    `delete_field`, all returning an error code and leaving state untouched
    on failure. `step()` increments tick only. Tests.
-3. **Canonical walk + hash** in `src/mathspace/hash.cpp`, per the plan's
+2. **Canonical walk + hash** in `src/mathspace/hash.cpp`, per the plan's
    walk, plus `serialize`/`restore` strict inverse. Tests: round-trip hash
    equality, tampered byte rejected, restore failure leaves state untouched.
-4. **Actions** `include/mathspace/action.hpp`: kinds 32 to 36 with the
+3. **Actions** `include/mathspace/action.hpp`: kinds 32 to 36 with the
    ddsim header layout, bounds-checked decoder into a local, `World::apply`.
    Tests per kind including malformed payloads.
-5. **Replay tool and goldens**: `tools/ms_replay/main.cpp`, fixture format
+4. **Replay tool and goldens**: `tools/ms_replay/main.cpp`, fixture format
    shared with `tests/golden_support.hpp` where possible,
    `tests/golden/ms/empty.actions` and `two-notes.actions` with `.sha256`,
    wired into the two-process CTest loop in `CMakeLists.txt`.
-6. **Tapestry Space page** (phase 1 done condition): `PageKind::Space`,
+5. **Tapestry Space page** (phase 1 done condition): `PageKind::Space`,
    page owns a mathspace `World`, notes drawn as labelled dots, drag
    issues `SetField pos`, `.tapestry` delta line `mspace <page> <base64
    actions>`; reload and compare hash. Link `mathspace` into
@@ -54,6 +49,8 @@ its oracle tests.
 
 ## Done
 
+- `d7a8862` ms1 step 2: `note.hpp`/`note.cpp` Field, Note, NoteKind,
+  `find_field`/`set_field`/`erase_field`/`fields_well_formed`, tests.
 - `3cd79d9` ms1 step 1: build scaffolding. `mathspace` static lib over
   `src/mathspace/*.cpp`, `mathspace_tests` over `tests/mathspace/*.cpp`
   (doctest prefix `ms.`), `include/mathspace/ids.hpp` (`NoteId`,
@@ -64,12 +61,21 @@ its oracle tests.
 
 ## Decisions
 
-(decisions made by sessions that the plan did not already make)
+- A Space note is top level: its `space` id is unassigned (0), and that
+  zero is what the hash walk writes for it.
+- Field names: 1 to 31 bytes, no byte below 0x20. Anything else is
+  legal in the store; the phase 2 grammar narrows what it parses.
+- `Field::value` is `std::array<fx64, 8>`; lanes at index >= dim are
+  always zero (set_field enforces), so `operator==` on Field matches
+  hashed-byte equality.
 
 ## Learned
 
 - Full Debug configure+build+ctest is ~10 s; Release the same. Run both
   every slice, it is cheap.
+- The token gate scans comments too: writing the name of the forbidden
+  container family in a header comment fails configure. Say "hash
+  containers".
 - `mathspace_tests` gets `MATHSPACE_GOLDEN_DIR` = `tests/golden/ms`
   (directory does not exist yet; step 5 creates it).
 
