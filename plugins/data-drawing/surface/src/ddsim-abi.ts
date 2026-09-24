@@ -180,77 +180,94 @@ export function encodeDefineBrush(spec: BrushVersionSpec, versionId: number): Ui
 // Snapshot decoders (main-thread side; the only place Q32.32 becomes a float)
 // ---------------------------------------------------------------------------
 
-export interface NodeView {
-  id: bigint
-  x: number
-  y: number
-  z: number
-  weight: number
-  dirX: number
-  dirY: number
-  vx: number
-  vy: number
-  tick: number
-  brush: number
-  scaleBand: number
-}
-
-export interface BodyView {
-  strokeId: bigint
-  x: number
-  y: number
-  vx: number
-  vy: number
-  targetU: number
-  targetV: number
-}
-
 /** Q32.32 raw -> JS number. Allowed left of the fence only. */
 export function fromQ32(raw: bigint): number {
   return Number(raw) / 4294967296
 }
 
-export function decodeNodes(buffer: ArrayBuffer, count: number): NodeView[] {
-  if (buffer.byteLength < count * NODE_STRIDE) throw new RangeError('node snapshot buffer too short')
-  const v = new DataView(buffer)
-  const out: NodeView[] = []
-  for (let i = 0; i < count; i++) {
-    const o = i * NODE_STRIDE
-    out.push({
-      id: v.getBigUint64(o, true),
-      x: fromQ32(v.getBigInt64(o + 8, true)),
-      y: fromQ32(v.getBigInt64(o + 16, true)),
-      z: fromQ32(v.getBigInt64(o + 24, true)),
-      weight: fromQ32(v.getBigInt64(o + 32, true)),
-      dirX: fromQ32(v.getBigInt64(o + 40, true)),
-      dirY: fromQ32(v.getBigInt64(o + 48, true)),
-      vx: fromQ32(v.getBigInt64(o + 56, true)),
-      vy: fromQ32(v.getBigInt64(o + 64, true)),
-      tick: v.getUint32(o + 72, true),
-      brush: v.getUint32(o + 76, true),
-      scaleBand: v.getUint32(o + 80, true),
-    })
-  }
-  return out
+/**
+ * Reads one Q32.32 little-endian field of a snapshot as a float:
+ * Number(BigInt) / 2^32. The renderer never sees the raw integer.
+ */
+export function q32ToFloat(dv: DataView, offset: number): number {
+  return Number(dv.getBigInt64(offset, true)) / 4294967296
 }
 
-export function decodeBodies(buffer: ArrayBuffer, count: number): BodyView[] {
-  if (buffer.byteLength < count * BODY_STRIDE) throw new RangeError('body snapshot buffer too short')
-  const v = new DataView(buffer)
-  const out: BodyView[] = []
-  for (let i = 0; i < count; i++) {
-    const o = i * BODY_STRIDE
-    out.push({
-      strokeId: v.getBigUint64(o, true),
-      x: fromQ32(v.getBigInt64(o + 8, true)),
-      y: fromQ32(v.getBigInt64(o + 16, true)),
-      vx: fromQ32(v.getBigInt64(o + 24, true)),
-      vy: fromQ32(v.getBigInt64(o + 32, true)),
-      targetU: fromQ32(v.getBigInt64(o + 40, true)),
-      targetV: fromQ32(v.getBigInt64(o + 48, true)),
-    })
+/**
+ * Lazy accessors over a transferred node snapshot (count x NODE_STRIDE
+ * bytes, ascending NodeId as the sim keeps them). Nothing is copied or
+ * sorted: the render side walks i = 0..count-1 and reads what it draws.
+ */
+export interface NodeAccessor {
+  readonly count: number
+  id(i: number): bigint
+  x(i: number): number
+  y(i: number): number
+  z(i: number): number
+  weight(i: number): number
+  dirX(i: number): number
+  dirY(i: number): number
+  vx(i: number): number
+  vy(i: number): number
+  tick(i: number): number
+  brush(i: number): number
+  scaleBand(i: number): number
+}
+
+export interface BodyAccessor {
+  readonly count: number
+  strokeId(i: number): bigint
+  x(i: number): number
+  y(i: number): number
+  vx(i: number): number
+  vy(i: number): number
+  targetU(i: number): number
+  targetV(i: number): number
+}
+
+export function decodeNodes(buffer: ArrayBuffer, count: number): NodeAccessor {
+  if (!Number.isInteger(count) || count < 0) throw new RangeError(`node count out of range: ${count}`)
+  if (buffer.byteLength < count * NODE_STRIDE) throw new RangeError('node snapshot buffer too short')
+  const dv = new DataView(buffer)
+  const at = (i: number): number => {
+    if (i < 0 || i >= count) throw new RangeError(`node index out of range: ${i}`)
+    return i * NODE_STRIDE
   }
-  return out
+  return {
+    count,
+    id: (i) => dv.getBigUint64(at(i), true),
+    x: (i) => q32ToFloat(dv, at(i) + 8),
+    y: (i) => q32ToFloat(dv, at(i) + 16),
+    z: (i) => q32ToFloat(dv, at(i) + 24),
+    weight: (i) => q32ToFloat(dv, at(i) + 32),
+    dirX: (i) => q32ToFloat(dv, at(i) + 40),
+    dirY: (i) => q32ToFloat(dv, at(i) + 48),
+    vx: (i) => q32ToFloat(dv, at(i) + 56),
+    vy: (i) => q32ToFloat(dv, at(i) + 64),
+    tick: (i) => dv.getUint32(at(i) + 72, true),
+    brush: (i) => dv.getUint32(at(i) + 76, true),
+    scaleBand: (i) => dv.getUint32(at(i) + 80, true),
+  }
+}
+
+export function decodeBodies(buffer: ArrayBuffer, count: number): BodyAccessor {
+  if (!Number.isInteger(count) || count < 0) throw new RangeError(`body count out of range: ${count}`)
+  if (buffer.byteLength < count * BODY_STRIDE) throw new RangeError('body snapshot buffer too short')
+  const dv = new DataView(buffer)
+  const at = (i: number): number => {
+    if (i < 0 || i >= count) throw new RangeError(`body index out of range: ${i}`)
+    return i * BODY_STRIDE
+  }
+  return {
+    count,
+    strokeId: (i) => dv.getBigUint64(at(i), true),
+    x: (i) => q32ToFloat(dv, at(i) + 8),
+    y: (i) => q32ToFloat(dv, at(i) + 16),
+    vx: (i) => q32ToFloat(dv, at(i) + 24),
+    vy: (i) => q32ToFloat(dv, at(i) + 32),
+    targetU: (i) => q32ToFloat(dv, at(i) + 40),
+    targetV: (i) => q32ToFloat(dv, at(i) + 48),
+  }
 }
 
 export function hexOf(bytes: Uint8Array): string {
