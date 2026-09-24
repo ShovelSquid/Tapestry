@@ -31,6 +31,9 @@ import { SpatialCommands } from './commands/spatial'
 import { runAgentTool, type AgentCommands } from './commands/agent-tools'
 import { AgentRegistry, agentSocketPath } from './agents/registry'
 import { AgentSocketServer } from './agents/socket-server'
+import { SpaceService } from './space/space-service'
+import { SPACE_NOT_OPEN, problemMessage, type SpacePaths } from './space/migrate'
+import { FOREST_FILE, HOME_FILE, HOME_LOCATION } from './space/shapes'
 
 // ---------------------------------------------------------------------------
 // Plugin surface scheme (CANV-04)
@@ -74,15 +77,45 @@ function createWindow(): void {
 }
 
 // ---------------------------------------------------------------------------
+// Development-only path overrides (2.6 RESEARCH Pitfall 6, T-2.6-22)
+// ---------------------------------------------------------------------------
+
+/**
+ * A folder named by an environment variable, honoured only in a development
+ * build, so a check can run against copies instead of live data.
+ *
+ * A packaged build ignores both variables: they could otherwise redirect
+ * where a person's arrangement is read and written. The value must be an
+ * absolute path with no `..` segment.
+ */
+function devPathOverride(name: 'TAPESTRY_USER_DATA_DIR' | 'TAPESTRY_SPACE_DIR'): string | null {
+  if (app.isPackaged) return null
+  const value = process.env[name]
+  if (!value || !isAbsolute(value)) return null
+  if (value.split(/[\\/]/).includes('..')) return null
+  return resolve(value)
+}
+
+// userData must be redirected before 'ready': settings.json, last-opened.json
+// and the agent socket are all resolved from it.
+if (!app.isPackaged) {
+  const userDataOverride = devPathOverride('TAPESTRY_USER_DATA_DIR')
+  if (userDataOverride) {
+    console.log('[Main] development userData:', userDataOverride)
+    app.setPath('userData', userDataOverride)
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Phase 2's last-opened file (D-18)
 // ---------------------------------------------------------------------------
 
 /**
- * There is no forest file: which trees are open lives in settings.json.
+ * Phase 2's record of the one open world.
  *
- * This path is still read once, by SettingsStore.migrateLastOpened, so a
- * world opened before the space existed survives the upgrade. Nothing writes
- * it any more.
+ * The arrangement now lives in the forest tree (2.6 D-01, superseding 2.2
+ * D-18). This file is read once, by the space's first-launch import, when the
+ * old settings `trees` list is empty. Nothing writes it any more.
  */
 function getLastOpenedPath(): string {
   return join(app.getPath('userData'), 'last-opened.json')
@@ -142,6 +175,12 @@ function isWellFormedVaultRoot(folderPath: unknown): folderPath is string {
 
 /** Every open tree, keyed by the identity in its file (D-15). */
 const registry = new TreeRegistry()
+
+/**
+ * The forest tree and the Tapestry tree (2.6 D-01, D-02). Held outside the
+ * registry, so plugins and agents cannot reach either; null until launch.
+ */
+let space: SpaceService | null = null
 
 let pluginHost: PluginHost
 let agentServer: AgentSocketServer | null = null
@@ -433,8 +472,41 @@ app.whenReady().then(async () => {
   })
 
   // -------------------------------------------------------------------------
-  // Trees IPC (D-15, D-18): which worlds are in the space, and where
+  // Trees IPC (D-15): which worlds are in the space, and where
+  //
+  // Frames live in the forest tree, one placement edge per member (2.6 D-01,
+  // D-04). `trees:list` reads them there and `trees:moveFrames` writes them
+  // there. Until Plans 04 and 05, `trees:open`, `trees:create`, `trees:close`,
+  // `vault:add` and `trees:setFrame` still write the old settings list.
   // -------------------------------------------------------------------------
+
+  // The space folder (D-06): ~/Documents/Tapestry, unless a development build
+  // was pointed at a scratch folder. The Tapestry tree sits beside the forest
+  // (answer 1.10), readable without the app.
+  const spaceDir = devPathOverride('TAPESTRY_SPACE_DIR') ?? join(app.getPath('documents'), 'Tapestry')
+  const spacePaths: SpacePaths = {
+    forest: join(spaceDir, FOREST_FILE),
+    home:
+      HOME_LOCATION === 'space-dir'
+        ? join(spaceDir, HOME_FILE)
+        : join(app.getPath('userData'), HOME_FILE),
+    lastOpenedFile: getLastOpenedPath(),
+  }
+
+  // No vault launch-restore branch exists yet (2.2 Plan 08 has not landed on
+  // this branch), so vault members stay in the forest unopened: there is no
+  // restoreVault hook to give the service.
+  space = new SpaceService({
+    registry,
+    settings,
+    paths: spacePaths,
+    hooks: {
+      // Members were chosen by the person in an earlier session.
+      approvePath: (path) => {
+        approvedPaths.add(resolve(path))
+      },
+    },
+  })
 
   /**
    * Where a newly opened tree's frame goes before the renderer measures it.
@@ -462,11 +534,33 @@ app.whenReady().then(async () => {
   }
 
   ipcMain.handle('trees:list', () => {
-    const frames = new Map(settings.read().trees.map((tree) => [tree.path, tree.frame]))
-    return registry.summary().map((tree) => ({
-      ...tree,
-      frame: frames.get(tree.path) ?? { x: 0, y: 0 },
-    }))
+    // Frames come from placement edges in the forest (2.6 D-04), never from
+    // settings.json.
+    if (space) return space.list()
+    return registry.summary().map((tree) => ({ ...tree, frame: { x: 0, y: 0 } }))
+  })
+
+  /**
+   * Record one drop: the dragged frame first, then every frame it pushed
+   * aside, as exactly one forest commit (2.6 D-11).
+   *
+   * Main signs it with the person's name; the renderer sends no actor
+   * (T-2.6-11). The batch is passed untouched to the service, which checks it
+   * in full before writing anything (T-2.6-05).
+   *
+   * Deliberately does not emit 'trees-changed': the renderer already has the
+   * positions it just sent, and echoing them back would refresh every tree on
+   * every drop.
+   */
+  ipcMain.handle('trees:moveFrames', (_event, moves: unknown) => {
+    try {
+      const actor = getHumanActor()
+      if (!space || !space.ready) return { ok: false, error: SPACE_NOT_OPEN }
+      const { committed } = space.moveFrames(moves, actor)
+      return { ok: true, committed }
+    } catch (err) {
+      return { ok: false, error: errorMessage(err) }
+    }
   })
 
   /**
@@ -689,24 +783,21 @@ app.whenReady().then(async () => {
   createWindow()
 
   // -------------------------------------------------------------------------
-  // Restore the space (D-18): the trees in settings, at their saved frames
+  // Open the space (2.6 D-02): the Tapestry tree, its forest, and every member
   // -------------------------------------------------------------------------
 
-  // A world opened before the space existed becomes the first entry.
-  settings.migrateLastOpened(getLastOpenedPath())
-
-  for (const tree of settings.read().trees) {
-    if (tree.kind !== 'native') continue
-    // These paths were chosen by the user in an earlier session.
-    approvedPaths.add(resolve(tree.path))
-    try {
-      // A tree that has been moved, deleted or damaged must not cost the user
-      // the rest of their space: it comes back as an unavailable frame holding
-      // the reason, rather than vanishing from the space it was part of.
-      registry.tryOpen(tree.path, { kind: 'native' })
-    } catch (err) {
-      console.error('[Main] could not reopen tree:', err)
+  // On first launch this imports the settings arrangement into the forest
+  // (D-10); afterwards it reopens from the settings pointer. A tree that has
+  // been moved, deleted or damaged comes back as an unavailable frame holding
+  // its reason. A space that cannot open writes nothing and opens no member
+  // (D-14); Plan 06 shows the problem in the window.
+  try {
+    const started = await space.start()
+    if (started.problem) {
+      console.error('[Main] space did not open:', problemMessage(started.problem))
     }
+  } catch (err) {
+    console.error('[Main] space did not open:', err)
   }
 
   // Plugin problems must not be mistaken for a missing world (D-33)
@@ -743,5 +834,8 @@ app.on('will-quit', () => {
     void agentServer.close()
     agentServer = null
   }
+  // The forest and the Tapestry tree first, so every journal lock is released
+  // and the next launch can open the space.
+  space?.close()
   registry.closeAll()
 })

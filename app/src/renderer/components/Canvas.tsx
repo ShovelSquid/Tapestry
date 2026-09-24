@@ -35,11 +35,12 @@ import {
   FRAME_GAP,
   computeFrameBounds,
   placeNewFrame,
-  pushApart,
   type ContentBox,
+  type FramePosition,
   type FrameRect,
   type PositionedRect,
 } from '../layout/frames'
+import { buildFrameMoveBatch } from '../layout/frame-moves'
 import { displayPositions, type DisplaySpot } from '../layout/placement'
 import { isZoomPinchDelta, normalizeWheelDelta, panDelta, zoomFactor } from '../layout/wheel'
 import {
@@ -420,27 +421,40 @@ function Canvas({
   }
 
   /**
-   * Settle the space around the frame that just moved (D-15).
+   * Record the space around a frame that just moved or grew (D-15), as one
+   * forest commit (2.6 D-11).
    *
-   * pushApart works in rect space, but what persists is a frame's origin, so
-   * each displaced frame's origin moves by the same delta its rect did. Every
-   * frame that yields is written, so the arrangement on screen is the one that
-   * reopens next launch.
+   * The batch holds the frame at `movedOrigin` first and every frame it
+   * pushed aside after it (the arithmetic is buildFrameMoveBatch's). The
+   * pushed frames move here at once; the moved frame is already where the
+   * pointer left it. One call sends the whole batch, so one undo can put the
+   * whole drop back. Main signs it; nothing here names an actor.
+   *
+   * When a note grows its frame (`frameMoved` false) and pushes nothing
+   * aside, there is nothing to record and no call is made.
    */
-  const settleFrames = (movedTreeId: string) => {
-    const rects = positionedRects()
-    const displaced = pushApart(rects, movedTreeId)
+  const recordFrameMoves = (
+    movedTreeId: string,
+    movedOrigin: FramePosition,
+    frameMoved: boolean,
+  ) => {
+    const batch = buildFrameMoveBatch(trees, positionedRects(), movedTreeId, movedOrigin)
+    for (const move of batch.slice(1)) onFrameMove(move.treeId, move.x, move.y)
+    if (!frameMoved && batch.length === 1) return
 
-    for (const [id, next] of displaced) {
-      const before = rects.find((rect) => rect.id === id)
-      const tree = trees.find((t) => t.id === id)
-      if (!before || !tree) continue
+    void window.tapestry.trees.moveFrames(batch).then(
+      (result) => {
+        // Plan 05 turns this into an app-level notice and arms frame undo.
+        if (!result.ok) console.error('[Canvas] frame move not recorded:', result.error)
+      },
+      (err: unknown) => console.error('[Canvas] frame move not recorded:', err),
+    )
+  }
 
-      const x = tree.frame.x + (next.x - before.x)
-      const y = tree.frame.y + (next.y - before.y)
-      onFrameMove(id, x, y)
-      void window.tapestry.trees.setFrame(id, x, y)
-    }
+  /** A note landed or resized: its frame may now crowd a neighbour. */
+  const recordFrameGrowth = (treeId: string) => {
+    const tree = trees.find((t) => t.id === treeId)
+    if (tree) recordFrameMoves(treeId, { x: tree.frame.x, y: tree.frame.y }, false)
   }
 
   /**
@@ -573,8 +587,7 @@ function Canvas({
         const tree = trees.find((t) => t.id === draggingTreeId)
         if (tree) {
           if (frameDragRef.current.moved) {
-            void window.tapestry.trees.setFrame(tree.id, tree.frame.x, tree.frame.y)
-            settleFrames(draggingTreeId)
+            recordFrameMoves(tree.id, { x: tree.frame.x, y: tree.frame.y }, true)
           } else {
             // Pressing the header without moving it selects the frame.
             onSelectTree(draggingTreeId)
@@ -799,19 +812,19 @@ function Canvas({
     // space re-settles on the same rule a frame drag uses.
     onPositionChange: (ref, x, y) => {
       onPositionChange(ref, x, y)
-      settleFrames(ref.treeId)
+      recordFrameGrowth(ref.treeId)
     },
     onTakeOverPosition: (ref, x, y) => {
       onTakeOverPosition(ref, x, y)
-      settleFrames(ref.treeId)
+      recordFrameGrowth(ref.treeId)
     },
     onWidthChange: (ref, width) => {
       onWidthChange(ref, width)
-      settleFrames(ref.treeId)
+      recordFrameGrowth(ref.treeId)
     },
     onHeightChange: (ref, height) => {
       onHeightChange(ref, height)
-      settleFrames(ref.treeId)
+      recordFrameGrowth(ref.treeId)
     },
     onPinnedPositionChange,
     onDeleteNote,

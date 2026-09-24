@@ -53,10 +53,11 @@ const tapestryAPI = {
   },
 
   /**
-   * The trees in the space and where their frames sit (D-15, D-18).
+   * The trees in the space and where their frames sit (D-15).
    *
-   * There is no forest file: `open`, `create` and `close` change both the open
-   * set and what the next launch restores.
+   * The arrangement lives in the forest tree, a readable `Forest.tree` that
+   * the Tapestry tree references (2.6 D-01): each frame is a placement edge
+   * there, and a move is a signed commit rather than a settings write.
    */
   trees: {
     list: (): Promise<
@@ -96,6 +97,12 @@ const tapestryAPI = {
       y: number,
     ): Promise<{ ok: boolean; error?: string }> =>
       ipcRenderer.invoke('trees:setFrame', treeId, x, y),
+
+    /** One drop, with every frame it pushed aside, is one forest commit (D-11). */
+    moveFrames: (
+      moves: Array<{ treeId: string; x: number; y: number }>,
+    ): Promise<{ ok: boolean; committed?: boolean; error?: string }> =>
+      ipcRenderer.invoke('trees:moveFrames', moves),
   },
 
   plugins: {

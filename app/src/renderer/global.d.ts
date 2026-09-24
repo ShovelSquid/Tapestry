@@ -85,11 +85,18 @@ interface TapestryTreeSummary {
   kind: 'native' | 'vault'
   path: string
   vaultRoot?: string
-  /** Where the tree's frame origin sits in world space (D-18). */
+  /** Where the tree's frame origin sits in world space, read from its placement edge in the forest tree (2.6 D-04). */
   frame: { x: number; y: number }
   /** A tree that would not open stays in the space with its reason. */
   status: TapestryTreeStatus
   reason?: string
+}
+
+/** One frame's new origin within a drop (2.6 D-11). */
+interface TapestryFrameMove {
+  treeId: string
+  x: number
+  y: number
 }
 
 interface TapestryTreesAPI {
@@ -105,6 +112,8 @@ interface TapestryTreesAPI {
   /** Try a damaged, locked or missing tree again (UI-SPEC "Reopen tree"). */
   reopen(treeId: string): Promise<{ ok: boolean; treeId?: string; error?: string }>
   setFrame(treeId: string, x: number, y: number): Promise<{ ok: boolean; error?: string }>
+  /** One drop, the dragged frame first, as one forest commit. Main signs it; no actor is sent. */
+  moveFrames(moves: TapestryFrameMove[]): Promise<{ ok: boolean; committed?: boolean; error?: string }>
 }
 
 interface TapestryPluginsAPI {
