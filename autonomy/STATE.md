@@ -80,54 +80,29 @@ viewer; it is theirs to edit.)
   `presets.test.js` projects every view preset after 60 ticks and checks
   the two-commit shape; `projection.test.js` dim-4 case; manifest lists
   the three commands.
-- `4acdaab` ms5 surface in a browser: `image.js` uses `TextEncoder`/
-  `TextDecoder` instead of Node's `Buffer` (it is bundled into the
-  renderer now); the dev page mounts the built `dist/surface.js`; the dev
-  server watches `dist/`. Verified with the browser-automation skill
-  against the fixture world: two panels with both notes, `world:BadDim`
-  on the dim-1 view, no console errors.
-- `24f1dbb` ms5 stage surface first cut: `plugins/mathspace/surface/`
-  (Vite library build to `surface/dist/surface.js`, gitignored; `npm run
-  build`), registered as `mathspace.stage` in `index.js` and the
-  manifest; `main.ts` reads `window.tapestry.kernel.getNodes(treeId)`,
-  builds the world with the bundled `world.js` + `engine-core.js` + the
-  plugin's own wasm glue, `projectAll`s and draws with `panels.ts`
-  (grid of panels, uniform fit per view, error text for a failed view);
-  refresh on `onTreeChanged`; `test/panels.test.js`.
-- `fd781d9` ms5 plumbing: `engine-core.js` (the `Engine` class, no
-  `node:` imports; `engine.js` keeps `loadModule` and re-exports),
-  `world.js` `buildWorld(nodes, mod)` extracted from `Runner.rebuild`,
-  `buildImage` returns `notes` and `views` id lists, `projection.js`
-  `projectAll(engine, image)` (a view's own failures found by probing it
-  with itself; per-note failures are `null`), `test/projection.test.js`.
-- `61ef64f` ms5 views, engine side: View notes skipped by step(), `RuleDims`
-  over Note-kind notes, `ms_project` (`MS_ABI_VERSION` 3), `Engine.project`,
-  `image.js` maps `mathspace/view@1` into `rules`; `MS_STEP_VERSION` 9.
+- Phase 5 (ms5) earlier, one line each: `4acdaab` surface runs in a
+  browser (`image.js` without `Buffer`, dev page mounts `dist/surface.js`,
+  verified headlessly); `24f1dbb` stage surface first cut
+  (`plugins/mathspace/surface/`, `mathspace.stage`, `panels.ts`,
+  refresh on `onTreeChanged`); `fd781d9` `engine-core.js`, `buildWorld`,
+  `projectAll`; `61ef64f` engine side (`ms_project`, `MS_ABI_VERSION` 3,
+  `MS_STEP_VERSION` 9).
 - Phase 4 (ms4), one line each: `064966d` contact preset + golden
   `contact`; `60cd37e` `rope_chain_test.cpp` against ddsim; `60c8346`
   `lift.hpp`, `constraint`/`compliance` XPBD passes, golden `rod`,
   `MS_STEP_VERSION` 8.
-- Phase 3 (ms3), one line each: `e1e30a5` presets (`presets/<id>.json`,
-  `presets.js`, `mathspace.preset.<id>` commands, `presets.test.js`);
-  `9b28407` RULE-07 runtime skips
-  (`World::reports`, `ms_errors_ptr/len`, `Engine.errors()`, runner sums
-  skips into `mathspace.error`; `MS_ABI_VERSION` 2); `e0b6942` pair and
-  global scope, golden `pair` (`MS_STEP_VERSION` 7); `919c06e` `set.<f>`
-  after the integrator (version 6); `872831b` `pinned` (version 5);
-  `204ced5` plugin side (rule nodes, compile-time `mathspace.error`);
-  `f90b3c7` `select` (version 4); `22bc70c` engine (force pass, mass
-  integrator, `RuleDims`, golden `gravity`, version 3).
-- Phase 2 (ms2), one line each: `d6e9c0b` `diff.hpp` symbolic
-  d/d(self.field.lane) checked against finite differences; `c5d134e`
-  `<f>.expr` props bound through the runner; `c44393d` `Engine.compile`;
-  `a159268` `ms_compile` C ABI; `1abc9d4` action 37 BindField + golden
-  `plot` (version 2); `3b25475` vm; `30fc1a6` bytecode; `1725143`
-  ast+parser; `3ca1482` fxmath (`tools/gen_fxmath/gen.py` oracle).
+- Phase 3 (ms3): `e1e30a5` presets; `9b28407` RULE-07 runtime skips
+  (`MS_ABI_VERSION` 2); `e0b6942` pair/global scope, golden `pair`;
+  `919c06e` `set.<f>`; `872831b` `pinned`; `204ced5` plugin rule nodes;
+  `f90b3c7` `select`; `22bc70c` force pass, integrator, golden `gravity`.
+- Phase 2 (ms2): `d6e9c0b` `diff.hpp`; `c5d134e` `<f>.expr` bound through
+  the runner; `c44393d` `Engine.compile`; `a159268` `ms_compile`;
+  `1abc9d4` action 37 BindField, golden `plot`; `3b25475` vm; `30fc1a6`
+  bytecode; `1725143` ast+parser; `3ca1482` fxmath (`tools/gen_fxmath`).
 - Phase 1 (ms1): `836a4da` real-tree check; `a111181` `runner.js`;
   `07f35f4` `image.js`; `feab148` plugin skeleton; `f7013b3` wasm;
-  `8587ec9` C ABI; `a247eab` golden `velocity`; store/walk/actions/
-  replay tool/goldens up to `943b9bb`; `215602c` merge of
-  `phase-2-implementation-v1` (SDL Space page reverted).
+  `8587ec9` C ABI; `a247eab` golden `velocity`; `215602c` merge of
+  `phase-2-implementation-v1`.
 
 ## Decisions
 
@@ -187,15 +162,12 @@ viewer; it is theirs to edit.)
 
 ## Learned
 
-- Vite dev serves a CommonJS file under its root untransformed (`require`
-  is not defined in the page), and its watcher ignores `build.outDir`, so
-  a rebuilt `dist/` is served from the old transform cache until restart
-  (`server.watch.ignored: ['!**/dist/**']` fixes it). Anything bundled
-  into the renderer must not touch `Buffer` or `node:`. The
+- Vite dev ignores `build.outDir` in its watcher (`server.watch.ignored:
+  ['!**/dist/**']` fixes it) and serves CommonJS untransformed; nothing
+  bundled into the renderer may touch `Buffer` or `node:`. The
   browser-automation skill (`~/.claude/skills/browser-automation/
   browser.mjs <url> --script f.mjs --screenshot p.png`) loads the dev
-  page headlessly and can read the canvas and the status line; a page
-  load there takes 15 to 45 s.
+  page headlessly (15 to 45 s per load) and can read the canvas.
 - ddsim comparison (ms4): single pendulum agrees to 3152 raw over 600
   ticks; the double pendulum (`rope-chain`) deviates 1.44 units by tick
   600 because a free-free rod keeps 2^-8 of its stretch (mathspace
