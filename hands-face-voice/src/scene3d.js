@@ -1,25 +1,36 @@
 // 3D point-cloud view of the same landmarks drawn in the 2D overlay.
 //
-// Hands use MediaPipe's `worldLandmarks` — real metric 3D coordinates
-// reconstructed per hand (origin at that hand's geometric center). Face uses
-// the normalized image-space landmarks (x, y in [0,1], z relative depth) since
-// Face Landmarker doesn't expose a metric world reconstruction the way Hand
-// Landmarker does — so the face cloud is a fair depth impression, not a
-// physically-scaled one. Because each hand's world landmarks are centered on
-// that hand independently, the model gives no real relative position between
-// two hands (or between a hand and the face); this view spaces them apart
-// with fixed offsets purely so multiple clouds don't overlap, not because
-// that's their true relative position in space.
+// Hands, face and pose are all drawn from MediaPipe's *normalized* landmarks
+// (x, y in [0,1] relative to the image, z relative depth) rather than each
+// model's independently-reconstructed metric world landmarks. Hand world
+// landmarks are hand-centered and pose world landmarks are hip-centered, so
+// mixing metric world landmarks across models would still have no shared
+// origin. Normalized landmarks, by contrast, are computed in one shared
+// per-frame coordinate system across all three models, so one shared
+// transform places every point cloud in real relative position: hands appear
+// where they actually are relative to the face, and the pose skeleton's
+// wrists/shoulders/nose sit near the hand and face clouds they anchor,
+// replacing the old fixed `HAND_OFFSETS_X` / `FACE_SCALE` spacing hack. This
+// is a normalized-frame visual anchor, not a metric 3D fusion — it gives
+// comparable relative x/y position and z depth ordering, not physically-scaled
+// absolute distances.
 
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { HandLandmarker, FaceLandmarker } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.17";
+import {
+  HandLandmarker,
+  FaceLandmarker,
+  PoseLandmarker,
+} from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.17";
 
-const HAND_SCALE = 4; // meters -> scene units, sized for visibility
-const HAND_OFFSETS_X = [-0.18, 0.18];
+const SCENE_SCALE = 0.6;
 const HAND_COLORS = [0x22d3ee, 0xf97316];
-const FACE_SCALE = 0.6;
 const FACE_COLOR = 0xa78bfa;
+const POSE_COLOR = 0x34d399;
+
+function normalizedTransform(p) {
+  return [(p.x - 0.5) * SCENE_SCALE, -(p.y - 0.5) * SCENE_SCALE, -p.z * SCENE_SCALE];
+}
 
 export function createScene3D(container) {
   const width = container.clientWidth;
@@ -65,35 +76,31 @@ export function createScene3D(container) {
     return new THREE.LineSegments(geom, mat);
   }
 
-  function update({ handsWorld = [], faceLandmarksList = [] }) {
+  function update({ handsNormalized = [], faceLandmarksList = [], poseLandmarksList = [] }) {
     scene.remove(liveGroup);
     liveGroup = new THREE.Group();
 
-    handsWorld.forEach((landmarks, i) => {
-      const offsetX = HAND_OFFSETS_X[i % HAND_OFFSETS_X.length];
+    handsNormalized.forEach((landmarks, i) => {
       const color = HAND_COLORS[i % HAND_COLORS.length];
-      const transform = (p) => [
-        p.x * HAND_SCALE + offsetX,
-        -p.y * HAND_SCALE + 0.1,
-        -p.z * HAND_SCALE,
-      ];
-      liveGroup.add(cloud(landmarks.map(transform), color));
-      liveGroup.add(lines(landmarks, HandLandmarker.HAND_CONNECTIONS, color, transform));
+      liveGroup.add(cloud(landmarks.map(normalizedTransform), color));
+      liveGroup.add(lines(landmarks, HandLandmarker.HAND_CONNECTIONS, color, normalizedTransform));
     });
 
     faceLandmarksList.forEach((landmarks) => {
-      const transform = (p) => [
-        (p.x - 0.5) * FACE_SCALE,
-        -(p.y - 0.5) * FACE_SCALE,
-        -p.z * FACE_SCALE,
-      ];
       const contourIndices = new Set(
         FaceLandmarker.FACE_LANDMARKS_CONTOURS.flatMap((c) => [c.start, c.end])
       );
-      const points = [...contourIndices].map((i) => transform(landmarks[i]));
+      const points = [...contourIndices].map((i) => normalizedTransform(landmarks[i]));
       liveGroup.add(cloud(points, FACE_COLOR));
       liveGroup.add(
-        lines(landmarks, FaceLandmarker.FACE_LANDMARKS_CONTOURS, FACE_COLOR, transform)
+        lines(landmarks, FaceLandmarker.FACE_LANDMARKS_CONTOURS, FACE_COLOR, normalizedTransform)
+      );
+    });
+
+    poseLandmarksList.forEach((landmarks) => {
+      liveGroup.add(cloud(landmarks.map(normalizedTransform), POSE_COLOR));
+      liveGroup.add(
+        lines(landmarks, PoseLandmarker.POSE_CONNECTIONS, POSE_COLOR, normalizedTransform)
       );
     });
 
