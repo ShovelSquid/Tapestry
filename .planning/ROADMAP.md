@@ -346,12 +346,12 @@ Plans:
   7. A per-chat "Allow shell" switch, off by default and labelled not sandboxed, enables Claude Code's shell and built-in file tools in the workspace; edits made that way are recorded as observed changes
   8. The panel talks to a `ChatEngine` interface, so a later API-key engine (Anthropic SDK over the same sandboxed tools) plugs in without changing the panel
 
-**Plans**: 7 plans
+**Plans**: 1/7 plans executed
 
 Plans:
 **Wave 1**
 
-- [ ] 02.7-01-PLAN.md — Dogfood tracer: generic mirror core, workspace trees in app data, sandboxed read_file/edit_file over MCP as agent.<name>, file windows with the human save and file-wins rule, restore across restarts, D-11 checkpoint
+- [x] 02.7-01-PLAN.md — Dogfood tracer: generic mirror core, workspace trees in app data, sandboxed read_file/edit_file over MCP as agent.<name>, file windows with the human save and file-wins rule, restore across restarts, D-11 checkpoint
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -376,7 +376,6 @@ Plans:
 **Wave 7** *(blocked on Wave 6 completion)*
 
 - [ ] 02.7-07-PLAN.md — API-key chat engine (D-16): @anthropic-ai/sdk tool runner over the same sandboxed tools in-process, engine picker, encrypted key storage; blocking package-legitimacy check first
-
 
 **UI hint**: yes
 

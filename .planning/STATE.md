@@ -4,16 +4,16 @@ milestone: v1.0
 current_phase: "02.7"
 current_phase_name: File Windows & Workspace Sandbox
 status: executing
-stopped_at: 02.7-01 tasks 1-3 done, dogfood checkpoint pending; 7 plans checked
-last_updated: "2026-09-24T19:23:39.794Z"
+stopped_at: Completed 02.7-01-PLAN.md (dogfood approved); next 02.7-02 wave 2
+last_updated: "2026-09-24T19:33:29.489Z"
 last_activity: 2026-09-24
-last_activity_desc: Phase 02.4 Lock Model complete and rebased onto the main line; Phase 02.2 still executing
-state_head: 28c94c4edcadb551da04ac30d95237a45f640458
+last_activity_desc: 02.7-01 dogfood tracer complete; next 02.7-02 (wave 2)
+state_head: a1c63f4fd18e57b2fce7e5bef477dec607046569
 progress:
   total_phases: 13
   completed_phases: 0
   total_plans: 52
-  completed_plans: 27
+  completed_plans: 28
 ---
 
 # Project State
@@ -23,15 +23,15 @@ progress:
 See: .planning/PROJECT.md (updated 2026-09-08)
 
 **Core value:** Your world of thoughts must remain readable and under your control — in its spatial interface, its editable relationships and behavior, and its files and branching history.
-**Current focus:** Phase 02.7 — File Windows & Workspace Sandbox on ws/windows (not planned yet). 02.2 continues on its own branch
+**Current focus:** Phase 02.7 — File Windows & Workspace Sandbox on ws/windows (02.7-01 complete; 02.7-02 next). 02.2 continues on its own branch
 
 ## Current Position
 
-Phase: 02.7 (File Windows & Workspace Sandbox) — READY TO EXECUTE
-Plan: 8 of 16 (02.2-01 to 02.2-07 complete; 02.2-08 code committed, no summary yet)
-Status: Ready to execute
+Phase: 02.7 (File Windows & Workspace Sandbox) — EXECUTING
+Plan: 02.7-01 of 7 complete (dogfood gate D-11 approved by Kaelen 2026-09-24); next is 02.7-02 (wave 2)
+Status: Ready to execute 02.7-02
 Phase 02.4 (Lock Model): COMPLETE — verified 25/25, 2026-09-16; rebased onto the main line 2026-09-23
-Last activity: 2026-09-24 - Completed quick task 260924-0ii: Add layout as a third lock aspect (lock.layout)
+Last activity: 2026-09-24 - Completed 02.7-01 dogfood tracer (workspaces, file windows, read_file/edit_file); 23 files / 449 tests
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -74,6 +74,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 02.2 P07 | 35 min | 1 tasks | 26 files |
 | Phase 02.4 P01 | 14 min | 2 tasks | 4 files |
 | Phase 02.4 P02 | 8 min | 2 tasks | 5 files |
+| Phase 02.7 P01 | 16 min | 4 tasks | 36 files |
 
 ## Accumulated Context
 
@@ -132,6 +133,8 @@ Recent decisions affecting current work:
 - [Phase 02.4]: 02.4-01: malformed lock values fail closed; only exact 'open' unlocks; blank owner shown as (unknown); allow list read in Plan 02
 - [Phase 02.4]: 02.4-02: lock.<aspect>.allow is read for explicit and derived locks; only a text value counts, whitespace-split, exact match
 - [Phase 02.4]: 02.4-02: agent tool text states the lock rule and that refusals name the owner, without publishing lock.* key names
+- [Phase 02.7]: Workspace trees live at <userData>/workspaces/<name>-<hash8>.tree outside the folder (reversible); node types tapestry.workspace/{text,file,folder}@1 with file.* keys; observer actor plugin workspace.watcher
+- [Phase 02.7]: Agent file tools reach exactly git's view of the workspace; git-ignored paths, symlinks, .git, '..' and outside paths are refused with nothing written
 
 ### Pending Todos
 
@@ -180,6 +183,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-16T06:54:29.284Z
-Stopped at: Completed 02.2-07-PLAN.md
+Last session: 2026-09-24T19:33:29.409Z
+Stopped at: Completed 02.7-01-PLAN.md (dogfood approved); next 02.7-02 wave 2
 Resume file: None
