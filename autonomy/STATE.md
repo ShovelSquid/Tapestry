@@ -35,7 +35,8 @@ are recorded in app/src/main/space/shapes.ts and 02.6-02-SUMMARY.
 
 ## In progress
 
-(nothing)
+2026-09-24 15:28 session: running wave 3 (02.6-03) via gsd-execute-phase.
+If this line survives, check git log for 02.6-03 commits and resume.
 
 ## Log
 
