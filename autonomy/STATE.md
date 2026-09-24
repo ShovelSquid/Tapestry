@@ -15,7 +15,7 @@ actions, replay tool, and goldens built before the redirect are kept.
 
 | Phase | Status |
 | --- | --- |
-| 1 engine over the kernel | in progress (store/hash/actions/replay/ids/snapshot/ABI/wasm/plugin skeleton done; image, run loop, app check remain) |
+| 1 engine over the kernel | in progress (store/hash/actions/replay/ids/snapshot/ABI/wasm/plugin skeleton/image done; run loop, app check remain) |
 | 2 expressions | not started |
 | 3 force rules | not started |
 | 4 constraints | not started |
@@ -30,19 +30,19 @@ viewer; it is theirs to edit.)
 
 ## Next
 
-1. **`image.js`.** Kernel `NodeData` → engine actions: exact real↔raw
-   int64 conversion (reject reals that are not `k / 2^32` with `|k| <
-   2^53`), key conventions (`f.x f.y f.z f.w`, `f.0..` above dim 4,
-   `space ref`, implicit space per tree frame), and `diff(before,
-   after)` → `set` ops. Vitest tests for all three.
-2. **Run loop and commits.** In `index.js`: on `mathspace.run`, build the
+1. **Run loop and commits.** In `index.js`: on `mathspace.run`, build the
    image from `getNodes()`, step at 60 Hz with `setInterval`, every 60
    ticks or on pause read the snapshot, diff, `kernel.submit('plugin',
    'mathspace', 'advance', [...sets, {op:'advance', ticks:k}])`. Before
    each commit compare `status().lastGoodSeq` with the seq of our last
-   commit; if others committed, rebuild the image first. Checkpoint
-   fixture `plugins/mathspace/test/fixtures/velocity.json`.
-3. **Phase 1 done check.** Build the app (`npm install` at the root,
+   commit; if others committed, rebuild the image first. `image.js`
+   already gives `buildImage(nodes)` → `{actions, fields, types,
+   problems}`, `parseSnapshot(engine.notes())` and `diff(fields, snap,
+   types)` → setProperty ops; the checkpoint fixture
+   `test/fixtures/velocity.json` exists and passes. Test the loop with a
+   fake `kernel` object (getNodes/status/submit recording calls) and
+   fake timers.
+2. **Phase 1 done check.** Build the app (`npm install` at the root,
    `npm run build:native` in `app/`, then the app's dev script; see
    `app/package.json`), create a note, set `velocity.x real 1` via the
    inspector or a `set` commit, Run, Pause, confirm the `.tree` has the
@@ -55,6 +55,9 @@ its oracle tests.
 
 ## Done
 
+- `07f35f4` ms1 image.js: exact real↔raw, key convention, JS encoders
+  pinned to `velocity.actions`, `buildImage`, `parseSnapshot`, `diff`,
+  checkpoint fixture `test/fixtures/velocity.json` (16 tests).
 - `feab148` ms1 plugin skeleton: `plugins/mathspace/` manifest, package,
   `scripts/build-wasm.sh`, `engine.js` (Engine over ms_*), `index.js`
   with stub commands, vitest golden replay (8 tests).
@@ -80,6 +83,14 @@ its oracle tests.
 
 ## Decisions
 
+- The implicit space (notes with `position.*` and no `space` ref) is one
+  per image under id `2^63`, a value no kernel `n<k>` reaches, dim 2.
+  `diff` ignores snapshot notes absent from the before-image, so the
+  implicit space never becomes a kernel op. (2026-09-24, `07f35f4`.)
+- An inexact real (not `k/2^32`) drops the whole field it belongs to from
+  the image and is reported in `buildImage(...).problems`; the note is
+  still created. Rejecting per the plan rather than rounding; see
+  Blocked. (2026-09-24, `07f35f4`.)
 - Mathspace is a plugin over the kernel, not a second store. Durable
   state is the `.tree`; the engine image is derived. (2026-09-24, from
   the merge review.)
@@ -151,3 +162,10 @@ its oracle tests.
 
 (questions a human would have been asked; answered by the session's best
 judgement, recorded here so a human can revisit)
+
+- Dragged notes may hold positions that are not `k/2^32` (a drag at a
+  fractional zoom divides by the zoom). The plan says such reals are
+  rejected, so `buildImage` drops that note's `pos` and it does not move.
+  If the phase 1 app check shows this bites, the run loop could round
+  and commit the rounded position first; that is a plan change, so it is
+  left for a human. (2026-09-24)
