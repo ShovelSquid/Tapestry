@@ -19,7 +19,7 @@ replay tool and goldens are kept.
 | 4 constraints | done headlessly (`60c8346`, `60cd37e`, `064966d`): `constraint.expr` + `compliance` by fixed XPBD passes over lifted symbolic gradients, goldens `rod` and `contact`, the `contact` preset, the `pendulum`/`rope-chain` comparison against ddsim (numbers under Learned). The "in the app" look joins the GUI checklist in Blocked |
 | 5 views | **done condition met headlessly** (`b27808a`): engine side (`61ef64f`), stage surface (`24f1dbb`, `4acdaab`), default views as presets `view-2d`/`view-3d`/`view-4d`, and one 4-space projected through `[x, y]` and `[z, w]` at once in `projection.test.js` and `presets.test.js`. Shapes and rule regions in the surface are optional polish (Next 2); the in-app look joins the GUI checklist in Blocked |
 | 6 metrics | **done condition met headlessly** (`9d47eaf`): engine side (`02481a2`, diagonal `metric`, geodesic integrator, golden `poincare`), plugin side (`566ff24`, `metric.expr` bound through `buildImage`), presets `poincare` and `sphere` (`c49dd84`), `identify` (`5b5b55e`) and `embed` (`9d47eaf`). The in-app look joins the GUI checklist in Blocked |
-| 7 fold ddsim | not started |
+| 7 fold ddsim | in progress: sliced (below), 7a headers moved (`4a99d1c`) |
 
 ## In progress
 
@@ -28,30 +28,72 @@ viewer; it is theirs to edit.)
 
 ## Next
 
-1. **Phase 7 first slice: read the plan's phase 7 section and cut it
-   into slices.** Re-read `mathspace_plan.md` "Phase 7 — fold ddsim in"
-   and `data-drawing/sim/` (the live ddsim the data-drawing plugin
-   builds) against `include/ddsim` (the diverged root copy: particles,
-   constraints). Write the slice list into this "Next" section (each
-   slice one commit with tests), then take the first: the plan names
-   the brush body as a preset rule, pen samples as `SetField` actions
-   on a target field, and emission at spacing in the data-drawing
-   plugin's bridge emitting `CreateNote`/`SetField`. The `rope-chain`
-   deviation under Learned (a free-free rod keeps 2^-8 of its stretch)
-   must be accepted or fixed by letting a pair constraint write `other`
-   too; decide that first, since it changes `MS_STEP_VERSION` and every
-   golden if fixed.
-2. Optional, phase 6 polish only if a preset is wanted: a `torus` preset
-   (flat metric, `identify.x`/`identify.y` 200) is the honest wrap demo;
-   the sphere is left unwrapped on purpose (fx64 cannot hold pi, and a
-   fake pi would mislead).
-3. Phase 5 optional polish, only if cheap: shapes by sampled level sets
-   and rule regions faintly in the surface; three.js only if a 3D panel
-   needs it. The surface refreshes only on `onTreeChanged` (fired for
-   commits from outside the renderer, not the human's own drags); a
-   `getNodes` poll while open, or a host change, would close that gap.
-4. **GUI confirmation of phases 1 to 5 (human, or a session that can
-   drive Electron).** `npm install` at the root (or symlink node_modules,
+Phase 7 slices, one commit with tests each, in this order (ddsim is
+deleted last so every earlier slice can be tested against it). The
+rope-chain deviation is accepted (Decisions), so `MS_STEP_VERSION` and
+the goldens do not change in 7b to 7e unless a slice says so.
+
+1. **7b brush body as a preset rule.** Add
+   `plugins/mathspace/presets/brush.json` (copy `spring-to-anchor.json`
+   for the format): one Rule note, unary scope, `force.expr` =
+   `self.k * (self.target - self.pos) - sqrt(self.k) * self.velocity`
+   (the `.tree` spells `self.position`; `world.js` rewrites), `select`
+   on notes that carry `target`. A body note carries `mass 1`, `k` =
+   1 / brush mass (ddsim's k_t with K = 1; c_t = sqrt(k_t) since
+   2 * zeta = 1), `target`, `pos`, `velocity`. Mathspace's integrator
+   (`velocity += force / mass; pos += velocity`, h = 1) is ddsim's
+   `body_substep` at h = 1 exactly, so the C++ test is
+   `tests/mathspace/brush_body_test.cpp`: 60 ticks of a moving target
+   through `World::step` versus `ddsim::body_substep` (root
+   `include/ddsim/rules/brush_body.hpp`, still present) with one sample
+   per tick, raw-equal every tick for mass 1 and mass 64; plus golden
+   `brush` in `tests/golden/ms/`. Check how `select` treats a note
+   without `target` (skip, not error) before writing the preset.
+2. **7c the bridge, kinds 1..4 to mathspace actions.** New
+   `plugins/data-drawing/surface/src/ms-bridge.ts`: DefineBrush (1) is
+   kept in JS as a table (id, mass, radius, spacing, curve; validated
+   like `validate_brush`, reject not clamp); StrokeBegin (2) emits
+   CreateNote for the body (id derived from the stroke id, see
+   `ids.hpp`) and SetField `mass`, `k`, `spacing`, and stores the
+   plane; StrokeSamples (3) emits SetField `target` from the tick's
+   LAST sample (Decisions: no sub-steps), and on the first sample ever
+   also SetField `pos` = target and `velocity` = 0 (ddsim places the
+   body on it); StrokeEnd (4) emits DeleteNote for the body. Test with
+   both Wasm modules in vitest: `one-stroke.actions` replayed through
+   the bridge into the mathspace Wasm gives the same body position per
+   tick as `_dd_body_ptr` from ddsim, for the ticks with one sample.
+3. **7d emission at spacing in the bridge.** Exact JS port of
+   `emit_segment`/`emit_node`/`curve_weight` over BigInt Q32.32 (fx64
+   mul/div/sqrt semantics; look for existing Q32 helpers in
+   `plugins/mathspace/image.js` first) run per tick after the step from
+   the body snapshot; each emitted node is CreateNote (id
+   `make_node_id(branch, ordinal, index)`) plus SetField `pos` (3D,
+   plane transform), `weight`, `dir`, `velocity`, `tick`, `brush`. Test:
+   node positions and count equal ddsim's node table for the one-sample
+   fixtures (`one-stroke`, `two-strokes`, `gap`; `four-per-tick` will
+   differ and is re-recorded in 7e).
+4. **7e Worker switch.** `sim-driver.ts`/`sim.worker.ts` load the
+   mathspace Wasm (build script copies `build/wasm-release/mathspace.*`
+   into `surface/wasm/`), `decodeNodes` reads the mathspace notes
+   snapshot (format in `plugins/mathspace/image.js`; data-drawing may
+   not import from plugins/mathspace, so port the reader or move it to
+   the SDK, record which). Move the nine `data-drawing/sim/tests/golden/
+   *.actions` to `plugins/data-drawing/surface/test/golden/` and
+   re-record their `.sha256` as mathspace hashes; `wasm-golden.test.ts`
+   replays them through the bridge. Keep the pause/hash-ring/replay
+   contract of `SimDriver`. `npm test` and `npm run typecheck` green.
+5. **7f delete ddsim.** `data-drawing/sim/`, `include/ddsim/` (move
+   `ByteReader` + `decode_header` into `mathspace/wire.hpp`,
+   `sha256_bytes` + picosha2 into `src/mathspace/hash.cpp`,
+   `DD_FX_FORMAT_ID` and the DD_OK/DD_ERR codes the ABI re-exports into
+   `mathspace_c.h`), `src/sim.cpp`, `src/ddsim_c.cpp`, `src/hash.cpp`,
+   `wasm/ddsim_wasm.cpp`, `tests/*.cpp` (ddsim's), `tests/golden/*.actions`
+   (ddsim's, not `ms/`), `tools/ddsim_replay`, `tools/gen_fixtures`, their
+   CMake targets; `rope_chain_test.cpp` keeps its mathspace numbers as
+   a plain regression. All three presets and the Wasm green, README
+   status paragraph, phase 7 done in this table, then `autonomy/DONE`.
+6. GUI confirmation of phases 1 to 6 (human, or a session that can
+   drive Electron): `npm install` at the root (or symlink node_modules,
    see Learned), `npm run build:native` in `app/` if the addon is
    missing, `npm run engine:wasm` and `npm run build` in
    `plugins/mathspace`, then `npm run dev` in `app/`. Checklist: a note
@@ -62,34 +104,25 @@ viewer; it is theirs to edit.)
    Mathspace" shows two panels and only `zw` moves under Run. Without
    the app: `npm run dev` in `plugins/mathspace` serves the surface over
    a stub `window.tapestry` at localhost:5174.
+7. Optional polish, only if cheap: a `torus` preset (flat metric,
+   `identify.x`/`identify.y` 200); shapes by sampled level sets and rule
+   regions in the surface; a `getNodes` poll while the surface is open.
 
 ## Done
 
-- `9d47eaf` ms6 `embed`: a bound dim-3 `embed` on the Space note;
-  `ms_project` embeds the note first when the view's space has one and
-  runs `project` against a copy carrying plain `embed`, `RuleDims`
-  resolves `self.embed` on a View; not dim 3 is BadDim on every view of
-  the space; step() leaves a space's `embed` alone like `metric`
-  (folded into `MS_STEP_VERSION` 11, no golden changed). Plugin:
-  `embed.expr` on a space, sphere preset embedded onto the unit sphere
-  with the Side view `[100 * self.embed.x, 100 * self.embed.z]`,
-  projection test. Phase 6 done condition met; README updated.
-- `5b5b55e` ms6 `identify`: engine wraps every Note-kind note's pos
-  lane k with L_k > 0 into [-L_k, L_k) after the velocity derivation
-  (one fx64 expression per lane, `Skip::BadIdentify` for a wrong dim,
-  `MS_STEP_VERSION` 11, goldens re-recorded, Debug/Release/UBSan
-  green); plugin `buildImage` sends a space's `identify.x/y` lanes as a
-  SetField after its CreateSpace, binds `identify.expr`, and flags any
-  other numeric field or binding on a space; runner test through the
-  kernel (99 + 2 at half-width 100 commits as -99).
+- `4a99d1c` ms7a: `fx64.hpp`, `rng.hpp`, `fxmath.hpp` moved to
+  `include/mathspace/`; `include/ddsim/` holds one-line forwarding stubs
+  until 7f; the two header-scan tests follow; Debug, Release, Wasm and
+  the plugin tests green, no hash change. Phase 7 sliced (Next).
+- `9d47eaf` ms6 `embed`; `5b5b55e` ms6 `identify` (`MS_STEP_VERSION` 11,
+  goldens re-recorded); details in git and Decisions.
 - Phase 6 (ms6) earlier, one line each: `c49dd84` `sphere` preset
   (chart (theta, phi), equator and pole notes, numbers under Learned);
   `566ff24` plugin side (`metric.expr` bound through `buildImage`,
   errors on the space, `poincare` preset); `02481a2` engine side
   (diagonal `metric`, `prepare_metric`, `geodesic_correction`,
   `Skip::BadMetric`, `MS_STEP_VERSION` 10, golden `poincare`).
-- `b27808a` ms5 default views as presets (`view-2d`/`view-3d`/`view-4d`,
-  `$<index>` refs over two commits) and the done condition.
+- `b27808a` ms5 default views as presets and the done condition.
 - Phase 5 (ms5) earlier, one line each: `4acdaab` surface runs in a
   browser (`image.js` without `Buffer`, dev page mounts `dist/surface.js`,
   verified headlessly); `24f1dbb` stage surface first cut
@@ -116,48 +149,33 @@ viewer; it is theirs to edit.)
 
 ## Decisions
 
-- Embed (`9d47eaf`): the smallest form that satisfies the design's
-  "used by View for drawing curved spaces convincingly and never by
-  physics" is a bound dim-3 `embed` on the Space note that only
-  `ms_project` evaluates, exposed to the view's `project.expr` as
-  `self.embed` on a per-call copy of the note (no new C ABI entry, no
-  new field on any stored note, `MS_ABI_VERSION` stays 3). The surface
-  therefore needs no change: a view of an embedded space is still a
-  map to the page. A note's own stored `embed` field, if it had one,
-  is shadowed by the space's for that projection.
-- Identify (`5b5b55e`): half-widths, not a period, so `[100, 0]` reads
-  as "x lives in [-100, 100)" and 0 is "open"; pinned notes are wrapped
-  too (a wrap is a change of representative, not motion); the wrap sits
-  after `velocity = pos - prev` so a wrap never appears as a jump in the
-  velocity, and before the set rules and the bound-field pass so a
-  bound `identify` evaluated on the space holds for the next tick
-  (first tick after binding: zero lanes, no wrap). A wrong dim is a
-  report on the space and nothing wraps; the plugin refuses it earlier
-  as a problem.
-- Metric (`02481a2`): diagonal only, as one dim-N bound field `metric`
-  on the Space note, because a `Field` holds at most `MAX_DIM` (8) lanes
-  so an N×N tensor cannot be one field, and the plan's two charts
-  (Poincaré, sphere) are diagonal; a full tensor would be `metric.<row>`
-  fields later. Forces are taken as chart vectors as written (no index
-  raised through g); the correction is semi-implicit (uses the velocity
-  after the force, before `pos += velocity`), h = 1. A g_kk below 2^-16
-  skips the correction for that note silently (like the constraint
-  pass's flat-gradient guard); a metric of the wrong dim or without a
-  symbolic gradient is `BadMetric` on the space; per-note evaluation
-  errors are VmError reports on the space id (RuleReport's `rule` may
-  now be a Space). The space's own `metric` lanes are never written by
-  the bound-field pass.
-- View presets (`b27808a`): `$k` refs (one level) resolved over two
-  commits, space first; one `view-3d` file holds four views; the N > 3
-  axis picker is `view-4d` plus editing `project.expr`.
-- Surface (`24f1dbb`): API 1 gives a surface no kernel channel, so it
-  reads `window.tapestry` and runs its own engine from `buildWorld` and
-  the shared seed, never submits; Canvas 2D; three.js/Worker deferred.
-- Views (`61ef64f`): compiled like a rule, never stepped or targeted
-  (but a `velocity` still moves one); `project` dim 2; share `image.rules`.
-- Contact (`064966d`): `max(0, shape(pos))` unary constraint. Constraints
-  (`60c8346`): gradient by lift+diff per rule per step; only `self.pos`
-  moves per visit with ddsim's `wa/(wa+wb)` split; `compliance` unbound.
+- Phase 7 (`4a99d1c`): the rope-chain deviation is ACCEPTED, not fixed.
+  Mathspace visits ordered pairs and moves only `self`, so letting a
+  pair constraint write `other` too would correct every rod twice per
+  pass unless constraints got their own unordered-pair scope; the ddsim
+  particle solver it was measured against is deleted by this phase and
+  the design's "self receives" rule stands. `MS_STEP_VERSION` stays 11.
+  Sub-steps: ddsim integrated n samples per tick at h = 1/n; the engine
+  has one step per tick, so the bridge sets `target` from the LAST
+  sample of a tick and the body integrates once (a 60 Hz mouse is one
+  sample per tick anyway; a fast pen loses within-tick path, and the
+  `four-per-tick` hash is re-recorded). Kinds 5 and 6 (particles,
+  constraints) exist only in the diverged root copy, the plugin never
+  sends them, and their goldens (`pendulum`, `rope-chain`) go with the
+  root copy: the "1..6 adapters" are 1..4. The `ddsim` namespace is
+  kept for `fx64`; renaming it is churn with no test.
+- Embed (`9d47eaf`): bound dim-3 `embed` on the Space note, evaluated only
+  by `ms_project` and seen by a view as `self.embed`; no ABI change.
+- Identify (`5b5b55e`): half-widths not periods, 0 is open; pinned notes
+  wrap too; wrap sits after `velocity = pos - prev`, before set rules.
+- Metric (`02481a2`): diagonal only (a `Field` holds MAX_DIM lanes); forces
+  are chart vectors; semi-implicit correction, h = 1; g_kk < 2^-16 skips.
+- View presets (`b27808a`): `$k` refs over two commits, space first.
+  Surface (`24f1dbb`): no kernel channel in API 1, runs its own engine
+  from `buildWorld`, Canvas 2D. Views (`61ef64f`): compiled like a rule,
+  never stepped; `project` dim 2. Contact (`064966d`): `max(0, shape)`.
+  Constraints (`60c8346`): gradient by lift+diff; only `self.pos` moves
+  per visit with ddsim's `wa/(wa+wb)` split; `compliance` unbound.
 - Presets (`e1e30a5`) are self-consistent worlds. RULE-07 (`9b28407`):
   one-byte reasons outside `==` and the hash. Scope (`e0b6942`): pair
   visits ordered pairs, `self` receives; `set.<f>` after the integrator,
@@ -177,13 +195,9 @@ viewer; it is theirs to edit.)
 - Plugin tests run against `plugins/mathspace/wasm/` as it is on disk:
   an engine change without `npm run engine:wasm` shows up as baffling
   compile errors (an `UnknownRef` for a reference the C++ resolves).
-- Sphere geodesics through the engine (`c49dd84`, h = 1, phi' = 1/64):
-  the equator note's theta goes 1.5, 1.529, 1.592, 1.638, 1.629 at ticks
-  0/60/120/180/240 with phi 3.742 at 240; the pole note's theta 0.25,
-  0.342, 0.528, 0.740, 0.961 with phi slowing 0.761, 1.106, 1.274, 1.377
-  (sin^2 theta phi' conserved). A quick probe is a throwaway vitest file
-  in `test/` that calls `buildWorld` on a preset's nodes with `$0`
-  replaced and prints `parseSnapshot(engine.notes())`.
+- Sphere geodesics numbers are in the `c49dd84` message. A quick probe is
+  a throwaway vitest file in `test/` calling `buildWorld` on a preset's
+  nodes with `$0` replaced and printing `parseSnapshot(engine.notes())`.
 - Vite dev ignores `build.outDir` in its watcher (`server.watch.ignored:
   ['!**/dist/**']` fixes it) and serves CommonJS untransformed; nothing
   bundled into the renderer may touch `Buffer` or `node:`. The
@@ -191,10 +205,8 @@ viewer; it is theirs to edit.)
   browser.mjs <url> --script f.mjs --screenshot p.png`) loads the dev
   page headlessly (15 to 45 s per load) and can read the canvas.
 - ddsim comparison (ms4): single pendulum agrees to 3152 raw over 600
-  ticks; the double pendulum (`rope-chain`) deviates 1.44 units by tick
-  600 because a free-free rod keeps 2^-8 of its stretch (mathspace
-  corrects one end per visit, ddsim both). Phase 7 must accept that or
-  let a pair constraint write `other` too.
+  ticks; `rope-chain` deviates 1.44 units by tick 600 (accepted, see
+  Decisions).
 - New golden: `touch tests/golden/ms/<f>.actions <f>.sha256`, build (the
   glob), `MS_WRITE_FIXTURES=1 mathspace_tests -tc="*golden <f>*"` (fails
   once on the empty `.sha256`), `ms_replay --write-golden` fills it. Then
@@ -240,3 +252,10 @@ judgement, recorded here so a human can revisit)
   fractional zoom); the plan rejects such reals, so `buildImage` drops
   that note's `pos`. If the app check shows this bites, rounding and
   committing first is a plan change for a human. (2026-09-24)
+
+- **Phase 7 sub-steps.** ddsim integrated every pen sample within a
+  tick at h = 1/n; the mathspace bridge keeps the last sample per tick
+  and integrates once. If drawing with a fast pen feels different in
+  the app, the alternatives are stepping the engine n times per tick
+  (breaks tick = kernel advance) or averaging samples; a human should
+  choose. Recorded 2026-09-24 at `4a99d1c`.
