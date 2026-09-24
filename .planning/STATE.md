@@ -4,16 +4,16 @@ milestone: v1.0
 current_phase: "02.7"
 current_phase_name: File Windows & Workspace Sandbox
 status: executing
-stopped_at: Completed 02.7-05-PLAN.md
-last_updated: "2026-09-24T22:50:39.684Z"
+stopped_at: Completed 02.7-06-PLAN.md
+last_updated: "2026-09-24T23:16:00.000Z"
 last_activity: 2026-09-24
-last_activity_desc: 02.7-05 full file tools, refusal matrix, file locks and guards complete (hands-on check deferred); next 02.7-06 (wave 6)
-state_head: 8add94d77c11af974032cbbf34cb4c9df60dd097
+last_activity_desc: 02.7-06 live watching, watch status, Retry write and scale complete (hands-on check deferred); next 02.7-07 (wave 7)
+state_head: 10bf2224bd66f01675688b3a7cf2194f1156a0b1
 progress:
   total_phases: 13
   completed_phases: 0
   total_plans: 52
-  completed_plans: 32
+  completed_plans: 33
 ---
 
 # Project State
@@ -23,15 +23,15 @@ progress:
 See: .planning/PROJECT.md (updated 2026-09-08)
 
 **Core value:** Your world of thoughts must remain readable and under your control — in its spatial interface, its editable relationships and behavior, and its files and branching history.
-**Current focus:** Phase 02.7 — File Windows & Workspace Sandbox on ws/windows (02.7-01, 02.7-02 and 02.7-03 complete; 02.7-04 next). 02.2 continues on its own branch
+**Current focus:** Phase 02.7 — File Windows & Workspace Sandbox on ws/windows (02.7-01 through 02.7-06 complete; 02.7-07 next). 02.2 continues on its own branch
 
 ## Current Position
 
 Phase: 02.7 (File Windows & Workspace Sandbox) — EXECUTING
-Plan: 02.7-05 of 7 complete (full agent file tools list_files/write_file/open_file, the D-08 refusal matrix with byte fingerprints, canonical-case paths, D-09 file locks via WORKSPACE_LOCK_POLICY, note-tool refusals and main-side guards on workspace trees; its hands-on check is deferred); next is 02.7-06 (wave 6)
-Status: Ready to execute 02.7-06
+Plan: 02.7-06 of 7 complete (live watching with recursive fs.watch and 750 ms moments signed workspace.watcher, stat-cached reconcileNow with the seq guard, self-healing watch status in the frame header, the author-unknown badge, Retry write, memoised file cards and scale measures; its hands-on check is deferred); next is 02.7-07 (wave 7)
+Status: Ready to execute 02.7-07
 Phase 02.4 (Lock Model): COMPLETE — verified 25/25, 2026-09-16; rebased onto the main line 2026-09-23
-Last activity: 2026-09-24 - Completed 02.7-05 (list_files, write_file, open_file; sandbox matrix; file locks; workspace submit/replay guards); 32 files / 652 tests
+Last activity: 2026-09-24 - Completed 02.7-06 (live watching, watch status, Retry write, scale: import 166 ms, idle reconcile reads 0, reopen 33 ms after 202 commits); 38 files / 681 tests
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -79,6 +79,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 02.7 P03 | 20 min | 3 tasks | 15 files |
 | Phase 02.7 P04 | 10 min | 2 tasks | 13 files |
 | Phase 02.7 P05 | 16 min | 3 tasks | 23 files |
+| Phase 02.7 P06 | 18 min | 3 tasks | 17 files |
 
 ## Accumulated Context
 
@@ -149,6 +150,9 @@ Recent decisions affecting current work:
 - [Phase 02.7]: 02.7-04: A shell-on turn's done is held until WorkspaceService.catchUp records its file changes as plugin workspace.watcher; shell-off turns never trigger it
 - [Phase 02.7]: 02.7-05: workspace file notes are open to every agent unless an explicit lock.<aspect> says otherwise (WORKSPACE_LOCK_POLICY); native/vault keep 2.4 defaults
 - [Phase 02.7]: 02.7-05: main refuses createNode/deleteNode/file.* submits and undo/redo on workspace trees; note tools refuse workspace trees
+- [Phase 02.7]: 02.7-06: workspaces are watched with recursive fs.watch (FSEvents), not chokidar; events are hints, the stat-cached reconcileNow decides, and 'all' also trusts the stat cache
+- [Phase 02.7]: 02.7-06: watch errors restart after 5 s with a full catch-up; a missing folder commits nothing, shows folder-missing, and heals by itself when it returns
+- [Phase 02.7]: 02.7-06: an agent file edit costs ~40 ms of main time on an 800-file tree (whole-tree getNodes per call); reopen does not grow measurably over 200 commits
 
 ### Pending Todos
 
@@ -195,9 +199,10 @@ Items acknowledged and deferred at milestone close, most recent first:
 | 2 | verification_deferred_human | /gsd-verify-work 2 |
 | 2.1 | verification_deferred_human | /gsd-verify-work 2.1 |
 | 02.7 (02.7-02 + 02.7-03 combined checkpoint) | verification_deferred_human | autonomy/REVIEW.md item 1 |
+| 02.7-06 (live watch, Retry write, feel on ~/Tapestrees/windows) | verification_deferred_human | 02.7-06-SUMMARY.md "Hands-on checks for later" |
 
 ## Session Continuity
 
-Last session: 2026-09-24T22:50:39.624Z
-Stopped at: Completed 02.7-05-PLAN.md
+Last session: 2026-09-24T23:16:00.000Z
+Stopped at: Completed 02.7-06-PLAN.md
 Resume file: None

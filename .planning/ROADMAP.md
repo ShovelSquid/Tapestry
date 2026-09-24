@@ -346,7 +346,7 @@ Plans:
   7. A per-chat "Allow shell" switch, off by default and labelled not sandboxed, enables Claude Code's shell and built-in file tools in the workspace; edits made that way are recorded as observed changes
   8. The panel talks to a `ChatEngine` interface, so a later API-key engine (Anthropic SDK over the same sandboxed tools) plugs in without changing the panel
 
-**Plans**: 5/7 plans executed
+**Plans**: 6/7 plans executed
 
 Plans:
 **Wave 1**
@@ -371,7 +371,7 @@ Plans:
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
-- [ ] 02.7-06-PLAN.md — Live watching of outside changes, grouped per moment and signed workspace.watcher, with self-healing watch errors, Retry write and scale measures
+- [x] 02.7-06-PLAN.md — Live watching of outside changes, grouped per moment and signed workspace.watcher, with self-healing watch errors, Retry write and scale measures
 
 **Wave 7** *(blocked on Wave 6 completion)*
 
