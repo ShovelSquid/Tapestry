@@ -15,7 +15,7 @@ actions, replay tool, and goldens built before the redirect are kept.
 
 | Phase | Status |
 | --- | --- |
-| 1 engine over the kernel | in progress (store/hash/actions/replay done; ids, ABI, wasm, plugin remain) |
+| 1 engine over the kernel | in progress (store/hash/actions/replay/ids/snapshot done; ABI, wasm, plugin remain) |
 | 2 expressions | not started |
 | 3 force rules | not started |
 | 4 constraints | not started |
@@ -30,50 +30,42 @@ viewer; it is theirs to edit.)
 
 ## Next
 
-1. **Snapshot bytes.** Add to `World` (world.hpp) a lazy snapshot: a
-   `mutable bool notes_dirty` set by every mutator and by `step`, and
-   `const std::vector<std::uint8_t>& notes_bytes() const` that rebuilds
-   into a `mutable` member when dirty. Lazy, so mutators pay nothing and
-   `operator==` stays about state (exclude both members from it and from
-   the hash walk). Record per note in id order: `u64 id | u8 field_count
-   | per field in name order: u8 name_len | name | u8 dim | dim x i64
-   (raw fx64)`. No space id, kind, bound flag or bytecode: this is what
-   the plugin diffs against the kernel after a step. Writer in a new
-   `src/mathspace/snapshot.cpp` using `wire::put_*`. Tests in
-   `tests/mathspace/snapshot_test.cpp`: bytes equal a hand-built
-   expectation for a two-note world; equal before and after
-   serialize/restore; change after `step` when a note has velocity;
-   unchanged after a rejected apply; `well_formed`/goldens untouched.
-2. **C ABI.** `include/mathspace/mathspace_c.h`, `src/mathspace/ms_c.cpp`:
+1. **C ABI.** `include/mathspace/mathspace_c.h`, `src/mathspace/ms_c.cpp`:
    `ms_version, ms_create(seed), ms_destroy, ms_apply(ptr,len), ms_step,
    ms_tick, ms_hash(out32), ms_serialize(out_ptr,out_len), ms_restore,
-   ms_notes_ptr, ms_notes_len`. Same error-code style as `ddsim_c.h`.
-   Tests through the ABI only, like `tools/ddsim_replay` does.
-3. **Wasm target.** `wasm/mathspace_wasm.cpp` and a `mathspace_wasm`
+   ms_notes_ptr, ms_notes_len`. Same error-code style as `ddsim_c.h`
+   (read it first; mirror its handle/buffer ownership). `ms_notes_ptr/len`
+   return `World::notes_bytes()` (`dc75224`), valid until the next
+   mutating call. `ms_serialize` can own one buffer per handle, freed on
+   the next serialize or destroy. Tests in `tests/mathspace/c_abi_test.cpp`
+   through the ABI only: create/apply/step/hash equals the same sequence
+   on a `World`; error codes map one-to-one to `Error`; notes ptr/len
+   agree with `notes_bytes()`.
+2. **Wasm target.** `wasm/mathspace_wasm.cpp` and a `mathspace_wasm`
    executable in the `EMSCRIPTEN` block of `CMakeLists.txt`, exporting
    the `ms_*` symbols plus malloc/free, output `mathspace.mjs`. Building
    needs Emscripten 6.0.10 at `$EMSDK`; if it is not installed, install
    it under `~/emsdk` per `plugins/data-drawing/surface/scripts/build-wasm.sh`
    (network required) and record the outcome under Learned.
-4. **Plugin skeleton.** `plugins/mathspace/`: `tapestry.plugin.json`
+3. **Plugin skeleton.** `plugins/mathspace/`: `tapestry.plugin.json`
    (api "1", commands `mathspace.run`, `mathspace.pause`,
    `mathspace.step`), `package.json` (workspace member, vitest),
    `scripts/build-wasm.sh` mirroring data-drawing's but building the root
    project's `wasm-release` preset and copying `mathspace.mjs/.wasm`
    into `plugins/mathspace/wasm/` (gitignored), `engine.js` loading it.
-5. **`image.js`.** Kernel `NodeData` → engine actions: exact real↔raw
+4. **`image.js`.** Kernel `NodeData` → engine actions: exact real↔raw
    int64 conversion (reject reals that are not `k / 2^32` with `|k| <
    2^53`), key conventions (`f.x f.y f.z f.w`, `f.0..` above dim 4,
    `space ref`, implicit space per tree frame), and `diff(before,
    after)` → `set` ops. Vitest tests for all three.
-6. **Run loop and commits.** In `index.js`: on `mathspace.run`, build the
+5. **Run loop and commits.** In `index.js`: on `mathspace.run`, build the
    image from `getNodes()`, step at 60 Hz with `setInterval`, every 60
    ticks or on pause read the snapshot, diff, `kernel.submit('plugin',
    'mathspace', 'advance', [...sets, {op:'advance', ticks:k}])`. Before
    each commit compare `status().lastGoodSeq` with the seq of our last
    commit; if others committed, rebuild the image first. Checkpoint
    fixture `plugins/mathspace/test/fixtures/velocity.json`.
-7. **Phase 1 done check.** Build the app (`npm install` at the root,
+6. **Phase 1 done check.** Build the app (`npm install` at the root,
    `npm run build:native` in `app/`, then the app's dev script; see
    `app/package.json`), create a note, set `velocity.x real 1` via the
    inspector or a `set` commit, Run, Pause, confirm the `.tree` has the
@@ -86,6 +78,9 @@ its oracle tests.
 
 ## Done
 
+- `dc75224` ms1 lazy notes snapshot: `World::notes_bytes()` in
+  `snapshot.cpp`, `notes_dirty`/`notes_cache` set by mutators, step and
+  restore; tests in `snapshot_test.cpp`.
 - `a247eab` ms1 bootstrap integrate rule in `step.cpp`,
   `MS_RULE_INTEGRATE_VERSION` in the walk (FORMAT_VERSION 2), golden
   `velocity`.
