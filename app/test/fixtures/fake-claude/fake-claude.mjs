@@ -8,7 +8,8 @@
  *
  * Environment:
  *   FAKE_CLAUDE_RECORD         write { argv, cwd, env } here as JSON at start,
- *                              and append the same line to <RECORD>.log
+ *                              and append the same line to <RECORD>.log; every
+ *                              stdin user line is appended to <RECORD>.stdin
  *   FAKE_CLAUDE_SCENARIO       text | edit | signed-out | crash | slow | session-lost
  *   FAKE_CLAUDE_SCENARIO_FILE  if set and readable, its trimmed content
  *                              overrides FAKE_CLAUDE_SCENARIO for this spawn
@@ -238,6 +239,7 @@ lines.on('line', (line) => {
     return
   }
   if (parsed?.type !== 'user') return
+  if (record) appendFileSync(`${record}.stdin`, `${line}\n`)
   queue = queue.then(onUserLine)
 })
 lines.on('close', () => {

@@ -10,7 +10,7 @@
  */
 
 import { afterEach, describe, expect, it } from 'vitest'
-import { readFileSync, statSync, existsSync } from 'node:fs'
+import { readFileSync, rmSync, statSync, existsSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { TreeRegistry, type OpenTree } from '../trees/registry'
 import { NoteCommands } from '../commands/notes'
@@ -23,14 +23,28 @@ import { AgentSocketServer } from '../agents/socket-server'
 import { agentActor } from '../commands/actor'
 import { WorkspaceService } from '../workspace/workspace-service'
 import { makeTempWorkspace, type TempWorkspace } from '../../../test/helpers/temp-workspace'
-import { ChatService, CHAT_AGENT_NAME } from './chat-service'
-import { ClaudeCliEngine, type ClaudeCliEngineOptions } from './claude-cli-engine'
-import { buildClaudeArgs, chatSystemPrompt } from './claude-cli'
+import { makeTempDir } from '../../../test/helpers/temp-tree'
+import {
+  BRIDGE_OFF_MESSAGE,
+  ChatService,
+  CHAT_AGENT_NAME,
+  RESUMED_NOTICE,
+  SESSION_LOST_NOTICE,
+} from './chat-service'
+import {
+  ClaudeCliEngine,
+  STILL_ANSWERING_MESSAGE,
+  TURN_TIMEOUT_MESSAGE,
+  type ClaudeCliEngineOptions,
+} from './claude-cli-engine'
+import { SIGNED_OUT_MESSAGE, buildClaudeArgs, chatSystemPrompt } from './claude-cli'
 import type { ChatEvent } from './engine'
 
 const FAKE_CLAUDE = resolve(process.cwd(), 'test', 'fixtures', 'fake-claude', 'fake-claude.mjs')
 
 interface Harness {
+  /** False for a second service sharing another harness's workspace and server. */
+  owned: boolean
   ws: TempWorkspace
   registry: TreeRegistry
   workspaces: WorkspaceService
@@ -44,11 +58,21 @@ interface Harness {
 }
 
 const harnesses: Harness[] = []
+const scenarioDirs: string[] = []
+
+/** A temp folder for a scenario file that switches the fake between spawns. */
+function makeScenarioDir(): string {
+  const dir = makeTempDir('fake-claude-scenario')
+  scenarioDirs.push(dir)
+  return dir
+}
 
 afterEach(async () => {
+  while (scenarioDirs.length > 0) rmSync(scenarioDirs.pop()!, { recursive: true, force: true })
   while (harnesses.length > 0) {
     const h = harnesses.pop()!
     await h.chat.disposeAll()
+    if (!h.owned) continue
     await h.server.close()
     h.registry.closeAll()
     h.ws.cleanup()
@@ -118,7 +142,7 @@ async function startHarness(options: HarnessOptions = {}): Promise<Harness> {
       }),
   })
 
-  const h: Harness = { ...base, chat, events, record, bridge }
+  const h: Harness = { ...base, owned: options.existing === undefined, chat, events, record, bridge }
   harnesses.push(h)
   return h
 }
@@ -248,4 +272,207 @@ describe('AgentRegistry.issueToken', () => {
       ws.cleanup()
     }
   })
+})
+
+// ---------------------------------------------------------------------------
+// Failures, Stop, relaunch and stray processes (Task 4)
+// ---------------------------------------------------------------------------
+
+function pidAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === 'EPERM'
+  }
+}
+
+async function slowPids(h: Harness): Promise<{ fake: number; sleep: number }> {
+  await waitFor(() => existsSync(`${h.record}.pids`))
+  return JSON.parse(readFileSync(`${h.record}.pids`, 'utf-8'))
+}
+
+async function expectAllDead(pids: { fake: number; sleep: number }): Promise<void> {
+  await waitFor(() => !pidAlive(pids.fake) && !pidAlive(pids.sleep), 5000)
+  expect(pidAlive(pids.fake)).toBe(false)
+  expect(pidAlive(pids.sleep)).toBe(false)
+}
+
+function recordedSpawns(h: Harness): Recorded[] {
+  const log = `${h.record}.log`
+  if (!existsSync(log)) return []
+  return readFileSync(log, 'utf-8')
+    .split('\n')
+    .filter((line) => line.trim().length > 0)
+    .map((line) => JSON.parse(line) as Recorded)
+}
+
+function flagValue(argv: string[], flag: string): string | undefined {
+  const index = argv.indexOf(flag)
+  return index >= 0 ? argv[index + 1] : undefined
+}
+
+describe('ChatService failures and lifecycle', () => {
+  it('says where it looked when claude is missing, and spawns nothing', async () => {
+    const lookedIn = ['/usr/bin/claude', '/opt/homebrew/bin/claude']
+    const h = await startHarness({ claudeBinary: () => ({ lookedIn }) })
+    await h.chat.send(h.tree.id, 'hi')
+
+    const error = h.events.find((e) => e.type === 'error') as Extract<ChatEvent, { type: 'error' }>
+    expect(error.kind).toBe('not-installed')
+    expect(error.message).toContain("Claude Code isn't installed, or Tapestry can't find it.")
+    expect(error.message).toContain('/usr/bin/claude, /opt/homebrew/bin/claude')
+    expect(existsSync(h.record)).toBe(false)
+  }, 30000)
+
+  it('says agents are off and spawns nothing', async () => {
+    const h = await startHarness()
+    h.bridge.enabled = false
+    await h.chat.send(h.tree.id, 'hi')
+
+    expect(h.events).toEqual([{ type: 'error', kind: 'bridge-off', message: BRIDGE_OFF_MESSAGE }])
+    expect(existsSync(h.record)).toBe(false)
+  }, 30000)
+
+  it('names a signed-out Claude Code with the /login sentence', async () => {
+    const h = await startHarness({ scenario: 'signed-out' })
+    await h.chat.send(h.tree.id, 'hi')
+    await waitFor(() => doneCount(h.events) === 1)
+
+    const tail = h.events.slice(-2)
+    expect(tail[0]).toEqual({ type: 'error', kind: 'signed-out', message: SIGNED_OUT_MESSAGE })
+    expect(tail[1]).toMatchObject({ type: 'done', ok: false })
+  }, 30000)
+
+  it('names a crash, then resumes the same session on the next message', async () => {
+    const scenarioFile = join(makeScenarioDir(), 'scenario')
+    writeFileSync(scenarioFile, 'crash')
+    const h = await startHarness({ scenarioFile })
+    await h.chat.send(h.tree.id, 'first')
+    await waitFor(() => doneCount(h.events) === 1)
+
+    const error = h.events.find((e) => e.type === 'error') as Extract<ChatEvent, { type: 'error' }>
+    expect(error.kind).toBe('crashed')
+    expect(error.message).toContain('Claude Code stopped unexpectedly (exit code 3)')
+    const sessionId = flagValue(recordedSpawns(h)[0].argv, '--session-id')!
+
+    writeFileSync(scenarioFile, 'text')
+    await h.chat.send(h.tree.id, 'second')
+    await waitFor(() => doneCount(h.events) === 2)
+
+    const spawns = recordedSpawns(h)
+    expect(spawns).toHaveLength(2)
+    expect(flagValue(spawns[1].argv, '--resume')).toBe(sessionId)
+    expect(spawns[1].argv).not.toContain('--session-id')
+    expect(h.events.at(-1)).toMatchObject({ type: 'done', ok: true })
+  }, 30000)
+
+  it('refuses a second message while one is running, writing nothing more to stdin', async () => {
+    const h = await startHarness({ scenario: 'slow' })
+    await h.chat.send(h.tree.id, 'first')
+    await slowPids(h)
+
+    await expect(h.chat.send(h.tree.id, 'second')).rejects.toThrow(STILL_ANSWERING_MESSAGE)
+    const stdinLines = readFileSync(`${h.record}.stdin`, 'utf-8').trim().split('\n')
+    expect(stdinLines).toHaveLength(1)
+    expect(stdinLines[0]).toContain('first')
+  }, 30000)
+
+  it('Stop ends the turn and kills the whole process group, grandchildren included', async () => {
+    const h = await startHarness({ scenario: 'slow' })
+    await h.chat.send(h.tree.id, 'take your time')
+    const pids = await slowPids(h)
+    expect(pidAlive(pids.fake)).toBe(true)
+    expect(pidAlive(pids.sleep)).toBe(true)
+
+    await h.chat.stop(h.tree.id)
+    expect(h.events.at(-1)).toEqual({ type: 'done', ok: false, reason: 'stopped' })
+    await expectAllDead(pids)
+  }, 30000)
+
+  it('closing the workspace leaves no process behind', async () => {
+    const h = await startHarness({ scenario: 'slow' })
+    await h.chat.send(h.tree.id, 'take your time')
+    const pids = await slowPids(h)
+    await h.chat.closeWorkspace(h.tree.id)
+    await expectAllDead(pids)
+  }, 30000)
+
+  it('disposeAll leaves no process behind', async () => {
+    const h = await startHarness({ scenario: 'slow' })
+    await h.chat.send(h.tree.id, 'take your time')
+    const pids = await slowPids(h)
+    await h.chat.disposeAll()
+    await expectAllDead(pids)
+  }, 30000)
+
+  it('killAllNow kills every chat process group synchronously, for app quit', async () => {
+    const h = await startHarness({ scenario: 'slow' })
+    await h.chat.send(h.tree.id, 'take your time')
+    const pids = await slowPids(h)
+    h.chat.killAllNow()
+    await expectAllDead(pids)
+  }, 30000)
+
+  it('stops a turn that runs past its time limit', async () => {
+    const h = await startHarness({ scenario: 'slow', turnTimeoutMs: 200 })
+    await h.chat.send(h.tree.id, 'take your time')
+    const pids = await slowPids(h)
+    await waitFor(() => doneCount(h.events) === 1, 5000)
+
+    expect(h.events).toContainEqual({ type: 'error', kind: 'timeout', message: TURN_TIMEOUT_MESSAGE })
+    await expectAllDead(pids)
+  }, 30000)
+
+  it('starts a fresh session, once, when the earlier one is lost', async () => {
+    const scenarioFile = join(makeScenarioDir(), 'scenario')
+    writeFileSync(scenarioFile, 'text')
+    const h = await startHarness({ scenarioFile })
+    await h.chat.send(h.tree.id, 'first')
+    await waitFor(() => doneCount(h.events) === 1)
+    const firstSession = flagValue(recordedSpawns(h)[0].argv, '--session-id')!
+    await h.chat.stop(h.tree.id)
+
+    writeFileSync(scenarioFile, 'session-lost')
+    await h.chat.send(h.tree.id, 'second')
+    await waitFor(() => doneCount(h.events) === 2)
+
+    expect(h.events).toContainEqual({ type: 'notice', text: SESSION_LOST_NOTICE })
+    expect(h.events.some((e) => e.type === 'error' && e.kind === 'session-lost')).toBe(false)
+    const spawns = recordedSpawns(h)
+    expect(spawns).toHaveLength(3)
+    expect(flagValue(spawns[1].argv, '--resume')).toBe(firstSession)
+    const fresh = flagValue(spawns[2].argv, '--session-id')
+    expect(fresh).toBeDefined()
+    expect(fresh).not.toBe(firstSession)
+    expect(spawns[2].argv).not.toContain('--resume')
+    expect(h.events.at(-1)).toMatchObject({ type: 'done', ok: true })
+    // The message was sent again, not recorded twice.
+    expect(h.events.filter((e) => e.type === 'user')).toHaveLength(2)
+  }, 30000)
+
+  it('continues the conversation after a relaunch, and forgets it after New chat', async () => {
+    const first = await startHarness({ scenario: 'text' })
+    await first.chat.send(first.tree.id, 'remember this')
+    await waitFor(() => doneCount(first.events) === 1)
+    const sessionId = flagValue(readRecord(first.record).argv, '--session-id')!
+    await first.chat.disposeAll()
+
+    // A relaunch: a new service over the same app data.
+    const second = await startHarness({ scenario: 'text', existing: first })
+    expect(second.chat.open(second.tree.id)).toMatchObject({ sessionId, resumed: true })
+    await second.chat.send(second.tree.id, 'what did I say?')
+    await waitFor(() => doneCount(second.events) === 1)
+
+    expect(second.events[0]).toEqual({ type: 'notice', text: RESUMED_NOTICE })
+    const argv = readRecord(second.record).argv
+    expect(flagValue(argv, '--resume')).toBe(sessionId)
+    expect(argv).not.toContain('--session-id')
+
+    await second.chat.newChat(second.tree.id)
+    const chats = JSON.parse(readFileSync(join(first.ws.dir, 'chat', 'chats.json'), 'utf-8'))
+    const realRoot = second.workspaces.workspaceFor(second.tree.id)!.realRoot
+    expect(chats.chats[realRoot]).toBeUndefined()
+    expect(statSync(join(first.ws.dir, 'chat', 'chats.json')).mode & 0o777).toBe(0o600)
+  }, 30000)
 })

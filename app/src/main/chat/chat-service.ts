@@ -190,6 +190,9 @@ export class ChatService {
     await Promise.all([...this.chats.keys()].map((treeId) => this.closeWorkspace(treeId)))
   }
 
+  /** Kill every chat's process group at once, synchronously (app quit). */
+  killAllNow(): void {}
+
   /** Stop every running turn (agents were switched off). */
   async stopAll(): Promise<void> {
     await Promise.all([...this.chats.values()].map((chat) => chat.engine?.stop()))
