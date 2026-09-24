@@ -17,36 +17,35 @@ the end of every session so its first item can be started cold.
 
 ## In progress
 
-Nothing of mine. **`autonomy/watch.py` is untracked and not ours**: an
-operator wrote it at 11:02 on 2026-09-24 while a session was running,
-and it is their live log viewer (two copies were running). Do not
-`git clean -fd` it away and do not commit it for them; if it shows up in
-`git status`, ignore it. If it has been committed by the operator, delete
-this paragraph.
+Nothing. (`autonomy/watch.py` is the operator's log viewer, committed in
+`b2a884d`; it is theirs to edit.)
 
 ## Next
 
-1. **Canonical walk + hash** in `src/mathspace/hash.cpp`, per the plan's
-   walk with one addition: `u32 next_group` right after `u64 tick` (see
-   Decisions). Declare `hash(const World&, uint8_t out[32])`,
-   `serialize(const World&) -> std::vector<uint8_t>`,
-   `restore(World&, bytes) -> Error` in `world.hpp` (add `Error::BadBytes`).
-   `restore` decodes into a local World, checks `well_formed()`, and swaps
-   only on success. Use `ddsim::sha256_bytes` from `ddsim/sim.hpp`. Look at
-   `src/hash.cpp` for the ddsim byte-writer helpers and copy the style, not
-   the code. Tests in `tests/mathspace/hash_test.cpp`: hash equal after
-   round-trip, every single-byte tamper of a serialized world is rejected
-   or hashes differently, restore failure leaves state untouched, hash
-   changes when a field value / name / dim / bound / kind / space changes,
-   hash ignores nothing that `operator==` sees.
-2. **Actions** `include/mathspace/action.hpp`: kinds 32 to 36 with the
-   ddsim header layout, bounds-checked decoder into a local, `World::apply`.
-   Tests per kind including malformed payloads.
-3. **Replay tool and goldens**: `tools/ms_replay/main.cpp`, fixture format
+1. **Actions** `include/mathspace/action.hpp` + `src/mathspace/action.cpp`:
+   kinds 32 to 36 (CreateSpace, CreateNote, SetField, DeleteNote,
+   DeleteField) with the ddsim header layout `u8 kind | u8 version | u16
+   reserved | u32 payload_len | payload` (reuse `ddsim::ByteReader` and
+   `ddsim::decode_header` from `ddsim/action.hpp` if its error codes fit,
+   else mirror it). Payloads: CreateSpace `u8 dim`; CreateNote `u64 space
+   | u8 kind`; SetField `u64 note | u8 name_len | name | u8 dim | u8 bound
+   | dim x i64 | u32 code_len | code` (same field record as the hash
+   walk, so share the reader in hash.cpp by moving it to a small internal
+   header `src/mathspace/wire.hpp`); DeleteNote `u64 note`; DeleteField
+   `u64 note | u8 name_len | name`. `World::apply(const uint8_t*, size_t,
+   NoteId* created) -> Error` decodes into locals, rejects any trailing
+   byte (`Error::BadAction`), then calls the matching mutator. Encoders
+   `encode_create_space(...)` etc. returning `std::vector<uint8_t>` so
+   tests and the replay tool build fixtures without hand-packing. Tests in
+   `tests/mathspace/action_test.cpp`: each kind round-trips through
+   encode/apply and equals the direct mutator call; truncated, oversized,
+   wrong-version, unknown-kind, and trailing-byte payloads are
+   `BadAction` and leave the world untouched.
+2. **Replay tool and goldens**: `tools/ms_replay/main.cpp`, fixture format
    shared with `tests/golden_support.hpp` where possible,
    `tests/golden/ms/empty.actions` and `two-notes.actions` with `.sha256`,
    wired into the two-process CTest loop in `CMakeLists.txt`.
-4. **Tapestry Space page** (phase 1 done condition): `PageKind::Space`,
+3. **Tapestry Space page** (phase 1 done condition): `PageKind::Space`,
    page owns a mathspace `World`, notes drawn as labelled dots, drag
    issues `SetField pos`, `.tapestry` delta line `mspace <page> <base64
    actions>`; reload and compare hash. Link `mathspace` into
@@ -59,6 +58,9 @@ its oracle tests.
 
 ## Done
 
+- `4c8a5de` ms1 step 4: `hash.cpp` walk + `hash`/`serialize`/`restore`
+  (strict, local-then-swap, `Error::BadBytes`), `MAX_FIELDS` 255 cap with
+  `Error::TooManyFields`. 9 tests incl. every-single-byte tamper.
 - `1832b88` ms1 step 3: `world.hpp`/`world.cpp` World store: create_space,
   create_note, set_field, delete_note, delete_field, step, well_formed,
   Error enum + error_name. 12 tests incl. untouched-on-reject checks.
@@ -97,6 +99,17 @@ its oracle tests.
 - `Field::value` is `std::array<fx64, 8>`; lanes at index >= dim are
   always zero (set_field enforces), so `operator==` on Field matches
   hashed-byte equality.
+
+- **Walk pins are `u32 FORMAT_VERSION` (world.hpp, =1) then `u32
+  ddsim::DD_FX_FORMAT_ID`.** Bump FORMAT_VERSION on any walk change.
+- **A note holds at most 255 fields** (`MAX_FIELDS`), because the walk's
+  field count is one byte. Replacing an existing name at capacity is fine;
+  a new name is `TooManyFields`.
+- `restore` reuses `ddsim::ByteReader` from `ddsim/action.hpp` (public
+  header, bounds-checked) rather than a copy; the writer helpers are
+  re-implemented in hash.cpp since ddsim's are TU-local.
+- A bound field's value lanes are still written to the walk (the phase 2
+  evaluated value is state until the next tick overwrites it).
 
 ## Learned
 
