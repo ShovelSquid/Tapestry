@@ -4,16 +4,16 @@ milestone: v1.0
 current_phase: "02.6"
 current_phase_name: Placement Edges & Forest Tree
 status: executing
-stopped_at: Completed 02.6-02-PLAN.md
-last_updated: "2026-09-24T22:27:19.217Z"
+stopped_at: Completed 02.6-03-PLAN.md
+last_updated: "2026-09-24T22:37:22.613Z"
 last_activity: 2026-09-24
 last_activity_desc: Phase 02.6 execution started
-state_head: 1d5acfab49cf63ac7525d7cc54a890e4fedfbffb
+state_head: f77abcd3e40d1999c4266aceb82a9c1197b41349
 progress:
   total_phases: 13
   completed_phases: 0
   total_plans: 51
-  completed_plans: 29
+  completed_plans: 30
 ---
 
 # Project State
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-09-08)
 ## Current Position
 
 Phase: 02.6 (Placement Edges & Forest Tree) — EXECUTING
-Plan: 3 of 6
+Plan: 4 of 6
 Status: Ready to execute
 Main line (phase-2-implementation-v1) at merge: 02.2 executing (8 of 16), 02.4 complete, 02.5 5/5
 Last activity: 2026-09-24 — Phase 02.6 execution started
@@ -76,6 +76,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 02.4 P02 | 8 min | 2 tasks | 5 files |
 | Phase 02.6 P01 | 6 min | 3 tasks | 8 files |
 | Phase 02.6 P02 | 9min | 1 tasks | 8 files |
+| Phase 02.6 P03 | 6min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -137,6 +138,9 @@ Recent decisions affecting current work:
 - [Phase 02.6]: 02.6-01: settings writes are a passthrough (unknown keys, raw trees, version never lowered); FRAME_UNDO_REACH defaults to 'run' pending Plan 02 checkpoint; registry reserved paths compared resolved + real (folder-real for unborn files)
 - [Phase 02.6]: 02.6-02 checkpoint resolved 'recommended' autonomously (pending Kaelen review, autonomy/REVIEW.md item 1): Option A names, absolute path hints, origin.x/origin.y only, settings pointer key 'tapestry' {path}, version 2, pointer written last
 - [Phase 02.6]: 02.6-02: a failed import removes only files the same call created, so the next launch retries case A; cases B/C return not-set-up until Plan 06
+- [Phase 02.6]: 02.6-03: No restoreVault hook at launch; this branch has no vault launch-restore branch (2.2 Plan 08 not landed), so vault members stay in the forest unopened
+- [Phase 02.6]: 02.6-03: Note landing/resize pushes use the same one-batch trees:moveFrames call as a frame drop (settleFrames removed)
+- [Phase 02.6]: 02.6-03: Forest identity is its header (name + creation second); two forests made in the same second cannot be told apart by the case H digest check
 
 ### Pending Todos
 
@@ -191,6 +195,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-24T22:27:19.156Z
-Stopped at: Completed 02.6-02-PLAN.md
+Last session: 2026-09-24T22:37:22.552Z
+Stopped at: Completed 02.6-03-PLAN.md
 Resume file: None
