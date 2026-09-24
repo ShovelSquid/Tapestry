@@ -39,6 +39,7 @@ import {
   type PositionedRect,
 } from '../layout/frames'
 import { displayPositions, type DisplaySpot } from '../layout/placement'
+import { clampZoom, isZoomPinchDelta, normalizeWheelDelta, panDelta, zoomFactor } from '../layout/wheel'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -168,7 +169,6 @@ export function worldToScreen(
 
 const MIN_ZOOM = 0.1
 const MAX_ZOOM = 5
-const ZOOM_SPEED = 0.001
 
 const DEFAULT_NODE_WIDTH = 240
 const DEFAULT_NODE_HEIGHT = 80
@@ -585,10 +585,14 @@ function Canvas({
         const rect = viewport.getBoundingClientRect()
         const pointerX = e.clientX - rect.left
         const pointerY = e.clientY - rect.top
+        const normalizedDeltaY = normalizeWheelDelta(e.deltaY, e.deltaMode)
 
         setView((prev) => {
-          const delta = -e.deltaY * ZOOM_SPEED
-          const newZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, prev.zoom * (1 + delta)))
+          const newZoom = clampZoom(
+            prev.zoom * zoomFactor(normalizedDeltaY, isZoomPinchDelta(normalizedDeltaY)),
+            MIN_ZOOM,
+            MAX_ZOOM
+          )
           const ratio = newZoom / prev.zoom
           return {
             panX: pointerX - ratio * (pointerX - prev.panX),
@@ -599,8 +603,8 @@ function Canvas({
       } else {
         setView((prev) => ({
           ...prev,
-          panX: prev.panX - e.deltaX,
-          panY: prev.panY - e.deltaY,
+          panX: prev.panX - panDelta(e.deltaX, e.deltaMode),
+          panY: prev.panY - panDelta(e.deltaY, e.deltaMode),
         }))
       }
     }
