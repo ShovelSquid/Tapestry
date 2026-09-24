@@ -22,3 +22,9 @@ Thumbs.db
 *~
 .idea/
 .vscode/
+
+# autonomous driver session logs
+autonomy/logs/
+autonomy/WAITING
+autonomy/RESPONSE
+autonomy/STOP
