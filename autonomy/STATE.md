@@ -31,8 +31,9 @@ Checkpoints in 01 and 03 were deferred to REVIEW.md. 07's blocking-human package
 
 ## Checkpoint
 
-(none pending) REVIEW.md holds items 1 (02.7-02/03 combined check), 2 (02.7-04 shell switch) and
-3 (02.7-05 open_file and the workspace guards), all deferred. The next wave is wave 6 (02.7-06, live watching and scale).
+(none pending) REVIEW.md holds items 1 (02.7-02/03 combined check), 2 (02.7-04 shell switch),
+3 (02.7-05 open_file and the workspace guards) and 4 (02.7-06 live watching), all deferred. The next wave is
+wave 7 (02.7-07, the API-key engine). Its first task is the blocking-human check of @anthropic-ai/sdk.
 Under PROTOCOL step 4, 07's package check gets parked in REVIEW.md, not approved.
 
 ## In progress
@@ -67,6 +68,9 @@ Under PROTOCOL step 4, 07's package check gets parked in REVIEW.md, not approved
 - 2026-09-24 15:32: wave 5 (02.7-05). One foreground executor, about 18 min and 218K tokens;
   ce2a5c2, 1b5d530, 8add94d, 55c20cc. 32 files and 652 tests pass, typecheck clean. Its on-screen
   checks are queued as REVIEW item 3. Wave 6 is next.
+- 2026-09-24 15:52: wave 6 (02.7-06). One foreground executor, about 24 min and 259K tokens;
+  b63d4a9, 339b2c9, a2c5b52, 10bf222, 90375b4. 38 files and 681 tests pass, typecheck clean. Its
+  hands-on checks are queued as REVIEW item 4. Wave 7 (02.7-07) is next; park its package check.
 
 ## Learned
 
@@ -88,7 +92,7 @@ Under PROTOCOL step 4, 07's package check gets parked in REVIEW.md, not approved
   32 minutes in the foreground without tripping it either: subagent events
   reach the stream-json log, so foreground executors are safe.
 - After 02.7-02: 26 test files, 499 tests. After 02.7-03 Tasks 1 and 2: 28 files, 516.
-  After 02.7-04: 28 files, 534. After 02.7-05: 32 files, 652.
+  After 02.7-04: 28 files, 534. After 02.7-05: 32 files, 652. After 02.7-06: 38 files, 681.
 - Executors must not launch the app before a checkpoint. On the first open,
   the app writes commits (such as the subspace arrangement) into the real
   workspace tree, and the human verifies those commits.

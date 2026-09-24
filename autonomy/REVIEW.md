@@ -106,3 +106,34 @@ Start Tapestry from a terminal (`npm --prefix app run dev` in ~/Tapestrees/windo
 If something's wrong, write it in RESPONSE. The next session will fix it with a 02.7 gap-closure plan.
 To undo the whole plan, `git revert 8add94d 1b5d530 ce2a5c2`.
 Known limit: agents can now `place` workspace files unless the note has a layout lock, and nothing in the app sets locks yet.
+
+### 4. 02.7-06: hands-on check of live watching, watch status and Retry write (open, deferred)
+
+Queued by the session at 2026-09-24 15:52. 02.7-06 is autonomous and has no checkpoint, but what it does shows up on screen
+and only the tests have checked it. The unattended session did not launch the app.
+The code is b63d4a9, 339b2c9, a2c5b52 and 10bf222, and the SUMMARY is 90375b4. 38 test files and 681 tests pass,
+and typecheck is clean.
+
+Start Tapestry from a terminal (`npm --prefix app run dev` in ~/Tapestrees/windows) and open ~/Tapestrees/windows as a workspace.
+ 1. **Live edit.** In a terminal, ask Claude Code to change a comment in any file using its own Edit tool, not the Tapestry tools.
+    Within about 2 s:
+    - the file's card shows the change;
+    - its footer reads `changed by workspace.watcher · author unknown` with the eye icon;
+    - the second row of the frame header reads "Watching".
+    Undo the change afterwards with `git checkout -- <file>`.
+ 2. **Grouped checkout.** Open a scratch clone as a workspace, for example
+    `git clone ~/Tapestrees/windows /tmp/ws-review && git -C /tmp/ws-review checkout -b other HEAD~5`.
+    Then run `git -C /tmp/ws-review checkout ws/windows`. History gets one entry, `observed changes: ...`, that lists every changed file.
+ 3. **Retry write.**
+    - In that scratch workspace, run `chmod a-w <folder>` and type in the window of a file inside it.
+    - After about 1 s the card shows "Not written to file" in red and a **Retry write** button.
+    - Run `chmod u+w <folder>` and choose Retry write. The file on disk now has the typed text.
+ 4. **Missing folder.** In Finder, rename the scratch workspace folder away.
+    - The header says "The folder is missing; nothing is being recorded.", and no cards disappear.
+    - Rename it back. Within about 5 s the header says "Watching" again.
+ 5. **Feel.** Pan and zoom across the whole ~/Tapestrees/windows frame, and type in an open window.
+    If it lags, say so: the next step would be loading file text on demand, or caching the tree read (each agent edit costs about 42 ms).
+ 6. **Clean up.** Run `rm -rf /tmp/ws-review`.
+
+If something's wrong, write it in RESPONSE. The next session will fix it with a 02.7 gap-closure plan.
+To undo the whole plan, run `git revert 10bf222 a2c5b52 339b2c9 b63d4a9`.
