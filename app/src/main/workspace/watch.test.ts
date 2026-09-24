@@ -6,10 +6,12 @@
  */
 
 import { afterEach, describe, expect, it } from 'vitest'
-import { readFileSync, writeFileSync } from 'fs'
+import { appendFileSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { TreeRegistry, type OpenTree } from '../trees/registry'
-import { WorkspaceService, type WorkspaceServiceOptions } from './workspace-service'
+import { WorkspaceService, type WorkspaceServiceOptions, type WorkspaceStatus } from './workspace-service'
+import { groupMessages } from '../mirror/plan'
+import type { FolderWatcherHandlers } from '../mirror/watcher'
 import { FILE_PATH, FILE_TEXT } from './shapes'
 import type { NodeData } from '../kernel-bridge'
 import { agentActor } from '../commands/actor'
@@ -167,5 +169,170 @@ describe('live watching (D-06)', () => {
     writeFileSync(join(ws.root, 'README.md'), '# Not watched\n')
     await sleep(2000)
     expect(tree.bridge.status().lastGoodSeq).toBe(seq)
+  })
+})
+
+describe('moments, deletions and ignores (D-06)', () => {
+  it('tags the commits of a moment that needs several', () => {
+    const stamp = '2026-09-24T12:00:00Z'
+    expect(groupMessages('observed changes: modified a', 3, stamp)).toEqual([
+      `observed changes: modified a (group ${stamp}, 1 of 3)`,
+      `observed changes: modified a (group ${stamp}, 2 of 3)`,
+      `observed changes: modified a (group ${stamp}, 3 of 3)`,
+    ])
+    expect(groupMessages('observed change to a', 1, stamp)).toEqual(['observed change to a'])
+  })
+
+  it('records three files written within 100 ms as one commit listing all three', async () => {
+    const { ws, service } = setup()
+    const tree = await service.addWorkspace(ws.root)
+    await watch(service, tree)
+    const seq = tree.bridge.status().lastGoodSeq
+
+    writeFileSync(join(ws.root, 'README.md'), '# one\n')
+    await sleep(40)
+    writeFileSync(join(ws.root, 'src', 'hello.ts'), 'two\n')
+    await sleep(40)
+    writeFileSync(join(ws.root, 'src', 'nested', 'deep.txt'), 'three\n')
+    await pollUntil(() => textAt(tree, 'src/nested/deep.txt') === 'three\n')
+    await sleep(1500)
+
+    expect(tree.bridge.status().lastGoodSeq).toBe(seq + 1)
+    const last = commitBlocks(tree).at(-1)!
+    expect(last).toContain('actor plugin workspace.watcher')
+    expect(last).toContain('observed changes: modified README.md, src/hello.ts, src/nested/deep.txt')
+    expect(textAt(tree, 'README.md')).toBe('# one\n')
+    expect(textAt(tree, 'src/hello.ts')).toBe('two\n')
+  })
+
+  it('removes a deleted file and its now-empty folder in one observed commit', async () => {
+    const { ws, service } = setup()
+    const tree = await service.addWorkspace(ws.root)
+    await watch(service, tree)
+    const seq = tree.bridge.status().lastGoodSeq
+    expect(noteAt(tree, 'src/nested')).toBeDefined()
+
+    unlinkSync(join(ws.root, 'src', 'nested', 'deep.txt'))
+    await pollUntil(() => noteAt(tree, 'src/nested/deep.txt') === undefined)
+    await sleep(1000)
+
+    expect(noteAt(tree, 'src/nested')).toBeUndefined()
+    expect(tree.bridge.status().lastGoodSeq).toBe(seq + 1)
+    const last = commitBlocks(tree).at(-1)!
+    expect(last).toContain('actor plugin workspace.watcher')
+    expect(last).toContain('observed changes: deleted src/nested/deep.txt, src/nested')
+    // The deleted file stays in history.
+    expect(readFileSync(tree.path, 'utf-8')).toContain('deep text')
+  })
+
+  it('adds an untracked file, and removes it once git ignores it', async () => {
+    const { ws, service } = setup()
+    const tree = await service.addWorkspace(ws.root)
+    await watch(service, tree)
+
+    writeFileSync(join(ws.root, 'notes.tmp.txt'), 'scratch\n')
+    await pollUntil(() => textAt(tree, 'notes.tmp.txt') === 'scratch\n')
+    expect(commitBlocks(tree).at(-1)).toContain('observed changes: created notes.tmp.txt')
+
+    appendFileSync(join(ws.root, '.gitignore'), 'notes.tmp.txt\n')
+    await pollUntil(() => noteAt(tree, 'notes.tmp.txt') === undefined)
+    const last = commitBlocks(tree).at(-1)!
+    expect(last).toContain('actor plugin workspace.watcher')
+    expect(last).toContain('deleted notes.tmp.txt')
+  })
+})
+
+/** A watcher the test drives by hand. */
+function fakeWatchers(): {
+  created: FolderWatcherHandlers[]
+  closed: number[]
+  createWatcher: WorkspaceServiceOptions['createWatcher']
+} {
+  const created: FolderWatcherHandlers[] = []
+  const closed: number[] = []
+  return {
+    created,
+    closed,
+    createWatcher: (_root, handlers) => {
+      const index = created.length
+      created.push(handlers)
+      return { close: () => closed.push(index) }
+    },
+  }
+}
+
+describe('watch status and self-healing (D-06, T-02.7-25, T-02.7-26)', () => {
+  it('says it is not watching after an error, then restarts with a full catch-up', async () => {
+    const statuses: WorkspaceStatus[] = []
+    const fake = fakeWatchers()
+    const { ws, service } = setup({
+      createWatcher: fake.createWatcher,
+      restartDelayMs: 100,
+      onStatus: (_treeId, status) => statuses.push(status),
+    })
+    const tree = await service.addWorkspace(ws.root)
+    service.startWatching(tree.id)
+    expect(statuses).toEqual([{ kind: 'watching' }])
+
+    fake.created[0].onError(new Error('FSEvents stream stopped'))
+    expect(statuses.at(-1)).toEqual({ kind: 'not-watching', reason: 'FSEvents stream stopped' })
+    expect(fake.closed).toEqual([0])
+    expect(service.isWatching(tree.id)).toBe(false)
+
+    // Changed while nothing was watching: only the catch-up can find it.
+    writeFileSync(join(ws.root, 'README.md'), '# while not watching\n')
+    await pollUntil(() => textAt(tree, 'README.md') === '# while not watching\n', 3000)
+
+    expect(fake.created.length).toBe(2)
+    expect(service.isWatching(tree.id)).toBe(true)
+    expect(statuses).toEqual([
+      { kind: 'watching' },
+      { kind: 'not-watching', reason: 'FSEvents stream stopped' },
+      { kind: 'watching' },
+    ])
+    expect(commitBlocks(tree).at(-1)).toContain('observed change to README.md')
+  })
+
+  it('records nothing for a folder that disappeared, says so, and heals when it returns', async () => {
+    const statuses: WorkspaceStatus[] = []
+    const fake = fakeWatchers()
+    const { ws, service } = setup({
+      createWatcher: fake.createWatcher,
+      restartDelayMs: 100,
+      onStatus: (_treeId, status) => statuses.push(status),
+    })
+    const tree = await service.addWorkspace(ws.root)
+    service.startWatching(tree.id)
+    const seq = tree.bridge.status().lastGoodSeq
+    const count = tree.bridge.getNodes().length
+    const moved = join(ws.dir, 'moved away')
+
+    renameSync(ws.root, moved)
+    await expect(service.reconcileNow(tree.id, 'all')).rejects.toThrow(/is missing; nothing was recorded/)
+    expect(statuses.at(-1)).toEqual({ kind: 'folder-missing' })
+    expect(tree.bridge.status().lastGoodSeq).toBe(seq)
+    expect(tree.bridge.getNodes().length).toBe(count)
+
+    // Still missing at the next restart attempt: nothing changes, no tight loop.
+    await sleep(250)
+    expect(tree.bridge.status().lastGoodSeq).toBe(seq)
+    expect(fake.created.length).toBe(1)
+
+    renameSync(moved, ws.root)
+    await pollUntil(() => statuses.at(-1)?.kind === 'watching', 3000)
+    expect(fake.created.length).toBe(2)
+    expect(tree.bridge.getNodes().length).toBe(count)
+  })
+
+  it('stops restarting once the frame is closed', async () => {
+    const fake = fakeWatchers()
+    const { ws, service } = setup({ createWatcher: fake.createWatcher, restartDelayMs: 50 })
+    const tree = await service.addWorkspace(ws.root)
+    service.startWatching(tree.id)
+    fake.created[0].onError(new Error('gone'))
+    service.stopWatching(tree.id)
+    await sleep(200)
+    expect(fake.created.length).toBe(1)
+    expect(service.isWatching(tree.id)).toBe(false)
   })
 })
