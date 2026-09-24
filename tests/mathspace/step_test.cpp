@@ -8,6 +8,7 @@
 #include "mathspace/expr/parser.hpp"
 #include "mathspace/expr/vm.hpp"
 
+#include <string>
 #include <vector>
 
 using namespace mathspace;
@@ -183,11 +184,26 @@ TEST_CASE("a rule is skipped when it is not unary, not a space vector, or in ano
     CHECK(field(w, A, "pos") == vec("pos", 2, 1, 1));
     CHECK(field(w, C, "pos") == vec("pos", 2, 0, 0));
 
-    // A scalar force is not a space vector: skipped.
+    // A scalar force is not a space vector: skipped, and reported (RULE-07).
     w = before;
     REQUIRE(w.bind_field(R, "force", rule_code(w, R, "1")) == Error::Ok);
     w.step();
     CHECK(field(w, A, "pos") == vec("pos", 2, 0, 0));
+    REQUIRE(w.reports.size() == 1);
+    CHECK(w.reports[0].rule == R);
+    CHECK(w.reports[0].skipped == 1);
+    CHECK(w.reports[0].reason == static_cast<std::uint8_t>(Skip::WrongDim));
+    CHECK(std::string(skip_name(w.reports[0].reason)) == "WrongDim");
+
+    // A bad scope is a whole-rule skip too; a clean step clears the reports.
+    w = before;
+    REQUIRE(w.set_field(R, vec("scope", 1, 7)) == Error::Ok);
+    w.step();
+    REQUIRE(w.reports.size() == 1);
+    CHECK(w.reports[0].reason == static_cast<std::uint8_t>(Skip::NoScope));
+    REQUIRE(w.set_field(R, vec("scope", 1, 0)) == Error::Ok);
+    w.step();
+    CHECK(w.reports.empty());
 
     // A bound `force` on a plain note is an ordinary bound field, not a law.
     w = before;
@@ -215,6 +231,12 @@ TEST_CASE("force needs velocity and a positive mass; a per-note failure skips th
     CHECK(field(w, A, "pos") == vec("pos", 2, 0, 0)); // never created a velocity
     CHECK(find_field(*w.find(A), "velocity") == nullptr);
     CHECK(field(w, B, "velocity") == vec("velocity", 2, 3, 0));
+    // A has no `k`: that visit is skipped and reported (RULE-07), B's is not.
+    REQUIRE(w.reports.size() == 1);
+    CHECK(w.reports[0].rule == R);
+    CHECK(w.reports[0].skipped == 1);
+    CHECK(w.reports[0].reason == static_cast<std::uint8_t>(expr::VmError::NoSuchField));
+    CHECK(std::string(skip_name(w.reports[0].reason)) == "NoSuchField");
 
     // mass 0 and a negative mass drop the force; velocity still integrates.
     REQUIRE(w.set_field(B, vec("mass", 1, 0)) == Error::Ok);
@@ -230,9 +252,17 @@ TEST_CASE("force needs velocity and a positive mass; a per-note failure skips th
     CHECK(field(w, B, "velocity") == vec("velocity", 2, 6, 0));
 
     // `self.k` reshaped on B: DimChanged for B only; A is untouched anyway.
+    // Both visits skip now, and the reason is the last skip's.
     REQUIRE(w.set_field(B, vec("k", 2, 1, 1)) == Error::Ok);
     w.step();
     CHECK(field(w, B, "velocity") == vec("velocity", 2, 6, 0));
+    REQUIRE(w.reports.size() == 1);
+    CHECK(w.reports[0].skipped == 2);
+    CHECK(w.reports[0].reason == static_cast<std::uint8_t>(expr::VmError::DimChanged));
+    // Reports are not state: the world equals its copy without them.
+    World copy = w;
+    copy.reports.clear();
+    CHECK(copy == w);
     CHECK(w.well_formed());
 }
 
@@ -345,6 +375,11 @@ TEST_CASE("a rule's bound set.<f> assigns f on each selected target after the in
     CHECK(field(w, B, "heat") == vec("heat", 2, 0, 0));
     CHECK(find_field(*w.find(A), "nope") == nullptr);
     CHECK(find_field(*w.find(B), "nope") == nullptr);
+    // RULE-07: B's reshaped heat, nope on both, B's missing tag: four skips.
+    REQUIRE(w.reports.size() == 1);
+    CHECK(w.reports[0].rule == R);
+    CHECK(w.reports[0].skipped == 4);
+    CHECK(w.reports[0].reason == static_cast<std::uint8_t>(Skip::NoTargetField));
     // A later rule in id order wins; select gates it; a pinned target is skipped.
     REQUIRE(w.bind_field(R2, "set.heat", rule_code(w, R2, "0 - 1")) == Error::Ok);
     REQUIRE(w.bind_field(R2, "select", rule_code(w, R2, "self.pos.x > 100")) == Error::Ok);
@@ -357,6 +392,13 @@ TEST_CASE("a rule's bound set.<f> assigns f on each selected target after the in
     w.step();
     CHECK(field(w, A, "heat") == vec("heat", 1, -1));
     CHECK(field(w, A, "tag") == vec("tag", 2, 40, 1)); // tick 3's value, no write while pinned
+    // A pinned target is not a reported skip (RULE-08 is what was asked):
+    // R still has B's three, R2 has B's reshaped heat only.
+    REQUIRE(w.reports.size() == 2);
+    CHECK(w.reports[0].rule == R);
+    CHECK(w.reports[0].skipped == 3);
+    CHECK(w.reports[1].rule == R2);
+    CHECK(w.reports[1].skipped == 1);
     // A set rule under a non-unary scope is skipped whole.
     REQUIRE(w.set_field(A, vec("pinned", 1, 0)) == Error::Ok);
     REQUIRE(w.set_field(R2, vec("scope", 1, 2)) == Error::Ok);

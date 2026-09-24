@@ -87,6 +87,49 @@ TEST_CASE("apply, step, hash and snapshot agree with a World") {
     CHECK(notesOf(h.w) == w.notes_bytes());
 }
 
+TEST_CASE("ms_errors carries the last step's rule skips and nothing else (RULE-07)") {
+    constexpr NoteId B{3};
+    constexpr NoteId R{4};
+    Handle h(3);
+    CHECK(ms_errors_len(h.w) == 0);
+    World w(3);
+    for (const auto& a : {encode_create_space(S, 2), encode_create_note(A, space_of(S), NoteKind::Note),
+                          encode_create_note(B, space_of(S), NoteKind::Note),
+                          encode_create_note(R, space_of(S), NoteKind::Rule), encode_set_field(A, vec("pos", 2)),
+                          encode_set_field(B, vec("pos", 2)), encode_set_field(B, vec("k", 1, 2))}) {
+        REQUIRE(applyTo(h.w, a) == MS_OK);
+        REQUIRE(w.apply(a) == Error::Ok);
+    }
+    // `self.k` compiles against B (the first note that has it); A lacks it.
+    const expr::ParseResult p = expr::parse("[self.k, 0]");
+    REQUIRE(p.ok());
+    const expr::CompileResult c = expr::compile(p.ast, expr::RuleDims{w, *w.find(R)});
+    REQUIRE(c.ok());
+    const std::vector<std::uint8_t> bind = encode_bind_field(R, "force", expr::encode(c.program));
+    REQUIRE(applyTo(h.w, bind) == MS_OK);
+    REQUIRE(w.apply(bind) == Error::Ok);
+    ms_step(h.w);
+    const uint8_t* e = ms_errors_ptr(h.w);
+    REQUIRE(ms_errors_len(h.w) == 13);
+    const std::vector<std::uint8_t> expected = {4, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0,
+                                                static_cast<std::uint8_t>(expr::VmError::NoSuchField)};
+    CHECK(std::vector<std::uint8_t>(e, e + 13) == expected);
+    CHECK(std::string(ms_skip_reason_name(e[12])) == "NoSuchField");
+    CHECK(std::string(ms_skip_reason_name(16)) == "NoScope");
+    CHECK(std::string(ms_skip_reason_name(200)) == "?");
+    // The errors are outside the walk: the same world without the step's
+    // history hashes the same, and a restore empties them.
+    w.step();
+    CHECK(hashOf(h.w) == hashOf(w));
+    const std::vector<std::uint8_t> bytes = serialize(w);
+    REQUIRE(ms_restore(h.w, bytes.data(), static_cast<uint32_t>(bytes.size())) == MS_OK);
+    CHECK(ms_errors_len(h.w) == 0);
+    // A clean step reports nothing.
+    REQUIRE(applyTo(h.w, encode_set_field(A, vec("k", 1, 1))) == MS_OK);
+    ms_step(h.w);
+    CHECK(ms_errors_len(h.w) == 0);
+}
+
 TEST_CASE("error codes are the World's, and a rejected apply changes nothing") {
     Handle h(1);
     REQUIRE(applyTo(h.w, encode_create_space(S, 2)) == MS_OK);

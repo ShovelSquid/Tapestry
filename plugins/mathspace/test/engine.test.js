@@ -29,9 +29,18 @@ describe('engine wasm golden replay', () => {
     expect(fixtureNames).toContain('velocity')
   })
 
-  it('reports ABI version 1', async () => {
+  it('reports ABI version 2', async () => {
     const mod = await loadModule()
-    expect(mod._ms_version()).toBe(1)
+    expect(mod._ms_version()).toBe(2)
+  })
+
+  it('errors() is empty on a fresh engine and after a clean step', async () => {
+    const mod = await loadModule()
+    const engine = new Engine(mod, 1n)
+    expect(engine.errors()).toEqual([])
+    engine.step()
+    expect(engine.errors()).toEqual([])
+    engine.destroy()
   })
 
   for (const name of fixtureNames) {

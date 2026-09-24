@@ -40,9 +40,14 @@
 // expression; a global set writes the rule's own field). A missing or reshaped `f`, an
 // evaluation error, or a pinned target (RULE-08 covers every write) is a
 // per-target skip; the rule never creates fields. Two rules setting one
-// field is RULE-07's error, but this tick has no runtime-error channel
-// yet, so the later rule in id order wins. A target's `pos` here is this
-// tick's integrated one.
+// field is not detected: the later rule in id order wins. A target's
+// `pos` here is this tick's integrated one.
+//
+// Every skip above, whole-rule or per-visit, is counted into
+// World::reports (RULE-07, world.hpp) with its reason, so the plugin can
+// write `mathspace.error` on the rule; a pinned target of a set rule is
+// not a skip (RULE-08 is what the user asked for). The reports are
+// cleared at the start of each step and never enter the hash.
 //
 // Then every bound field of every non-Rule note (phase 2) is evaluated:
 // notes in id order, fields in name order, each against the world as it
@@ -108,6 +113,32 @@ bool decode_program(const Field& f, expr::Program& program) {
 }
 
 
+// Collects RULE-07 reports (world.hpp) for the step in progress: one
+// entry per rule that skipped anything, in id order, holding the count
+// and the reason of the last skip. Rules are visited in id order twice
+// (force pass, then set pass), so an entry is found or inserted by
+// lower_bound rather than appended.
+struct Reporter {
+    std::vector<RuleReport>& reports;
+
+    void skip(NoteId rule, std::uint8_t reason) {
+        auto it = reports.begin();
+        while (it != reports.end() && it->rule.value < rule.value) {
+            ++it;
+        }
+        if (it == reports.end() || it->rule != rule) {
+            it = reports.insert(it, RuleReport{rule, 0, 0});
+        }
+        ++it->skipped;
+        it->reason = reason;
+    }
+    void skip(NoteId rule, Skip reason) { skip(rule, static_cast<std::uint8_t>(reason)); }
+    void skip(NoteId rule, expr::VmError err) { skip(rule, static_cast<std::uint8_t>(err)); }
+};
+
+static_assert(static_cast<std::uint8_t>(expr::VmError::BadProgram) < static_cast<std::uint8_t>(Skip::NoScope),
+              "VmError codes share Skip's byte below 16");
+
 // Calls fn(index, self, other) for each evaluation a rule's scope asks
 // for, where `self` is the note that receives the rule's writes: unary
 // visits each target once with `other` null; pair visits every ordered
@@ -117,18 +148,28 @@ bool decode_program(const Field& f, expr::Program& program) {
 // once with `other` null. A target is a non-Rule note of the rule's
 // space that has `pos`. A bound scalar `select` is evaluated per visit
 // with the same `self` and `other` and gates it (nonzero passes; an
-// error skips the visit). Returns false when the rule is skipped whole:
-// no scope, a space without a dim, or a bound non-scalar `select`.
+// error skips the visit and is reported). Returns false when the rule is
+// skipped whole, reporting why: no scope, a space without a dim, or a
+// bound non-scalar `select`.
 template <class Fn>
-bool for_each_target(const World& w, const Note& rule, Fn&& fn) {
+bool for_each_target(const World& w, const Note& rule, Reporter& report, Fn&& fn) {
     const std::vector<Note>& notes = w.notes;
+    if (rule.kind != NoteKind::Rule) {
+        return false;
+    }
     const Scope scope = scope_of(rule);
-    if (rule.kind != NoteKind::Rule || scope == Scope::None || w.space_dim(rule.space) == 0) {
+    if (scope == Scope::None) {
+        report.skip(rule.id, Skip::NoScope);
+        return false;
+    }
+    if (w.space_dim(rule.space) == 0) {
+        report.skip(rule.id, Skip::NoSpace);
         return false;
     }
     const Field* sel = find_field(rule, SELECT_FIELD);
     expr::Program select;
     if (sel != nullptr && sel->bound && !program_of(*sel, 1, select)) {
+        report.skip(rule.id, Skip::BadSelect);
         return false;
     }
     auto selected = [&](const Note& self, const Note* other) {
@@ -136,7 +177,12 @@ bool for_each_target(const World& w, const Note& rule, Fn&& fn) {
             return true;
         }
         expr::Lanes out{};
-        return expr::eval(select, w, self, other, out) == expr::VmError::Ok && out[0].raw != 0;
+        const expr::VmError err = expr::eval(select, w, self, other, out);
+        if (err != expr::VmError::Ok) {
+            report.skip(rule.id, err);
+            return false;
+        }
+        return out[0].raw != 0;
     };
     auto is_target = [&](const Note& n) {
         return n.kind != NoteKind::Rule && n.space == rule.space && find_field(n, POS_FIELD) != nullptr;
@@ -174,7 +220,23 @@ bool for_each_target(const World& w, const Note& rule, Fn&& fn) {
 
 } // namespace
 
+const char* skip_name(std::uint8_t reason) {
+    if (reason < static_cast<std::uint8_t>(Skip::NoScope)) {
+        return expr::vm_error_name(static_cast<expr::VmError>(reason));
+    }
+    switch (static_cast<Skip>(reason)) {
+    case Skip::NoScope: return "NoScope";
+    case Skip::NoSpace: return "NoSpace";
+    case Skip::BadSelect: return "BadSelect";
+    case Skip::WrongDim: return "WrongDim";
+    case Skip::NoTargetField: return "NoTargetField";
+    default: return "?";
+    }
+}
+
 void World::step() {
+    reports.clear();
+    Reporter report{reports};
     // Force accumulation, indexed like `notes` so no field is created.
     std::vector<expr::Lanes> force(notes.size());
     for (const Note& rule : notes) {
@@ -187,12 +249,19 @@ void World::step() {
         }
         const std::uint8_t dim = space_dim(rule.space);
         expr::Program program;
-        if (dim == 0 || !program_of(*f, dim, program)) {
+        if (dim == 0) {
+            report.skip(rule.id, Skip::NoSpace);
             continue;
         }
-        for_each_target(*this, rule, [&](std::size_t i, const Note& self, const Note* other) {
+        if (!program_of(*f, dim, program)) {
+            report.skip(rule.id, Skip::WrongDim);
+            continue;
+        }
+        for_each_target(*this, rule, report, [&](std::size_t i, const Note& self, const Note* other) {
             expr::Lanes out{};
-            if (expr::eval(program, *this, self, other, out) != expr::VmError::Ok) {
+            const expr::VmError err = expr::eval(program, *this, self, other, out);
+            if (err != expr::VmError::Ok) {
+                report.skip(rule.id, err);
                 return;
             }
             for (std::uint8_t lane = 0; lane < dim; ++lane) {
@@ -234,16 +303,19 @@ void World::step() {
             if (!decode_program(f, program)) {
                 continue;
             }
-            for_each_target(*this, rule, [&](std::size_t i, const Note& self, const Note* other) {
+            for_each_target(*this, rule, report, [&](std::size_t i, const Note& self, const Note* other) {
                 if (is_pinned(self)) {
-                    return;
+                    return; // RULE-08 is the user's choice, not a failure
                 }
                 Field* dst = find_field(notes[i], target_name);
                 if (dst == nullptr || dst->dim != program.dim) {
+                    report.skip(rule.id, Skip::NoTargetField);
                     return;
                 }
                 expr::Lanes out{};
-                if (expr::eval(program, *this, self, other, out) != expr::VmError::Ok) {
+                const expr::VmError err = expr::eval(program, *this, self, other, out);
+                if (err != expr::VmError::Ok) {
+                    report.skip(rule.id, err);
                     return;
                 }
                 for (std::uint8_t lane = 0; lane < dst->dim; ++lane) {

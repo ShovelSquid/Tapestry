@@ -50,6 +50,31 @@ enum class Error : std::uint8_t {
 
 const char* error_name(Error e);
 
+// RULE-07: why step() skipped a rule, or one visit of it. Values below
+// 16 are expr::VmError codes (vm.hpp): the rule's force, select or
+// set.<f> program failed on that visit. The rest are whole-rule skips
+// (one count each). skip_name (step.cpp) names either kind.
+enum class Skip : std::uint8_t {
+    None = 0,
+    NoScope = 16,   // `scope` bound, a vector, or outside 0..2
+    NoSpace,        // the rule's space has no dim (not a Space note)
+    BadSelect,      // a bound `select` that is not a scalar program
+    WrongDim,       // the force program does not yield the space dim
+    NoTargetField,  // set.<f>: the target lacks `f`, or holds it at another dim
+};
+const char* skip_name(std::uint8_t reason);
+
+// One Rule note's skips in the last step(): how many visits (or the whole
+// rule, counted once) were skipped and the reason of the last skip, in
+// step()'s deterministic order. Diagnostics only: never hashed,
+// serialized or compared, so a report is not state and the plugin's
+// `mathspace.error` text stays out of the walk.
+struct RuleReport {
+    NoteId rule{};
+    std::uint32_t skipped = 0;
+    std::uint8_t reason = 0;
+};
+
 struct World {
     std::uint64_t seed = 0;
     std::uint64_t tick = 0;
@@ -91,6 +116,10 @@ struct World {
     // field of every non-Rule note evaluated in id then name order, then
     // ++tick.
     void step();
+    // The last step()'s skips, per Rule note that skipped anything, in id
+    // order; empty after a step that skipped nothing, a restore, or before
+    // the first step. Excluded from operator== and the walk (see RuleReport).
+    std::vector<RuleReport> reports;
 
     // Sorted, unique ids and well-formed fields; the tests' invariant check.
     bool well_formed() const;

@@ -20,8 +20,13 @@
  * records against a `mathspace/rule@1` node is written onto that node as
  * `mathspace.error text` in the next commit, and a node whose problems
  * are gone gets the property unset, so a broken rule is visible in the
- * inspector and in the .tree. Runtime skips inside the engine are silent
- * for now (STATE.md, Next).
+ * inspector and in the .tree. Runtime skips (Engine.errors, what step()
+ * could not evaluate or apply) are summed per rule over the ticks since
+ * the last commit and folded into the same text as `step: skipped N
+ * visits (Reason)`, so a rule that fails on some ticks of a commit is
+ * still reported, and a rule that stops failing loses the text at the
+ * next commit. The count changes the text, so a rule that keeps failing
+ * rewrites its property on every commit; that is the record wanted.
  *
  * The snapshot and diff are taken synchronously before any await, so
  * ticks that land while a commit is in flight belong to the next one.
@@ -31,7 +36,7 @@
  */
 
 const { Engine } = require('./engine')
-const { ERROR_KEY, buildImage, diff, encodeBindField, engineSource, kernelName, nodeIdToU64, parseSnapshot } = require('./image')
+const { ERROR_KEY, buildImage, diff, encodeBindField, engineSource, kernelName, nodeIdToU64, parseSnapshot, u64ToNodeId } = require('./image')
 
 const ENGINE_SEED = 1n
 
@@ -57,6 +62,7 @@ class Runner {
     this.image = null
     this.seq = -1 // lastGoodSeq after our last commit or rebuild; -1 forces a rebuild
     this.pending = 0 // ticks stepped since the last commit
+    this.skips = new Map() // rule node id -> {skipped, reason} summed since the last commit
     this.timer = null
     this.flushing = null // the in-flight flush promise, if any
   }
@@ -97,22 +103,27 @@ class Runner {
     this.image = image
     this.seq = status.lastGoodSeq
     this.pending = 0
+    this.skips = new Map()
     this.log(`image built: ${image.fields.size} notes at seq ${this.seq}`)
   }
 
   /**
    * RULE-07: the `mathspace.error` ops a commit owes rule nodes, and the
    * text each rule should carry afterwards (null for none). A rule's text
-   * is its problems as `key: reason` lines joined by `; ` in key order;
-   * only rules whose text differs from what the kernel holds get an op.
+   * is its problems as `key: reason` lines, plus a `step` line for the
+   * runtime skips in `skips`, joined by `; ` in key order; only rules
+   * whose text differs from what the kernel holds get an op.
+   * @param {Map<string, {skipped: number, reason: string}>} skips
    */
-  errorOps() {
+  errorOps(skips = this.skips) {
     const wanted = new Map()
-    for (const p of this.image.problems) {
-      if (!this.image.rules.has(p.id)) continue
-      if (!wanted.has(p.id)) wanted.set(p.id, [])
-      wanted.get(p.id).push(`${p.key}: ${p.reason}`)
+    const add = (id, line) => {
+      if (!this.image.rules.has(id)) return
+      if (!wanted.has(id)) wanted.set(id, [])
+      wanted.get(id).push(line)
     }
+    for (const p of this.image.problems) add(p.id, `${p.key}: ${p.reason}`)
+    for (const [id, s] of skips) add(id, `step: skipped ${s.skipped} visit${s.skipped === 1 ? '' : 's'} (${s.reason})`)
     const ops = []
     const ids = [...this.image.rules.keys()].sort((a, b) => (nodeIdToU64(a) < nodeIdToU64(b) ? -1 : 1))
     for (const id of ids) {
@@ -131,6 +142,11 @@ class Runner {
     if (!this.engine) return
     this.engine.step()
     this.pending += 1
+    for (const e of this.engine.errors()) {
+      const id = u64ToNodeId(e.id)
+      const prior = this.skips.get(id)
+      this.skips.set(id, { skipped: (prior ? prior.skipped : 0) + e.skipped, reason: e.reason })
+    }
     if (this.running && this.pending >= this.commitEvery && !this.flushing) {
       this.flush().catch((err) => this.log(`commit failed: ${err.message}`))
     }
@@ -145,8 +161,10 @@ class Runner {
       if (!this.engine || this.pending === 0) return null
       const ticks = this.pending
       this.pending = 0
+      const skips = this.skips
+      this.skips = new Map()
       const snapshot = parseSnapshot(this.engine.notes())
-      const errors = this.errorOps()
+      const errors = this.errorOps(skips)
       const ops = [...errors.ops, ...diff(this.image.fields, snapshot, this.image.types, new Set(this.image.rules.keys()))]
       const status = await this.kernel.status()
       if (status.lastGoodSeq !== this.seq) {

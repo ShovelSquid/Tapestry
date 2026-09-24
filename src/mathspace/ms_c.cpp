@@ -8,6 +8,7 @@
 #include "mathspace/expr/parser.hpp"
 #include "mathspace/expr/vm.hpp"
 #include "mathspace/world.hpp"
+#include "wire.hpp"
 
 #include <cstdint>
 #include <cstring>
@@ -17,7 +18,19 @@
 
 struct ms_world {
     mathspace::World world;
+    // World::reports encoded as the header says, rebuilt by ms_step and
+    // cleared by ms_restore (a restored world has no reports).
+    std::vector<std::uint8_t> errors;
     explicit ms_world(std::uint64_t seed) : world(seed) {}
+
+    void encode_errors() {
+        errors.clear();
+        for (const mathspace::RuleReport& r : world.reports) {
+            mathspace::wire::put_u64(errors, r.rule.value);
+            mathspace::wire::put_u32(errors, r.skipped);
+            mathspace::wire::put_u8(errors, r.reason);
+        }
+    }
 };
 
 namespace {
@@ -64,6 +77,7 @@ int ms_apply(ms_world* w, const uint8_t* action, uint32_t len) {
 void ms_step(ms_world* w) {
     if (w != nullptr) {
         w->world.step();
+        w->encode_errors();
     }
 }
 
@@ -96,7 +110,11 @@ int ms_restore(ms_world* w, const uint8_t* in, uint32_t len) {
     if (w == nullptr || in == nullptr) {
         return MS_ERR_BAD_BYTES;
     }
-    return code(mathspace::restore(w->world, in, len));
+    const int rc = code(mathspace::restore(w->world, in, len));
+    if (rc == MS_OK) {
+        w->errors.clear();
+    }
+    return rc;
 }
 
 const uint8_t* ms_notes_ptr(const ms_world* w) { return w == nullptr ? nullptr : w->world.notes_bytes().data(); }
@@ -104,6 +122,12 @@ const uint8_t* ms_notes_ptr(const ms_world* w) { return w == nullptr ? nullptr :
 uint32_t ms_notes_len(const ms_world* w) {
     return w == nullptr ? 0 : static_cast<uint32_t>(w->world.notes_bytes().size());
 }
+
+const uint8_t* ms_errors_ptr(const ms_world* w) { return w == nullptr ? nullptr : w->errors.data(); }
+
+uint32_t ms_errors_len(const ms_world* w) { return w == nullptr ? 0 : static_cast<uint32_t>(w->errors.size()); }
+
+const char* ms_skip_reason_name(uint8_t reason) { return mathspace::skip_name(reason); }
 
 int32_t ms_compile(const ms_world* w, uint64_t note, const char* text, uint32_t len, uint8_t* out, uint32_t cap,
                    uint32_t* where) {

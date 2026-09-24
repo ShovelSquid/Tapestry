@@ -280,7 +280,9 @@ describe('Runner with rule nodes', () => {
     await runner.stepOnce(kernel)
     expect(runner.image.problems.map((p) => p.id)).toEqual(['n7', 'n6'])
     // Tick 1: n2 velocity += [1, -2] / 2 = [0.5, -1], pos = [0.5, -1]. Rule 5 selects nothing.
+    // n4 reads self.mass, which n3 lacks: a runtime skip reported on the rule.
     expect(kernel.state.commits[0].ops).toEqual([
+      { op: 'setProperty', target: 'n4', key: 'mathspace.error', type: 'text', value: 'step: skipped 1 visit (NoSuchField)' },
       { op: 'setProperty', target: 'n6', key: 'mathspace.error', type: 'text', value: expect.stringMatching(/^force\.expr: compile:UnknownRef at \d+$/) },
       { op: 'setProperty', target: 'n7', key: 'mathspace.error', type: 'text', value: 'scope: scope must be one of unary, pair, global' },
       { op: 'unsetProperty', target: 'n8', key: 'mathspace.error' },
@@ -330,12 +332,43 @@ describe('Runner with rule nodes', () => {
     const { runner } = makeRunner()
     await runner.stepOnce(kernel)
     expect(runner.image.problems).toEqual([])
-    // heat is set from this tick's integrated x (3 + 1 = 4).
+    // heat is set from this tick's integrated x (3 + 1 = 4); n3's missing heat is reported on the rule.
     expect(kernel.state.commits[0].ops).toEqual([
+      { op: 'setProperty', target: 'n4', key: 'mathspace.error', type: 'text', value: 'step: skipped 1 visit (NoTargetField)' },
       { op: 'setProperty', target: 'n2', key: 'heat', type: 'real', value: 8 },
       { op: 'setProperty', target: 'n2', key: 'position.x', type: 'real', value: 4 },
       { op: 'advance', ticks: 1 },
     ])
+    runner.dispose()
+  })
+
+  it('runtime skips are summed over the ticks of a commit and unset once the rule runs clean', async () => {
+    const kernel = fakeKernel([
+      { id: 'n2', type: 'tapestry.notes/note@1', props: at(0, 0, { 'velocity.x': { type: 'real', value: 0 }, 'velocity.y': { type: 'real', value: 0 }, mass: { type: 'real', value: 1 } }) },
+      { id: 'n3', type: 'tapestry.notes/note@1', props: at(10, 0) }, // no mass: self.mass fails here every tick
+      { id: 'n4', type: RULE, props: at(50, 50, { 'force.expr': text('[self.mass, 0]') }) },
+    ])
+    const { runner } = makeRunner()
+    await runner.start(kernel)
+    for (let i = 0; i < 10; i++) runner.tick()
+    await runner.flushing
+    expect(runner.image.problems).toEqual([])
+    expect(kernel.state.commits[0].ops[0]).toEqual(
+      { op: 'setProperty', target: 'n4', key: 'mathspace.error', type: 'text', value: 'step: skipped 10 visits (NoSuchField)' })
+    expect(kernel.state.nodes.find((n) => n.id === 'n4').props['mathspace.error'].value).toBe('step: skipped 10 visits (NoSuchField)')
+    // A human gives n3 a mass: the foreign commit forces a rebuild, and the
+    // next commit finds the rule clean and unsets the text.
+    kernel.state.nodes.find((n) => n.id === 'n3').props.mass = { type: 'real', value: 1 }
+    kernel.state.seq += 1
+    for (let i = 0; i < 10; i++) runner.tick()
+    await runner.flushing // rebuilt, nothing committed
+    expect(kernel.state.commits).toHaveLength(1)
+    for (let i = 0; i < 10; i++) runner.tick()
+    await runner.flushing
+    expect(kernel.state.commits).toHaveLength(2)
+    expect(kernel.state.commits[1].ops[0]).toEqual({ op: 'unsetProperty', target: 'n4', key: 'mathspace.error' })
+    expect(kernel.state.nodes.find((n) => n.id === 'n4').props['mathspace.error']).toBeUndefined()
+    await runner.pause(kernel)
     runner.dispose()
   })
 

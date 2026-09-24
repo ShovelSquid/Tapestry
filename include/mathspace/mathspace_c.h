@@ -18,6 +18,16 @@
  *     u8 name_len | name | u8 dim | dim x i64 (raw fx64, Q32.32)
  * The pointer is valid until the next ms_apply, ms_step, ms_restore or
  * ms_destroy.
+ *
+ * Errors (ms_errors_ptr/len, RULE-07): what the last ms_step skipped,
+ * per Rule note that skipped anything, in id order:
+ *   u64 rule id | u32 skipped | u8 reason
+ * `skipped` counts visits (a whole-rule skip counts once); `reason` is
+ * the last skip's (world.hpp Skip: below 16 an expr::VmError), named by
+ * ms_skip_reason_name. Diagnostics only: not in the hash, the serialized
+ * world or the snapshot; empty before the first step and after
+ * ms_restore. The pointer is valid until the next ms_step, ms_restore or
+ * ms_destroy.
  */
 #ifndef MATHSPACE_C_H
 #define MATHSPACE_C_H
@@ -66,8 +76,9 @@ enum ms_compile_stage {
     MS_STAGE_COMPILE = 2
 };
 
+/* 1: initial. 2: ms_errors_ptr/len and ms_skip_reason_name. */
 enum ms_layout {
-    MS_ABI_VERSION = 1,
+    MS_ABI_VERSION = 2,
     MS_HASH_BYTES = 32
 };
 
@@ -91,6 +102,11 @@ MS_EXPORT int ms_restore(ms_world* w, const uint8_t* in, uint32_t len);
 
 MS_EXPORT const uint8_t* ms_notes_ptr(const ms_world* w);
 MS_EXPORT uint32_t ms_notes_len(const ms_world* w);
+
+MS_EXPORT const uint8_t* ms_errors_ptr(const ms_world* w);
+MS_EXPORT uint32_t ms_errors_len(const ms_world* w);
+/* A static name such as "NoSuchField" or "WrongDim"; "?" when unknown. */
+MS_EXPORT const char* ms_skip_reason_name(uint8_t reason);
 
 /* Compiles the expression `text` (len bytes, no terminator) for a field
  * of `note`, resolving `self` and `node(nN)` refs against the world as it

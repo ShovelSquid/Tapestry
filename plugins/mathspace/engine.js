@@ -91,6 +91,29 @@ class Engine {
     return this.mod.HEAPU8.slice(ptr, ptr + len)
   }
 
+  /**
+   * RULE-07: what the last step() skipped, per rule note that skipped
+   * anything, in id order (ms_errors_ptr in the header). Empty when the
+   * step was clean.
+   * @returns {Array<{id: bigint, skipped: number, reason: string}>}
+   *   `reason` is ms_skip_reason_name's, e.g. "NoSuchField" or "WrongDim".
+   */
+  errors() {
+    const ptr = this.mod._ms_errors_ptr(this.world)
+    const len = this.mod._ms_errors_len(this.world)
+    const bytes = this.mod.HEAPU8.slice(ptr, ptr + len)
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+    const out = []
+    for (let off = 0; off + 13 <= len; off += 13) {
+      out.push({
+        id: view.getBigUint64(off, true),
+        skipped: view.getUint32(off + 8, true),
+        reason: this.mod.UTF8ToString(this.mod._ms_skip_reason_name(bytes[off + 12])),
+      })
+    }
+    return out
+  }
+
   /** @returns {Uint8Array} the full serialized world */
   serialize() {
     const need = this.mod._ms_serialize(this.world, 0, 0)
