@@ -4,16 +4,16 @@ milestone: v1.0
 current_phase: "02.7"
 current_phase_name: File Windows & Workspace Sandbox
 status: executing
-stopped_at: Completed 02.7-03-PLAN.md
-last_updated: "2026-09-24T22:19:20.000Z"
+stopped_at: Completed 02.7-04-PLAN.md
+last_updated: "2026-09-24T22:30:38.124Z"
 last_activity: 2026-09-24
-last_activity_desc: 02.7-03 folder subspaces complete (combined checkpoint deferred to autonomy/REVIEW.md item 1); next 02.7-04 (wave 4)
-state_head: c911d9496e134c54d0b6dccadf6b1d279e7e4885
+last_activity_desc: 02.7-04 Allow shell switch complete (hands-on check deferred); next 02.7-05 (wave 5)
+state_head: 46037015fb1744cc318a8b8c9ee59c2e3006aa37
 progress:
   total_phases: 13
   completed_phases: 0
   total_plans: 52
-  completed_plans: 30
+  completed_plans: 31
 ---
 
 # Project State
@@ -28,10 +28,10 @@ See: .planning/PROJECT.md (updated 2026-09-08)
 ## Current Position
 
 Phase: 02.7 (File Windows & Workspace Sandbox) — EXECUTING
-Plan: 02.7-03 of 7 complete (folders as nested, collapsible, draggable subspaces; the combined hands-on checkpoint for 02.7-02 and 02.7-03 is deferred to human review, autonomy/REVIEW.md item 1); next is 02.7-04 (wave 4)
-Status: Ready to execute 02.7-04
+Plan: 02.7-04 of 7 complete (per-chat Allow shell (not sandboxed) switch, D-15: off by default, for New chat and after every relaunch, confirmed; shell-on turns caught up as plugin workspace.watcher observed changes; its hands-on check is deferred); next is 02.7-05 (wave 5)
+Status: Ready to execute 02.7-05
 Phase 02.4 (Lock Model): COMPLETE — verified 25/25, 2026-09-16; rebased onto the main line 2026-09-23
-Last activity: 2026-09-24 - Completed 02.7-03 (D-21 folder subspaces: folder-local positions, collapsed by default, one-time system tapestry re-layout of existing workspace trees); 28 files / 516 tests
+Last activity: 2026-09-24 - Completed 02.7-04 (D-15 Allow shell switch: SHELL_TOOLS argv variant, per-session consent reset on relaunch, end-of-turn catch-up as workspace.watcher); 28 files / 534 tests
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -77,6 +77,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 02.7 P01 | 16 min | 4 tasks | 36 files |
 | Phase 02.7 P02 | 29 min | 4 tasks | 29 files |
 | Phase 02.7 P03 | 20 min | 3 tasks | 15 files |
+| Phase 02.7 P04 | 10 min | 2 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -142,6 +143,9 @@ Recent decisions affecting current work:
 - [Phase 02.7]: 02.7-02: agents show Connected now from the shim's startup hello (60 s keep-alive), not only after a tool call (D-20)
 - [Phase 02.7]: 02.7-03: workspace note positions are folder-local; folders carry the Tapestry keys subspace (bool true) and collapsed (bool), never file.* (D-21)
 - [Phase 02.7]: 02.7-03: an existing workspace tree is re-laid out once on open in one system tapestry commit 'arrange workspace <name> into folder subspaces'; every folder starts collapsed
+- [Phase 02.7]: 02.7-04: Shell-on tool set is exactly Bash,Read,Edit,Write,Glob,Grep (one --tools element); --allowedTools mcp__tapestry plus the same; no --restricted
+- [Phase 02.7]: 02.7-04: The Allow shell switch resets to off on every relaunch and for New chat; chats.json keeps shell {on, changedAt} only to say it was reset
+- [Phase 02.7]: 02.7-04: A shell-on turn's done is held until WorkspaceService.catchUp records its file changes as plugin workspace.watcher; shell-off turns never trigger it
 
 ### Pending Todos
 
@@ -191,6 +195,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-24T22:19:20.000Z
-Stopped at: Completed 02.7-03-PLAN.md
+Last session: 2026-09-24T22:30:38.063Z
+Stopped at: Completed 02.7-04-PLAN.md
 Resume file: None
