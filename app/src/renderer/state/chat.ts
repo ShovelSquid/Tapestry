@@ -30,6 +30,49 @@ export const ChatContext = createContext<ChatContextValue>({
 })
 
 // ---------------------------------------------------------------------------
+// Attachments and which workspace a click means (D-19)
+// ---------------------------------------------------------------------------
+
+/** What was clicked, carried into the first message as text. */
+export type ChatAttachment =
+  | { kind: 'file'; workspaceTreeId: string; workspaceName: string; path: string }
+  | { kind: 'note'; treeId: string; treeName: string; noteId: string; title: string }
+
+/** Where a chat was asked for: a tree under the pointer, and what was clicked. */
+export interface ChatTarget {
+  treeId?: string
+  attachment?: ChatAttachment
+}
+
+/** One tree in the space, as far as choosing a chat is concerned. */
+export interface ChatTreeRef {
+  id: string
+  name: string
+  kind: 'native' | 'vault' | 'workspace'
+}
+
+export type ChatWorkspaceChoice =
+  | { treeId: string }
+  | { choose: Array<{ treeId: string; name: string }> }
+  | { none: true }
+
+export function formatAttachment(_attachment: ChatAttachment): string {
+  return ''
+}
+
+export function composeFirstMessage(_attachment: ChatAttachment | null, _text: string): string {
+  return ''
+}
+
+export function chatWorkspaceFor(
+  _target: ChatTarget,
+  _openTrees: ChatTreeRef[],
+  _lastChatTreeId: string | null,
+): ChatWorkspaceChoice {
+  return { none: true }
+}
+
+// ---------------------------------------------------------------------------
 // Folding events into a transcript
 // ---------------------------------------------------------------------------
 
