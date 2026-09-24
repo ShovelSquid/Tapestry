@@ -16,10 +16,10 @@ Requirements for the first milestone: deterministic core plus painting frontend.
 
 ### Strokes and Brushes
 
-- [ ] **STRK-01**: A stroke action records raw pen samples (position on the plane, pressure, tilt) quantized once to integers and stamped with the sim tick and sample index at record time; no smoothed or predicted positions are ever recorded.
+- [x] **STRK-01**: A stroke action records raw pen samples (position on the plane, pressure, tilt) quantized once to integers and stamped with the sim tick and sample index at record time; no smoothed or predicted positions are ever recorded.
 - [ ] **STRK-02**: The brush is a spring-damper body integrated inside the sim from the recorded samples, with stiffness and damping derived from the brush's mass, so heavy brushes lag and carry momentum and the feel replays exactly.
 - [x] **STRK-03**: Nodes are emitted along the brush body's path at the brush's spacing, with ids derived from the stroke ordinal and emission index (branch-tag bits reserved), never from a counter.
-- [ ] **STRK-04**: Brushes are versioned and immutable: a brush version holds a free-text description, mass, radius, spacing, and pressure curve; editing creates a new version and old strokes keep theirs; three or four presets ship differing in description and mass.
+- [x] **STRK-04**: Brushes are versioned and immutable: a brush version holds a free-text description, mass, radius, spacing, and pressure curve; editing creates a new version and old strokes keep theirs; three or four presets ship differing in description and mass.
 - [ ] **STRK-05**: A pulled-string dead zone and finish-line-on-pen-up are brush-version parameters, so light brushes feel direct and a stroke completes to the pen's final position.
 - [x] **STRK-06**: Tilt and twist are captured and recorded when the pen reports them; no sim rule depends on them in v1.
 
@@ -32,8 +32,8 @@ Requirements for the first milestone: deterministic core plus painting frontend.
 
 ### Painting Surface
 
-- [ ] **CANV-01**: The user paints on one plane facing a fixed camera; node positions are stored as 3D with z taken from the plane, and the plane frame is recorded per stroke so replay never depends on the camera.
-- [ ] **CANV-02**: Pen input is captured at the device's full sample rate through pointer capture and coalesced events, recorded only when the pointer is a pen with the tip down (a setting allows the mouse), and predicted events drive the preview only.
+- [x] **CANV-01**: The user paints on one plane facing a fixed camera; node positions are stored as 3D with z taken from the plane, and the plane frame is recorded per stroke so replay never depends on the camera.
+- [x] **CANV-02**: Pen input is captured at the device's full sample rate through pointer capture and coalesced events, recorded only when the pointer is a pen with the tip down (a setting allows the mouse), and predicted events drive the preview only.
 - [ ] **CANV-03**: A deterministic placeholder renderer shows the node field live, with each node colored from a hash of its brush description, and a cursor overlay draws the pen position, the brush body position, and the spring between them.
 - [ ] **CANV-04**: A plugin can own a WebGL or WebGPU canvas surface inside the Tapestry renderer through a public host extension point, so the painting surface ships without a private hook or an app fork.
 
@@ -111,18 +111,18 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SIM-02 | Phase 1 | Complete |
 | SIM-03 | Phase 1 | Pending |
 | SIM-04 | Phase 2 | Pending |
-| STRK-01 | Phase 1 | Pending |
+| STRK-01 | Phase 1 | Complete |
 | STRK-02 | Phase 1 | Pending |
 | STRK-03 | Phase 1 | Complete |
-| STRK-04 | Phase 1 | Pending |
+| STRK-04 | Phase 1 | Complete |
 | STRK-05 | Phase 2 | Pending |
 | STRK-06 | Phase 1 | Complete |
 | JRNL-01 | Phase 2 | Pending |
 | JRNL-02 | Phase 2 | Pending |
 | JRNL-03 | Phase 2 | Pending |
 | JRNL-04 | Phase 2 | Pending |
-| CANV-01 | Phase 1 | Pending |
-| CANV-02 | Phase 1 | Pending |
+| CANV-01 | Phase 1 | Complete |
+| CANV-02 | Phase 1 | Complete |
 | CANV-03 | Phase 1 | Pending |
 | CANV-04 | Phase 1 | Pending |
 | TIME-01 | Phase 3 | Pending |
