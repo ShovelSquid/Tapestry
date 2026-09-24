@@ -53,7 +53,7 @@ export const CreateNoteArgs = z
 /** list_trees takes no arguments — and `.strict()` means it accepts none. */
 export const ListTreesArgs = z.object({}).strict()
 
-/** read_note (D-05): agents may read any note. */
+/** read_note: agents may read any note; reading stays unrestricted (02.4 D-01). */
 export const ReadNoteArgs = z
   .object({
     tree: z.string().min(1).max(200),
@@ -74,7 +74,7 @@ export const LookArgs = z
   })
   .strict()
 
-/** search_notes (D-05): reading is unrestricted, so this searches every tree. */
+/** search_notes: reading stays unrestricted (02.4 D-01), so this searches every tree. */
 export const SearchNotesArgs = z
   .object({
     tree: z.string().min(1).max(200).optional(),
@@ -83,7 +83,10 @@ export const SearchNotesArgs = z
   })
   .strict()
 
-/** update_note (D-05): only a note the calling agent created. */
+/**
+ * update_note: refused when the note's `text` aspect is locked against the
+ * calling agent (02.4 D-01, D-03, D-08). See commands/locks.ts.
+ */
 export const UpdateNoteArgs = z
   .object({
     tree: z.string().min(1).max(200),
@@ -92,7 +95,10 @@ export const UpdateNoteArgs = z
   })
   .strict()
 
-/** rename_note (D-05): only a note the calling agent created. */
+/**
+ * rename_note: a title is part of the note's text, so this is refused when the
+ * `text` aspect is locked against the calling agent (02.4 D-01, D-03, D-08).
+ */
 export const RenameNoteArgs = z
   .object({
     tree: z.string().min(1).max(200),
@@ -101,7 +107,10 @@ export const RenameNoteArgs = z
   })
   .strict()
 
-/** delete_note (D-05): only a note the calling agent created. */
+/**
+ * delete_note: refused when the note's `delete` aspect is locked against the
+ * calling agent (02.4 D-02). See commands/locks.ts.
+ */
 export const DeleteNoteArgs = z
   .object({
     tree: z.string().min(1).max(200),
@@ -123,7 +132,7 @@ const ConnectionEndpointArgs = z
   })
   .strict()
 
-/** connect_notes (D-05): connecting is unrestricted; any notes may be joined. */
+/** connect_notes: connecting stays unrestricted (02.4 D-01); any notes may be joined. */
 export const ConnectNotesArgs = z
   .object({
     from: ConnectionEndpointArgs,
@@ -182,25 +191,25 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = Object.freeze([
   },
   {
     name: 'update_note',
-    title: 'Replace the text of a note you created',
+    title: 'Replace the text of a note',
     description:
-      'Replaces a note\'s text. You may edit only notes you created; editing a note created by the user or by another agent is refused and nothing is written.',
+      'Replaces a note\'s text. Refused, and nothing is written, when the note\'s text is locked against you; the error names the lock\'s owner. Notes created by the user, by the Obsidian bridge or by another plugin start with their text locked.',
     schema: UpdateNoteArgs,
     annotations: { destructiveHint: false },
   },
   {
     name: 'rename_note',
-    title: 'Retitle a note you created',
+    title: 'Retitle a note',
     description:
-      'Changes a note\'s title. You may rename only notes you created; renaming a note created by the user or by another agent is refused and nothing is written.',
+      'Changes a note\'s title. A title is part of the note\'s text, so renaming is refused, and nothing is written, when the note\'s text is locked against you; the error names the lock\'s owner.',
     schema: RenameNoteArgs,
     annotations: {},
   },
   {
     name: 'delete_note',
-    title: 'Delete a note you created',
+    title: 'Delete a note',
     description:
-      'Deletes a note and its connections. You may delete only notes you created; deleting a note created by the user or by another agent is refused and nothing is written. The note stays in the tree\'s history either way.',
+      'Deletes a note and its connections. Refused, and nothing is written, when the note\'s deletion is locked against you; the error names the lock\'s owner. The note stays in the tree\'s history either way.',
     schema: DeleteNoteArgs,
     annotations: { destructiveHint: true },
   },

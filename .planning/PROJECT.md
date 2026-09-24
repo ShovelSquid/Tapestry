@@ -152,6 +152,7 @@ Start fresh in planning and product definition while retaining existing work for
 | Every node is user-movable; forces can move dynamic nodes | User agency and automatic organization must coexist | — Pending pinning/layout design |
 | Persist language and interaction evidence for companion memory | The user wants an evolving, inspectable mimic | — Pending memory scope |
 | Record inputs and materialized decisions, derive intermediate state | Proposed deterministic replay strategy avoids frame-by-frame state storage | — Pending research and format contract |
+| Agents may edit anything not locked; a lock, not authorship, decides who may write (supersedes 02.2 D-05) | Kaelen, 2026-09-16: notes and agents edit freely unless a user or agent locked it; non-agent notes start text- and delete-locked, rank starts open | ✓ Phase 2.4: agent note commands gated by `text`/`delete` lock aspects with `open` and `.allow`; `lock.*` naming (Decision Register #19) and a `setLock` command still pending |
 
 ## Open Design Questions
 
@@ -178,4 +179,4 @@ After each phase transition, move validated requirements to Validated, record in
 After each milestone, review all sections, check the core value, revisit deferred scope, and update context with demonstrated behavior and user feedback.
 
 ---
-*Last updated: 2026-09-08 after confirming plugins as a foundational architecture requirement*
+*Last updated: 2026-09-16 after Phase 2.4 (lock model)*

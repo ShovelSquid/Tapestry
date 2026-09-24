@@ -18,6 +18,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [ ] **Phase 2.1: Passage Anchors, Threads & Complete Rich Editing** - Passage-level linking, thread center nodes, gradient-of-focus hover hierarchy, and complete formatting toolbar with universal editing (INSERTED)
 - [ ] **Phase 2.2: Obsidian Bridge** - Agent MCP bridge, then a two-way Obsidian vault tree, on one shared command set with honest provenance for agent and observed edits (INSERTED)
 - [ ] **Phase 2.3: Time Threads** - Live z-axis writing threads: one note and its history, per-letter timing, side-view read-back (INSERTED)
+- [x] **Phase 2.4: Lock Model** - Allow unless locked: lock aspects replace the D-05 authorship gate for agent note commands (INSERTED) (completed 2026-09-16)
 - [ ] **Phase 2.5: Agent Spatial Verbs** - Task-space `look` and `place` for agents: relations in, relations out, refused by `lock.layout` (INSERTED; depends on 2.4)
 - [ ] **Phase 3: Branching History & Deterministic Replay** - History navigation, fork-preserving branches, snapshots, and replay from recorded inputs
 - [ ] **Phase 4: Spatial Notebook** - Bundled note, drawing, property, and provenance-display plugins delivering the usable spatial workspace
@@ -137,7 +138,7 @@ Plans:
   4. Edits, retitles, moves, new notes, connections and placeholder typing made in Tapestry reach the vault's files after a short pause; when a file changed first, the file wins and the Tapestry edit stays in history; undo writes files back
   5. Several trees share one space in non-overlapping frames that reopen where they were; connections between trees are recorded in both trees and cut in both when a note is deleted; dragging a note into another frame copies it, asking before any formatting would be lost
 
-**Plans**: 4/16 plans executed
+**Plans**: 7/16 plans executed
 
 Plans:
 **Wave 1**
@@ -158,15 +159,15 @@ Plans:
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 02.2-05-PLAN.md — Several trees in one space: tree-scoped IPC, frames, push-apart, settings restore
+- [x] 02.2-05-PLAN.md — Several trees in one space: tree-scoped IPC, frames, push-apart, settings restore
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
-- [ ] 02.2-06-PLAN.md — Forest bar and tree lifecycle: Add tree, Tree options, unavailable trees, empty state, announcements
+- [x] 02.2-06-PLAN.md — Forest bar and tree lifecycle: Add tree, Tree options, unavailable trees, empty state, announcements
 
 **Wave 7** *(blocked on Wave 6 completion)*
 
-- [ ] 02.2-07-PLAN.md — Tracer: Obsidian vault mirror tree (House Party) with byte-exact note text, folders and catch-up
+- [x] 02.2-07-PLAN.md — Tracer: Obsidian vault mirror tree (House Party) with byte-exact note text, folders and catch-up
 
 **Wave 8** *(blocked on Wave 7 completion)*
 
@@ -259,6 +260,31 @@ Plans:
 
 **UI hint**: yes
 
+### Phase 2.4: Lock Model (INSERTED)
+
+**Goal**: Agents may change any note that is not locked against them. A lock, not authorship, decides who may write: every note not created by an agent (a person's, an Obsidian vault note, another plugin's) starts with its text and deletion locked, agent notes start open, and an explicit lock on a note can close it, open it, or name who else may write
+**Depends on**: Phase 2.2 (the agent note commands and D-05 gate this phase replaces)
+**Requirements**: none owned — applies the project's Control constraint ("users can edit … guessing policies") to agent writes; no v1 requirement ID covers permissions yet
+**Design**: `~/Tapestry Tales/Connections/Spec - Locks and Rank.md`, `~/Tapestry Tales/Connections/Plan - Lock Model Implementation.md`. Supersedes 02.2 D-05 (Kaelen, 2026-09-16); collides with 02.3 D-22, recorded only
+**Success Criteria** (what must be TRUE):
+
+  1. An agent is refused when it updates, renames or deletes a note that no agent created (a person's, the Obsidian bridge's, another plugin's), and a refusal writes nothing to the `.tree` file
+  2. An agent may update another agent's note unless that note is locked; the switch for this default is one named constant
+  3. An explicit `lock.text` or `lock.delete` on a note refuses every actor except its owner and anyone on its `.allow` list, and the literal `open` unlocks a default lock; locking text leaves deletion unaffected and vice versa
+  4. Whether non-agent notes start delete-locked is one named constant, and every refusal names the aspect and the lock's owner
+
+**Follow-ups** (later slices, not this phase): rank auto-lock when a person sets rank (needs a per-property last writer in the history index); a `setLock` command so only an owner can remove a lock (needs Decision Register #19, the `lock.*` naming, a one-way door); thread and tree scopes, and the Tapestry scope once Phase 2.6 creates the Tapestry tree
+**Plans**: 2/2 plans executed
+
+Plans:
+**Wave 1**
+
+- [x] 02.4-01-PLAN.md — Tracer: lock resolver (`locks.ts`, both PENDING constants, fail-closed values) wired into update_note, then rename→text / delete→delete through one gate; authorship gate retired; policy tests rewritten test-first
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 02.4-02-PLAN.md — `lock.<aspect>.allow` test-first; bridge/plugin-creator, non-agent, deleted-note, ungated-path and undone-lock coverage; lock rule stated in MCP tool text; phase gate
+
 ### Phase 2.5: Agent Spatial Verbs (INSERTED)
 
 **Goal**: Agents can perceive where notes are and say where notes go, in task space: `look` returns relations rather than coordinates, `place` takes a relation rather than a position, and the host resolves one into the other — so an agent can move its own body through a tree, and a lock on layout finally has a verb to refuse
@@ -275,7 +301,7 @@ Plans:
   5. No new kernel verb or value type is added; placements remain node properties (`position.x/y`), and nothing starts the frozen migration onto placement edges (spec §6, §7)
   6. `facing` is **not** in this phase; D-27's `direction` stays unwritten by agents until the anchor-cursor phase (#12)
 
-**Plans:** 3/5 plans complete (waves 1–3); waves 4–5 wait on Phase 2.4
+**Plans:** 3/5 plans complete (waves 1–3); waves 4–5 unblocked: Phase 2.4 with `lock.layout` merged 2026-09-24
 
 Plans:
 

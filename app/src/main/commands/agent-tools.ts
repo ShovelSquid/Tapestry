@@ -10,8 +10,9 @@
  * never read from `args`. No schema has an actor field, and each is `.strict()`,
  * so an `actor` key is a validation failure rather than something to ignore.
  *
- * Every tool lands in the shared command layer (D-01). The D-05 ownership rule
- * lives there, not here, so it holds for any transport a later plan adds.
+ * Every tool lands in the shared command layer (D-01). The lock rule (02.4
+ * D-01) lives there, not in this dispatcher, so it holds for any transport a
+ * later plan adds.
  */
 
 import type { Actor } from './actor'

@@ -18,9 +18,10 @@
  * - "Not saved" after a failed call
  */
 
-import React, { useCallback, useEffect, useState } from 'react'
-import Canvas, { type DoubleClickTarget } from './components/Canvas'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
+import Canvas, { type CanvasHandle, type DoubleClickTarget } from './components/Canvas'
 import ForestBar from './components/ForestBar'
+import { LiveAnnouncer } from './components/LiveAnnouncer'
 import TransientNotice from './components/TransientNotice'
 import PluginErrorNotification from './components/PluginErrorNotification'
 import NamePromptDialog from './components/NamePromptDialog'
@@ -40,6 +41,11 @@ function worldNameFromPath(filePath: string): string {
   return fileName.replace(/[^A-Za-z0-9_-]/g, '_')
 }
 
+/** The file's own name, for copy that names the file rather than its path. */
+function fileNameOf(filePath: string): string {
+  return filePath.split('/').pop() ?? filePath
+}
+
 // ---------------------------------------------------------------------------
 // App
 // ---------------------------------------------------------------------------
@@ -48,6 +54,8 @@ export default function App(): React.ReactElement {
   const {
     trees,
     lastChangedTreeId,
+    selectedTreeId,
+    setSelectedTreeId,
     patchNodeProps,
     refreshTree,
     refreshAll,
@@ -59,6 +67,12 @@ export default function App(): React.ReactElement {
 
   const [editingRef, setEditingRef] = useState<NodeRef | null>(null)
   const [selectedRef, setSelectedRef] = useState<NodeRef | null>(null)
+
+  // The space, for the one thing App asks of it: pan to a frame it just added.
+  const canvasRef = useRef<CanvasHandle>(null)
+
+  /** A tree that has just been added and is waiting to be panned to. */
+  const [pendingPanTreeId, setPendingPanTreeId] = useState<string | null>(null)
 
   // The name every change is signed with (D-07). Null means "not chosen yet",
   // which is what makes the first-run prompt appear; nameLoaded keeps the
@@ -211,6 +225,100 @@ export default function App(): React.ReactElement {
     }
     return result.error ?? 'Could not save your name.'
   }, [])
+
+  // -----------------------------------------------------------------------
+  // Add tree (D-18): a world joins the space and the canvas moves to it
+  // -----------------------------------------------------------------------
+
+  /**
+   * Put a world that main has just opened or created into the space.
+   *
+   * Every failure reads as the UI-SPEC's file-open error rather than as the
+   * raw reason: a damaged header, an unreadable file and a copy of a world
+   * that is already open all arrive here as text, and what Kaelen can do next
+   * is the same in each case.
+   */
+  const addTreeToSpace = useCallback(
+    async (filePath: string, result: { ok: boolean; treeId?: string; error?: string }) => {
+      if (!result.ok || !result.treeId) {
+        setNotice(
+          `Could not open ${fileNameOf(filePath)} -- The file may be damaged or in an ` +
+            'unrecognized format. Create a new world or choose another file.',
+        )
+        return
+      }
+
+      // The tree has to be in local state before its frame can be panned to.
+      await refreshAll()
+      setPendingPanTreeId(result.treeId)
+    },
+    [refreshAll],
+  )
+
+  const handleOpenWorld = useCallback(async () => {
+    const picked = await window.tapestry.dialog.showOpenTree()
+    if (picked.canceled || !picked.filePath) return
+    const opened = await window.tapestry.trees.open(picked.filePath)
+    await addTreeToSpace(picked.filePath, opened)
+  }, [addTreeToSpace])
+
+  const handleNewWorld = useCallback(async () => {
+    const picked = await window.tapestry.dialog.showSave()
+    if (picked.canceled || !picked.filePath) return
+    const created = await window.tapestry.trees.create(
+      picked.filePath,
+      worldNameFromPath(picked.filePath),
+    )
+    await addTreeToSpace(picked.filePath, created)
+  }, [addTreeToSpace])
+
+  /**
+   * Mirror an Obsidian vault as its own tree (D-10, D-13).
+   *
+   * Its failure copy is deliberately not the `.tree` file-open copy: when a
+   * vault will not open, the first thing anyone wants to know is whether their
+   * notes are still there, so the sentence says so.
+   *
+   * The confirmation dialog the UI-SPEC describes is Plan 08; this is the
+   * tracer path — choose the folder, and the vault becomes a frame.
+   */
+  const handleAddVault = useCallback(async () => {
+    const picked = await window.tapestry.dialog.showOpenVaultFolder()
+    if (picked.canceled || !picked.folderPath) return
+
+    const added = await window.tapestry.vault.add(picked.folderPath)
+    if (!added.ok || !added.treeId) {
+      setNotice(
+        `Could not add ${fileNameOf(picked.folderPath)} as a tree -- ` +
+          `${added.error ?? 'unknown error'} Nothing in the vault was changed.`,
+      )
+      return
+    }
+
+    // The tree has to be in local state before its frame can be panned to.
+    await refreshAll()
+    setPendingPanTreeId(added.treeId)
+  }, [refreshAll])
+
+  /**
+   * Pan to a newly added frame once the space knows about it.
+   *
+   * Deferred by one animation frame on purpose: main places a new frame from
+   * stored positions alone, and the canvas corrects that placement after it
+   * has measured the existing frames. Centering before the correction would
+   * center where the frame briefly was.
+   */
+  useEffect(() => {
+    if (!pendingPanTreeId) return undefined
+    if (!trees.some((tree) => tree.id === pendingPanTreeId)) return undefined
+
+    const treeId = pendingPanTreeId
+    const handle = requestAnimationFrame(() => {
+      canvasRef.current?.panToFrame(treeId)
+      setPendingPanTreeId(null)
+    })
+    return () => cancelAnimationFrame(handle)
+  }, [pendingPanTreeId, trees])
 
   // -----------------------------------------------------------------------
   // Create note on double-click (D-04)
@@ -491,8 +599,16 @@ export default function App(): React.ReactElement {
    * on; with nothing selected, the tree they last changed is the next best
    * answer, and the only open tree is the answer when there is just one.
    */
+  // A selected frame is a statement about which tree is being worked on, so it
+  // outranks "the tree I last changed" — but not the note actually being
+  // edited or selected, which is more specific still.
   const undoTargetTreeId =
-    editingRef?.treeId ?? selectedRef?.treeId ?? lastChangedTreeId ?? trees[0]?.id ?? null
+    editingRef?.treeId ??
+    selectedRef?.treeId ??
+    selectedTreeId ??
+    lastChangedTreeId ??
+    trees[0]?.id ??
+    null
 
   const handleUndo = useCallback(async () => {
     if (!undoTargetTreeId) return
@@ -558,65 +674,75 @@ export default function App(): React.ReactElement {
   const currentUserActorId = userName !== null ? `user.${userName}` : null
 
   return (
-    <div className="tapestry-app">
-      {/* Top-left chrome: agents, and the name changes are signed with. Save
-          state lives in each frame's header now, one per tree. */}
-      <ForestBar
-        agents={agents}
-        agentsEnabled={agentsEnabled}
-        userName={userName}
-        onSaveUserName={handleSaveUserName}
-        onAgentsRefresh={refreshAgents}
-      />
-
-      {/* An agent write ended a rewound state (UA-14) */}
-      {notice && <TransientNotice message={notice} onHide={() => setNotice(null)} />}
-
-      {/* Plugin error notification (D-34) */}
-      {pluginError && (
-        <PluginErrorNotification
-          pluginName={pluginError.pluginName}
-          displayName={pluginError.displayName}
-          message={pluginError.message}
-          canRestart={pluginError.canRestart}
-          onRestart={handlePluginRestart}
-          onDismiss={handlePluginErrorDismiss}
+    // One pair of live regions for the whole space, mounted above everything
+    // that announces into them (UI-SPEC screen-reader announcements).
+    <LiveAnnouncer>
+      <div className="tapestry-app">
+        {/* Top-left chrome: add a tree, agents, and the name changes are
+            signed with. Save state lives in each frame's header now. */}
+        <ForestBar
+          agents={agents}
+          agentsEnabled={agentsEnabled}
+          userName={userName}
+          onSaveUserName={handleSaveUserName}
+          onAgentsRefresh={refreshAgents}
+          onAddVault={handleAddVault}
+          onOpenWorld={handleOpenWorld}
+          onNewWorld={handleNewWorld}
         />
-      )}
 
-      {/* First-run name prompt (D-07). Its overlay covers the canvas, so no
-          change can be made before a name exists to sign it with. */}
-      {nameLoaded && userName === null && (
-        <NamePromptDialog
-          mode="first-run"
-          initialName={suggestedName}
-          onSave={handleSaveUserName}
+        {/* An agent write ended a rewound state (UA-14) */}
+        {notice && <TransientNotice message={notice} onHide={() => setNotice(null)} />}
+
+        {/* Plugin error notification (D-34) */}
+        {pluginError && (
+          <PluginErrorNotification
+            pluginName={pluginError.pluginName}
+            displayName={pluginError.displayName}
+            message={pluginError.message}
+            canRestart={pluginError.canRestart}
+            onRestart={handlePluginRestart}
+            onDismiss={handlePluginErrorDismiss}
+          />
+        )}
+
+        {/* First-run name prompt (D-07). Its overlay covers the canvas, so no
+            change can be made before a name exists to sign it with. */}
+        {nameLoaded && userName === null && (
+          <NamePromptDialog
+            mode="first-run"
+            initialName={suggestedName}
+            onSave={handleSaveUserName}
+          />
+        )}
+
+        {/* The space: one frame per open tree, with pan/zoom and connections */}
+        <Canvas
+          ref={canvasRef}
+          trees={trees}
+          editingRef={editingRef}
+          pluginNodeViews={pluginNodeViews}
+          currentUserActorId={currentUserActorId}
+          selectedTreeId={selectedTreeId}
+          onSelectTree={setSelectedTreeId}
+          onStartEditing={(ref) => setEditingRef(ref)}
+          onStopEditing={() => setEditingRef(null)}
+          onCanvasDoubleClick={handleCanvasDoubleClick}
+          onSelectedNoteChange={setSelectedRef}
+          onSave={handleNoteSave}
+          onMarkDirty={markDirty}
+          onMarkClean={markClean}
+          onPositionChange={handlePositionChange}
+          onTakeOverPosition={handleTakeOverPosition}
+          onWidthChange={handleWidthChange}
+          onHeightChange={handleHeightChange}
+          onPinnedPositionChange={handlePinnedPositionChange}
+          onEdgeCreate={handleEdgeCreate}
+          onDeleteNote={handleDeleteNote}
+          onPropertyEdit={handlePropertyEdit}
+          onFrameMove={setFrameLocal}
         />
-      )}
-
-      {/* The space: one frame per open tree, with pan/zoom and connections */}
-      <Canvas
-        trees={trees}
-        editingRef={editingRef}
-        pluginNodeViews={pluginNodeViews}
-        currentUserActorId={currentUserActorId}
-        onStartEditing={(ref) => setEditingRef(ref)}
-        onStopEditing={() => setEditingRef(null)}
-        onCanvasDoubleClick={handleCanvasDoubleClick}
-        onSelectedNoteChange={setSelectedRef}
-        onSave={handleNoteSave}
-        onMarkDirty={markDirty}
-        onMarkClean={markClean}
-        onPositionChange={handlePositionChange}
-        onTakeOverPosition={handleTakeOverPosition}
-        onWidthChange={handleWidthChange}
-        onHeightChange={handleHeightChange}
-        onPinnedPositionChange={handlePinnedPositionChange}
-        onEdgeCreate={handleEdgeCreate}
-        onDeleteNote={handleDeleteNote}
-        onPropertyEdit={handlePropertyEdit}
-        onFrameMove={setFrameLocal}
-      />
-    </div>
+      </div>
+    </LiveAnnouncer>
   )
 }

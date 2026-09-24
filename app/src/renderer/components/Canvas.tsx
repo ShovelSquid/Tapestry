@@ -17,7 +17,14 @@
  * Frame-local coordinates are world coordinates minus the frame's origin.
  */
 
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import React, {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from 'react'
 import ConnectionLine from './ConnectionLine'
 import TreeFrame, { type TreeFrameHandlers } from './TreeFrame'
 import type { ForestTree, NodeRef } from '../state/use-forest'
@@ -55,6 +62,17 @@ interface ViewTransform {
   panX: number
   panY: number
   zoom: number
+}
+
+/**
+ * What the space can be asked to do from outside it.
+ *
+ * Canvas owns the view transform, so panning is its to perform: App knows
+ * which tree it just added, not where that tree's frame ended up.
+ */
+export interface CanvasHandle {
+  /** Center a tree's frame in the viewport at the current zoom. */
+  panToFrame(treeId: string): void
 }
 
 /** Where a double-click landed: inside a frame, or nowhere in particular. */
@@ -107,6 +125,9 @@ interface CanvasProps {
   ) => void
   /** Move a frame in renderer state only; the canvas persists the final spot. */
   onFrameMove: (treeId: string, x: number, y: number) => void
+  /** The selected frame, which is the space's focal point and undo target. */
+  selectedTreeId: string | null
+  onSelectTree: (treeId: string | null) => void
 }
 
 // ---------------------------------------------------------------------------
@@ -155,6 +176,17 @@ const DEFAULT_NODE_HEIGHT = 80
 /** The drawn-spot map for a tree that has none yet (D-05). */
 const NO_DISPLAY_SPOTS: ReadonlyMap<string, DisplaySpot> = new Map()
 
+/**
+ * The empty space (UI-SPEC "Empty state body").
+ *
+ * One string rather than wrapped JSX text, so the approved copy stays one
+ * greppable line: it names the way in to a vault, which is the whole point of
+ * saying anything here at all.
+ */
+const EMPTY_BODY =
+  'Create notes, connect ideas, and build your world of thought. ' +
+  'To bring in an Obsidian vault, choose Add tree, then Add Obsidian Vault.'
+
 /** Backgrounds a pan, a deselect or a create may start from. */
 const BACKGROUND_CLASSES = [
   'tapestry-canvas-container',
@@ -175,7 +207,7 @@ function containsPoint(rect: FrameRect, x: number, y: number): boolean {
 // Canvas
 // ---------------------------------------------------------------------------
 
-export default function Canvas({
+function Canvas({
   trees,
   editingRef,
   pluginNodeViews,
@@ -196,7 +228,9 @@ export default function Canvas({
   onDeleteNote,
   onPropertyEdit,
   onFrameMove,
-}: CanvasProps): React.ReactElement {
+  selectedTreeId,
+  onSelectTree,
+}: CanvasProps, ref: React.ForwardedRef<CanvasHandle>): React.ReactElement {
   const viewportRef = useRef<HTMLDivElement>(null)
   const [view, setView] = useState<ViewTransform>({ panX: 0, panY: 0, zoom: 1 })
 
@@ -222,7 +256,6 @@ export default function Canvas({
   // Frame-level state (D-15). A frame is dragged by its header, selected by a
   // click on it, and never deleted by the Delete key.
   const [draggingTreeId, setDraggingTreeId] = useState<string | null>(null)
-  const [selectedTreeId, setSelectedTreeId] = useState<string | null>(null)
   const [hoveredTreeId, setHoveredTreeId] = useState<string | null>(null)
   const frameDragRef = useRef({ startX: 0, startY: 0, originX: 0, originY: 0, moved: false })
 
@@ -292,6 +325,37 @@ export default function Canvas({
     })
     frameRects.set(tree.id, computeFrameBounds(tree.frame, boxes))
   }
+
+  /**
+   * The rects this render computed, readable by an imperative caller later.
+   *
+   * panToFrame is called after a frame has been added and possibly nudged
+   * clear of its neighbours, so it must read the rects as they are at that
+   * moment rather than the ones its own closure was created with.
+   */
+  const frameRectsRef = useRef(frameRects)
+  frameRectsRef.current = frameRects
+
+  /**
+   * Center a frame in the viewport, keeping the current zoom.
+   *
+   * worldToScreen is `world * zoom + pan`, so centering the frame's midpoint
+   * means solving `mid * zoom + pan = viewport / 2` for pan.
+   */
+  const panToFrame = useCallback((treeId: string) => {
+    const viewport = viewportRef.current
+    const rect = frameRectsRef.current.get(treeId)
+    if (!viewport || !rect) return
+
+    const { clientWidth, clientHeight } = viewport
+    setView((prev) => ({
+      ...prev,
+      panX: clientWidth / 2 - (rect.x + rect.width / 2) * prev.zoom,
+      panY: clientHeight / 2 - (rect.y + rect.height / 2) * prev.zoom,
+    }))
+  }, [])
+
+  useImperativeHandle(ref, () => ({ panToFrame }), [panToFrame])
 
   /** The tree whose frame contains a world point, if any. */
   const treeAt = useCallback(
@@ -484,7 +548,7 @@ export default function Canvas({
             settleFrames(draggingTreeId)
           } else {
             // Pressing the header without moving it selects the frame.
-            setSelectedTreeId(draggingTreeId)
+            onSelectTree(draggingTreeId)
           }
         }
         setDraggingTreeId(null)
@@ -554,9 +618,9 @@ export default function Canvas({
       if (!isBackground(e.target as HTMLElement, viewportRef.current)) return
       onStopEditing()
       selectNote(null)
-      setSelectedTreeId(null)
+      onSelectTree(null)
     },
-    [onStopEditing, selectNote],
+    [onStopEditing, selectNote, onSelectTree],
   )
 
   const handleDoubleClick = useCallback(
@@ -729,9 +793,7 @@ export default function Canvas({
       {trees.length === 0 && (
         <div className="tapestry-empty-state">
           <h2 className="tapestry-empty-heading">Double-click anywhere to start</h2>
-          <p className="tapestry-empty-body">
-            Create notes, connect ideas, and build your world of thought.
-          </p>
+          <p className="tapestry-empty-body">{EMPTY_BODY}</p>
         </div>
       )}
 
@@ -793,3 +855,5 @@ export default function Canvas({
     </div>
   )
 }
+
+export default forwardRef(Canvas)
