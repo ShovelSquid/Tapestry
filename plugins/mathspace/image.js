@@ -300,13 +300,17 @@ function engineSource(text) {
  *   problems: Array<{id: string, key: string, reason: string}>,
  *   bindings: Array<{id: bigint, node: string, name: string, text: string}>,
  *   rules: Map<string, string|null>,
+ *   notes: string[],
+ *   views: string[],
  * }} actions in apply order; fields is the before-image diff() needs;
  *   types remembers `int` props so they come back as ints; bindings are
  *   the `<f>.expr` props for the runner to compile once the actions are
  *   applied, in id then name order; rules maps every `mathspace/rule@1`
  *   and `mathspace/view@1` node id (in the image or not) to the
  *   `mathspace.error` text it carries now, null when none, so the runner
- *   can write only changes (and never commits their bound fields back).
+ *   can write only changes (and never commits their bound fields back);
+ *   notes and views are the ids of the Note-kind and View-kind notes that
+ *   made it into the image, in id order, for the surface's projection.
  *
  * The app's `pinned bool true` is the engine's scalar `pinned` 1, which
  * holds the note still (step.cpp, RULE-08); false or absent sends
@@ -426,7 +430,9 @@ function buildImage(nodes) {
   for (const n of notes) {
     for (const b of n.bindings) bindings.push({ id: n.id, node: n.node, name: b.name, text: b.text })
   }
-  return { actions, fields: image, types, problems, bindings, rules }
+  const noteIds = notes.filter((n) => n.kind === NOTE_KIND_NOTE).map((n) => n.node)
+  const viewIds = notes.filter((n) => n.kind === NOTE_KIND_VIEW).map((n) => n.node)
+  return { actions, fields: image, types, problems, bindings, rules, notes: noteIds, views: viewIds }
 }
 
 // ---------------------------------------------------------------------------

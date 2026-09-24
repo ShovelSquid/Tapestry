@@ -2,8 +2,9 @@
  * runner.js — the run loop: engine ticks in memory, kernel commits on a
  * cadence (mathspace_plan.md, "Commit granularity").
  *
- * One Runner per plugin. `start` rebuilds the image from kernel.getNodes(),
- * applies it to a fresh engine, and steps at `hz` on an interval. Every
+ * One Runner per plugin. `start` rebuilds the image from kernel.getNodes()
+ * into a fresh engine (world.js, shared with the surface) and steps at
+ * `hz` on an interval. Every
  * `commitEvery` ticks, on pause, and on a single step, `flush` reads the
  * snapshot, diffs it against the before-image, and submits the changed
  * lanes as `setProperty` ops plus one `advance k`, so the .tree replays to
@@ -35,10 +36,8 @@
  * host would read as a plugin crash) can escape: buildImage catches them.
  */
 
-const { Engine } = require('./engine')
-const { ERROR_KEY, buildImage, diff, encodeBindField, engineSource, kernelName, nodeIdToU64, parseSnapshot, u64ToNodeId } = require('./image')
-
-const ENGINE_SEED = 1n
+const { ERROR_KEY, diff, nodeIdToU64, parseSnapshot, u64ToNodeId } = require('./image')
+const { ENGINE_SEED, buildWorld } = require('./world')
 
 class Runner {
   /**
@@ -73,30 +72,8 @@ class Runner {
   async rebuild() {
     const nodes = await this.kernel.getNodes()
     const status = await this.kernel.status()
-    const image = buildImage(nodes)
     const mod = await this.loadModule()
-    const engine = new Engine(mod, ENGINE_SEED)
-    for (const action of image.actions) {
-      const rc = engine.apply(action)
-      if (rc !== 0) {
-        engine.destroy()
-        throw new Error(`engine rejected an image action with code ${rc}`)
-      }
-    }
-    // Second pass: every note and field exists now, so refs resolve.
-    // A binding that fails is a problem on that node, never a rebuild
-    // failure: the rest of the world still runs.
-    for (const b of image.bindings) {
-      const key = `${kernelName(b.name)}.expr`
-      const src = engineSource(b.text)
-      const r = engine.compile(b.id, src.text)
-      if (r.error !== undefined) {
-        image.problems.push({ id: b.node, key, reason: `${r.error} at ${src.back(r.where)}` })
-        continue
-      }
-      const rc = engine.apply(encodeBindField(b.id, b.name, r.code))
-      if (rc !== 0) image.problems.push({ id: b.node, key, reason: `bind rejected with code ${rc}` })
-    }
+    const { engine, image } = buildWorld(nodes, mod)
     for (const p of image.problems) this.log(`skipping ${p.id} ${p.key}: ${p.reason}`)
     if (this.engine) this.engine.destroy()
     this.engine = engine
