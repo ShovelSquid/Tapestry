@@ -109,3 +109,28 @@ entry; the old tree is hidden that session and reappears as unavailable after re
    nothing written.
 
 **If the answer is no:** `git revert b73ec11 d6efff1 8b85ae5` and describe the issue in autonomy/RESPONSE.
+
+### 4. Phase 02.6, plan 02.6-05 — Ctrl+Z after a drag, system-signed fit (queued by the 15:56 session, 2026-09-24)
+
+**What was built (1ee3adc, ed0a42f, 9340af9):** Ctrl+Z right after dragging a frame writes a new
+person-signed commit to `Forest.tree` that restores the dragged frame and every frame it pushed aside
+(before-values read from the forest by main, never from the renderer); Ctrl+Shift+Z redoes. Reach is
+`'run'` (approved Part 3 answer): consecutive drags undo one by one; editing, selecting, or a tree undo
+ends the run, and Ctrl+Z goes back to the selected tree. History capped at 100 drops
+(`FRAME_HISTORY_LIMIT`). Automatic fit is signed `system tapestry`, only when a frame actually moves, at
+most once per tree per session, never over a frame the person moved. `trees:setFrame` is removed, so
+nothing writes frame positions to settings.json. A failed drop shows the 4.12 banner "Could not move the
+frame: [reason]" and frames snap back. 596 tests green.
+Deviations (see 02.6-05-SUMMARY): undo/redo/fit commit messages added to `shapes.ts`; `close()` also
+clears frame history and fit allowance.
+
+**Task 1's hands-on check was deferred** (approved-deferred, PROTOCOL step 4). On copies only (same
+`TAPESTRY_USER_DATA_DIR` / `TAPESTRY_SPACE_DIR` setup as item 2):
+1. Drag a frame so it pushes another aside, press Ctrl+Z: both return.
+2. Press Ctrl+Shift+Z: both move again.
+3. Drag two frames in turn, press Ctrl+Z twice: both drags undone.
+4. Edit a note, press Ctrl+Z: the note edit is undone, not a frame.
+5. `Forest.tree`: the moves and their undos are separate commits signed `human user.<name>`; a fit, if
+   any, is signed `system tapestry`.
+
+**If the answer is no:** `git revert 9340af9 ed0a42f 1ee3adc` and describe the issue in autonomy/RESPONSE.
