@@ -31,7 +31,7 @@ Phase: 02.2 (Obsidian Bridge) — EXECUTING
 Plan: 8 of 16 (02.2-01 to 02.2-07 complete; 02.2-08 code committed, no summary yet)
 Status: Executing
 Phase 02.4 (Lock Model): COMPLETE — verified 25/25, 2026-09-16; rebased onto the main line 2026-09-23
-Last activity: 2026-09-24 - Merged ws/hands-face-voice into ws/hands-face-voice-gesture-capture: quick tasks 260924-1gd (pose skeleton + shared normalized-frame 3D placement) and 260924-1c5 (face blendshapes + tessellation point cloud)
+Last activity: 2026-09-24 - Completed quick task 260924-2ej: In hands-face-voice/, add a dead-zone tolerance plus EMA smoothing to the 3D landmark point cloud, keyed per slot and reset on slot disappearance
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -155,6 +155,7 @@ None yet.
 | 260924-1gd | In hands-face-voice/, wire hand-face relative position through the live playground and add MediaPipe Pose Landmarker as a shared body skeleton anchoring hands and face, replacing scene3d.js's fixed-offset spacing hack | 2026-09-24 | 797dc1d, 6d7ee79 | [260924-1gd-in-hands-face-voice-wire-hand-face-relat](./quick/260924-1gd-in-hands-face-voice-wire-hand-face-relat/) |
 | 260924-1c5 | Improve facial fidelity/expressiveness of the hands-face-voice real-time face tracker: enable FaceLandmarker blendshapes and render the full face tessellation mesh (not just contours) in the 3D view | 2026-09-24 | 46d8cc8 | [260924-1c5-improve-facial-fidelity-expressiveness-o](./quick/260924-1c5-improve-facial-fidelity-expressiveness-o/) |
 | 8 | In hands-face-voice/, cap the metrics line width under the landmarks panel so it stops jittering and pushing the 3D panel off to the side | 2026-09-24 | 1500b32 | — |
+| 260924-2ej | In hands-face-voice/, add a dead-zone tolerance plus EMA smoothing to the 3D landmark point cloud in scene3d.js, keyed per (hand/face/pose slot, point) and reset when a slot disappears and reappears | 2026-09-24 | d6ebf0c | [260924-2ej-in-hands-face-voice-add-a-movement-toler](./quick/260924-2ej-in-hands-face-voice-add-a-movement-toler/) |
 
 ### Roadmap Evolution
 
