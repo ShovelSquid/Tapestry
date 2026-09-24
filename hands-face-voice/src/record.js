@@ -24,7 +24,32 @@ function pickMimeType() {
   return candidates.find((type) => MediaRecorder.isTypeSupported(type)) ?? "";
 }
 
+// One-shot override for the next recording's base name, set by a voice
+// command ("save file to <name>") instead of the folder picker (which
+// requires a real user gesture voice cannot supply). Consumed by the very
+// next sessionBaseName() call, then reverts to the timestamp default.
+let baseNameOverride = null;
+
+function sanitizeBaseName(raw) {
+  const cleaned = raw
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, "-")
+    .replace(/[^a-z0-9-_]/g, "");
+  return cleaned || null;
+}
+
+export function setRecordingBaseName(name) {
+  baseNameOverride = sanitizeBaseName(name);
+  return baseNameOverride;
+}
+
 function sessionBaseName() {
+  if (baseNameOverride) {
+    const name = baseNameOverride;
+    baseNameOverride = null; // one-shot: consumed here, then reverts to timestamp default
+    return name;
+  }
   return `session-${new Date().toISOString().replace(/[:.]/g, "-")}`;
 }
 

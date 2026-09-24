@@ -2,7 +2,8 @@ import { startHandsAndFace } from "./hands-face.js";
 import { startVoiceWaveform } from "./voice.js";
 import { startTranscription } from "./transcribe.js";
 import { createScene3D } from "./scene3d.js";
-import { chooseSaveFolder, startRecording } from "./record.js";
+import { chooseSaveFolder, startRecording, setRecordingBaseName } from "./record.js";
+import { classifyIntent, preloadClassifier, COMMAND_EXAMPLES } from "./commands.js";
 
 const statusEl = document.getElementById("status");
 const errorBox = document.getElementById("errorBox");
@@ -12,13 +13,14 @@ const chooseFolderBtn = document.getElementById("chooseFolder");
 const startRecordingBtn = document.getElementById("startRecording");
 const stopRecordingBtn = document.getElementById("stopRecording");
 const recordStatusEl = document.getElementById("recordStatus");
+const voiceCommandStatusEl = document.getElementById("voiceCommandStatus");
 
 function showError(context, err) {
   console.error(context, err);
   errorBox.textContent = `${context}: ${err.message || err}`;
 }
 
-startCameraBtn.addEventListener("click", async () => {
+async function handleStartCamera() {
   startCameraBtn.disabled = true;
   statusEl.textContent = "loading hand/face models...";
   try {
@@ -35,9 +37,10 @@ startCameraBtn.addEventListener("click", async () => {
     statusEl.textContent = "camera failed";
     showError("Camera/tracking", err);
   }
-});
+}
+startCameraBtn.addEventListener("click", handleStartCamera);
 
-startMicBtn.addEventListener("click", async () => {
+async function handleStartMic() {
   startMicBtn.disabled = true;
   statusEl.textContent = "requesting microphone...";
   try {
@@ -58,6 +61,7 @@ startMicBtn.addEventListener("click", async () => {
     startTranscription({
       onFinal: (text) => {
         finalEl.textContent += text + " ";
+        handleVoiceCommand(text).catch((err) => showError("Voice command", err));
       },
       onInterim: (text) => {
         interimEl.textContent = text;
@@ -67,7 +71,14 @@ startMicBtn.addEventListener("click", async () => {
   } catch (err) {
     showError("Transcription", err);
   }
-});
+
+  // Start downloading the classifier's embedding model in parallel with the
+  // ASR model instead of waiting for the first spoken command to trigger
+  // it. Swallow its own errors — real classifyIntent error handling
+  // happens on first spoken command via handleVoiceCommand's own catch.
+  preloadClassifier().catch(() => {});
+}
+startMicBtn.addEventListener("click", handleStartMic);
 
 function formatBytes(bytes) {
   if (bytes < 1024) return `${bytes} B`;
@@ -77,7 +88,7 @@ function formatBytes(bytes) {
 
 let activeRecording = null;
 
-chooseFolderBtn.addEventListener("click", async () => {
+async function handleChooseFolder() {
   try {
     const folderName = await chooseSaveFolder();
     recordStatusEl.textContent = `save folder: ${folderName}`;
@@ -85,9 +96,10 @@ chooseFolderBtn.addEventListener("click", async () => {
   } catch (err) {
     showError("Choose save folder", err);
   }
-});
+}
+chooseFolderBtn.addEventListener("click", handleChooseFolder);
 
-startRecordingBtn.addEventListener("click", async () => {
+async function handleStartRecording() {
   startRecordingBtn.disabled = true;
   chooseFolderBtn.disabled = true;
   try {
@@ -105,9 +117,10 @@ startRecordingBtn.addEventListener("click", async () => {
     chooseFolderBtn.disabled = false;
     showError("Recording", err);
   }
-});
+}
+startRecordingBtn.addEventListener("click", handleStartRecording);
 
-stopRecordingBtn.addEventListener("click", async () => {
+async function handleStopRecording() {
   stopRecordingBtn.disabled = true;
   try {
     await activeRecording.stop();
@@ -118,4 +131,37 @@ stopRecordingBtn.addEventListener("click", async () => {
     chooseFolderBtn.disabled = false;
     startRecordingBtn.disabled = false;
   }
-});
+}
+stopRecordingBtn.addEventListener("click", handleStopRecording);
+
+// Voice-command dispatch: maps a classified command to the exact same
+// function its button's click listener calls. "startMicrophone" maps to
+// handleStartMic for label-set symmetry, but is structurally unreachable
+// via voice — see commands.js's COMMAND_EXAMPLES comment.
+const COMMAND_HANDLERS = {
+  startRecording: handleStartRecording,
+  stopRecording: handleStopRecording,
+  startLandmarks: handleStartCamera,
+  startMicrophone: handleStartMic,
+};
+
+async function handleVoiceCommand(text) {
+  const { command, confident, slot } = await classifyIntent(text);
+
+  if (!confident) {
+    const example = command ? COMMAND_EXAMPLES[command][0] : "one of the known commands";
+    voiceCommandStatusEl.textContent = `did you mean: "${example}"?`;
+    return;
+  }
+
+  if (command === "saveFileTo") {
+    const accepted = setRecordingBaseName(slot ?? "");
+    voiceCommandStatusEl.textContent = accepted
+      ? `next recording will be named "${accepted}"`
+      : "could not extract a valid file name; next recording uses the default name";
+    return;
+  }
+
+  voiceCommandStatusEl.textContent = `executing: ${command}`;
+  COMMAND_HANDLERS[command]?.();
+}
