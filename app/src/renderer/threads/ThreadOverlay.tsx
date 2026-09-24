@@ -29,6 +29,7 @@ import { useThreadEditor, type ThreadPushResult, type ThreadReadyState } from '.
 import StageFallbackPanel from './StageFallbackPanel'
 import ThreadSettingsPopover from './ThreadSettingsPopover'
 import {
+  CHUNK_KIND,
   Ribbon,
   clearPendingFullUpload,
   createStageUniforms,
@@ -37,11 +38,14 @@ import {
 import { GlyphLayer } from './stage/glyphs'
 import { getGlyphCache } from './stage/glyph-cache'
 import { createLiveView, type LiveViewHandle } from './stage/live-view'
+import { SideView, SIDE_ZOOM_DURATION_FACTOR } from './stage/side-view'
 import { getStageRenderer, isWebglAvailable } from './stage/renderer'
 import { readStageTokens } from './stage/tokens'
+import { loadSessions } from './SessionBridge'
 import { parseThreadFrame, parseThreadSettings, type ThreadFrame, type ThreadNodeProps } from '../../shared/threads/settings'
 import { parseSlowdown, type SlowdownCurve } from '../../shared/threads/slowdown'
 import { docAt, type ThreadCommitEntry, type ThreadLetter } from '../../shared/threads/replay'
+import type { DerivedSession } from '../../shared/threads/sessions'
 
 const STATUS_DELAY_MS = 400
 
@@ -82,12 +86,17 @@ interface StageHistory {
   timeoutSeconds: number
   /** Live (non-deleted) letters, in the order `docAt` returned them. */
   letters: ThreadLetter[]
+  /** D-07/D-16: the thread's own recorded sessions, so the ribbon's
+   * historical reconstruction below can draw true-length gaps between them
+   * instead of one continuous span standing in for real history. */
+  sessions: DerivedSession[]
 }
 
 async function loadStageHistory(treeId: string, nodeId: string): Promise<StageHistory> {
-  const [node, commits] = await Promise.all([
+  const [node, commits, sessions] = await Promise.all([
     window.tapestry.kernel.getNode(treeId, nodeId),
     loadThreadCommits(treeId, nodeId),
+    loadSessions(treeId, nodeId),
   ])
   const props: ThreadNodeProps = node?.props ?? {}
   const frame = parseThreadFrame(props)
@@ -98,6 +107,7 @@ async function loadStageHistory(treeId: string, nodeId: string): Promise<StageHi
     slowdown: parseSlowdown(settings.slowdown),
     timeoutSeconds: settings.timeout,
     letters: letters.filter((l) => l.deletedAtMs === null),
+    sessions,
   }
 }
 
@@ -112,7 +122,18 @@ interface StageRuntime {
   ribbon: Ribbon
   glyphs: GlyphLayer
   liveView: LiveViewHandle
+  /** D-15..D-19: the side view's own camera, sharing this stage's ribbon,
+   * glyphs and uniforms -- switching views changes the camera and a few
+   * uniforms, never the renderer or the geometry (Task 1's action text). */
+  sideView: SideView
   uniforms: StageUniforms
+  /** The thread's own stored D-27 frame, as last applied to both cameras --
+   * kept here so a view switch never needs to re-fetch it. */
+  frame: ThreadFrame
+  /** D-07/D-16: the thread's own recorded sessions, as last loaded --
+   * gravity, fly-to and the side view's honest historical ribbon all read
+   * from this same list rather than re-deriving it per interaction. */
+  sessions: DerivedSession[]
   threadStartMs: number
   lastActivitySeconds: number
   pauseOpen: boolean
@@ -144,6 +165,14 @@ export default function ThreadOverlay({
   const [stageBuiltCount, setStageBuiltCount] = useState(0)
   const [stageTotalCount, setStageTotalCount] = useState(0)
   const [stageError, setStageError] = useState<string | null>(null)
+
+  // D-09/D-15: "Read the thread back" / "Return to now" -- `viewRef` is the
+  // render loop's own source of truth (read inside `renderFrame`, which is
+  // captured once by the mount effect below and must never see a stale
+  // closure over `view`); `view` state exists only to drive the header
+  // button's own label and re-render.
+  const [view, setViewState] = useState<'live' | 'side'>('live')
+  const viewRef = useRef<'live' | 'side'>('live')
 
   const stageContainerRef = useRef<HTMLDivElement>(null)
   const stageRuntimeRef = useRef<StageRuntime | null>(null)
@@ -255,6 +284,28 @@ export default function ThreadOverlay({
     onLocalInsert: handleLocalInsert,
   })
 
+  // -------------------------------------------------------------------
+  // "Read the thread back" / "Return to now" (D-09, D-15): switches which
+  // camera renderFrame draws, and frames the side view on the whole thread
+  // the first time it opens in a given session (spike 001's own
+  // `state.sideCenter = t0/2; state.sideSeconds = max(60, t0*1.05)`,
+  // generalized to this plan's 1.1x duration factor).
+  // -------------------------------------------------------------------
+  const handleToggleView = useCallback(() => {
+    const stage = stageRuntimeRef.current
+    if (!stage) return
+    if (viewRef.current === 'live') {
+      const nowSeconds = secondsSince(stage.threadStartMs, Date.now())
+      const initialSpan = Math.max(60, nowSeconds * SIDE_ZOOM_DURATION_FACTOR)
+      stage.sideView.setView(nowSeconds / 2, initialSpan, nowSeconds)
+      viewRef.current = 'side'
+      setViewState('side')
+    } else {
+      viewRef.current = 'live'
+      setViewState('live')
+    }
+  }, [])
+
   const handleClose = useCallback(() => {
     window.tapestry.thread
       .close(treeId, nodeId)
@@ -299,6 +350,7 @@ export default function ThreadOverlay({
     glyphs.setUniforms(uniforms)
     scene.add(ribbon.mesh, glyphs.mesh)
     const liveView = createLiveView(uniforms)
+    const sideView = new SideView(uniforms)
 
     const cache = getGlyphCache()
 
@@ -311,12 +363,44 @@ export default function ThreadOverlay({
     // screen (T-02.3-04-03).
     function applyHistory(history: StageHistory): void {
       const finiteTimes = history.letters.map((l) => l.insertedAtMs).filter((ms) => Number.isFinite(ms))
-      const threadStartMs = finiteTimes.length > 0 ? Math.min(...finiteTimes) : Date.now()
+      const sessionStarts = history.sessions.map((s) => s.startMs)
+      const threadStartMs =
+        sessionStarts.length > 0
+          ? Math.min(...sessionStarts)
+          : finiteTimes.length > 0
+            ? Math.min(...finiteTimes)
+            : Date.now()
 
       ribbon.reset()
       glyphs.reset()
       const nowSeconds = secondsSince(threadStartMs, Date.now())
-      ribbon.addSpan(0, nowSeconds, 0)
+
+      // D-07/D-16: reconstruct the ribbon's historical structure from the
+      // thread's own recorded sessions -- true-length gaps between them,
+      // never one continuous span standing in for real history (closing a
+      // Plan 04 known stub so the side view has something honest to show).
+      let prevEndSeconds: number | null = null
+      for (const session of history.sessions) {
+        const startSeconds = secondsSince(threadStartMs, session.startMs)
+        const endSeconds = Math.max(startSeconds, secondsSince(threadStartMs, session.endMs))
+        if (prevEndSeconds !== null && startSeconds > prevEndSeconds) {
+          ribbon.addSpan(prevEndSeconds, startSeconds, CHUNK_KIND.GAP)
+        }
+        ribbon.addSpan(startSeconds, endSeconds, CHUNK_KIND.SESSION)
+        prevEndSeconds = Math.max(prevEndSeconds ?? endSeconds, endSeconds)
+      }
+      if (prevEndSeconds === null) {
+        // No recorded sessions yet (a brand-new thread, or one written
+        // before sessions existed): fall back to one continuous span,
+        // matching this overlay's pre-existing behaviour.
+        ribbon.addSpan(0, nowSeconds, CHUNK_KIND.SESSION)
+      } else if (nowSeconds > prevEndSeconds) {
+        // The most recently recorded session is still open, or the thread
+        // has been quiet since it closed: extend a live span to "now" --
+        // the tick loop's own extendLast/pause-chunk calls take over from
+        // here for the currently-open session's own pause/timeout behaviour.
+        ribbon.addSpan(prevEndSeconds, nowSeconds, CHUNK_KIND.SESSION)
+      }
 
       setStageTotalCount(history.letters.length)
       let built = 0
@@ -332,6 +416,7 @@ export default function ThreadOverlay({
       setStageBuilding(false)
 
       liveView.applyFrame(history.frame)
+      sideView.applyFrame(history.frame)
 
       const firstBreakpointSeconds = history.slowdown[0]?.afterSeconds ?? Number.POSITIVE_INFINITY
       stageRuntimeRef.current = {
@@ -339,7 +424,10 @@ export default function ThreadOverlay({
         ribbon,
         glyphs,
         liveView,
+        sideView,
         uniforms,
+        frame: history.frame,
+        sessions: history.sessions,
         threadStartMs,
         lastActivitySeconds: nowSeconds,
         pauseOpen: false,
@@ -365,11 +453,13 @@ export default function ThreadOverlay({
       const { clientWidth, clientHeight } = container
       rendererHandle.resize(clientWidth, clientHeight, window.devicePixelRatio)
       liveView.resize(clientWidth, clientHeight)
+      sideView.resize(clientWidth, clientHeight)
     })
     resizeObserver.observe(container)
     // Prime the initial size synchronously so the first frame isn't 0x0.
     rendererHandle.resize(container.clientWidth, container.clientHeight, window.devicePixelRatio)
     liveView.resize(container.clientWidth, container.clientHeight)
+    sideView.resize(container.clientWidth, container.clientHeight)
 
     const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
     let lastReducedMotionFrame = 0
@@ -392,9 +482,18 @@ export default function ThreadOverlay({
       // simply stop extending; the next keystroke (handleLocalInsert) opens
       // a fresh chunk regardless of how the previous one ended.
 
-      stage.liveView.tick(nowSeconds)
+      // The live and side cameras share one uniforms object (StageUniforms):
+      // liveView.tick() recenters the floating origin on "now" every frame,
+      // which would immediately undo whatever the side view's own setView()
+      // last set. So the live camera's tick only runs while it is actually
+      // the one being drawn; the side view's own uniforms are only touched
+      // by its own setView()/resize() calls, never per frame.
+      if (viewRef.current === 'live') {
+        stage.liveView.tick(nowSeconds)
+      }
       stage.glyphs.syncAtlasTextures(cache)
-      rendererHandle.renderer.render(stage.scene, stage.liveView.camera)
+      const camera = viewRef.current === 'side' ? stage.sideView.camera : stage.liveView.camera
+      rendererHandle.renderer.render(stage.scene, camera)
       clearPendingFullUpload()
     }
 
@@ -465,6 +564,17 @@ export default function ThreadOverlay({
           )}
 
           {ready !== null && <span style={styles.statusLabel}>{saveLabel}</span>}
+
+          {/* D-09/D-15: "Read the thread back" in the live view, "Return to
+              now" in the side view (UI-SPEC "Thread overlay header"). */}
+          <button
+            type="button"
+            onClick={handleToggleView}
+            disabled={ready === null}
+            style={styles.closeButton}
+          >
+            {view === 'live' ? 'Read the thread back' : 'Return to now'}
+          </button>
 
           <button
             type="button"

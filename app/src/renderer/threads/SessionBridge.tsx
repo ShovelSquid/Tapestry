@@ -146,8 +146,10 @@ const MIN_EDGE_GAP_PX = 8
 const OVERFLOW_THRESHOLD = 9
 const OVERFLOW_EDGE_COUNT = 4
 
-/** 12-32px on a log scale from <=100 to >=5,000 letters (UI-SPEC "Spacing"). */
-function pillDiameter(letterCount: number): number {
+/** 12-32px on a log scale from <=100 to >=5,000 letters (UI-SPEC "Spacing").
+ * Exported (02.3-07) so the side view's own session pills use the identical
+ * log-scale sizing rather than a second, possibly-drifting formula. */
+export function pillDiameter(letterCount: number): number {
   const clamped = Math.max(PILL_MIN_LETTERS, Math.min(PILL_MAX_LETTERS, Math.max(letterCount, 1)))
   const t = Math.log(clamped / PILL_MIN_LETTERS) / Math.log(PILL_MAX_LETTERS / PILL_MIN_LETTERS)
   return PILL_MIN_PX + t * (PILL_MAX_PX - PILL_MIN_PX)
