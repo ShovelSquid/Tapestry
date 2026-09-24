@@ -89,11 +89,24 @@ endif()
 # no dependency on the kernel tree. SYSTEM include: not ours to keep
 # warning-clean. It is included by exactly one translation unit (src/hash.cpp).
 # ---------------------------------------------------------------------------
-file(GLOB_RECURSE DDSIM_SOURCES CONFIGURE_DEPENDS ${PROJECT_SOURCE_DIR}/src/*.cpp)
+# Non-recursive on purpose: src/mathspace/ is its own library below.
+file(GLOB DDSIM_SOURCES CONFIGURE_DEPENDS ${PROJECT_SOURCE_DIR}/src/*.cpp)
 add_library(ddsim STATIC ${DDSIM_SOURCES})
 target_include_directories(ddsim PUBLIC ${PROJECT_SOURCE_DIR}/include)
 target_include_directories(ddsim SYSTEM PRIVATE ${PROJECT_SOURCE_DIR}/third_party/picosha2)
 target_link_libraries(ddsim PUBLIC ddsim_settings)
+
+# ---------------------------------------------------------------------------
+# mathspace — the schema-less spatial note store (mathspace_design.md,
+# mathspace_plan.md). Same settings interface, same forbidden-token gate
+# (it lives under include/ and src/ so the gate covers it for free). Links
+# ddsim for fx64.hpp and sha256_bytes only; ddsim itself stays untouched
+# until plan phase 7.
+# ---------------------------------------------------------------------------
+file(GLOB MATHSPACE_SOURCES CONFIGURE_DEPENDS ${PROJECT_SOURCE_DIR}/src/mathspace/*.cpp)
+add_library(mathspace STATIC ${MATHSPACE_SOURCES})
+target_include_directories(mathspace PUBLIC ${PROJECT_SOURCE_DIR}/include)
+target_link_libraries(mathspace PUBLIC ddsim_settings ddsim)
 
 # ---------------------------------------------------------------------------
 # Tests and the fixture generator. doctest is the repo's vendored copy
@@ -115,6 +128,13 @@ if(DDSIM_BUILD_TESTS)
 
     include(${DDSIM_DOCTEST_DIR}/doctest.cmake)
     doctest_discover_tests(ddsim_tests)
+
+    file(GLOB MATHSPACE_TEST_SOURCES CONFIGURE_DEPENDS ${PROJECT_SOURCE_DIR}/tests/mathspace/*.cpp)
+    add_executable(mathspace_tests ${MATHSPACE_TEST_SOURCES})
+    target_link_libraries(mathspace_tests PRIVATE mathspace doctest::doctest)
+    target_compile_definitions(mathspace_tests PRIVATE
+        MATHSPACE_GOLDEN_DIR="${PROJECT_SOURCE_DIR}/tests/golden/ms")
+    doctest_discover_tests(mathspace_tests TEST_PREFIX ms.)
 
     add_executable(ddsim_gen_fixtures tools/gen_fixtures/main.cpp)
     target_link_libraries(ddsim_gen_fixtures PRIVATE ddsim)
