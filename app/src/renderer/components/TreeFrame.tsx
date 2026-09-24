@@ -12,7 +12,7 @@
  * D-16, Plan 15).
  */
 
-import React from 'react'
+import React, { useState } from 'react'
 import NoteCard from './NoteCard'
 import FallbackNodeView from './FallbackNodeView'
 import ConnectionLine from './ConnectionLine'
@@ -20,6 +20,7 @@ import KnotNode, { KNOT_TYPE, KNOT_TIE_LABEL } from './KnotNode'
 import FrameHeader from './FrameHeader'
 import ThreadCard, { THREAD_TYPE } from '../threads/ThreadCard'
 import SessionBridge from '../threads/SessionBridge'
+import ThreadSettingsPopover from '../threads/ThreadSettingsPopover'
 import type { ForestTree, NodeRef } from '../state/use-forest'
 import { nodeKey } from '../state/use-forest'
 import type { FrameRect } from '../layout/frames'
@@ -112,6 +113,12 @@ export default function TreeFrame({
 }: TreeFrameProps): React.ReactElement {
   const refFor = (nodeId: string): NodeRef => ({ treeId: tree.id, nodeId })
   const keyFor = (nodeId: string): string => nodeKey(refFor(nodeId))
+
+  // ThreadCard menu (D-07 UI-SPEC "The thread on the 2D canvas": "Open
+  // thread", "Thread settings", "Delete thread") and the settings popover it
+  // opens (UI-SPEC "Thread settings": "opened from ... the ThreadCard menu").
+  const [threadMenuOpenFor, setThreadMenuOpenFor] = useState<string | null>(null)
+  const [threadSettingsFor, setThreadSettingsFor] = useState<{ nodeId: string; x: number; y: number } | null>(null)
 
   /** A note's center in this tree's local coordinates. */
   const getNodeCenter = (nodeId: string): { x: number; y: number } | null => {
@@ -309,6 +316,8 @@ export default function TreeFrame({
             const isAgentStarted = createdBy?.kind === 'plugin' && createdBy.id.startsWith('agent.')
             const originTitle = originNode ? String(originNode.props['title']?.value ?? 'Untitled') : null
 
+            const dimsWidth = dims?.width ?? 200
+
             return (
               <React.Fragment key={node.id}>
                 <ThreadCard
@@ -338,6 +347,88 @@ export default function TreeFrame({
                     {`Grew from ${originTitle} · started by ${createdBy!.id}`}
                   </div>
                 )}
+
+                {/* ThreadCard menu (UI-SPEC "Card menu"): "Open thread",
+                    "Thread settings", "Delete thread". */}
+                <button
+                  type="button"
+                  aria-label="Thread options"
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setThreadMenuOpenFor(threadMenuOpenFor === node.id ? null : node.id)
+                  }}
+                  style={{
+                    position: 'absolute',
+                    left: px + dimsWidth - 20,
+                    top: py + 4,
+                    width: 16,
+                    height: 16,
+                    fontSize: 12,
+                    lineHeight: '16px',
+                    padding: 0,
+                    border: 'none',
+                    background: 'transparent',
+                    color: 'var(--tap-muted)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  ⋯
+                </button>
+                {threadMenuOpenFor === node.id && (
+                  <div
+                    role="menu"
+                    className="passage-chooser"
+                    style={{ position: 'absolute', left: px + dimsWidth - 20, top: py + 20, zIndex: 10 }}
+                  >
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="passage-chooser-item"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setThreadMenuOpenFor(null)
+                        handlers.onStartEditing(refFor(node.id))
+                      }}
+                    >
+                      Open thread
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="passage-chooser-item"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setThreadMenuOpenFor(null)
+                        setThreadSettingsFor({ nodeId: node.id, x: e.clientX, y: e.clientY })
+                      }}
+                    >
+                      Thread settings
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="passage-chooser-item"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setThreadMenuOpenFor(null)
+                        handlers.onDeleteNote(refFor(node.id))
+                      }}
+                    >
+                      Delete thread
+                    </button>
+                  </div>
+                )}
+                {threadSettingsFor?.nodeId === node.id && (
+                  <ThreadSettingsPopover
+                    treeId={tree.id}
+                    nodeId={node.id}
+                    x={threadSettingsFor.x}
+                    y={threadSettingsFor.y}
+                    onClose={() => setThreadSettingsFor(null)}
+                  />
+                )}
+
                 <SessionBridge
                   treeId={tree.id}
                   nodeId={node.id}

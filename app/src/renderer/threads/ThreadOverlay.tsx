@@ -27,6 +27,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { useThreadEditor, type ThreadPushResult, type ThreadReadyState } from './use-thread-editor'
 import StageFallbackPanel from './StageFallbackPanel'
+import ThreadSettingsPopover from './ThreadSettingsPopover'
 import {
   Ribbon,
   clearPendingFullUpload,
@@ -136,6 +137,7 @@ export default function ThreadOverlay({
   const [openError, setOpenError] = useState<string | null>(null)
   const [saveState, setSaveState] = useState<SaveState>('saved')
   const [notSavedReason, setNotSavedReason] = useState<string | null>(null)
+  const [settingsAnchor, setSettingsAnchor] = useState<{ x: number; y: number } | null>(null)
 
   const [stageAvailable, setStageAvailable] = useState<boolean | null>(null)
   const [stageBuilding, setStageBuilding] = useState(false)
@@ -464,10 +466,30 @@ export default function ThreadOverlay({
 
           {ready !== null && <span style={styles.statusLabel}>{saveLabel}</span>}
 
+          <button
+            type="button"
+            aria-label="Thread settings"
+            title="Thread settings"
+            onClick={(e) => setSettingsAnchor({ x: e.clientX, y: e.clientY })}
+            style={styles.closeButton}
+          >
+            ⚙
+          </button>
+
           <button type="button" onClick={handleClose} style={styles.closeButton}>
             Close thread view
           </button>
         </header>
+
+        {settingsAnchor && (
+          <ThreadSettingsPopover
+            treeId={treeId}
+            nodeId={nodeId}
+            x={settingsAnchor.x}
+            y={settingsAnchor.y}
+            onClose={() => setSettingsAnchor(null)}
+          />
+        )}
 
         {openError && <div style={styles.error}>Couldn't finish reading this thread's history — {openError}</div>}
 
@@ -484,8 +506,10 @@ export default function ThreadOverlay({
         {/* D-09 stage area: paper with the ribbon and glyphs, or the
             no-WebGL / context-lost fallback (UI-SPEC "No-stage fallback"). */}
         <div ref={stageContainerRef} style={styles.stage}>
-          {stageAvailable === false && <StageFallbackPanel />}
-          {stageAvailable !== false && stageError && <StageFallbackPanel reason={stageError} />}
+          {stageAvailable === false && <StageFallbackPanel treeId={treeId} nodeId={nodeId} />}
+          {stageAvailable !== false && stageError && (
+            <StageFallbackPanel reason={stageError} treeId={treeId} nodeId={nodeId} />
+          )}
           {stageAvailable !== false && !stageError && stageStatus && (
             <div style={styles.stageStatus} aria-hidden="false">
               {stageStatus}

@@ -6,25 +6,29 @@
  * recording must keep working exactly as they do with one (UI-SPEC
  * "No-stage fallback").
  *
- * A later plan replaces the placeholder body below with the real
- * `SessionList` (one row per session, expanding to a `MarkerList`) --
- * that data model (sessions, markers) does not exist yet; this plan's job
- * is only to make sure the stage area is never a blank rectangle when
- * WebGL is unavailable, and that the typer above stays full width and
- * fully writable regardless (verified by this component taking the stage
- * area's space without touching typer layout).
+ * Mounts `SessionList` -- the stage's accessible and visual equivalent --
+ * so "a machine with no WebGL loses no meaning at all" (UI-SPEC): every
+ * session and every marker stays reachable, and the typer above stays full
+ * width and fully writable regardless (this component only ever occupies
+ * the stage area, never the typer's).
  */
 
 import React from 'react'
+import SessionList from './SessionList'
 
 export interface StageFallbackPanelProps {
   /** Why the stage isn't drawing, when known (e.g. from a
    * `webglcontextlost` that never recovered). Omitted for "no WebGL on
    * this machine at all". */
   reason?: string
+  /** Present whenever the caller knows which thread this fallback stands
+   * in for -- omitted only by a caller with no thread context at all, in
+   * which case the explanatory notice still renders on its own. */
+  treeId?: string
+  nodeId?: string
 }
 
-export default function StageFallbackPanel({ reason }: StageFallbackPanelProps): React.ReactElement {
+export default function StageFallbackPanel({ reason, treeId, nodeId }: StageFallbackPanelProps): React.ReactElement {
   return (
     <div
       role="status"
@@ -33,21 +37,23 @@ export default function StageFallbackPanel({ reason }: StageFallbackPanelProps):
         flex: 1,
         display: 'flex',
         flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
+        alignItems: 'stretch',
         gap: 8,
         padding: 24,
-        textAlign: 'center',
-        background: 'var(--tap-paper, #F7F5F0)',
+        overflowY: 'auto',
+        background: 'var(--tap-paper)',
       }}
     >
-      <p style={{ fontSize: 16, lineHeight: 1.5, color: 'var(--tap-ink, #2C2C2C)', margin: 0, maxWidth: 480 }}>
+      <p style={{ fontSize: 16, lineHeight: 1.5, color: 'var(--tap-ink)', margin: 0, textAlign: 'center' }}>
         This machine can't draw the thread line. You can still read and write the document, and the sessions below
         list every stage of it.
       </p>
       {reason && (
-        <p style={{ fontSize: 13, lineHeight: 1.4, color: 'var(--tap-muted, #6B6B6B)', margin: 0 }}>{reason}</p>
+        <p style={{ fontSize: 13, lineHeight: 1.4, color: 'var(--tap-muted)', margin: 0, textAlign: 'center' }}>
+          {reason}
+        </p>
       )}
+      {treeId && nodeId && <SessionList treeId={treeId} nodeId={nodeId} />}
     </div>
   )
 }
