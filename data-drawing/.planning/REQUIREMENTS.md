@@ -21,7 +21,7 @@ Requirements for the first milestone: deterministic core plus painting frontend.
 - [x] **STRK-03**: Nodes are emitted along the brush body's path at the brush's spacing, with ids derived from the stroke ordinal and emission index (branch-tag bits reserved), never from a counter.
 - [ ] **STRK-04**: Brushes are versioned and immutable: a brush version holds a free-text description, mass, radius, spacing, and pressure curve; editing creates a new version and old strokes keep theirs; three or four presets ship differing in description and mass.
 - [ ] **STRK-05**: A pulled-string dead zone and finish-line-on-pen-up are brush-version parameters, so light brushes feel direct and a stroke completes to the pen's final position.
-- [ ] **STRK-06**: Tilt and twist are captured and recorded when the pen reports them; no sim rule depends on them in v1.
+- [x] **STRK-06**: Tilt and twist are captured and recorded when the pen reports them; no sim rule depends on them in v1.
 
 ### Journal and Readability
 
@@ -116,7 +116,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | STRK-03 | Phase 1 | Complete |
 | STRK-04 | Phase 1 | Pending |
 | STRK-05 | Phase 2 | Pending |
-| STRK-06 | Phase 1 | Pending |
+| STRK-06 | Phase 1 | Complete |
 | JRNL-01 | Phase 2 | Pending |
 | JRNL-02 | Phase 2 | Pending |
 | JRNL-03 | Phase 2 | Pending |

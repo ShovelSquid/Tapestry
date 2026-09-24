@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 1
+open_count: 2
 waived_count: 0
 fixed_count: 1
-total_count: 2
-last_updated: 2026-09-24T07:17:11.877Z
+total_count: 3
+last_updated: 2026-09-24T08:09:52.735Z
 ---
 
 # Broken Windows Ledger
@@ -17,6 +17,7 @@ last_updated: 2026-09-24T07:17:11.877Z
 |----|-------|------|------|------|-------------|--------|--------|-------------|-------------|
 | 1 | 01 | stub | data-drawing/sim/src/sim.cpp |  | dd_step() advances the tick and runs no rules; stroke kinds return DD_ERR_UNKNOWN_KIND (resolved by 01-05) | fixed |  | 2026-09-23T00:44:45.100Z | 2026-09-24T07:17:11.877Z |
 | 2 | 01 | deviation | plugins/example-plugin/surface/surface.js |  | 01-04 deviation 4: direct new Worker(tapestry-plugin://...) refused cross-origin; spawned via same-origin blob trampoline (ea6bc9e); sim-host.ts must adopt the same in 01-06/01-08 | open |  | 2026-09-24T06:44:12.002Z |  |
+| 3 | 01 | unmet-truth | plugins/data-drawing/surface/src/input.ts | 46 | Pen re-measurement: PEN_FACTS measured with a mouse over streaming on 2026-09-24; re-measure with a pen tablet attached to the Mac (or on a future Windows build) and update the fence constants (pressure range/distinct, tilt sign, twist, eraser buttons 32) | open |  | 2026-09-24T08:09:52.735Z |  |
 
 ````json
 [
@@ -42,6 +43,18 @@ last_updated: 2026-09-24T07:17:11.877Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-24T06:44:12.002Z",
+    "resolved_at": null
+  },
+  {
+    "id": 3,
+    "kind": "unmet-truth",
+    "phase": "01",
+    "file": "plugins/data-drawing/surface/src/input.ts",
+    "line": 46,
+    "description": "Pen re-measurement: PEN_FACTS measured with a mouse over streaming on 2026-09-24; re-measure with a pen tablet attached to the Mac (or on a future Windows build) and update the fence constants (pressure range/distinct, tilt sign, twist, eraser buttons 32)",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-24T08:09:52.735Z",
     "resolved_at": null
   }
 ]

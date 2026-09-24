@@ -3,15 +3,15 @@ gsd_state_version: "1.0"
 current_phase: 01
 current_phase_name: Painting with the Pen
 status: executing
-stopped_at: Completed 01-05-PLAN.md
-last_updated: "2026-09-24T07:17:11.590Z"
+stopped_at: Completed 01-06-PLAN.md
+last_updated: "2026-09-24T08:09:52.450Z"
 last_activity: 2026-09-22
 last_activity_desc: Phase 01 execution started
 progress:
   total_phases: 3
   completed_phases: 0
   total_plans: 8
-  completed_plans: 5
+  completed_plans: 6
   percent: 0
 ---
 
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-09-22)
 ## Current Position
 
 Phase: 01 (Painting with the Pen) — EXECUTING
-Plan: 6 of 8
+Plan: 7 of 8
 Status: Ready to execute
 Last activity: 2026-09-22 — Phase 01 execution started
 
@@ -62,6 +62,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 01 P03 | 14 min | 3 tasks | 13 files |
 | Phase 01 P04 | 28h 53m | 3 tasks | 8 files |
 | Phase 01 P05 | 24 min | 3 tasks | 32 files |
+| Phase 01 P06 | 46 min | 3 tasks | 16 files |
 
 ## Accumulated Context
 
@@ -97,6 +98,9 @@ Recent decisions affecting current work:
 - [Phase 01]: The mass-1 preset (k_t = c_t = 1) is dead-beat at one sample per tick: light lag 0 raw, heavy (mass 64) 7398907896 raw after 60 samples; heavy > light and heavy > 0 are the tested truths
 - [Phase 01]: read_canonical's node pre-check compared node_count * 88 (snapshot stride) but a walk node record is 84 bytes: every state with nodes was refused by restore; latent since 01-01, fixed with DD_NODE_WALK_BYTES
 - [Phase 01]: STRK-03 and SIM-02 marked complete after 01-05; STRK-01/STRK-06 gated by 01-06, STRK-04/CANV-01 by 01-07, STRK-02 by 01-08
+- [Phase 01]: Mouse measurement accepted for PEN_FACTS (Kaelen, 01-06 checkpoint): the Mac is driven over an Apollo/Moonlight stream with no tablet attached, so the 2026-09-24 JSON is a mouse measurement recorded verbatim; pen fields are provisional, W3C expectations tagged [ASSUMED], pen re-measurement is an open item in WINDOWS.md
+- [Phase 01]: DEFAULT_SETTINGS.allowMouse derives from PEN_FACTS.measuredWith: pen-only by design, mouse accepted by default only while the measurement was made with a mouse so 01-07/01-08 can paint over the stream; every mouse stroke carries pressureSource 1 and FLAG_SOURCE
+- [Phase 01]: STRK-06 marked complete after 01-06 (tilt/twist captured with presence flags at the fence, recorded by the 01-05 grammar); CANV-02 and STRK-01 held for 01-07 by the shared-ID gate
 
 ### Pending Todos
 
@@ -119,6 +123,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-24T07:17:11.571Z
-Stopped at: Completed 01-05-PLAN.md
+Last session: 2026-09-24T08:09:52.433Z
+Stopped at: Completed 01-06-PLAN.md
 Resume file: None
