@@ -1,0 +1,1122 @@
+/**
+ * Locks (02.4): how one aspect of a note resolves, and what an agent is told.
+ *
+ * The first block is pure: property maps and creator refs are written by hand
+ * and the policy is passed explicitly, so every value of both constants is
+ * exercised without flipping them.
+ *
+ * The second block runs through NoteCommands against the real kernel. Its
+ * `lock.*` fixtures are written with a raw `submitAs`, because no command may
+ * write them yet (D-08, Decision Register #19). Each refusal takes its
+ * fingerprint only after the fixture commit, so the fixture is not mistaken
+ * for a side effect of the refusal (D-11).
+ */
+
+import { afterEach, beforeEach, describe, expect, expectTypeOf, it } from 'vitest'
+import { join } from 'node:path'
+import { readFileSync, rmSync, statSync } from 'node:fs'
+import { makeTempDir } from '../../../test/helpers/temp-tree'
+import { TreeRegistry, type OpenTree } from '../trees/registry'
+import {
+  OBSIDIAN_BRIDGE_ACTOR,
+  agentActor,
+  humanActor,
+  pluginActor,
+  type Actor,
+} from './actor'
+import { ConnectionCommands } from './connections'
+import {
+  AGENT_NOTES_OPEN_TO_AGENTS,
+  DEFAULT_LOCK_POLICY,
+  NON_AGENT_NOTES_DELETE_LOCKED,
+  allowKey,
+  checkLock,
+  isAgentActor,
+  lockKey,
+  resolveLock,
+  type ActorLike,
+  type LockAspect,
+  type LockPolicy,
+  type LockProps,
+} from './locks'
+import { NoteCommands, docJsonToPlainText, plainTextToDocJson } from './notes'
+
+// ---------------------------------------------------------------------------
+// Pure resolution
+// ---------------------------------------------------------------------------
+
+const HUMAN_KAELEN: ActorLike = { kind: 'human', id: 'user.kaelen' }
+const AGENT_CLAUDE: ActorLike = { kind: 'plugin', id: 'agent.claude' }
+const AGENT_CHATGPT: ActorLike = { kind: 'plugin', id: 'agent.chatgpt' }
+
+const ALL_POLICIES: LockPolicy[] = [
+  { agentNotesOpenToAgents: true, nonAgentNotesDeleteLocked: true },
+  { agentNotesOpenToAgents: true, nonAgentNotesDeleteLocked: false },
+  { agentNotesOpenToAgents: false, nonAgentNotesDeleteLocked: true },
+  { agentNotesOpenToAgents: false, nonAgentNotesDeleteLocked: false },
+]
+
+function textProp(value: string): LockProps[string] {
+  return { type: 'text', value }
+}
+
+describe('resolveLock and checkLock (pure)', () => {
+  it('builds the lock keys it reads', () => {
+    expect(lockKey('text')).toBe('lock.text')
+    expect(lockKey('delete')).toBe('lock.delete')
+    expect(allowKey('text')).toBe('lock.text.allow')
+    expect(allowKey('delete')).toBe('lock.delete.allow')
+  })
+
+  it('builds DEFAULT_LOCK_POLICY from the two named constants', () => {
+    expect(DEFAULT_LOCK_POLICY).toEqual({
+      agentNotesOpenToAgents: AGENT_NOTES_OPEN_TO_AGENTS,
+      nonAgentNotesDeleteLocked: NON_AGENT_NOTES_DELETE_LOCKED,
+    })
+  })
+
+  it('locks the text of a person\'s note to that person, whatever the policy', () => {
+    for (const policy of ALL_POLICIES) {
+      expect(resolveLock({}, HUMAN_KAELEN, 'text', policy)).toEqual({
+        locked: true,
+        owner: 'user.kaelen',
+        ownerKind: 'human',
+        allow: [],
+      })
+    }
+  })
+
+  it('locks delete of a person\'s note only when nonAgentNotesDeleteLocked is true', () => {
+    expect(
+      resolveLock({}, HUMAN_KAELEN, 'delete', {
+        agentNotesOpenToAgents: true,
+        nonAgentNotesDeleteLocked: true,
+      }),
+    ).toEqual({ locked: true, owner: 'user.kaelen', ownerKind: 'human', allow: [] })
+
+    expect(
+      resolveLock({}, HUMAN_KAELEN, 'delete', {
+        agentNotesOpenToAgents: true,
+        nonAgentNotesDeleteLocked: false,
+      }),
+    ).toEqual({ locked: false })
+  })
+
+  it('opens an agent\'s note to agents when agentNotesOpenToAgents is true', () => {
+    const policy: LockPolicy = { agentNotesOpenToAgents: true, nonAgentNotesDeleteLocked: true }
+    expect(resolveLock({}, AGENT_CLAUDE, 'text', policy)).toEqual({ locked: false })
+    expect(resolveLock({}, AGENT_CLAUDE, 'delete', policy)).toEqual({ locked: false })
+  })
+
+  it('locks an agent\'s note to its creator when agentNotesOpenToAgents is false', () => {
+    const policy: LockPolicy = { agentNotesOpenToAgents: false, nonAgentNotesDeleteLocked: false }
+    expect(resolveLock({}, AGENT_CLAUDE, 'text', policy)).toEqual({
+      locked: true,
+      owner: 'agent.claude',
+      ownerKind: 'plugin',
+      allow: [],
+    })
+    expect(resolveLock({}, AGENT_CLAUDE, 'delete', policy)).toEqual({
+      locked: true,
+      owner: 'agent.claude',
+      ownerKind: 'plugin',
+      allow: [],
+    })
+  })
+
+  it('locks the text of notes made by bridges, plugins, the system and legacy local (D-04)', () => {
+    const creators: ActorLike[] = [
+      { kind: 'plugin', id: 'obsidian.bridge' },
+      { kind: 'plugin', id: 'tapestry-notes' },
+      { kind: 'system', id: 'tapestry' },
+      { kind: 'human', id: 'local' },
+    ]
+    for (const creator of creators) {
+      expect(resolveLock({}, creator, 'text')).toEqual({
+        locked: true,
+        owner: creator.id,
+        ownerKind: creator.kind,
+        allow: [],
+      })
+    }
+  })
+
+  it('opens text on a person\'s note with an explicit `open`, leaving delete on its default', () => {
+    const props: LockProps = { 'lock.text': textProp('open') }
+    for (const policy of ALL_POLICIES) {
+      expect(resolveLock(props, HUMAN_KAELEN, 'text', policy)).toEqual({ locked: false })
+      expect(resolveLock(props, HUMAN_KAELEN, 'delete', policy)).toEqual(
+        resolveLock({}, HUMAN_KAELEN, 'delete', policy),
+      )
+    }
+  })
+
+  it('locks an agent\'s note to an explicit owner whatever the policy', () => {
+    const props: LockProps = { 'lock.text': textProp('agent.claude') }
+    for (const policy of ALL_POLICIES) {
+      expect(resolveLock(props, AGENT_CLAUDE, 'text', policy)).toEqual({
+        locked: true,
+        owner: 'agent.claude',
+        allow: [],
+      })
+    }
+  })
+
+  it('fails closed on a non-text lock value, naming the raw value as owner', () => {
+    expect(resolveLock({ 'lock.text': { type: 'int', value: 7 } }, AGENT_CLAUDE, 'text')).toEqual({
+      locked: true,
+      owner: '7',
+      allow: [],
+    })
+    expect(
+      resolveLock({ 'lock.text': { type: 'bool', value: true } }, AGENT_CLAUDE, 'text'),
+    ).toEqual({ locked: true, owner: 'true', allow: [] })
+  })
+
+  it('does not let a ref-typed `open` unlock', () => {
+    const state = resolveLock(
+      { 'lock.text': { type: 'ref', value: 'open' } },
+      AGENT_CLAUDE,
+      'text',
+    )
+    expect(state.locked).toBe(true)
+  })
+
+  it('unlocks only on exactly `open`: case and padding stay locked', () => {
+    for (const value of ['Open', ' open', 'open ']) {
+      expect(resolveLock({ 'lock.text': textProp(value) }, AGENT_CLAUDE, 'text')).toEqual({
+        locked: true,
+        owner: value,
+        allow: [],
+      })
+    }
+  })
+
+  it('keeps an empty or blank owner locked', () => {
+    for (const value of ['', '   ']) {
+      expect(resolveLock({ 'lock.text': textProp(value) }, AGENT_CLAUDE, 'text').locked).toBe(true)
+    }
+  })
+
+  it('reads the allow list of an explicit lock', () => {
+    const props: LockProps = {
+      'lock.text': textProp('user.kaelen'),
+      'lock.text.allow': textProp('agent.claude'),
+    }
+    expect(resolveLock(props, HUMAN_KAELEN, 'text')).toEqual({
+      locked: true,
+      owner: 'user.kaelen',
+      allow: ['agent.claude'],
+    })
+  })
+
+  it('lets the lock owner write and refuses any other agent', () => {
+    const props: LockProps = { 'lock.text': textProp('agent.claude') }
+    expect(checkLock('n1', props, HUMAN_KAELEN, AGENT_CLAUDE, 'text')).toBeNull()
+    expect(checkLock('n1', props, HUMAN_KAELEN, AGENT_CHATGPT, 'text')).toBe(
+      'n1 text is locked by agent.claude',
+    )
+  })
+
+  it('matches the owner exactly, never by prefix', () => {
+    const props: LockProps = { 'lock.text': textProp('agent.claude') }
+    expect(
+      checkLock('n1', props, HUMAN_KAELEN, { kind: 'plugin', id: 'agent.claud' }, 'text'),
+    ).toBe('n1 text is locked by agent.claude')
+  })
+
+  /**
+   * WR-01: a default lock belongs to the creator's kind and id together, as
+   * the retired 02.2 D-05 gate compared them. A non-agent creator whose id happens
+   * to read `agent.claude` (a hand-edited or foreign `.tree` can say so) must
+   * not hand its lock to `plugin agent.claude`.
+   */
+  it('matches a default lock owner on kind and id, not id alone', () => {
+    const lookalikes: ActorLike[] = [
+      { kind: 'human', id: 'agent.claude' },
+      { kind: 'system', id: 'agent.claude' },
+    ]
+    for (const creator of lookalikes) {
+      for (const aspect of ['text', 'delete'] as const) {
+        expect(checkLock('n1', {}, creator, AGENT_CLAUDE, aspect, {
+          agentNotesOpenToAgents: true,
+          nonAgentNotesDeleteLocked: true,
+        })).toBe(`n1 ${aspect} is locked by agent.claude`)
+      }
+    }
+  })
+
+  it('still lets the creating agent through its own default lock', () => {
+    const policy: LockPolicy = { agentNotesOpenToAgents: false, nonAgentNotesDeleteLocked: true }
+    expect(checkLock('n1', {}, AGENT_CLAUDE, AGENT_CLAUDE, 'text', policy)).toBeNull()
+    expect(checkLock('n1', {}, AGENT_CLAUDE, AGENT_CHATGPT, 'text', policy)).toBe(
+      'n1 text is locked by agent.claude',
+    )
+  })
+
+  it('names the delete aspect in a delete refusal', () => {
+    const props: LockProps = { 'lock.delete': textProp('user.kaelen') }
+    expect(checkLock('n1', props, AGENT_CLAUDE, AGENT_CLAUDE, 'delete')).toBe(
+      'n1 delete is locked by user.kaelen',
+    )
+  })
+
+  it('shows an empty or blank owner as (unknown)', () => {
+    for (const value of ['', '   ']) {
+      const props: LockProps = { 'lock.text': textProp(value) }
+      expect(checkLock('n1', props, HUMAN_KAELEN, AGENT_CLAUDE, 'text')).toBe(
+        'n1 text is locked by (unknown)',
+      )
+    }
+  })
+
+  it('does not check people or non-agent plugins (D-10)', () => {
+    const props: LockProps = { 'lock.text': textProp('agent.claude') }
+    expect(checkLock('n1', props, HUMAN_KAELEN, HUMAN_KAELEN, 'text')).toBeNull()
+    expect(
+      checkLock('n1', props, HUMAN_KAELEN, { kind: 'plugin', id: 'tapestry-notes' }, 'text'),
+    ).toBeNull()
+  })
+
+  it('recognises agents from journal-shaped actor refs', () => {
+    expect(isAgentActor({ kind: 'plugin', id: 'agent.x' })).toBe(true)
+    expect(isAgentActor({ kind: 'human', id: 'agent.x' })).toBe(false)
+    expect(isAgentActor({ kind: 'plugin', id: 'agentx' })).toBe(false)
+  })
+})
+
+describe('allow lists (D-09, pure)', () => {
+  const AGENT_GEMINI: ActorLike = { kind: 'plugin', id: 'agent.gemini' }
+
+  it('admits an agent on the allow list of an explicit lock and refuses one that is not', () => {
+    const props: LockProps = {
+      'lock.text': textProp('agent.claude'),
+      'lock.text.allow': textProp('agent.chatgpt'),
+    }
+    expect(checkLock('n1', props, HUMAN_KAELEN, AGENT_CHATGPT, 'text')).toBeNull()
+    expect(checkLock('n1', props, HUMAN_KAELEN, AGENT_GEMINI, 'text')).toBe(
+      'n1 text is locked by agent.claude',
+    )
+  })
+
+  it('splits an allow list on any whitespace and ignores padding', () => {
+    const props: LockProps = {
+      'lock.text': textProp('agent.claude'),
+      'lock.text.allow': textProp('  agent.gemini\tagent.chatgpt \n'),
+    }
+    const state = resolveLock(props, HUMAN_KAELEN, 'text')
+    expect(state.locked).toBe(true)
+    expect(state.locked && state.allow).toEqual(['agent.gemini', 'agent.chatgpt'])
+    expect(checkLock('n1', props, HUMAN_KAELEN, AGENT_GEMINI, 'text')).toBeNull()
+    expect(checkLock('n1', props, HUMAN_KAELEN, AGENT_CHATGPT, 'text')).toBeNull()
+  })
+
+  it('matches allow entries exactly, never by prefix', () => {
+    const props: LockProps = {
+      'lock.text': textProp('agent.claude'),
+      'lock.text.allow': textProp('agent.chatgpt'),
+    }
+    expect(
+      checkLock('n1', props, HUMAN_KAELEN, { kind: 'plugin', id: 'agent.chat' }, 'text'),
+    ).toBe('n1 text is locked by agent.claude')
+  })
+
+  it('admits nobody through an allow value that is not text', () => {
+    const nonText: LockProps[string][] = [
+      { type: 'ref', value: 'agent.chatgpt' },
+      { type: 'int', value: 1 },
+    ]
+    for (const allow of nonText) {
+      const props: LockProps = {
+        'lock.text': textProp('agent.claude'),
+        'lock.text.allow': allow,
+      }
+      expect(resolveLock(props, HUMAN_KAELEN, 'text')).toEqual({
+        locked: true,
+        owner: 'agent.claude',
+        allow: [],
+      })
+      expect(checkLock('n1', props, HUMAN_KAELEN, AGENT_CHATGPT, 'text')).toBe(
+        'n1 text is locked by agent.claude',
+      )
+    }
+  })
+
+  it('reads the allow list of a default lock too', () => {
+    const props: LockProps = { 'lock.text.allow': textProp('agent.claude') }
+    expect(checkLock('n1', props, HUMAN_KAELEN, AGENT_CLAUDE, 'text')).toBeNull()
+    expect(checkLock('n1', props, HUMAN_KAELEN, AGENT_CHATGPT, 'text')).toBe(
+      'n1 text is locked by user.kaelen',
+    )
+  })
+
+  it('applies lock.delete.allow to the delete aspect only', () => {
+    const props: LockProps = { 'lock.delete.allow': textProp('agent.claude') }
+    const policy: LockPolicy = { agentNotesOpenToAgents: true, nonAgentNotesDeleteLocked: true }
+    expect(checkLock('n1', props, HUMAN_KAELEN, AGENT_CLAUDE, 'text', policy)).toBe(
+      'n1 text is locked by user.kaelen',
+    )
+    expect(checkLock('n1', props, HUMAN_KAELEN, AGENT_CLAUDE, 'delete', policy)).toBeNull()
+    expect(checkLock('n1', props, HUMAN_KAELEN, AGENT_CHATGPT, 'delete', policy)).toBe(
+      'n1 delete is locked by user.kaelen',
+    )
+  })
+
+  it('ignores the allow list when the aspect resolves open', () => {
+    expect(
+      resolveLock(
+        { 'lock.text': textProp('open'), 'lock.text.allow': textProp('agent.claude') },
+        HUMAN_KAELEN,
+        'text',
+      ),
+    ).toEqual({ locked: false })
+    expect(
+      resolveLock({ 'lock.text.allow': textProp('agent.chatgpt') }, AGENT_CLAUDE, 'text', {
+        agentNotesOpenToAgents: true,
+        nonAgentNotesDeleteLocked: true,
+      }),
+    ).toEqual({ locked: false })
+  })
+})
+
+/**
+ * Layout (quick 260924-0ii): the note's placement on the canvas, a third
+ * aspect whose defaults mirror text's (Q-02). No command checks layout yet;
+ * Phase 2.5 `place` is its first caller (Q-04). The resolver is aspect-generic
+ * at runtime, so the red for this block was type-level: `'layout'` was not a
+ * LockAspect until locks.ts widened the union.
+ */
+describe('layout aspect (pure)', () => {
+  const AGENT_GEMINI: ActorLike = { kind: 'plugin', id: 'agent.gemini' }
+  const NON_AGENT_CREATORS: ActorLike[] = [
+    HUMAN_KAELEN,
+    { kind: 'plugin', id: 'obsidian.bridge' },
+    { kind: 'plugin', id: 'tapestry-notes' },
+    { kind: 'system', id: 'tapestry' },
+    { kind: 'human', id: 'local' },
+  ]
+
+  /** One prop fixture, written under the given aspect's own keys. */
+  type Fixture = (aspect: LockAspect) => LockProps
+  const FIXTURES: Record<string, Fixture> = {
+    none: () => ({}),
+    open: (a) => ({ [lockKey(a)]: textProp('open') }),
+    owner: (a) => ({ [lockKey(a)]: textProp('user.kaelen') }),
+    int: (a) => ({ [lockKey(a)]: { type: 'int', value: 7 } }),
+    blank: (a) => ({ [lockKey(a)]: textProp('   ') }),
+    ownerWithAllow: (a) => ({
+      [lockKey(a)]: textProp('user.kaelen'),
+      [allowKey(a)]: textProp('agent.claude agent.chatgpt'),
+    }),
+    defaultWithAllow: (a) => ({ [allowKey(a)]: textProp('agent.claude') }),
+  }
+
+  it('is one of exactly three aspects; rank is still deferred (Q-05)', () => {
+    expectTypeOf<LockAspect>().toEqualTypeOf<'text' | 'delete' | 'layout'>()
+  })
+
+  it('builds the layout lock keys (Q-01)', () => {
+    expect(lockKey('layout')).toBe('lock.layout')
+    expect(allowKey('layout')).toBe('lock.layout.allow')
+  })
+
+  it('locks layout of a note no agent created to its creator under every policy', () => {
+    for (const creator of NON_AGENT_CREATORS) {
+      for (const policy of ALL_POLICIES) {
+        expect(resolveLock({}, creator, 'layout', policy)).toEqual({
+          locked: true,
+          owner: creator.id,
+          ownerKind: creator.kind,
+          allow: [],
+        })
+      }
+    }
+  })
+
+  it('opens layout of an agent\'s note only when agentNotesOpenToAgents is true', () => {
+    expect(
+      resolveLock({}, AGENT_CLAUDE, 'layout', {
+        agentNotesOpenToAgents: true,
+        nonAgentNotesDeleteLocked: true,
+      }),
+    ).toEqual({ locked: false })
+    expect(
+      resolveLock({}, AGENT_CLAUDE, 'layout', {
+        agentNotesOpenToAgents: false,
+        nonAgentNotesDeleteLocked: true,
+      }),
+    ).toEqual({ locked: true, owner: 'agent.claude', ownerKind: 'plugin', allow: [] })
+  })
+
+  it('resolves exactly as text does for every creator, policy and fixture (Q-02)', () => {
+    for (const creator of [...NON_AGENT_CREATORS, AGENT_CLAUDE]) {
+      for (const policy of ALL_POLICIES) {
+        for (const fixtureFor of Object.values(FIXTURES)) {
+          expect(resolveLock(fixtureFor('layout'), creator, 'layout', policy)).toEqual(
+            resolveLock(fixtureFor('text'), creator, 'text', policy),
+          )
+        }
+      }
+    }
+  })
+
+  it('honours an explicit layout lock over the default (D-08)', () => {
+    expect(resolveLock({ 'lock.layout': textProp('open') }, HUMAN_KAELEN, 'layout')).toEqual({
+      locked: false,
+    })
+    for (const policy of ALL_POLICIES) {
+      expect(
+        resolveLock({ 'lock.layout': textProp('agent.claude') }, AGENT_CLAUDE, 'layout', policy),
+      ).toEqual({ locked: true, owner: 'agent.claude', allow: [] })
+    }
+  })
+
+  it('fails closed on a malformed layout lock', () => {
+    expect(
+      resolveLock({ 'lock.layout': { type: 'int', value: 7 } }, AGENT_CLAUDE, 'layout'),
+    ).toEqual({ locked: true, owner: '7', allow: [] })
+    expect(
+      resolveLock({ 'lock.layout': { type: 'bool', value: true } }, AGENT_CLAUDE, 'layout'),
+    ).toEqual({ locked: true, owner: 'true', allow: [] })
+    expect(
+      resolveLock({ 'lock.layout': { type: 'ref', value: 'open' } }, AGENT_CLAUDE, 'layout')
+        .locked,
+    ).toBe(true)
+    for (const value of ['Open', ' open', 'open ']) {
+      expect(resolveLock({ 'lock.layout': textProp(value) }, AGENT_CLAUDE, 'layout')).toEqual({
+        locked: true,
+        owner: value,
+        allow: [],
+      })
+    }
+    for (const value of ['', '   ']) {
+      const props: LockProps = { 'lock.layout': textProp(value) }
+      expect(resolveLock(props, AGENT_CLAUDE, 'layout').locked).toBe(true)
+      expect(checkLock('n1', props, HUMAN_KAELEN, AGENT_CLAUDE, 'layout')).toBe(
+        'n1 layout is locked by (unknown)',
+      )
+    }
+  })
+
+  it('refuses an agent moving a note no agent made (Phase 2.5 D-15, D-12)', () => {
+    expect(checkLock('n1', {}, HUMAN_KAELEN, AGENT_CLAUDE, 'layout')).toBe(
+      'n1 layout is locked by user.kaelen',
+    )
+    expect(
+      checkLock('n1', {}, { kind: 'plugin', id: 'obsidian.bridge' }, AGENT_CLAUDE, 'layout'),
+    ).toBe('n1 layout is locked by obsidian.bridge')
+  })
+
+  it('lets the layout lock owner through and refuses others, never by prefix (D-10)', () => {
+    const props: LockProps = { 'lock.layout': textProp('agent.claude') }
+    expect(checkLock('n1', props, HUMAN_KAELEN, AGENT_CLAUDE, 'layout')).toBeNull()
+    expect(checkLock('n1', props, HUMAN_KAELEN, AGENT_CHATGPT, 'layout')).toBe(
+      'n1 layout is locked by agent.claude',
+    )
+    expect(
+      checkLock('n1', props, HUMAN_KAELEN, { kind: 'plugin', id: 'agent.claud' }, 'layout'),
+    ).toBe('n1 layout is locked by agent.claude')
+  })
+
+  it('honours lock.layout.allow on explicit and default locks (D-09)', () => {
+    const explicit: LockProps = {
+      'lock.layout': textProp('agent.chatgpt'),
+      'lock.layout.allow': textProp('agent.claude'),
+    }
+    expect(checkLock('n1', explicit, HUMAN_KAELEN, AGENT_CLAUDE, 'layout')).toBeNull()
+    expect(checkLock('n1', explicit, HUMAN_KAELEN, AGENT_GEMINI, 'layout')).toBe(
+      'n1 layout is locked by agent.chatgpt',
+    )
+
+    const byDefault: LockProps = { 'lock.layout.allow': textProp('agent.claude') }
+    expect(checkLock('n1', byDefault, HUMAN_KAELEN, AGENT_CLAUDE, 'layout')).toBeNull()
+    expect(checkLock('n1', byDefault, HUMAN_KAELEN, AGENT_CHATGPT, 'layout')).toBe(
+      'n1 layout is locked by user.kaelen',
+    )
+  })
+
+  it('splits lock.layout.allow on whitespace and matches exactly (D-09)', () => {
+    const padded: LockProps = {
+      'lock.layout': textProp('agent.claude'),
+      'lock.layout.allow': textProp('  agent.gemini\tagent.chatgpt \n'),
+    }
+    const state = resolveLock(padded, HUMAN_KAELEN, 'layout')
+    expect(state.locked && state.allow).toEqual(['agent.gemini', 'agent.chatgpt'])
+
+    const exact: LockProps = {
+      'lock.layout': textProp('agent.claude'),
+      'lock.layout.allow': textProp('agent.chatgpt'),
+    }
+    expect(
+      checkLock('n1', exact, HUMAN_KAELEN, { kind: 'plugin', id: 'agent.chat' }, 'layout'),
+    ).toBe('n1 layout is locked by agent.claude')
+  })
+
+  it('admits nobody through a non-text lock.layout.allow, and ignores it when open', () => {
+    const nonText: LockProps[string][] = [
+      { type: 'ref', value: 'agent.chatgpt' },
+      { type: 'int', value: 1 },
+    ]
+    for (const allow of nonText) {
+      const props: LockProps = { 'lock.layout': textProp('agent.claude'), 'lock.layout.allow': allow }
+      expect(resolveLock(props, HUMAN_KAELEN, 'layout')).toEqual({
+        locked: true,
+        owner: 'agent.claude',
+        allow: [],
+      })
+      expect(checkLock('n1', props, HUMAN_KAELEN, AGENT_CHATGPT, 'layout')).toBe(
+        'n1 layout is locked by agent.claude',
+      )
+    }
+    expect(
+      resolveLock(
+        { 'lock.layout': textProp('open'), 'lock.layout.allow': textProp('agent.claude') },
+        HUMAN_KAELEN,
+        'layout',
+      ),
+    ).toEqual({ locked: false })
+  })
+
+  it('matches a default layout owner on kind and id, not id alone (WR-01)', () => {
+    const lookalikes: ActorLike[] = [
+      { kind: 'human', id: 'agent.claude' },
+      { kind: 'system', id: 'agent.claude' },
+    ]
+    for (const creator of lookalikes) {
+      expect(
+        checkLock('n1', {}, creator, AGENT_CLAUDE, 'layout', {
+          agentNotesOpenToAgents: true,
+          nonAgentNotesDeleteLocked: true,
+        }),
+      ).toBe('n1 layout is locked by agent.claude')
+    }
+  })
+
+  it('does not check people or non-agent plugins against a layout lock (D-10)', () => {
+    const props: LockProps = { 'lock.layout': textProp('agent.claude') }
+    expect(checkLock('n1', props, HUMAN_KAELEN, HUMAN_KAELEN, 'layout')).toBeNull()
+    expect(
+      checkLock('n1', props, HUMAN_KAELEN, { kind: 'plugin', id: 'tapestry-notes' }, 'layout'),
+    ).toBeNull()
+  })
+
+  it('is independent of the text and delete locks, both ways (D-02)', () => {
+    const otherAspectsOpen: LockProps = {
+      'lock.text': textProp('open'),
+      'lock.delete': textProp('open'),
+      'lock.text.allow': textProp('agent.claude'),
+      'lock.delete.allow': textProp('agent.claude'),
+    }
+    expect(resolveLock(otherAspectsOpen, HUMAN_KAELEN, 'layout')).toEqual({
+      locked: true,
+      owner: 'user.kaelen',
+      ownerKind: 'human',
+      allow: [],
+    })
+    expect(checkLock('n1', otherAspectsOpen, HUMAN_KAELEN, AGENT_CLAUDE, 'layout')).toBe(
+      'n1 layout is locked by user.kaelen',
+    )
+
+    const layoutOpen: LockProps = {
+      'lock.layout': textProp('open'),
+      'lock.layout.allow': textProp('agent.claude'),
+    }
+    for (const policy of ALL_POLICIES) {
+      for (const aspect of ['text', 'delete'] as const) {
+        expect(resolveLock(layoutOpen, HUMAN_KAELEN, aspect, policy)).toEqual(
+          resolveLock({}, HUMAN_KAELEN, aspect, policy),
+        )
+      }
+    }
+    expect(checkLock('n1', layoutOpen, HUMAN_KAELEN, AGENT_CLAUDE, 'text')).toBe(
+      'n1 text is locked by user.kaelen',
+    )
+  })
+})
+
+// ---------------------------------------------------------------------------
+// End to end through NoteCommands
+// ---------------------------------------------------------------------------
+
+const CLAUDE = agentActor('claude')
+const CHATGPT = agentActor('chatgpt')
+const KAELEN = humanActor('kaelen')
+
+let dir: string
+let treePath: string
+let registry: TreeRegistry
+let tree: OpenTree
+let notes: NoteCommands
+let claudeNote: string
+
+/** Write one `lock.*` fixture with a raw submit; no command may do this. */
+function setLockProp(
+  noteId: string,
+  key: string,
+  value: string | number | boolean,
+  by: Actor = KAELEN,
+  type = 'text',
+): void {
+  tree.bridge.submitAs(by, `set ${key}`, [
+    { op: 'setProperty', target: noteId, key, type, value },
+  ])
+}
+
+function worldFingerprint(): { size: number; nodes: number; edges: number } {
+  return {
+    size: statSync(treePath).size,
+    nodes: tree.bridge.getNodes().length,
+    edges: tree.bridge.getEdges().length,
+  }
+}
+
+function lastCommitBlock(): string {
+  const segments = readFileSync(treePath, 'utf-8').split(/^@commit /m)
+  return segments[segments.length - 1]
+}
+
+function bodyTextOf(noteId: string): string {
+  return docJsonToPlainText(String(tree.bridge.getNode(noteId)!.props['body']?.value ?? ''))
+}
+
+function titleOf(noteId: string): string {
+  return String(tree.bridge.getNode(noteId)!.props['title']?.value ?? '')
+}
+
+describe('locks through NoteCommands', () => {
+  beforeEach(() => {
+    dir = makeTempDir('locks')
+    treePath = join(dir, 'locks.tree')
+    registry = new TreeRegistry()
+    tree = registry.create(treePath, 'locks')
+    notes = new NoteCommands(registry)
+
+    tree.bridge.submitAs(KAELEN, 'Create note', [
+      {
+        op: 'createNode',
+        type: 'tapestry.notes/note@1',
+        props: {
+          'position.x': { type: 'real', value: 0 },
+          'position.y': { type: 'real', value: 0 },
+          title: { type: 'text', value: 'Seed' },
+          body: { type: 'text', value: plainTextToDocJson('Written by Kaelen') },
+        },
+      },
+    ])
+
+    const grown = notes.createFrom(CLAUDE, {
+      tree: 'locks',
+      grewFrom: 'n1',
+      title: 'Luna',
+      text: 'Grown by Claude',
+    })
+    if (!grown.ok) throw new Error(`setup failed: ${grown.error}`)
+    claudeNote = grown.value.note
+  })
+
+  afterEach(() => {
+    try {
+      registry.closeAll()
+    } catch {
+      // Already closed.
+    }
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('refuses another agent under an explicit text lock, and lets the owner write', () => {
+    setLockProp(claudeNote, 'lock.text', 'agent.claude')
+    const before = worldFingerprint()
+
+    const refused = notes.updateNote(CHATGPT, {
+      tree: 'locks',
+      note: claudeNote,
+      text: 'ChatGPT was here',
+    })
+    expect(refused.ok).toBe(false)
+    expect(refused.ok === false && refused.error).toBe(
+      `${claudeNote} text is locked by agent.claude`,
+    )
+    expect(worldFingerprint()).toEqual(before)
+    expect(bodyTextOf(claudeNote)).toBe('Grown by Claude')
+
+    const allowed = notes.updateNote(CLAUDE, {
+      tree: 'locks',
+      note: claudeNote,
+      text: 'Claude again',
+    })
+    expect(allowed.ok).toBe(true)
+    expect(bodyTextOf(claudeNote)).toBe('Claude again')
+    expect(lastCommitBlock()).toContain('actor plugin agent.claude')
+  })
+
+  it('lets an agent update a person\'s note whose text lock is `open`', () => {
+    setLockProp('n1', 'lock.text', 'open')
+
+    const result = notes.updateNote(CLAUDE, { tree: 'locks', note: 'n1', text: 'Opened up' })
+
+    expect(result.ok).toBe(true)
+    expect(bodyTextOf('n1')).toBe('Opened up')
+  })
+
+  it('fails closed on an int-typed text lock through the real kernel', () => {
+    setLockProp(claudeNote, 'lock.text', 7, KAELEN, 'int')
+    const before = worldFingerprint()
+
+    const result = notes.updateNote(CLAUDE, {
+      tree: 'locks',
+      note: claudeNote,
+      text: 'Should not land',
+    })
+
+    expect(result.ok).toBe(false)
+    expect(result.ok === false && result.error).toBe(`${claudeNote} text is locked by 7`)
+    expect(worldFingerprint()).toEqual(before)
+    expect(bodyTextOf(claudeNote)).toBe('Grown by Claude')
+  })
+  /** Aspects are independent (D-02, D-03): opening text leaves delete locked. */
+  it('lets an agent update and rename under an open text lock, but refuses its delete', () => {
+    setLockProp('n1', 'lock.text', 'open')
+    setLockProp('n1', 'lock.delete', 'user.kaelen')
+
+    const updated = notes.updateNote(CLAUDE, { tree: 'locks', note: 'n1', text: 'Opened up' })
+    expect(updated.ok).toBe(true)
+
+    const renamed = notes.renameNote(CLAUDE, { tree: 'locks', note: 'n1', title: 'Opened' })
+    expect(renamed.ok).toBe(true)
+    expect(titleOf('n1')).toBe('Opened')
+
+    const before = worldFingerprint()
+    const deleted = notes.deleteNote(CLAUDE, { tree: 'locks', note: 'n1' })
+    expect(deleted.ok).toBe(false)
+    expect(deleted.ok === false && deleted.error).toBe('n1 delete is locked by user.kaelen')
+    expect(worldFingerprint()).toEqual(before)
+    expect(tree.bridge.getNode('n1')).not.toBeNull()
+  })
+
+  /**
+   * A delete lock alone leaves text writable. Claude's note is open under the
+   * default, or agent.claude owns it, so update and rename pass for either
+   * value of AGENT_NOTES_OPEN_TO_AGENTS.
+   */
+  it('lets an agent update and rename a note whose only lock is on delete, but refuses its delete', () => {
+    setLockProp(claudeNote, 'lock.delete', 'user.kaelen')
+
+    const updated = notes.updateNote(CLAUDE, {
+      tree: 'locks',
+      note: claudeNote,
+      text: 'Still mine to edit',
+    })
+    expect(updated.ok).toBe(true)
+
+    const renamed = notes.renameNote(CLAUDE, { tree: 'locks', note: claudeNote, title: 'Lunara' })
+    expect(renamed.ok).toBe(true)
+    expect(titleOf(claudeNote)).toBe('Lunara')
+
+    const before = worldFingerprint()
+    const deleted = notes.deleteNote(CLAUDE, { tree: 'locks', note: claudeNote })
+    expect(deleted.ok).toBe(false)
+    expect(deleted.ok === false && deleted.error).toBe(
+      `${claudeNote} delete is locked by user.kaelen`,
+    )
+    expect(worldFingerprint()).toEqual(before)
+    expect(tree.bridge.getNode(claudeNote)).not.toBeNull()
+  })
+
+  it('refuses a rename when the text lock belongs to someone else (D-03)', () => {
+    setLockProp(claudeNote, 'lock.text', 'user.kaelen')
+    const before = worldFingerprint()
+
+    const result = notes.renameNote(CLAUDE, { tree: 'locks', note: claudeNote, title: 'Taken' })
+
+    expect(result.ok).toBe(false)
+    expect(result.ok === false && result.error).toBe(
+      `${claudeNote} text is locked by user.kaelen`,
+    )
+    expect(titleOf(claudeNote)).toBe('Luna')
+    expect(worldFingerprint()).toEqual(before)
+  })
+
+  it('lets an agent delete a person\'s note whose delete lock is `open`', () => {
+    setLockProp('n1', 'lock.delete', 'open')
+
+    const result = notes.deleteNote(CLAUDE, { tree: 'locks', note: 'n1' })
+
+    expect(result.ok).toBe(true)
+    expect(tree.bridge.getNode('n1')).toBeNull()
+  })
+
+  it('admits an agent on the allow list of an explicit lock and refuses another (D-09)', () => {
+    setLockProp(claudeNote, 'lock.text', 'agent.claude')
+    setLockProp(claudeNote, 'lock.text.allow', 'agent.chatgpt')
+
+    const admitted = notes.updateNote(CHATGPT, {
+      tree: 'locks',
+      note: claudeNote,
+      text: 'ChatGPT is on the list',
+    })
+    expect(admitted.ok).toBe(true)
+    expect(bodyTextOf(claudeNote)).toBe('ChatGPT is on the list')
+    expect(lastCommitBlock()).toContain('actor plugin agent.chatgpt')
+
+    const before = worldFingerprint()
+    const refused = notes.updateNote(agentActor('gemini'), {
+      tree: 'locks',
+      note: claudeNote,
+      text: 'Gemini is not',
+    })
+    expect(refused.ok).toBe(false)
+    expect(refused.ok === false && refused.error).toBe(
+      `${claudeNote} text is locked by agent.claude`,
+    )
+    expect(worldFingerprint()).toEqual(before)
+    expect(bodyTextOf(claudeNote)).toBe('ChatGPT is on the list')
+  })
+
+  it('admits an agent on the allow list of a default lock and refuses another (D-09)', () => {
+    setLockProp('n1', 'lock.text.allow', 'agent.claude')
+
+    const admitted = notes.updateNote(CLAUDE, { tree: 'locks', note: 'n1', text: 'Allowed in' })
+    expect(admitted.ok).toBe(true)
+    expect(bodyTextOf('n1')).toBe('Allowed in')
+
+    const before = worldFingerprint()
+    const refused = notes.updateNote(CHATGPT, { tree: 'locks', note: 'n1', text: 'Not listed' })
+    expect(refused.ok).toBe(false)
+    expect(refused.ok === false && refused.error).toBe('n1 text is locked by user.kaelen')
+    expect(worldFingerprint()).toEqual(before)
+    expect(bodyTextOf('n1')).toBe('Allowed in')
+  })
+
+  /**
+   * No existing command is gated on layout (quick 260924-0ii, Q-04). Claude
+   * created claudeNote, so text and delete pass for either value of
+   * AGENT_NOTES_OPEN_TO_AGENTS; only the layout lock names someone else.
+   */
+  it('a lock.layout alone gates no existing command', () => {
+    setLockProp(claudeNote, 'lock.layout', 'user.kaelen')
+
+    const updated = notes.updateNote(CLAUDE, {
+      tree: 'locks',
+      note: claudeNote,
+      text: 'Layout lock is not a text lock',
+    })
+    expect(updated.ok).toBe(true)
+    expect(bodyTextOf(claudeNote)).toBe('Layout lock is not a text lock')
+
+    const renamed = notes.renameNote(CLAUDE, { tree: 'locks', note: claudeNote, title: 'Moved not' })
+    expect(renamed.ok).toBe(true)
+    expect(titleOf(claudeNote)).toBe('Moved not')
+
+    const deleted = notes.deleteNote(CLAUDE, { tree: 'locks', note: claudeNote })
+    expect(deleted.ok).toBe(true)
+    expect(tree.bridge.getNode(claudeNote)).toBeNull()
+  })
+
+  /** Aspects are independent (D-02): an open layout lock opens nothing else. */
+  it('lock.layout open on a person\'s note opens neither text nor delete', () => {
+    setLockProp('n1', 'lock.layout', 'open')
+    setLockProp('n1', 'lock.layout.allow', 'agent.claude')
+    const before = worldFingerprint()
+
+    const updated = notes.updateNote(CLAUDE, { tree: 'locks', note: 'n1', text: 'Should not land' })
+    expect(updated.ok).toBe(false)
+    expect(updated.ok === false && updated.error).toBe('n1 text is locked by user.kaelen')
+
+    const renamed = notes.renameNote(CLAUDE, { tree: 'locks', note: 'n1', title: 'Not renamed' })
+    expect(renamed.ok).toBe(false)
+    expect(renamed.ok === false && renamed.error).toBe('n1 text is locked by user.kaelen')
+
+    expect(worldFingerprint()).toEqual(before)
+    expect(bodyTextOf('n1')).toBe('Written by Kaelen')
+    expect(titleOf('n1')).toBe('Seed')
+
+    const deleted = notes.deleteNote(CLAUDE, { tree: 'locks', note: 'n1' })
+    if (NON_AGENT_NOTES_DELETE_LOCKED) {
+      expect(deleted.ok).toBe(false)
+      expect(deleted.ok === false && deleted.error).toBe('n1 delete is locked by user.kaelen')
+      expect(worldFingerprint()).toEqual(before)
+      expect(tree.bridge.getNode('n1')).not.toBeNull()
+    } else {
+      expect(deleted.ok).toBe(true)
+      expect(tree.bridge.getNode('n1')).toBeNull()
+    }
+  })
+  // -------------------------------------------------------------------------
+  // Characterization: behaviour Plan 01 already implements
+  // -------------------------------------------------------------------------
+
+  /** Create a note with a raw submit signed by `by`, and return its id. */
+  function createNoteAs(by: Actor, title: string, text: string, message: string): string {
+    const result = tree.bridge.submitAs(by, message, [
+      {
+        op: 'createNode',
+        type: 'tapestry.notes/note@1',
+        props: {
+          'position.x': { type: 'real', value: 0 },
+          'position.y': { type: 'real', value: 0 },
+          title: { type: 'text', value: title },
+          body: { type: 'text', value: plainTextToDocJson(text) },
+        },
+      },
+    ])
+    return result.nodeIds[0]
+  }
+
+  it('locks a note the Obsidian bridge created against agents (D-04)', () => {
+    const rody = createNoteAs(
+      OBSIDIAN_BRIDGE_ACTOR,
+      'Rody',
+      'From the vault',
+      'observed change to Rody.md',
+    )
+    const before = worldFingerprint()
+
+    const updated = notes.updateNote(CLAUDE, { tree: 'locks', note: rody, text: 'Claude edit' })
+    expect(updated.ok).toBe(false)
+    expect(updated.ok === false && updated.error).toBe(`${rody} text is locked by obsidian.bridge`)
+    expect(worldFingerprint()).toEqual(before)
+    expect(bodyTextOf(rody)).toBe('From the vault')
+
+    const deleted = notes.deleteNote(CLAUDE, { tree: 'locks', note: rody })
+    if (NON_AGENT_NOTES_DELETE_LOCKED) {
+      expect(deleted.ok).toBe(false)
+      expect(deleted.ok === false && deleted.error).toBe(
+        `${rody} delete is locked by obsidian.bridge`,
+      )
+      expect(worldFingerprint()).toEqual(before)
+      expect(tree.bridge.getNode(rody)).not.toBeNull()
+    } else {
+      expect(deleted.ok).toBe(true)
+      expect(tree.bridge.getNode(rody)).toBeNull()
+    }
+  })
+
+  it('locks a note a plain plugin created against an agent rename (D-04)', () => {
+    const pluginNote = createNoteAs(
+      pluginActor('tapestry-notes'),
+      'Plugin note',
+      'Made by a plugin',
+      'Create note',
+    )
+    const before = worldFingerprint()
+
+    const renamed = notes.renameNote(CLAUDE, { tree: 'locks', note: pluginNote, title: 'Taken' })
+    expect(renamed.ok).toBe(false)
+    expect(renamed.ok === false && renamed.error).toBe(
+      `${pluginNote} text is locked by tapestry-notes`,
+    )
+    expect(titleOf(pluginNote)).toBe('Plugin note')
+    expect(worldFingerprint()).toEqual(before)
+  })
+
+  /** WR-01: kind is part of a default owner, through the real kernel. */
+  it('refuses plugin agent.claude on a note created by human or system agent.claude', () => {
+    const lookalikes: Actor[] = [
+      { kind: 'human', id: 'agent.claude' },
+      { kind: 'system', id: 'agent.claude' },
+    ]
+    for (const creator of lookalikes) {
+      const noteId = createNoteAs(creator, 'Lookalike', 'Not an agent note', 'Create note')
+      const before = worldFingerprint()
+
+      const updated = notes.updateNote(CLAUDE, { tree: 'locks', note: noteId, text: 'Hijack' })
+      expect(updated.ok).toBe(false)
+      expect(updated.ok === false && updated.error).toBe(`${noteId} text is locked by agent.claude`)
+      expect(worldFingerprint()).toEqual(before)
+      expect(bodyTextOf(noteId)).toBe('Not an agent note')
+
+      const deleted = notes.deleteNote(CLAUDE, { tree: 'locks', note: noteId })
+      if (NON_AGENT_NOTES_DELETE_LOCKED) {
+        expect(deleted.ok).toBe(false)
+        expect(deleted.ok === false && deleted.error).toBe(
+          `${noteId} delete is locked by agent.claude`,
+        )
+        expect(worldFingerprint()).toEqual(before)
+        expect(tree.bridge.getNode(noteId)).not.toBeNull()
+      }
+    }
+  })
+
+  it('does not check people or non-agent plugins against an agent lock (D-10)', () => {
+    setLockProp(claudeNote, 'lock.text', 'agent.claude')
+
+    const byKaelen = notes.updateNote(humanActor('kaelen'), {
+      tree: 'locks',
+      note: claudeNote,
+      text: 'Kaelen edit',
+    })
+    expect(byKaelen.ok).toBe(true)
+    expect(bodyTextOf(claudeNote)).toBe('Kaelen edit')
+
+    const byPlugin = notes.updateNote(pluginActor('tapestry-notes'), {
+      tree: 'locks',
+      note: claudeNote,
+      text: 'Plugin edit',
+    })
+    expect(byPlugin.ok).toBe(true)
+    expect(bodyTextOf(claudeNote)).toBe('Plugin edit')
+    expect(lastCommitBlock()).toContain('actor plugin tapestry-notes')
+
+    const byBridge = notes.updateNote(OBSIDIAN_BRIDGE_ACTOR, {
+      tree: 'locks',
+      note: 'n1',
+      text: 'Bridge edit',
+    })
+    expect(byBridge.ok).toBe(true)
+    expect(bodyTextOf('n1')).toBe('Bridge edit')
+  })
+
+  it('refuses a write to a deleted note as not live, not as locked (D-13)', () => {
+    const deleted = notes.deleteNote(CLAUDE, { tree: 'locks', note: claudeNote })
+    expect(deleted.ok).toBe(true)
+    const before = worldFingerprint()
+
+    const updated = notes.updateNote(CLAUDE, {
+      tree: 'locks',
+      note: claudeNote,
+      text: 'Back from the dead',
+    })
+    expect(updated.ok).toBe(false)
+    expect(updated.ok === false && updated.error).toBe(`${claudeNote} is not a live note in locks`)
+    expect(worldFingerprint()).toEqual(before)
+  })
+
+  it('still lets an agent grow from and connect a locked note (D-01)', () => {
+    setLockProp('n1', 'lock.text', 'user.kaelen')
+    setLockProp('n1', 'lock.delete', 'user.kaelen')
+
+    const grown = notes.createFrom(agentActor('chatgpt'), {
+      tree: 'locks',
+      grewFrom: 'n1',
+      title: 'Offshoot',
+      text: 'grown from a locked note',
+    })
+    expect(grown.ok).toBe(true)
+
+    const connected = new ConnectionCommands(registry).connect(agentActor('chatgpt'), {
+      from: { tree: 'locks', note: 'n1' },
+      to: { tree: 'locks', note: claudeNote },
+    })
+    expect(connected.ok).toBe(true)
+  })
+
+  it('refuses under a lock hidden by undo, after returning to the head, and writes nothing (D-11)', () => {
+    setLockProp(claudeNote, 'lock.text', 'agent.claude')
+    expect(tree.bridge.undo()).toBe(true)
+    expect(tree.bridge.isRewound).toBe(true)
+    const before = worldFingerprint()
+
+    const refused = notes.updateNote(CHATGPT, {
+      tree: 'locks',
+      note: claudeNote,
+      text: 'Slipped past the undo',
+    })
+    expect(refused.ok).toBe(false)
+    expect(refused.ok === false && refused.error).toBe(
+      `${claudeNote} text is locked by agent.claude`,
+    )
+    expect(tree.bridge.isRewound).toBe(false)
+    expect(worldFingerprint()).toEqual(before)
+    expect(bodyTextOf(claudeNote)).toBe('Grown by Claude')
+  })
+})

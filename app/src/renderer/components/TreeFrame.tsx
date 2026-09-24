@@ -23,6 +23,7 @@ import FrameHeader from './FrameHeader'
 import type { ForestTree, NodeRef } from '../state/use-forest'
 import { nodeKey } from '../state/use-forest'
 import type { FrameRect } from '../layout/frames'
+import type { DisplaySpot } from '../layout/placement'
 import type { NodeInfo } from './Canvas'
 
 /** Fallback thread-center size until the node registers its real dims. */
@@ -132,6 +133,8 @@ export interface TreeFrameHandlers {
   onMarkDirty: (ref: NodeRef) => void
   onMarkClean: (ref: NodeRef) => void
   onPositionChange: (ref: NodeRef, x: number, y: number) => void
+  /** A person moved a following note: position and pinned=true (D-03, D-16). */
+  onTakeOverPosition: (ref: NodeRef, x: number, y: number) => void
   onWidthChange: (ref: NodeRef, width: number) => void
   onHeightChange: (ref: NodeRef, height: number) => void
   onPinnedPositionChange: (ref: NodeRef, x: number, y: number) => void
@@ -167,6 +170,12 @@ interface TreeFrameProps {
   currentUserActorId: string | null
   /** Live drag positions, keyed by nodeKey. */
   dragPositions: Record<string, { x: number; y: number }>
+  /**
+   * Where each note in this tree is drawn, keyed by bare node id (D-05). The
+   * single source of a note's drawn spot, computed once in Canvas so frame
+   * bounds, edges and cards agree on where a following note is.
+   */
+  displayPositions: ReadonlyMap<string, DisplaySpot>
   getDims: (key: string) => { width: number; height: number } | undefined
   /** Frame-level state, which drives the border treatment (UI-SPEC). */
   isSelected: boolean
@@ -190,6 +199,7 @@ export default function TreeFrame({
   pluginNodeViews,
   currentUserActorId,
   dragPositions,
+  displayPositions,
   getDims,
   isSelected,
   isHovered,
@@ -276,13 +286,27 @@ export default function TreeFrame({
   const refFor = (nodeId: string): NodeRef => ({ treeId: tree.id, nodeId })
   const keyFor = (nodeId: string): string => nodeKey(refFor(nodeId))
 
+  /**
+   * A person's drop (or left/top resize) of a note. A note that is visibly
+   * following its parent is taken over and pinned (D-03, D-16); any other
+   * note moves exactly as before (D-02).
+   */
+  const writePosition = (nodeId: string, x: number, y: number): void => {
+    if (displayPositions.get(nodeId)?.following === true) {
+      handlers.onTakeOverPosition(refFor(nodeId), x, y)
+    } else {
+      handlers.onPositionChange(refFor(nodeId), x, y)
+    }
+  }
+
   /** A note's center in this tree's local coordinates. */
   const getNodeCenter = (nodeId: string): { x: number; y: number } | null => {
     const node = tree.nodes.find((n) => n.id === nodeId)
     if (!node) return null
     const drag = dragPositions[keyFor(nodeId)]
-    const px = drag ? drag.x : Number(node.props['position.x']?.value ?? 0)
-    const py = drag ? drag.y : Number(node.props['position.y']?.value ?? 0)
+    const spot = displayPositions.get(nodeId)
+    const px = spot ? spot.x : drag ? drag.x : Number(node.props['position.x']?.value ?? 0)
+    const py = spot ? spot.y : drag ? drag.y : Number(node.props['position.y']?.value ?? 0)
     const dims = getDims(keyFor(nodeId))
     return { x: px + (dims?.width ?? 240) / 2, y: py + (dims?.height ?? 80) / 2 }
   }
@@ -462,6 +486,7 @@ export default function TreeFrame({
               <NoteCard
                 key={node.id}
                 node={node}
+                displayPosition={displayPositions.get(node.id)?.followSpot ?? undefined}
                 isEditing={editingKey === key}
                 isHovered={hoveredKey === key}
                 isSelected={selectedKey === key}
@@ -475,9 +500,7 @@ export default function TreeFrame({
                 onSave={(nodeId, body, title) => handlers.onSave(refFor(nodeId), body, title)}
                 onMarkDirty={(nodeId) => handlers.onMarkDirty(refFor(nodeId))}
                 onMarkClean={(nodeId) => handlers.onMarkClean(refFor(nodeId))}
-                onPositionChange={(nodeId, x, y) =>
-                  handlers.onPositionChange(refFor(nodeId), x, y)
-                }
+                onPositionChange={writePosition}
                 onWidthChange={(nodeId, width) => handlers.onWidthChange(refFor(nodeId), width)}
                 onHeightChange={(nodeId, height) =>
                   handlers.onHeightChange(refFor(nodeId), height)
@@ -501,14 +524,13 @@ export default function TreeFrame({
             <FallbackNodeView
               key={node.id}
               node={node}
+              displayPosition={displayPositions.get(node.id)?.followSpot ?? undefined}
               isSelected={selectedKey === key}
               isHovered={hoveredKey === key}
               zoom={zoom}
               onBorderSelect={() => handlers.onBorderSelect(refFor(node.id))}
               onHover={(hovered) => handlers.onHover(refFor(node.id), hovered)}
-              onPositionChange={(nodeId, x, y) =>
-                handlers.onPositionChange(refFor(nodeId), x, y)
-              }
+              onPositionChange={writePosition}
               onRegisterDims={(nodeId, w, h) => handlers.onRegisterDims(refFor(nodeId), w, h)}
               onPropertyEdit={(nodeId, k, t, v) =>
                 handlers.onPropertyEdit(refFor(nodeId), k, t, v)

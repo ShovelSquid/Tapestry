@@ -5,15 +5,15 @@ current_phase: "02.2"
 current_phase_name: Obsidian Bridge
 status: executing
 stopped_at: Completed 02.2-07-PLAN.md
-last_updated: "2026-09-16T07:00:27.729Z"
-last_activity: 2026-09-15
-last_activity_desc: Phase 02.2 execution started
+last_updated: "2026-09-23T06:50:00.000Z"
+last_activity: 2026-09-23
+last_activity_desc: Phase 02.4 Lock Model complete and rebased onto the main line; Phase 02.2 still executing
 state_head: c3f4f3d6c993f90c55415c6117705b124bb9667a
 progress:
-  total_phases: 10
-  completed_phases: 0
-  total_plans: 38
-  completed_plans: 20
+  total_phases: 11
+  completed_phases: 1
+  total_plans: 40
+  completed_plans: 22
 ---
 
 # Project State
@@ -23,14 +23,15 @@ progress:
 See: .planning/PROJECT.md (updated 2026-09-08)
 
 **Core value:** Your world of thoughts must remain readable and under your control — in its spatial interface, its editable relationships and behavior, and its files and branching history.
-**Current focus:** Phase 02.2 — Obsidian Bridge
+**Current focus:** Phase 02.2 — Obsidian Bridge (executing). Phase 02.4 — Lock Model is complete and on the main line; open for Kaelen: WR-02 redo decision, WR-01 owner-matching confirmation, #19 lock naming
 
 ## Current Position
 
 Phase: 02.2 (Obsidian Bridge) — EXECUTING
-Plan: 5 of 16
-Status: Ready to execute
-Last activity: 2026-09-15 — Phase 02.2 execution started
+Plan: 8 of 16 (02.2-01 to 02.2-07 complete; 02.2-08 code committed, no summary yet)
+Status: Executing
+Phase 02.4 (Lock Model): COMPLETE — verified 25/25, 2026-09-16; rebased onto the main line 2026-09-23
+Last activity: 2026-09-24 - Completed quick task 260924-0ii: Add layout as a third lock aspect (lock.layout)
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -38,7 +39,7 @@ Progress: [░░░░░░░░░░] 0%
 
 **Velocity:**
 
-- Total plans completed: 5
+- Total plans completed: 7
 - Average duration: -
 - Total execution time: 0 hours
 
@@ -47,6 +48,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 1 | 5 | - | - |
+| 02.4 | 2 | - | - |
 
 **Recent Trend:**
 
@@ -70,6 +72,8 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 02.2 P05 | 25 min | 2 tasks | 19 files |
 | Phase 02.2 P06 | 40 min | 3 tasks | 13 files |
 | Phase 02.2 P07 | 35 min | 1 tasks | 26 files |
+| Phase 02.4 P01 | 14 min | 2 tasks | 4 files |
+| Phase 02.4 P02 | 8 min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -124,6 +128,10 @@ Recent decisions affecting current work:
 - [Phase 02.2]: The vault test fixture is synthetic and authored in-repo; no House Party content enters git history, and .gitattributes pins its bytes so normalisation cannot rewrite the shapes under test (02.2-07)
 - [Phase 02.2]: A plugin's registered node-view name now selects a component through NODE_VIEW_COMPONENTS; an unmapped name falls back to the readable card instead of rendering as a NoteCard (02.2-07)
 - [Phase 02.2]: The Obsidian mirror refuses bytes it would have to change in order to store them, rather than transcoding them (02.2-07, D-12)
+- [Phase 02.4]: 02.4-01: update/rename check the note's text aspect, delete checks delete, all via writeToNote -> assertMayWrite -> checkLock; 02.2 D-05 authorship gate removed
+- [Phase 02.4]: 02.4-01: malformed lock values fail closed; only exact 'open' unlocks; blank owner shown as (unknown); allow list read in Plan 02
+- [Phase 02.4]: 02.4-02: lock.<aspect>.allow is read for explicit and derived locks; only a text value counts, whitespace-split, exact match
+- [Phase 02.4]: 02.4-02: agent tool text states the lock rule and that refusals name the owner, without publishing lock.* key names
 
 ### Pending Todos
 
@@ -144,12 +152,14 @@ None yet.
 | 3 | Move development scope constraint to the primary checkout (PROJECT.md, CLAUDE.md) | 2026-09-15 | 0bb6638 | — |
 | 260915-v62 | Fix connect-agent command argument order so `claude mcp add` parses the server name | 2026-09-15 | 27b3869 | [260915-v62-fix-connect-agent-command-argument-order](./quick/260915-v62-fix-connect-agent-command-argument-order/) |
 | 260915-v51 | Fix the kernel copy-per-commit quadratic: Kernel::replayUpTo and Kernel::submit copied the entire World once per commit, making reopen O(n^2) in commit count | 2026-09-15 | 7fed53f | [260915-v51-fix-the-kernel-copy-per-commit-quadratic](./quick/260915-v51-fix-the-kernel-copy-per-commit-quadratic/) |
+| 260924-0ii | Add layout as a third lock aspect (lock.layout), text-aspect defaults, not yet gating any command | 2026-09-24 | 4d78287 | [260924-0ii-add-layout-as-a-third-lock-aspect-lock-l](./quick/260924-0ii-add-layout-as-a-third-lock-aspect-lock-l/) |
 
 ### Roadmap Evolution
 
 - Phase 02.2 inserted after Phase 2: Obsidian Bridge: two-way connection between an Obsidian Markdown vault and a Tapestry world (Kaelen, 2026-09-15; discuss with Kaelen, not skipped) (URGENT)
 - Phase 2.3 inserted after Phase 2.2: Time Threads: live z-axis writing threads split out of the 2.2 discussion (Kaelen, 2026-09-15); discuss with Kaelen before planning
 - Phase 2.2 edited: goal reworded to cover the agent MCP bridge plus the Obsidian bridge (02.2-CONTEXT D-01)
+- Phase 2.4 inserted after Phase 2.3: Lock Model: allow unless locked; lock aspects replace the D-05 authorship gate (Kaelen, 2026-09-16)
 
 ## Deferred Items
 

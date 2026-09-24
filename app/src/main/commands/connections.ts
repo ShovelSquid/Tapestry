@@ -1,12 +1,13 @@
 /**
  * Connections between notes — the other half of the shared command set (D-01).
  *
- * D-05 restricts *changing* a note to the actor that created it, but places
- * **no restriction on connecting**: "agents may read any note and draw
- * connections to any note". That asymmetry is deliberate and is why this lives
- * beside NoteCommands rather than inside its ownership check — a connection
- * says "these two thoughts relate", which is a claim anyone reading the world
- * is entitled to make, while rewriting somebody's words is not.
+ * Locks (02.4) restrict *changing* a note's text and deleting it, but place
+ * **no restriction on connecting**: 02.2 D-05 already had it that "agents may
+ * read any note and draw connections to any note", and 02.4 D-01 keeps it.
+ * That asymmetry is deliberate and is why this lives beside NoteCommands
+ * rather than behind its lock check — a connection says "these two thoughts
+ * relate", which is a claim anyone reading the world is entitled to make,
+ * while rewriting somebody's words is not.
  *
  * In this plan both endpoints must be in the same tree. Plan 15 adds
  * cross-tree endpoints (D-16) without changing the argument shape, which is
@@ -74,8 +75,8 @@ export class ConnectionCommands {
   /**
    * Connect two notes in the same tree.
    *
-   * Any actor may do this, including an agent connecting two notes it did not
-   * write (D-05).
+   * Any actor may do this, including an agent connecting notes whose text is
+   * locked against it (02.4 D-01).
    */
   connect(
     actor: Actor,

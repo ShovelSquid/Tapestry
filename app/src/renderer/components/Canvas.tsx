@@ -38,6 +38,7 @@ import {
   type FrameRect,
   type PositionedRect,
 } from '../layout/frames'
+import { displayPositions, type DisplaySpot } from '../layout/placement'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -99,6 +100,12 @@ interface CanvasProps {
   onMarkDirty: (ref: NodeRef) => void
   onMarkClean: (ref: NodeRef) => void
   onPositionChange: (ref: NodeRef, x: number, y: number) => void
+  /**
+   * Called when a person drops, or left/top-resizes, a note that follows its
+   * parent (D-03, D-16). Must persist position.x, position.y AND pinned=true
+   * in a single commit, so the note stops following.
+   */
+  onTakeOverPosition: (ref: NodeRef, x: number, y: number) => void
   onWidthChange: (ref: NodeRef, width: number) => void
   onHeightChange: (ref: NodeRef, height: number) => void
   /**
@@ -166,6 +173,9 @@ const ZOOM_SPEED = 0.001
 const DEFAULT_NODE_WIDTH = 240
 const DEFAULT_NODE_HEIGHT = 80
 
+/** The drawn-spot map for a tree that has none yet (D-05). */
+const NO_DISPLAY_SPOTS: ReadonlyMap<string, DisplaySpot> = new Map()
+
 /**
  * The empty space (UI-SPEC "Empty state body").
  *
@@ -210,6 +220,7 @@ function Canvas({
   onMarkDirty,
   onMarkClean,
   onPositionChange,
+  onTakeOverPosition,
   onWidthChange,
   onHeightChange,
   onPinnedPositionChange,
@@ -289,14 +300,25 @@ function Canvas({
   // -----------------------------------------------------------------------
 
   const frameRects = new Map<string, FrameRect>()
+  // D-05: where every note is drawn, computed once per tree so frame bounds,
+  // edges, knot midpoints and cards all agree on a following note's spot.
+  const treeSpots = new Map<string, ReadonlyMap<string, DisplaySpot>>()
   for (const tree of trees) {
+    const overrides = new Map<string, { x: number; y: number }>()
+    for (const node of tree.nodes) {
+      const drag = dragPositions[nodeKey({ treeId: tree.id, nodeId: node.id })]
+      if (drag) overrides.set(node.id, drag)
+    }
+    const spots = displayPositions(tree.nodes, tree.edges, overrides)
+    treeSpots.set(tree.id, spots)
     const boxes: ContentBox[] = tree.nodes.map((node) => {
       const key = nodeKey({ treeId: tree.id, nodeId: node.id })
       const drag = dragPositions[key]
+      const spot = spots.get(node.id)
       const dims = nodeDimsRef.current.get(key)
       return {
-        x: drag ? drag.x : Number(node.props['position.x']?.value ?? 0),
-        y: drag ? drag.y : Number(node.props['position.y']?.value ?? 0),
+        x: spot ? spot.x : drag ? drag.x : Number(node.props['position.x']?.value ?? 0),
+        y: spot ? spot.y : drag ? drag.y : Number(node.props['position.y']?.value ?? 0),
         width: dims?.width ?? DEFAULT_NODE_WIDTH,
         height: dims?.height ?? DEFAULT_NODE_HEIGHT,
       }
@@ -711,6 +733,10 @@ function Canvas({
       onPositionChange(ref, x, y)
       settleFrames(ref.treeId)
     },
+    onTakeOverPosition: (ref, x, y) => {
+      onTakeOverPosition(ref, x, y)
+      settleFrames(ref.treeId)
+    },
     onWidthChange: (ref, width) => {
       onWidthChange(ref, width)
       settleFrames(ref.treeId)
@@ -740,9 +766,10 @@ function Canvas({
     if (tree && node) {
       const key = nodeKey(connectingFrom)
       const drag = dragPositions[key]
+      const spot = treeSpots.get(tree.id)?.get(node.id)
       const dims = nodeDimsRef.current.get(key)
-      const localX = drag ? drag.x : Number(node.props['position.x']?.value ?? 0)
-      const localY = drag ? drag.y : Number(node.props['position.y']?.value ?? 0)
+      const localX = spot ? spot.x : drag ? drag.x : Number(node.props['position.x']?.value ?? 0)
+      const localY = spot ? spot.y : drag ? drag.y : Number(node.props['position.y']?.value ?? 0)
       tempConnectionLine = {
         x1: tree.frame.x + localX + (dims?.width ?? DEFAULT_NODE_WIDTH) / 2,
         y1: tree.frame.y + localY + (dims?.height ?? DEFAULT_NODE_HEIGHT) / 2,
@@ -789,6 +816,7 @@ function Canvas({
               pluginNodeViews={pluginNodeViews}
               currentUserActorId={currentUserActorId}
               dragPositions={dragPositions}
+              displayPositions={treeSpots.get(tree.id) ?? NO_DISPLAY_SPOTS}
               getDims={getDims}
               isSelected={selectedTreeId === tree.id}
               isHovered={hoveredTreeId === tree.id}

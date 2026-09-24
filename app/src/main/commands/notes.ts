@@ -17,6 +17,15 @@
 import type { Actor } from './actor'
 import type { CommitResult, NodeData, OpObject } from '../kernel-bridge'
 import type { OpenTree, TreeKind, TreeRegistry } from '../trees/registry'
+import {
+  CHILD_GAP,
+  DEFAULT_NOTE_WIDTH,
+  GREW_FROM_LABEL,
+  resolveWhere,
+  whereRefusalText,
+  type WherePlacement,
+} from '../../renderer/layout/placement'
+import { checkLock, isAgentActor, type LockAspect } from './locks'
 
 // ---------------------------------------------------------------------------
 // Result convention (plugin-host.ts lines 736-800)
@@ -42,7 +51,7 @@ export const NATIVE_NOTE_TYPE = 'tapestry.notes/note@1'
  * The direction is chosen so the line reads naturally in the file:
  * `create-edge e5 n13 n12 grew-from` means "n13 grew from n12".
  */
-export const GREW_FROM_LABEL = 'grew-from'
+export { GREW_FROM_LABEL }
 
 /** Node ids the kernel issues: `n1`, `n2`, ... (never `n0`). */
 const NODE_ID_RE = /^n[1-9][0-9]*$/
@@ -59,12 +68,6 @@ function snippetAround(text: string, query: string): string {
   const start = Math.max(0, index - SNIPPET_LEAD)
   return text.slice(start, start + SNIPPET_LENGTH)
 }
-
-/** Fallback card width when a note has never been resized. */
-const DEFAULT_NOTE_WIDTH = 280
-
-/** Horizontal gap between a parent note and the note grown from it. */
-const CHILD_GAP = 80
 
 const MAX_TITLE_LENGTH = 200
 const MAX_TEXT_BYTES = 1000000
@@ -169,17 +172,6 @@ export function prepareWriteFor(tree: OpenTree, actor: Actor, hooks: CommandHook
   }
 }
 
-/**
- * Whether this actor is bound by D-05's "only notes it created".
- *
- * The rule names agents specifically. A person editing their world is not
- * restricted, and a bridge plugin recording what a file already says is not
- * claiming authorship of it.
- */
-export function isAgentActor(actor: Actor): boolean {
-  return actor.kind === 'plugin' && actor.id.startsWith('agent.')
-}
-
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -240,11 +232,18 @@ export class NoteCommands {
    * contains a moment where the note exists unattached. That is only possible
    * because `getNextIds()` (Plan 02) predicts the id the new node will get,
    * letting the edge name it before it exists.
+   *
+   * `where` (02.5 SC2) is optional. Without it nothing changes: the note goes
+   * to the right of its parent, with no collision step and no `pinned` key
+   * (D-02). With it, the spot comes from the same `resolveWhere` as `place`;
+   * near its own parent the note follows (`pinned` bool false, D-01), any
+   * other relation is fixed, and the value adds `follows`. A refusal writes
+   * nothing.
    */
   createFrom(
     actor: Actor,
-    args: { tree: string; grewFrom: string; title: string; text: string },
-  ): CommandResult<{ tree: string; note: string; edge: string; seq: number }> {
+    args: { tree: string; grewFrom: string; title: string; text: string; where?: WherePlacement },
+  ): CommandResult<{ tree: string; note: string; edge: string; seq: number; follows?: boolean }> {
     let tree: OpenTree
     try {
       tree = this.registry.resolveRef(args.tree)
@@ -267,6 +266,34 @@ export class NoteCommands {
     // refused as firmly as a malformed id.
     if (typeof args.grewFrom !== 'string' || !NODE_ID_RE.test(args.grewFrom)) {
       return { ok: false, error: `grewFrom ${String(args.grewFrom)} is not a live note in ${tree.name}` }
+    }
+
+    // 02.5 SC2: a `where` refusal that needs no world comes before reconciling,
+    // so it never discards a person's redo.
+    const where = args.where
+    if (where !== undefined) {
+      const anchors: Array<{ role: 'near' | 'beyond' | 'from'; id: unknown }> =
+        where !== null && typeof where === 'object' && 'beyond' in where
+          ? [
+              { role: 'beyond', id: where.beyond },
+              { role: 'from', id: where.from },
+            ]
+          : [{ role: 'near', id: (where as { near?: unknown } | null)?.near }]
+      for (const anchor of anchors) {
+        if (typeof anchor.id !== 'string' || !NODE_ID_RE.test(anchor.id)) {
+          return { ok: false, error: `${anchor.role} ${String(anchor.id)} is not a live note in ${tree.name}` }
+        }
+      }
+      if ('beyond' in where && where.beyond === where.from) {
+        return {
+          ok: false,
+          error: whereRefusalText(
+            { ok: false, reason: 'same-note', role: 'beyond', anchor: where.beyond, from: where.from },
+            '',
+            tree.name,
+          ),
+        }
+      }
     }
 
     try {
@@ -306,8 +333,36 @@ export class NoteCommands {
           label: GREW_FROM_LABEL,
         },
       ]
+      let message = `grow note "${title}" from ${args.grewFrom}`
+      let follows: boolean | undefined
 
-      const result = bridge.submitAs(actor, `grow note "${title}" from ${args.grewFrom}`, ops)
+      // 02.5 SC2: the spot the agent asked for, resolved against the tree as
+      // it is now plus the new note's own grew-from edge, so near its parent
+      // it follows exactly where it will be drawn (D-01, D-06). Anchors are
+      // looked up only in this tree (D-12). Nothing is written on a refusal.
+      if (where !== undefined) {
+        const subject = { id: next.node, type: NATIVE_NOTE_TYPE, props: {} }
+        const edges = [
+          ...bridge.getEdges(),
+          { id: next.edge, from: next.node, to: args.grewFrom, label: GREW_FROM_LABEL },
+        ]
+        const outcome = resolveWhere({ nodes: bridge.getNodes(), edges }, subject, where)
+        if (!outcome.ok) return { ok: false, error: whereRefusalText(outcome, next.node, tree.name) }
+        if (!Number.isFinite(outcome.x) || !Number.isFinite(outcome.y)) {
+          return { ok: false, error: `no finite spot for ${next.node} in ${tree.name}` }
+        }
+
+        // The createNode op above, with the resolved spot in place of the default.
+        const props = ops[0].props as NodeData['props']
+        props['position.x'] = { type: 'real', value: outcome.x }
+        props['position.y'] = { type: 'real', value: outcome.y }
+        if (outcome.follows) props['pinned'] = { type: 'bool', value: false }
+        message +=
+          'beyond' in where ? `, placed beyond ${where.beyond} from ${where.from}` : `, placed near ${where.near}`
+        follows = outcome.follows
+      }
+
+      const result = bridge.submitAs(actor, message, ops)
 
       // The edge was written against a predicted id. If the kernel issued a
       // different one the edge points at the wrong note, so say so rather than
@@ -328,6 +383,7 @@ export class NoteCommands {
           note: next.node,
           edge: result.edgeIds[0],
           seq: result.seq,
+          ...(follows === undefined ? {} : { follows }),
         },
       }
     } catch (err) {
@@ -340,7 +396,8 @@ export class NoteCommands {
    *
    * `author` is the actor on the commit that created the node, read from the
    * history index (Plan 02). It is not a property on the node, so it is not
-   * something a writer could have set about itself (D-05, HIST-08).
+   * something a writer could have set about itself (HIST-08). It is also the
+   * note's default lock owner (02.4 D-04).
    */
   readNote(args: { tree: string; note: string }): CommandResult<{
     tree: string
@@ -425,8 +482,8 @@ export class NoteCommands {
   /**
    * Search titles and text across the open trees, or one named tree.
    *
-   * Read-only, and deliberately unrestricted: D-05 lets an agent read any
-   * note. Nothing is committed, so no actor is needed.
+   * Read-only, and deliberately unrestricted: locks gate changes, never
+   * reading, so an agent may read any note (02.4 D-01). Nothing is committed, so no actor is needed.
    */
   searchNotes(args: { tree?: string; query: string; limit?: number }): CommandResult<
     Array<{ tree: string; treeName: string; note: string; title: string; snippet: string }>
@@ -491,7 +548,11 @@ export class NoteCommands {
   }
 
   /**
-   * Replace a note's text (D-05: only a note this actor created).
+   * Replace a note's text.
+   *
+   * An agent is refused when the note's `text` aspect is locked against it
+   * (02.4 D-01, D-08); people and non-agent plugins are not checked (D-10).
+   * The lock rule lives in locks.ts.
    */
   updateNote(
     actor: Actor,
@@ -500,7 +561,7 @@ export class NoteCommands {
     const textResult = validateText(args.text)
     if (!textResult.ok) return textResult
 
-    return this.writeToOwnNote(actor, args.tree, args.note, (tree) => ({
+    return this.writeToNote(actor, args.tree, args.note, 'text', (tree) => ({
       message: `update note ${args.note}`,
       ops: [
         {
@@ -515,7 +576,12 @@ export class NoteCommands {
     }))
   }
 
-  /** Retitle a note (D-05: only a note this actor created). */
+  /**
+   * Retitle a note.
+   *
+   * A title is part of what the note says, so rename checks the note's `text`
+   * aspect, the same lock as updateNote (02.4 D-03). See locks.ts.
+   */
   renameNote(
     actor: Actor,
     args: { tree: string; note: string; title: string },
@@ -523,7 +589,7 @@ export class NoteCommands {
     const titleResult = validateTitle(args.title)
     if (!titleResult.ok) return titleResult
 
-    return this.writeToOwnNote(actor, args.tree, args.note, (tree) => ({
+    return this.writeToNote(actor, args.tree, args.note, 'text', (tree) => ({
       message: `rename note ${args.note} to "${titleResult.value}"`,
       ops: [
         {
@@ -539,7 +605,11 @@ export class NoteCommands {
   }
 
   /**
-   * Delete a note (D-05: only a note this actor created).
+   * Delete a note.
+   *
+   * An agent is refused when the note's `delete` aspect is locked against it
+   * (02.4 D-02). For a note no agent created, whether that aspect starts locked
+   * follows NON_AGENT_NOTES_DELETE_LOCKED in locks.ts (02.4 D-05).
    *
    * The note leaves the world but not the history: the journal is append-only,
    * so the commits that created and changed it remain readable.
@@ -548,7 +618,7 @@ export class NoteCommands {
     actor: Actor,
     args: { tree: string; note: string },
   ): CommandResult<{ tree: string; note: string; seq: number }> {
-    return this.writeToOwnNote(actor, args.tree, args.note, (tree) => ({
+    return this.writeToNote(actor, args.tree, args.note, 'delete', (tree) => ({
       message: `delete note ${args.note}`,
       ops: [{ op: 'deleteNode', id: args.note }],
       tree,
@@ -560,17 +630,19 @@ export class NoteCommands {
   // -------------------------------------------------------------------------
 
   /**
-   * The shared shape of update, rename and delete: resolve, reconcile a
-   * rewound tree, check ownership, then commit.
+   * The shared shape of an agent-reachable note change: resolve, reconcile a
+   * rewound tree, check the lock on `aspect`, then commit.
    *
-   * Ownership is checked **after** the tree is returned to its latest state,
+   * The lock is checked **after** the tree is returned to its latest state,
    * so the answer comes from the world the commit will actually be appended
-   * to rather than from a rewound view of it.
+   * to rather than from a rewound view of it (02.4 D-11). A refusal returns
+   * before anything is built or submitted, so it writes nothing.
    */
-  private writeToOwnNote(
+  private writeToNote(
     actor: Actor,
     treeRef: string,
     noteId: string,
+    aspect: LockAspect,
     build: (tree: OpenTree) => { message: string; ops: OpObject[]; tree: OpenTree },
   ): CommandResult<{ tree: string; note: string; seq: number }> {
     let tree: OpenTree
@@ -583,7 +655,7 @@ export class NoteCommands {
     try {
       this.prepareWrite(tree, actor)
 
-      const refusal = this.assertOwnNote(tree, noteId, actor)
+      const refusal = this.assertMayWrite(tree, noteId, actor, aspect)
       if (refusal) return { ok: false, error: refusal }
 
       const { message, ops } = build(tree)
@@ -596,37 +668,40 @@ export class NoteCommands {
     }
   }
 
-  /** See prepareWriteFor: this is the same rule, bound to these hooks. */
-  private prepareWrite(tree: OpenTree, actor: Actor): void {
-    prepareWriteFor(tree, actor, this.hooks)
-  }
-
   /**
-   * D-05: an agent may change only notes it created.
+   * Whether `actor` may change `aspect` of `noteId` (02.4 D-01, D-10).
    *
-   * The answer comes from the `actor` line of the commit that created the
-   * node, read through the history index. There is no created-by property, so
-   * ownership is a fact recorded on disk rather than a claim the caller could
-   * have written about itself (HIST-08).
+   * A note that is not live is refused as such (D-13). People and non-agent
+   * plugins are not checked. For an agent, the lock is resolved from the
+   * note's properties and from its creator, which is the `actor` line of the
+   * commit that created it, read through the history index. There is no
+   * created-by property, so the default lock owner is a fact recorded on disk
+   * rather than a claim a writer could make about itself (HIST-08, D-04).
    *
    * Returns the refusal message, or null when the write may proceed.
    */
-  private assertOwnNote(tree: OpenTree, noteId: string, actor: Actor): string | null {
+  private assertMayWrite(
+    tree: OpenTree,
+    noteId: string,
+    actor: Actor,
+    aspect: LockAspect,
+  ): string | null {
     const notLive = `${String(noteId)} is not a live note in ${tree.name}`
 
     if (typeof noteId !== 'string' || !NODE_ID_RE.test(noteId)) return notLive
-    if (!tree.bridge.getNode(noteId)) return notLive
+    const node = tree.bridge.getNode(noteId)
+    if (!node) return notLive
 
-    // Only agents are restricted; a person may change their own world freely.
     if (!isAgentActor(actor)) return null
 
     const entry = tree.bridge.getHistoryIndex().nodes[noteId]
     if (!entry) return notLive
 
-    const createdBy = entry.createdBy
-    if (createdBy.kind !== actor.kind || createdBy.id !== actor.id) {
-      return `${actor.id} may only change notes it created; ${noteId} was created by ${createdBy.id}`
-    }
-    return null
+    return checkLock(noteId, node.props, entry.createdBy, actor, aspect)
+  }
+
+  /** See prepareWriteFor: this is the same rule, bound to these hooks. */
+  private prepareWrite(tree: OpenTree, actor: Actor): void {
+    prepareWriteFor(tree, actor, this.hooks)
   }
 }

@@ -415,6 +415,27 @@ export default function App(): React.ReactElement {
     [submitChange, refreshTree, reportSaveError],
   )
 
+  /**
+   * A person moved a note that was following its parent (D-03, D-16). The
+   * file records the takeover readably: position and pinned=true in one
+   * 'Move note' commit, after which the note stops following.
+   */
+  const handleTakeOverPosition = useCallback(
+    async (ref: NodeRef, newX: number, newY: number) => {
+      try {
+        await submitChange(ref.treeId, 'Move note', [
+          { op: 'setProperty', target: ref.nodeId, key: 'position.x', type: 'real', value: newX },
+          { op: 'setProperty', target: ref.nodeId, key: 'position.y', type: 'real', value: newY },
+          { op: 'setProperty', target: ref.nodeId, key: 'pinned', type: 'bool', value: true },
+        ])
+        await refreshTree(ref.treeId)
+      } catch (err) {
+        reportSaveError('Failed to update position', err)
+      }
+    },
+    [submitChange, refreshTree, reportSaveError],
+  )
+
   /** Thread center pin (D-17): position + pinned=true in one commit. */
   const handlePinnedPositionChange = useCallback(
     async (ref: NodeRef, newX: number, newY: number) => {
@@ -737,6 +758,7 @@ export default function App(): React.ReactElement {
           onMarkDirty={markDirty}
           onMarkClean={markClean}
           onPositionChange={handlePositionChange}
+          onTakeOverPosition={handleTakeOverPosition}
           onWidthChange={handleWidthChange}
           onHeightChange={handleHeightChange}
           onPinnedPositionChange={handlePinnedPositionChange}

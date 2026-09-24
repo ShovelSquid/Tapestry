@@ -28,6 +28,11 @@ interface NodeInfo {
 
 interface FallbackNodeViewProps {
   node: NodeInfo
+  /**
+   * Where a following note is drawn, beside its grew-from parent (D-05). Set
+   * only for a following note; every other note keeps its stored position.
+   */
+  displayPosition?: { x: number; y: number }
   isSelected: boolean
   isHovered: boolean
   zoom: number
@@ -150,6 +155,7 @@ function EditableValue({
 
 export default function FallbackNodeView({
   node,
+  displayPosition,
   isSelected,
   // isHovered is accepted (Canvas passes it) but the fallback view has no
   // hover-only affordance yet, so it is intentionally not destructured.
@@ -164,8 +170,8 @@ export default function FallbackNodeView({
   const isDraggingRef = useRef(false)
   const dragStartRef = useRef({ x: 0, y: 0 })
 
-  const px = Number(node.props['position.x']?.value ?? 0)
-  const py = Number(node.props['position.y']?.value ?? 0)
+  const px = displayPosition ? displayPosition.x : Number(node.props['position.x']?.value ?? 0)
+  const py = displayPosition ? displayPosition.y : Number(node.props['position.y']?.value ?? 0)
   const [localPos, setLocalPos] = useState({ x: px, y: py })
 
   // Sync from props when not dragging
