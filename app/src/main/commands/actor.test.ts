@@ -17,6 +17,7 @@ import {
   humanActor,
   isValidActorName,
   OBSIDIAN_BRIDGE_ACTOR,
+  WORKSPACE_BRIDGE_ACTOR,
   pluginActor,
   SYSTEM_ACTOR,
 } from './actor'
@@ -234,5 +235,13 @@ describe('worlds written before D-07', () => {
     } finally {
       tree.cleanup()
     }
+  })
+})
+
+describe('WORKSPACE_BRIDGE_ACTOR (02.7 D-06)', () => {
+  it('is plugin workspace.bridge, and plugins may not claim it', () => {
+    expect(WORKSPACE_BRIDGE_ACTOR).toEqual({ kind: 'plugin', id: 'workspace.bridge' })
+    expect(Object.isFrozen(WORKSPACE_BRIDGE_ACTOR)).toBe(true)
+    expect(() => pluginActor('workspace.bridge')).toThrow('Reserved plugin id: workspace.bridge')
   })
 })
