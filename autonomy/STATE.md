@@ -41,17 +41,16 @@ strictly in order: 01, 02, 03, 04, 05, then 06.
 
 - 2026-09-24 (interactive, not the driver): committed the 2.6 plans,
   merged phase-2-implementation-v1 at `96ac7f0` (`256fae7`), ported this
-  driver from ws/windows, set `auto_advance` and `_auto_chain_active` to
-  false so no checkpoint is auto-approved.
+  driver from ws/windows. Auto checkpoints stay on (Kaelen's choice).
 
 ## Learned
 
 - The worktree shares `node_modules` with `~/Tapestry` by symlink.
   `app/native/build` was built here with `npm --prefix app run build:native`
   (not copied: a copied CMake cache carries another tree's absolute paths).
-- GSD treats `workflow.auto_advance: true` as auto mode even without
-  `--auto`, and auto mode approves `human-verify` checkpoints. Only
-  `blocking-human` gates are exempt. Keep `auto_advance` false here.
+- `workflow.auto_advance: true` is auto mode even without `--auto`: GSD
+  approves `human-verify` checkpoints and picks the first option of
+  decisions. Kaelen wants this on. Only `blocking-human` gates stop.
 - The baseline after the merge (`256fae7`): 21 test files, 443 tests
   passing, typecheck clean.
 

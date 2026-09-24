@@ -33,16 +33,21 @@ the difference is that the work list comes from GSD, not a hand-kept list.
 3. **Execute the next wave.** Find the lowest wave that still has a plan
    without a `*-SUMMARY.md`, then invoke the skill
    `gsd-execute-phase` with args `<phase> --wave <N>`.
-   - **Never pass `--auto`.** Auto mode approves human checkpoints on its
-     own, and the checkpoints in these plans are the human's to pass,
-     especially the 02.6-02 record-shape checkpoint (#17/#18), which is a one-way door.
+   - Auto checkpoints are on (Kaelen, 2026-09-24): `workflow.auto_advance`
+     is true, so GSD approves `checkpoint:human-verify` and picks the
+     recommended option of `checkpoint:decision` by itself. Let it; record
+     each auto-approval as one line in the Log.
+   - Do not pass `--auto` on top of that: it also chains into the next
+     phase, and a session is one wave.
    - Let GSD's executor agents do the work and make the atomic commits.
      Do not re-implement a plan inline.
 
-4. **Stop at any human gate.** A `checkpoint:human-verify`,
-   `checkpoint:decision` or `checkpoint:human-action`, a phase verification
-   that ends `human_needed`, or any AskUserQuestion that the workflow would
-   raise all mean the human decides. Do not answer it yourself.
+4. **Stop only at a blocking-human gate.** A checkpoint with
+   `gate="blocking-human"` (in 2.6: the 02.6-02 record-shape decision,
+   #17/#18, a one-way door), a package-legitimacy check, a
+   `checkpoint:human-action` that needs hands at the machine, or a phase
+   verification that ends `human_needed` all mean the human decides. GSD
+   never auto-approves these; do not answer them yourself.
    - Write `autonomy/WAITING`, which is gitignored, in plain words: phase,
      plan and task; exactly what to do (the checkpoint's how-to-verify
      steps, with commands); what to check; and how to answer.
