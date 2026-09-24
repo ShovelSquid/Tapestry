@@ -11,27 +11,55 @@
  * sets, and segments text into the letters D-01 draws one at a time.
  */
 
-import { isHistoryTransaction } from 'prosemirror-history'
-import type { Transaction } from 'prosemirror-state'
+import { isHistoryTransaction, redo, undo } from 'prosemirror-history'
+import type { Command, Transaction } from 'prosemirror-state'
+import type { Node as ProseMirrorNode } from 'prosemirror-model'
 import type { Step } from 'prosemirror-transform'
+import { ReplaceStep } from 'prosemirror-transform'
 import type { ThreadCause } from '../../shared/threads/grammar'
 
 /**
- * The cause a transaction carries, or null for ordinary typing.
+ * Meta key `threadUndo`/`threadRedo` (below) stamp onto the transaction
+ * `undo`/`redo` themselves dispatch, so `causeOf` can distinguish the two --
+ * `isHistoryTransaction` alone cannot, since redo replays through the exact
+ * same history plugin as undo and carries no separate marker of its own.
+ */
+export const THREAD_HISTORY_DIRECTION_META = 'threadHistoryDirection'
+
+/**
+ * Wraps `prosemirror-history`'s `undo`/`redo` so every transaction either
+ * command produces is stamped with which direction it was, before it ever
+ * reaches `causeOf`. The thread typer's keymap binds `Mod-z`/`Mod-Shift-z`
+ * to these, never to the bare library commands, and never to the kernel's
+ * own history-rewind channel -- Cmd+Z in a thread is ordinary editor
+ * history (D-04).
+ */
+export const threadUndo: Command = (state, dispatch) =>
+  undo(state, dispatch ? (tr) => dispatch(tr.setMeta(THREAD_HISTORY_DIRECTION_META, 'undo')) : undefined)
+
+export const threadRedo: Command = (state, dispatch) =>
+  redo(state, dispatch ? (tr) => dispatch(tr.setMeta(THREAD_HISTORY_DIRECTION_META, 'redo')) : undefined)
+
+/**
+ * The cause a transaction carries, or null for ordinary typing. Resolved in
+ * a fixed order (RESEARCH Pattern 2, this plan's Task 2 vocabulary):
  *
- * `uiEvent` covers paste/cut/drop (prosemirror-view sets it on the
- * transaction that performs them); `isHistoryTransaction` covers undo (redo
- * is not distinguished from undo here -- both replay through the same
- * history plugin and neither carries a separate marker on the transaction
- * itself); `composition` covers IME; `threadCause` is the escape hatch for
- * a formatting or link command to tag its own transaction once
- * `toolbar-commands.ts`/`passage-plugin.ts` are wired to do so (a later
- * plan -- this tracer never sets it).
+ *  1. `uiEvent` -- paste/cut/drop (prosemirror-view sets it on the
+ *     transaction that performs them; covers the menu, context-menu and
+ *     drag paths a key listener would miss).
+ *  2. `isHistoryTransaction` -- undo/redo, distinguished by which of
+ *     `threadUndo`/`threadRedo` (above) dispatched it.
+ *  3. `composition` -- non-null while an IME composition is in flight.
+ *  4. `threadCause` -- the escape hatch `toolbar-commands.ts` (`'format'`)
+ *     and `passage-plugin.ts` (`'link'`) set on their own transactions.
  */
 export function causeOf(tr: Transaction): ThreadCause | null {
   const uiEvent = tr.getMeta('uiEvent') as 'paste' | 'cut' | 'drop' | undefined
   if (uiEvent === 'paste' || uiEvent === 'cut' || uiEvent === 'drop') return uiEvent
-  if (isHistoryTransaction(tr)) return 'undo'
+  if (isHistoryTransaction(tr)) {
+    const direction = tr.getMeta(THREAD_HISTORY_DIRECTION_META)
+    return direction === 'redo' ? 'redo' : 'undo'
+  }
   if (tr.getMeta('composition') != null) return 'ime'
   const threadCause = tr.getMeta('threadCause') as ThreadCause | undefined
   return threadCause ?? null
@@ -73,4 +101,31 @@ export function insertedTextOf(step: Step): string {
     .slice
   if (!slice) return ''
   return slice.content.textBetween(0, slice.content.size, '\n')
+}
+
+/**
+ * Collapses a whole IME composition into the **one** step it should have
+ * recorded (Pitfall 5, D-05's "never spread out to look typed" sibling
+ * rule for composition): while `view.composing`, kana-preview churn can
+ * dispatch several intermediate replace transactions before the user
+ * commits a result, and pushing each of those individually would flood
+ * `thread.log` with revisions nobody ever actually typed.
+ *
+ * Diffs `startDoc` (the document immediately before the composition began)
+ * against `endDoc` (the document once it ended) using the same
+ * `Fragment.findDiffStart`/`findDiffEnd` technique ProseMirror's own DOM
+ * change reader uses to turn an arbitrary DOM mutation into one step --
+ * never a hand-rolled position walk. Returns `null` when the two documents
+ * are identical (a composition that committed no net change).
+ */
+export function collapsedCompositionStep(startDoc: ProseMirrorNode, endDoc: ProseMirrorNode): ReplaceStep | null {
+  const start = startDoc.content.findDiffStart(endDoc.content)
+  if (start == null) return null
+  const diffEnd = startDoc.content.findDiffEnd(endDoc.content)
+  if (!diffEnd) return null
+  let { a: endA, b: endB } = diffEnd
+  if (endA < start) endA = start
+  if (endB < start) endB = start
+  const slice = endDoc.slice(start, endB)
+  return new ReplaceStep(start, endA, slice)
 }

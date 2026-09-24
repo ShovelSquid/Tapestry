@@ -25,12 +25,11 @@ import { EditorView } from 'prosemirror-view'
 import type { Node as ProseMirrorNode } from 'prosemirror-model'
 import { keymap } from 'prosemirror-keymap'
 import { baseKeymap } from 'prosemirror-commands'
-import { history, redo, undo } from 'prosemirror-history'
+import { history } from 'prosemirror-history'
 import { collab, getVersion, receiveTransaction } from 'prosemirror-collab'
 import { Step } from 'prosemirror-transform'
 import { tapestrySchema } from '../editor/schema'
-import { insertedTextOf } from './recorder'
-import { causeOf } from './recorder'
+import { causeOf, collapsedCompositionStep, insertedTextOf, threadRedo, threadUndo } from './recorder'
 import type { ThreadCause } from '../../shared/threads/grammar'
 
 export type ThreadPushResult =
@@ -124,12 +123,13 @@ export function useThreadEditor({
   const onLocalInsertRef = useRef(onLocalInsert)
   onLocalInsertRef.current = onLocalInsert
 
-  // Buffers a composing run's steps; flushed together at composition end
-  // (Pitfall 5: an IME's intermediate revisions must not each become their
-  // own record).
   type Captured = { stepJson: unknown; timeMs: number; cause: ThreadCause | null; insertedText: string }
-  const composingBufferRef = useRef<Captured[]>([])
   const wasComposingRef = useRef(false)
+  // The document immediately before the current composition run started
+  // (Pitfall 5): captured once, on the first composing transaction, so the
+  // whole run can be collapsed into a single step at composition end
+  // instead of replaying every intermediate revision it churned through.
+  const composingStartDocRef = useRef<ProseMirrorNode | null>(null)
 
   const pushBatch = useCallback((steps: unknown[], times: number[], causes: (ThreadCause | null)[]) => {
     const view = viewRef.current
@@ -157,7 +157,7 @@ export function useThreadEditor({
     const editable = ready !== null
     const doc = ready ? tapestrySchema.nodeFromJSON(ready.doc) : deserializeCheckpoint(checkpointBody)
 
-    const plugins: Plugin[] = [history(), keymap({ 'Mod-z': undo, 'Mod-Shift-z': redo }), keymap(baseKeymap)]
+    const plugins: Plugin[] = [history(), keymap({ 'Mod-z': threadUndo, 'Mod-Shift-z': threadRedo }), keymap(baseKeymap)]
     if (editable) {
       plugins.unshift(collab({ version: ready!.version }))
     }
@@ -168,11 +168,39 @@ export function useThreadEditor({
       state,
       editable: () => editable,
       dispatchTransaction(tr) {
+        const beforeDoc = view.state.doc
         const newState = view.state.apply(tr)
         view.updateState(newState)
         if (!editable || !tr.docChanged) return
 
         const nowMs = Date.now()
+
+        if (view.composing) {
+          // Nothing is drawn and nothing is pushed while composing
+          // (Pitfall 5): kana-preview churn dispatches several intermediate
+          // replace transactions before the user commits a result, and
+          // recording each one individually would flood thread.log with
+          // revisions nobody ever actually typed. Only the moment
+          // composition *started* is remembered, once.
+          if (!wasComposingRef.current) composingStartDocRef.current = beforeDoc
+          wasComposingRef.current = true
+          return
+        }
+
+        if (wasComposingRef.current) {
+          const startDoc = composingStartDocRef.current ?? beforeDoc
+          wasComposingRef.current = false
+          composingStartDocRef.current = null
+
+          const collapsed = collapsedCompositionStep(startDoc, newState.doc)
+          if (collapsed) {
+            const text = insertedTextOf(collapsed)
+            if (text) onLocalInsertRef.current?.(nowMs, text)
+            pushBatch([collapsed.toJSON()], [nowMs], ['ime'])
+          }
+          return
+        }
+
         const cause = causeOf(tr)
         const captured: Captured[] = tr.steps.map((step) => ({
           stepJson: step.toJSON(),
@@ -180,30 +208,6 @@ export function useThreadEditor({
           cause,
           insertedText: insertedTextOf(step),
         }))
-
-        if (view.composing) {
-          // Nothing is drawn while composing (RESEARCH Pitfall 5): the
-          // committed graphemes land as one cluster at composition end,
-          // below.
-          composingBufferRef.current.push(...captured)
-          wasComposingRef.current = true
-          return
-        }
-
-        if (wasComposingRef.current) {
-          composingBufferRef.current.push(...captured)
-          const buffered = composingBufferRef.current
-          composingBufferRef.current = []
-          wasComposingRef.current = false
-          const composedText = buffered.map((s) => s.insertedText).join('')
-          if (composedText) onLocalInsertRef.current?.(nowMs, composedText)
-          pushBatch(
-            buffered.map((s) => s.stepJson),
-            buffered.map((s) => s.timeMs),
-            buffered.map((s) => s.cause),
-          )
-          return
-        }
 
         // Optimistic, synchronous, per-step: the stage never waits for
         // onPush's round trip to draw a keystroke.

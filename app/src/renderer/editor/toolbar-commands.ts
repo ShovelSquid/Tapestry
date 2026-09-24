@@ -1,16 +1,27 @@
 import { EditorView } from 'prosemirror-view'
 import { toggleMark, setBlockType } from 'prosemirror-commands'
 import { wrapInList, liftListItem } from 'prosemirror-schema-list'
+import type { Transaction } from 'prosemirror-state'
 import { tapestrySchema, DEFAULT_TEXT_COLOR, isValidTextColor, isValidFontFamily } from './schema'
 import { NodeType } from 'prosemirror-model'
 
+/**
+ * Wraps `view.dispatch` so a command's own transaction is stamped
+ * `threadCause: 'format'` before it is dispatched (D-02: "making a link or
+ * applying formatting drops a small marker on the line at that moment").
+ * A no-op outside a thread typer -- the meta is simply never read there.
+ */
+function withFormatCause(dispatch: EditorView['dispatch']): (tr: Transaction) => void {
+  return (tr) => dispatch(tr.setMeta('threadCause', 'format'))
+}
+
 export function toggleBold(view: EditorView) {
-  toggleMark(tapestrySchema.marks.strong)(view.state, view.dispatch)
+  toggleMark(tapestrySchema.marks.strong)(view.state, withFormatCause(view.dispatch))
   view.focus()
 }
 
 export function toggleItalic(view: EditorView) {
-  toggleMark(tapestrySchema.marks.em)(view.state, view.dispatch)
+  toggleMark(tapestrySchema.marks.em)(view.state, withFormatCause(view.dispatch))
   view.focus()
 }
 
@@ -22,12 +33,12 @@ function currentAlign(view: EditorView): string | null {
 
 export function setHeading(view: EditorView, level: number) {
   const node = tapestrySchema.nodes.heading
-  setBlockType(node, { level, align: currentAlign(view) })(view.state, view.dispatch)
+  setBlockType(node, { level, align: currentAlign(view) })(view.state, withFormatCause(view.dispatch))
   view.focus()
 }
 
 export function setParagraph(view: EditorView) {
-  setBlockType(tapestrySchema.nodes.paragraph, { align: currentAlign(view) })(view.state, view.dispatch)
+  setBlockType(tapestrySchema.nodes.paragraph, { align: currentAlign(view) })(view.state, withFormatCause(view.dispatch))
   view.focus()
 }
 
@@ -61,15 +72,15 @@ function toggleList(view: EditorView, listType: NodeType) {
   const parentList = listDepth >= 0 ? $from.node(listDepth) : null
 
   if (parentList && parentList.type === listType) {
-    liftListItem(list_item)(view.state, view.dispatch)
+    liftListItem(list_item)(view.state, withFormatCause(view.dispatch))
   } else if (
     parentList &&
     listDepth >= 1 &&
     (parentList.type === bullet_list || parentList.type === ordered_list)
   ) {
-    view.dispatch(view.state.tr.setNodeMarkup($from.before(listDepth), listType))
+    view.dispatch(view.state.tr.setNodeMarkup($from.before(listDepth), listType).setMeta('threadCause', 'format'))
   } else {
-    wrapInList(listType)(view.state, view.dispatch)
+    wrapInList(listType)(view.state, withFormatCause(view.dispatch))
   }
   view.focus()
 }
@@ -83,6 +94,7 @@ export function setTextColor(view: EditorView, color: string) {
   if (color !== DEFAULT_TEXT_COLOR && isValidTextColor(color)) {
     tr.addMark(from, to, mark.create({ color }))
   }
+  tr.setMeta('threadCause', 'format')
   view.dispatch(tr)
   view.focus()
 }
@@ -96,6 +108,7 @@ export function setFontFamily(view: EditorView, family: string) {
   if (family && isValidFontFamily(family)) {
     tr.addMark(from, to, mark.create({ family }))
   }
+  tr.setMeta('threadCause', 'format')
   view.dispatch(tr)
   view.focus()
 }
@@ -103,6 +116,7 @@ export function setFontFamily(view: EditorView, family: string) {
 export function setAlignment(view: EditorView, align: string | null) {
   const { from, to } = view.state.selection
   const tr = view.state.tr
+  tr.setMeta('threadCause', 'format')
   view.state.doc.nodesBetween(from, to, (node, pos) => {
     if (node.type === tapestrySchema.nodes.paragraph || node.type === tapestrySchema.nodes.heading) {
       tr.setNodeMarkup(pos, undefined, { ...node.attrs, align })
