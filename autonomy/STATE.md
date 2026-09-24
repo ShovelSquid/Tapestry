@@ -22,44 +22,61 @@ Nothing. (`autonomy/watch.py` is the operator's log viewer, committed in
 
 ## Next
 
-1. **Replay tool and goldens** (phase 1 needs goldens that pass two-process
-   and Debug-vs-Release). `tools/ms_replay/main.cpp`, same CLI as
-   `tools/ddsim_replay/main.cpp` (`<fixture>`, `--compare <golden>`,
-   `--write-golden <out>`, `--roundtrip`; exit 0/1/2 the same way) but
-   driving `mathspace::World` directly (`apply`, `step`, `hash`,
-   `serialize`, `restore`; there is no C ABI yet and none is needed).
-   Fixture text is the ddsim format from `tests/golden_support.hpp`
-   (`seed <u64>` | `action <tick> <hex bytes>` | `checkpoint <tick>` |
-   `#` comments; replay rule: for t = 0..max apply that tick's actions
-   in file order, record the hash if t is a checkpoint, then step).
-   Put a mathspace copy of the parser in `tests/mathspace/fixture.hpp`
-   rather than including `golden_support.hpp`, which drags in ddsim's
-   action writer; keep the grammar identical so a later merge is a
-   delete. Fixtures in `tests/golden/ms/`: `empty.actions` (seed 42,
-   checkpoints 0, 1, 60) and `two-notes.actions` (create a 2-space at
-   tick 0, two notes with `pos` at ticks 0 and 1, SetField pos again at
-   tick 2, DeleteNote one at tick 3; checkpoints 0..4). Write the hex by
-   hand from `encode_*` (a doctest in `tests/mathspace/golden_test.cpp`
-   that builds the same log via the encoders and checks it equals the
-   fixture's bytes keeps the hex honest). CMake: `ms_replay` target next
-   to `ddsim_replay`, a second `file(GLOB ...)` loop over
-   `tests/golden/ms/*.actions` naming tests `ms_golden_two_process_<n>`
-   and reusing `cmake/two_process.cmake` with `-DREPLAY=ms_replay`
-   (check that its `ddsim_replay` in error text is only a message).
-   Produce `.sha256` with `--write-golden` from native-release, then
-   confirm native-debug agrees, then commit both.
-2. **Tapestry Space page** (phase 1 done condition): `PageKind::Space`,
-   page owns a mathspace `World`, notes drawn as labelled dots, drag
-   issues `SetField pos`, `.tapestry` delta line `mspace <page> <base64
-   actions>`; reload and compare hash. Link `mathspace` into
-   `tapestry_core` (the tapestry CMake is a separate project; add it as a
-   subdirectory or an `add_subdirectory(..)` bridge, whichever is cleaner,
-   and record the choice under Decisions).
+The Tapestry Space page (phase 1 done condition) is split into three
+slices; do them in order, one per session unless the first is quick.
+
+1. **2a Space page model + `.tapestry` round trip, headless.** Build the
+   tapestry tree first to confirm the environment
+   (`cmake -S tapestry -B build/tapestry && cmake --build build/tapestry -j`;
+   first configure needs network for glad). Then:
+   - CMake bridge: in `tapestry/CMakeLists.txt` before `tapestry_core`,
+     `add_subdirectory(${PROJECT_SOURCE_DIR}/.. ${CMAKE_BINARY_DIR}/physics-engine)`
+     (the root CMakeLists already forces `DDSIM_BUILD_TESTS OFF` when it is
+     not the top-level project, line ~30; verify) and link `mathspace` into
+     `tapestry_core` PUBLIC. Record the choice under Decisions. Tapestry is
+     not under the forbidden-token gate (gate covers include/, src/, wasm/
+     only), so its doubles are fine; only mathspace bytes are hashed.
+   - `PageKind::Space` appended AFTER `Settings` in `tapestry/core/Page.hpp`
+     so the numeric kinds already in saved files do not shift.
+   - `tapestry/core/Space.hpp`: `struct SpacePage { mathspace::World world;
+     std::vector<std::vector<std::uint8_t>> log; std::size_t saved = 0; }`,
+     one per Space page, kept in the tapestry `World` in a vector sorted by
+     page id (find the page container in `tapestry/core/World.hpp`). `apply`
+     helper: `world.apply(bytes)`; on Ok push to `log`. The World's seed is
+     the page id. mathspace has no journal, so the page keeps the full log;
+     the snapshot writes all of it, a delta writes `log[saved..]`.
+   - Document (`tapestry/core/Document.cpp`): new body line
+     `mspace <page-id> <base64 action bytes>`, one per action, in log order;
+     base64 encoder/decoder local to Document.cpp (std only). On load,
+     apply each line to that page's world in file order; a rejected action
+     fails the load like any other malformed line. After a successful save
+     set `saved = log.size()`.
+   - Test in `tapestry/tests/DocumentTest.cpp`: make a Space page, apply
+     CreateSpace(2), CreateNote, SetField pos; save; reload into fresh
+     state; `mathspace::hash` equal before and after; save again, then a
+     second SetField, save (delta), reload, hash equal again.
+2. **2b render.** Notes drawn as labelled dots in `tapestry/render/Pages.cpp`
+   for `PageKind::Space` pages: iterate the page world's notes in id order,
+   skip the Space note, take `pos` lanes 0 and 1 (a 3-space draws x,y and
+   ignores z for now), label i-th note from the i-th line of the page body.
+3. **2c input.** In `tapestry/app/main.cpp`: a "new 2D space" / "new 3D
+   space" command creating a Space page and applying CreateSpace(dim);
+   click in the body creates a note (CreateNote + SetField pos); dragging a
+   dot issues SetField pos on release (one action per drag, not per
+   frame). `--headless --frames N` must still run. Then check phase 1's
+   done condition and mark it in Phases and README.md.
 
 Then phase 2, per the plan, starting with `include/ddsim/fxmath.hpp` and
 its oracle tests.
 
 ## Done
+
+- `a9297de` ms1 step 6: `tools/ms_replay/main.cpp` (ddsim_replay CLI twin over
+  `World`), `tests/mathspace/fixture.hpp` (parser copy, identical grammar),
+  goldens `empty` and `two-notes` under `tests/golden/ms` with `.sha256`
+  from native-release, confirmed by native-debug; `golden_test.cpp` checks
+  hand hex == encoders, replay == direct build, in-process == committed.
+  CMake `ms_replay` + `ms_golden_two_process_<n>` via `two_process.cmake`.
 
 - `0978fb6` ms1 step 5: `action.hpp` kinds 32..36 + encoders,
   `action.cpp` `World::apply` (`Error::BadAction` for grammar, mutator
@@ -137,8 +154,10 @@ its oracle tests.
 - The token gate scans comments too: writing the name of the forbidden
   container family in a header comment fails configure. Say "hash
   containers".
-- `mathspace_tests` gets `MATHSPACE_GOLDEN_DIR` = `tests/golden/ms`
-  (directory does not exist yet; step 5 creates it).
+- `mathspace_tests` and `ms_replay` get `MATHSPACE_GOLDEN_DIR` =
+  `tests/golden/ms`. New fixtures there are picked up at configure
+  (GLOB CONFIGURE_DEPENDS); write the `.sha256` from native-release,
+  then run native-debug's ctest to confirm before committing.
 
 ## Blocked
 
