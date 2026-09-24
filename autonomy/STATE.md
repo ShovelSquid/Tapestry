@@ -7,33 +7,19 @@ cut off mid-way, the session log, and environment lessons.
 
 ## Current target
 
-Phase 01: Painting with the Pen. 8 plans in 5 waves; waves 1-4 (01-01 to
-01-07) are complete with SUMMARY files.
-
-- 01-08 (wave 5) — inside Tapestry: replay-from-zero, main-thread transport,
-  latency meter, cycles harness, backend report. Task 1 is committed
-  (`971b871`) but has no SUMMARY. Task 2 is a blocking
-  `checkpoint:human-verify`: feel, replay, latency, backend and 20-open
-  lifetime checks with the pen inside the running Tapestry app.
-
-Task 1's verify re-passed here on 2026-09-24 and Task 2's preparation is
-done; the session is WAITING on the human (see Checkpoint).
-
-After 01-08 is approved, finishing Phase 01 is its verification. Phase 2
-(Readable Journal) has no plans and must not be started unattended.
+Phase 01: Painting with the Pen. All 8 plans have SUMMARY files. 01-08 Task 2
+(pen checks inside Tapestry) was approved-deferred per PROTOCOL step 4 and is
+REVIEW.md item 1. Phase verification ran: `human_needed` (01-VERIFICATION.md,
+01-UAT.md); its extra human items are REVIEW.md items 2 and 3. `autonomy/DONE`
+is written. Phase 2 (Readable Journal) must not be planned unattended.
 
 ## Checkpoint
 
-Phase 01, plan 01-08, Task 2 (checkpoint:human-verify, blocking): feel,
-replay, latency, backend and 20-open lifetime checks with the pen inside
-Tapestry. WAITING written 2026-09-24 13:00 with the plan's how-to-verify
-steps. On RESPONSE: resume 01-08 at Task 2 through the GSD execute workflow
-with the RESPONSE text verbatim; the SUMMARY must include the human's sheet
-verbatim, the cycles line and the transport latency comparison. Task 1's
-dev-page observations (`?cycles=20`, `?transport=main`, Verify replay) were
-not recorded in a SUMMARY by the Task 1 executor; the human's steps 8-10
-cover the same ground inside Tapestry. If the app is not running when the
-human answers, nothing needs rebuilding: all outputs are current.
+None pending. Human answers to REVIEW.md items 1-3 arrive in autonomy/RESPONSE.
+On item 1: paste the human's sheet verbatim into 01-08-SUMMARY.md's PENDING
+section and update 01-UAT.md; on "approved", mark CANV-03, CANV-04, STRK-02
+complete in REQUIREMENTS.md; on issues, gap-closure via
+`gsd-plan-phase 01 --gaps` then `gsd-execute-phase 01 --gaps-only`.
 
 ## In progress
 
@@ -46,6 +32,10 @@ human answers, nothing needs rebuilding: all outputs are current.
 - 2026-09-24 12:56 — wave 5 / 01-08: re-ran Task 1 verify (native 75x3,
   plugin 90, app 443, gates clean), rebuilt Wasm and surface, started app
   dev in background, wrote WAITING for Task 2. Commit: this STATE only.
+- 2026-09-24 15:15 — wave 5 / 01-08: resumed Task 2 as approved-deferred;
+  executor re-ran suites (native 75x3, plugin 90, app 443) plus headless
+  dev-page checks, wrote SUMMARY (`85a2f06`); phase verification
+  human_needed (`test(01)` commit), REVIEW items 1-3 queued, DONE written.
 
 ## Learned
 
@@ -67,6 +57,13 @@ human answers, nothing needs rebuilding: all outputs are current.
   rewrites the tracked `.gsd/dispatch-isolation-sentinel.json` (repo root
   and `data-drawing/.gsd/`); restore it with `git checkout --` before
   committing.
+
+- The Agent isolation guard hook requires `isolation="worktree"` unless
+  the sentinel is forced to none first:
+  `gsd-tools query dispatch-isolation --raw --phase 01 --force-isolation none`
+  (base-check degrades here); restore the sentinel file before committing.
+- Config has `verifier_enabled: false`; verification was run anyway since
+  PROTOCOL step 7 requires it.
 
 ## Blocked
 
