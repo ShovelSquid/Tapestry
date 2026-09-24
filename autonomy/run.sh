@@ -108,7 +108,7 @@
           --no-session-persistence \
           --output-format stream-json \
           --verbose \
-          "${budget_args[@]}" \
+          ${budget_args[@]+"${budget_args[@]}"} \
           "$(cat "$ROOT/autonomy/PROMPT.md"; time_limit_line)" \
           >"$log" 2>&1 &
       CHILD_PID=$!
