@@ -16,7 +16,7 @@ import { readFileSync, rmSync, statSync } from 'node:fs'
 import { makeTempDir } from '../../../test/helpers/temp-tree'
 import { TreeRegistry, type OpenTree } from '../trees/registry'
 import type { OpObject } from '../kernel-bridge'
-import { agentActor, humanActor } from './actor'
+import { agentActor, humanActor, type Actor } from './actor'
 import { NoteCommands } from './notes'
 import { ConnectionCommands } from './connections'
 import {
@@ -34,6 +34,10 @@ import { displayPositions, type WherePlacement } from '../../renderer/layout/pla
 
 const KAELEN = humanActor('kaelen')
 const CLAUDE = agentActor('claude')
+const CHATGPT = agentActor('chatgpt')
+/** The Obsidian bridge: a plugin that is not an agent, as it signs vault notes. */
+const BRIDGE: Actor = { kind: 'plugin', id: 'obsidian.bridge' }
+const VAULT_NOTE_TYPE = 'obsidian.vault/note@1'
 
 const NOTE_TYPE = 'tapestry.notes/note@1'
 const KNOT_TYPE = 'tapestry.notes/thread-center@1'
@@ -518,7 +522,7 @@ describe('look through runAgentTool', () => {
 // ---------------------------------------------------------------------------
 
 /** Seed notes made by `actor` in one commit. Agent-made notes start open under 2.4's layout default. */
-function seedAs(actor: typeof CLAUDE, seeds: NoteSeed[], into: OpenTree = tree): string[] {
+function seedAs(actor: Actor, seeds: NoteSeed[], into: OpenTree = tree): string[] {
   return into.bridge.submitAs(actor, 'Seed notes', seeds.map(createOp)).nodeIds
 }
 
@@ -534,7 +538,7 @@ function lastCommitBlock(): string {
 
 type PlaceCall = { tree: string; note: string; where: WherePlacement }
 
-function placeOk(args: PlaceCall, actor = CLAUDE, commands = spatial): PlaceResult {
+function placeOk(args: PlaceCall, actor: Actor = CLAUDE, commands: SpatialCommands = spatial): PlaceResult {
   const result = commands.place(actor, args)
   if (!result.ok) throw new Error(`place refused: ${result.error}`)
   return result.value
@@ -753,5 +757,371 @@ describe('place through runAgentTool', () => {
     })
     expect(result.ok).toBe(true)
     expect(lastCommitBlock()).toContain('actor plugin agent.claude')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// place (Plan 04): every refusal writes nothing
+// ---------------------------------------------------------------------------
+
+/** Calls made to the hooks `place` is given. */
+interface HookCalls {
+  committed: number
+  discarded: number
+}
+
+let calls: HookCalls
+let hooked: SpatialCommands
+
+beforeEach(() => {
+  calls = { committed: 0, discarded: 0 }
+  hooked = new SpatialCommands(registry, {
+    onCommitted: () => {
+      calls.committed++
+    },
+    onRedoDiscarded: () => {
+      calls.discarded++
+    },
+  })
+})
+
+/** How many commits the file holds, counted by their `@commit` records. */
+function commitRecords(): number {
+  return (treeText().match(/^@commit /gm) ?? []).length
+}
+
+/**
+ * Everything a refused `place` must leave alone: the file, the world's
+ * counts, the target note's position and pinned, and the onCommitted count.
+ */
+function fingerprint(note: string) {
+  const node = tree.bridge.getNode(note)
+  return {
+    size: fileSize(),
+    nodes: tree.bridge.getNodes().length,
+    edges: tree.bridge.getEdges().length,
+    commits: commitRecords(),
+    x: node?.props['position.x'],
+    y: node?.props['position.y'],
+    pinned: node?.props['pinned'],
+    committed: calls.committed,
+  }
+}
+
+/** Every refusal sentence seen, for the D-14 digit check. */
+const refusals: string[] = []
+
+/** Place, expect a refusal, and prove the widened fingerprint is unchanged. */
+function placeError(args: PlaceCall, actor: Actor = CLAUDE): string {
+  const before = fingerprint(String(args.note))
+  const result = hooked.place(actor, args)
+  expect(result.ok).toBe(false)
+  expect(fingerprint(String(args.note))).toEqual(before)
+  const error = result.ok ? '' : result.error
+  refusals.push(error)
+  return error
+}
+
+/** Set a lock property the way 2.4's fixtures do: a raw `text` setProperty, signed by `by`. */
+function setLock(note: string, key: string, value: string, by: Actor): void {
+  tree.bridge.submitAs(by, 'Set lock', [{ op: 'setProperty', target: note, key, type: 'text', value }])
+}
+
+describe('place refusals write nothing (SC4)', () => {
+  beforeEach(() => {
+    // n1 placed, n2 unplaced, n3 a knot, n4 on n1's centre: all Kaelen's.
+    seed([{ x: 0, y: 0 }, {}, { x: 0, y: 0, type: KNOT_TYPE }, { x: 0, y: 0 }])
+    // n5 the agent's note, n6 an agent-made knot.
+    seedAs(CLAUDE, [{ x: 2000, y: 2000 }, { x: 900, y: 900, type: KNOT_TYPE }])
+  })
+
+  it('refuses an unknown tree', () => {
+    expect(placeError({ tree: 'no-such-tree', note: 'n5', where: { near: 'n1' } })).toBe(
+      'Unknown tree: no-such-tree',
+    )
+  })
+
+  it('refuses a malformed note id, a note that is not live, and a knot as the note', () => {
+    expect(placeError({ tree: 'spatial', note: 'bogus', where: { near: 'n1' } })).toBe(
+      'bogus is not a live note in spatial',
+    )
+    expect(placeError({ tree: 'spatial', note: 'n99', where: { near: 'n1' } })).toBe(
+      'n99 is not a live note in spatial',
+    )
+    expect(placeError({ tree: 'spatial', note: 'n6', where: { near: 'n1' } })).toBe(
+      'n6 is not a note place can move in spatial',
+    )
+  })
+
+  it('refuses a near or from anchor that is not live, malformed or live', () => {
+    expect(placeError({ tree: 'spatial', note: 'n5', where: { near: 'n99' } })).toBe(
+      'near n99 is not a live note in spatial',
+    )
+    expect(placeError({ tree: 'spatial', note: 'n5', where: { near: 'bogus' } })).toBe(
+      'near bogus is not a live note in spatial',
+    )
+    expect(placeError({ tree: 'spatial', note: 'n5', where: { beyond: 'n1', from: 'n99' } })).toBe(
+      'from n99 is not a live note in spatial',
+    )
+    expect(placeError({ tree: 'spatial', note: 'n5', where: { beyond: 'n98', from: 'n1' } })).toBe(
+      'beyond n98 is not a live note in spatial',
+    )
+  })
+
+  it('refuses near an unplaced note and near a knot', () => {
+    expect(placeError({ tree: 'spatial', note: 'n5', where: { near: 'n2' } })).toBe(
+      'near n2 is not placed in spatial',
+    )
+    expect(placeError({ tree: 'spatial', note: 'n5', where: { near: 'n3' } })).toBe(
+      'near n3 is not placed in spatial',
+    )
+  })
+
+  it('refuses near itself, from itself, and beyond and from the same note', () => {
+    expect(placeError({ tree: 'spatial', note: 'n5', where: { near: 'n5' } })).toBe(
+      'n5 cannot be placed relative to itself',
+    )
+    expect(placeError({ tree: 'spatial', note: 'n5', where: { beyond: 'n1', from: 'n5' } })).toBe(
+      'n5 cannot be placed relative to itself',
+    )
+    expect(placeError({ tree: 'spatial', note: 'n5', where: { beyond: 'n1', from: 'n1' } })).toBe(
+      'beyond n1 from n1 names the same note twice',
+    )
+  })
+
+  it('refuses two distinct anchors with the same centre (no line)', () => {
+    expect(placeError({ tree: 'spatial', note: 'n5', where: { beyond: 'n1', from: 'n4' } })).toBe(
+      'beyond n1 from n4 has no line to extend in spatial',
+    )
+  })
+
+  it('refuses a column fully blocked by one tall note (no clear spot)', () => {
+    // n7 right of n1, tall enough to cover every one of MAX_PLACE_STEPS steps.
+    seed([{ x: 360, y: -100, height: 20000 }])
+    expect(placeError({ tree: 'spatial', note: 'n5', where: { near: 'n1' } })).toBe(
+      'no clear spot near n1 in spatial',
+    )
+  })
+
+  it('refuses an anchor live only in another open tree (D-12)', () => {
+    const other = registry.create(join(dir, 'other.tree'), 'other')
+    seed(
+      Array.from({ length: 9 }, (_, i) => ({ x: i * 400, y: 0 })),
+      other,
+    )
+    expect(tree.bridge.getNode('n9')).toBeNull()
+    expect(placeError({ tree: 'spatial', note: 'n5', where: { near: 'n9' } })).toBe(
+      'near n9 is not a live note in spatial',
+    )
+  })
+
+  it('refuses to move a note user.kaelen made, with no lock property, naming user.kaelen (SC4, #8)', () => {
+    expect(tree.bridge.getNode('n1')?.props['lock.layout']).toBeUndefined()
+    expect(placeError({ tree: 'spatial', note: 'n1', where: { near: 'n5' } })).toBe(
+      'n1 layout is locked by user.kaelen',
+    )
+  })
+
+  it('carries no digit in any refusal once node ids are removed (D-14)', () => {
+    seed([{ x: 360, y: -100, height: 20000 }])
+    placeError({ tree: 'no-such-tree', note: 'n5', where: { near: 'n1' } })
+    placeError({ tree: 'spatial', note: 'n77', where: { near: 'n1' } })
+    placeError({ tree: 'spatial', note: 'n6', where: { near: 'n1' } })
+    placeError({ tree: 'spatial', note: 'n5', where: { near: 'n2' } })
+    placeError({ tree: 'spatial', note: 'n5', where: { near: 'n5' } })
+    placeError({ tree: 'spatial', note: 'n5', where: { beyond: 'n1', from: 'n1' } })
+    placeError({ tree: 'spatial', note: 'n5', where: { beyond: 'n1', from: 'n4' } })
+    placeError({ tree: 'spatial', note: 'n5', where: { near: 'n1' } })
+    placeError({ tree: 'spatial', note: 'n1', where: { near: 'n5' } })
+    expect(refusals.length).toBeGreaterThanOrEqual(9)
+    for (const error of refusals) {
+      expect(error.replace(/\bn[1-9][0-9]*\b/g, '')).not.toMatch(/[0-9]/)
+    }
+  })
+})
+
+describe("place and a person's takeover (D-17, D-03)", () => {
+  beforeEach(() => {
+    seed([{ x: 0, y: 0 }, { x: 0, y: 1000 }]) // n1 parent, n2 elsewhere
+    seedAs(CLAUDE, [{ x: 360, y: 0, pinned: false }]) // n3 the agent's follower
+    grow('n3', 'n1')
+    // Kaelen drags it: position and pinned true in one commit (Plan 03's takeover).
+    tree.bridge.submitAs(KAELEN, 'Move note', [
+      { op: 'setProperty', target: 'n3', key: 'position.x', type: 'real', value: 800 },
+      { op: 'setProperty', target: 'n3', key: 'position.y', type: 'real', value: 400 },
+      { op: 'setProperty', target: 'n3', key: 'pinned', type: 'bool', value: true },
+    ])
+  })
+
+  it('refuses near its own parent once pinned by a person, and writes nothing', () => {
+    expect(placeError({ tree: 'spatial', note: 'n3', where: { near: 'n1' } })).toBe(
+      'n3 was pinned by a person; it will not follow n1 again',
+    )
+    expect(propOf('n3', 'pinned')).toEqual({ type: 'bool', value: true })
+    expect(calls.committed).toBe(0)
+  })
+
+  it('places it fixed near another note or beyond, and pinned stays true after reopening', () => {
+    const near = placeOk({ tree: 'spatial', note: 'n3', where: { near: 'n2' } }, CLAUDE, hooked)
+    expect(near.follows).toBe(false)
+    let lines = lastCommitBlock()
+      .split('\n')
+      .filter((line) => /^(set|unset) /.test(line))
+    expect(lines).toEqual(['set n3 position.x real 360', 'set n3 position.y real 1000'])
+    expect(propOf('n3', 'pinned')).toEqual({ type: 'bool', value: true })
+
+    placeOk({ tree: 'spatial', note: 'n3', where: { beyond: 'n2', from: 'n1' } }, CLAUDE, hooked)
+    lines = lastCommitBlock()
+      .split('\n')
+      .filter((line) => /^(set|unset) /.test(line))
+    expect(lines.map((line) => line.split(' ').slice(0, 3).join(' '))).toEqual([
+      'set n3 position.x',
+      'set n3 position.y',
+    ])
+    expect(calls.committed).toBe(2)
+
+    registry.closeAll()
+    tree = registry.open(treePath)
+    expect(propOf('n3', 'pinned')).toEqual({ type: 'bool', value: true })
+  })
+})
+
+describe('place and the layout lock (D-15)', () => {
+  beforeEach(() => {
+    seed([{ x: 0, y: 0 }]) // n1, Kaelen's anchor
+    seedAs(CLAUDE, [{ x: 2000, y: 2000 }]) // n2, made by claude, then locked by chatgpt
+    setLock('n2', 'lock.layout', 'agent.chatgpt', CHATGPT)
+  })
+
+  it('refuses a note whose layout is locked by agent.chatgpt, naming the owner', () => {
+    expect(placeError({ tree: 'spatial', note: 'n2', where: { near: 'n1' } })).toBe(
+      'n2 layout is locked by agent.chatgpt',
+    )
+  })
+
+  it('lets an agent listed in lock.layout.allow place it', () => {
+    setLock('n2', 'lock.layout.allow', 'agent.gemini agent.claude', CHATGPT)
+    expect(placeOk({ tree: 'spatial', note: 'n2', where: { near: 'n1' } }, CLAUDE, hooked).note).toBe('n2')
+    expect(calls.committed).toBe(1)
+  })
+
+  it('lets any agent place it once lock.layout is open', () => {
+    setLock('n2', 'lock.layout', 'open', CHATGPT)
+    expect(placeOk({ tree: 'spatial', note: 'n2', where: { near: 'n1' } }, CLAUDE, hooked).note).toBe('n2')
+  })
+
+  it("lets the lock's owner place it", () => {
+    const value = placeOk({ tree: 'spatial', note: 'n2', where: { near: 'n1' } }, CHATGPT, hooked)
+    expect(value.note).toBe('n2')
+    expect(lastCommitBlock()).toContain('actor plugin agent.chatgpt')
+  })
+})
+
+describe('place on a vault note (D-13)', () => {
+  function seedVault(by: Actor): string {
+    return tree.bridge.submitAs(by, 'Seed vault note', [
+      {
+        op: 'createNode',
+        type: VAULT_NOTE_TYPE,
+        props: {
+          'position.x': { type: 'real', value: 2000 },
+          'position.y': { type: 'real', value: 2000 },
+          title: { type: 'text', value: 'Rune' },
+          'md.path': { type: 'text', value: 'Characters/Rune.md' },
+        },
+      },
+    ]).nodeIds[0]
+  }
+
+  beforeEach(() => {
+    seed([{ x: 0, y: 0 }]) // n1, the anchor
+  })
+
+  it('refuses a vault note the obsidian.bridge created, by default', () => {
+    const id = seedVault(BRIDGE)
+    expect(placeError({ tree: 'spatial', note: id, where: { near: 'n1' } })).toBe(
+      `${id} layout is locked by obsidian.bridge`,
+    )
+  })
+
+  it('moves only the Tapestry-side position once its layout is open, leaving md.path byte-equal', () => {
+    const id = seedVault(BRIDGE)
+    setLock(id, 'lock.layout', 'open', KAELEN)
+    const mdBefore = JSON.stringify(propOf(id, 'md.path'))
+    const nodesBefore = tree.bridge.getNodes().length
+
+    placeOk({ tree: 'spatial', note: id, where: { near: 'n1' } }, CLAUDE, hooked)
+
+    expect(JSON.stringify(propOf(id, 'md.path'))).toBe(mdBefore)
+    expect(propOf(id, 'md.path')).toEqual({ type: 'text', value: 'Characters/Rune.md' })
+    expect(tree.bridge.getNodes().length).toBe(nodesBefore)
+    expect(lastCommitBlock()).not.toMatch(/ md\./)
+  })
+
+  it('places a vault-typed note an agent created, which is open by default', () => {
+    const id = seedVault(CLAUDE)
+    placeOk({ tree: 'spatial', note: id, where: { near: 'n1' } }, CLAUDE, hooked)
+    expect(propOf(id, 'md.path')).toEqual({ type: 'text', value: 'Characters/Rune.md' })
+    expect(lastCommitBlock()).not.toMatch(/ md\./)
+  })
+})
+
+describe('place on a rewound tree', () => {
+  beforeEach(() => {
+    seed([{ x: 0, y: 0 }, { x: 0, y: 1000 }]) // n1, n2
+    seedAs(CLAUDE, [{ x: 2000, y: 2000 }]) // n3
+    tree.bridge.submitAs(KAELEN, 'Retitle', [
+      { op: 'setProperty', target: 'n1', key: 'title', type: 'text', value: 'Later' },
+    ])
+    expect(tree.bridge.undo()).toBe(true)
+    expect(tree.bridge.isRewound).toBe(true)
+  })
+
+  it("refuses from the arguments alone without discarding a person's redo (rewound)", () => {
+    const size = fileSize()
+    for (const where of [{ near: 'n3' }, { beyond: 'n1', from: 'n1' }, { near: 'bogus' }] as WherePlacement[]) {
+      const result = hooked.place(CLAUDE, { tree: 'spatial', note: 'n3', where })
+      expect(result.ok).toBe(false)
+    }
+    const malformed = hooked.place(CLAUDE, { tree: 'spatial', note: 'bogus', where: { near: 'n1' } })
+    expect(malformed.ok).toBe(false)
+
+    expect(tree.bridge.isRewound).toBe(true)
+    expect(calls.discarded).toBe(0)
+    expect(calls.committed).toBe(0)
+    expect(fileSize()).toBe(size)
+    expect(tree.bridge.redo()).toBe(true)
+  })
+
+  it('reconciles a rewound tree for a valid placement, announces the discarded redo once, and commits', () => {
+    const commits = commitRecords()
+    placeOk({ tree: 'spatial', note: 'n3', where: { near: 'n2' } }, CLAUDE, hooked)
+    expect(tree.bridge.isRewound).toBe(false)
+    expect(tree.bridge.redo()).toBe(false)
+    expect(calls.discarded).toBe(1)
+    expect(calls.committed).toBe(1)
+    // The retitle was discarded from the view, not from the file; one new commit follows it.
+    expect(commitRecords()).toBe(commits + 1)
+  })
+})
+
+describe('a following note after place (D-05)', () => {
+  it("a person's move of the parent is one commit and leaves the follower's stored props alone", () => {
+    seed([{ x: 0, y: 0 }])
+    seedAs(CLAUDE, [{ x: 2000, y: 2000 }])
+    grow('n2', 'n1')
+    expect(placeOk({ tree: 'spatial', note: 'n2', where: { near: 'n1' } }, CLAUDE, hooked).follows).toBe(true)
+    const followerBefore = tree.bridge.getNode('n2')!
+    const commits = commitRecords()
+
+    tree.bridge.submitAs(KAELEN, 'Move note', [
+      { op: 'setProperty', target: 'n1', key: 'position.x', type: 'real', value: 5000 },
+    ])
+
+    expect(commitRecords()).toBe(commits + 1)
+    const followerAfter = tree.bridge.getNode('n2')!
+    for (const key of ['position.x', 'position.y', 'pinned']) {
+      expect(followerAfter.props[key]).toEqual(followerBefore.props[key])
+    }
   })
 })
