@@ -220,7 +220,7 @@ Plans:
   5. No `thread-center` / `thread-arm` occurrences remain in tracked source under `app/`, `plugins/` or `sdk/`; 2.1's feature works as `knot` / `knot-tie` (D-26)
   6. Each thread stores its own readable frame — `origin.x/y/z`, `direction.x/y/z` and `roll` — and both the live and side views derive their camera from it rather than a hardcoded axis (D-27)
 
-**Plans**: 3/9 plans executed in 8 waves
+**Plans**: 4/9 plans executed in 8 waves
 
 Plans:
 **Wave 1**
@@ -234,7 +234,7 @@ Plans:
 **Wave 3** *(blocked on Wave 2)*
 
 - [x] 02.3-03-PLAN.md — Publish the grammar in FORMAT.md, threads.md and the golden fixture; replay to any moment; no-plugin fallback (D-06, D-08, PLUG-04)
-- [ ] 02.3-04-PLAN.md — Live z-axis view: stage, procedural ribbon, MSDF glyphs, pause slowdown, distance fade, camera from the stored frame (D-09..D-14, D-19, D-27)
+- [x] 02.3-04-PLAN.md — Live z-axis view: stage, procedural ribbon, MSDF glyphs, pause slowdown, distance fade, camera from the stored frame (D-09..D-14, D-19, D-27)
 
 **Wave 4** *(blocked on Wave 3)*
 

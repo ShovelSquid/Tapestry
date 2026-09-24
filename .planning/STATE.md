@@ -4,16 +4,16 @@ milestone: v1.0
 current_phase: "02.3"
 current_phase_name: Time Threads (INSERTED)
 status: executing
-stopped_at: Completed 02.3-03-PLAN.md
-last_updated: "2026-09-24T18:38:42.000Z"
+stopped_at: Completed 02.3-04-PLAN.md
+last_updated: "2026-09-24T19:45:04.723Z"
 last_activity: 2026-09-24
 last_activity_desc: Phase 02.3 Plan 03 executed (grammar published, replay, readable fallback)
-state_head: 44c048deb1e3193fc176eee78bf007fbc9dae331
+state_head: 88bfaa2c029ba1af990b70b8270b2af66b3e8f28
 progress:
   total_phases: 10
   completed_phases: 0
   total_plans: 38
-  completed_plans: 20
+  completed_plans: 21
 ---
 
 # Project State
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-09-08)
 ## Current Position
 
 Phase: 02.3 (Time Threads (INSERTED)) — EXECUTING
-Plan: 3 of 9
+Plan: 4 of 9
 Status: Ready to execute (Plan 04 next — Wave 3, blocked on Wave 2)
 Last activity: 2026-09-24 — Phase 02.3 Plan 03 executed (grammar published, replay, readable fallback)
 
@@ -70,6 +70,7 @@ Progress: [█████░░░░░] 53%
 | Phase 02.3 P01 | 8 min | 2 tasks | 6 files |
 | Phase 02.3 P02 | 44 min | 2 tasks | 30 files |
 | Phase 02.3 P03 | 25 min | 3 tasks | 17 files |
+| Phase 02.3 P04 | 71 min | 2 tasks | 20 files |
 
 ## Accumulated Context
 
@@ -124,6 +125,9 @@ Recent decisions affecting current work:
 - [Phase 02.3]: ThreadService.open() degrades to {unreadable: true, unreadableReason} with no write handle registered on a thread.log parse failure, rather than throwing (T-02.3-03-01)
 - [Phase 02.3]: kernel:getPropertyValues exposed as a generic, ungated IPC read (KernelBridge/preload/global.d.ts), independent of any plugin's enabled state, so FallbackNodeView can read a checkpoint's own recorded stamp with the owning plugin disabled
 - [Phase 02.3]: App.css gains its first CSS custom properties (--tap-destructive-text, --tap-surface), scoped to ThreadNotice.tsx's no-raw-hex requirement rather than a full token-system migration
+- [Phase 02.3]: [Phase 02.3]: uThreadOrigin/uThreadDirection generalize the shared GLSL prelude (threadPoint/threadAxis) to draw along a thread's own D-27 frame instead of a hardcoded axis, reducing to spike 001's exact validated numbers at the default frame
+- [Phase 02.3]: [Phase 02.3]: The live view's fade is distance-only (uFadeOn=0), never thread.js's age-based 20s alpha fade -- D-14 explicitly supersedes the spike's exploratory fade for this phase
+- [Phase 02.3]: [Phase 02.3]: MSDF stays deferred (Kaelen, 2026-09-16); glyph-cache.ts's atlas paging is a bounded 4-page pool (4096 cells), not true LRU eviction -- spike 007 is the queued verdict for real eviction
 
 ### Pending Todos
 
@@ -168,6 +172,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-24T18:38:42.000Z
-Stopped at: Completed 02.3-03-PLAN.md
+Last session: 2026-09-24T19:45:04.643Z
+Stopped at: Completed 02.3-04-PLAN.md
 Resume file: None

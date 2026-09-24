@@ -25,7 +25,7 @@ The first phase must prove an actual plugin-authored interaction and readable sa
 ### Spatial notebook
 
 - [ ] **NOTE-01**: User can create a text node, edit its title/body, save it and reopen the same content.
-- [ ] **NOTE-02**: User can select, copy, paste and compose text through normal keyboard and input-method interactions.
+- [x] **NOTE-02**: User can select, copy, paste and compose text through normal keyboard and input-method interactions.
 - [ ] **NOTE-03**: User can create and remove labeled connections between nodes and follow those relationships.
 - [ ] **NOTE-04**: User can pan, zoom, find a node by its text and bring it into a readable view.
 - [ ] **NOTE-05**: User can move any node and choose whether it is pinned or responds to movement rules.
@@ -65,7 +65,7 @@ The first phase must prove an actual plugin-authored interaction and readable sa
 
 - [ ] **DRAW-01**: User can create and remove drawing strokes in world space alongside notes and retain them through save, replay and branching.
 - [ ] **DRAW-02**: User can associate a drawing with a node or related content.
-- [ ] **DRAW-03**: User can navigate dense or zoomed-out content and return to legible editable text without losing spatial orientation.
+- [x] **DRAW-03**: User can navigate dense or zoomed-out content and return to legible editable text without losing spatial orientation.
 - [ ] **DRAW-04**: User can operate essential editing, inspection and history controls without depending solely on hover or color.
 
 ### Origin and review
@@ -162,7 +162,7 @@ Each v1 requirement has one owning phase; later phases may exercise it through i
 | PLUG-06 | Phase 2 | Complete |
 | PLUG-07 | Phase 2 | Pending |
 | NOTE-01 | Phase 4 | Pending |
-| NOTE-02 | Phase 4 | Pending |
+| NOTE-02 | Phase 4 | Complete |
 | NOTE-03 | Phase 4 | Pending |
 | NOTE-04 | Phase 4 | Pending |
 | NOTE-05 | Phase 4 | Pending |
@@ -190,7 +190,7 @@ Each v1 requirement has one owning phase; later phases may exercise it through i
 | RULE-08 | Phase 5 | Pending |
 | DRAW-01 | Phase 4 | Pending |
 | DRAW-02 | Phase 4 | Pending |
-| DRAW-03 | Phase 4 | Pending |
+| DRAW-03 | Phase 4 | Complete |
 | DRAW-04 | Phase 4 | Pending |
 | PROV-01 | Phase 4 | Pending |
 | PROV-02 | Phase 4 | Pending |
