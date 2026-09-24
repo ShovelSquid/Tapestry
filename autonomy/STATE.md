@@ -149,50 +149,22 @@ viewer; it is theirs to edit.)
   plan's list is `pow`/`norm`, so the plan wins). Node ids in text are
   `node(n12)`, the kernel's spelling. Bounds: `MAX_DEPTH` 64 nesting
   levels (parens and unary minus count), `MAX_NODES` 4096.
-- fxmath rounding: CORDIC results (`sin cos atan2`) round to nearest at
-  the final Q3.60 to Q32.32 shift (`to_grid`), because the working value
-  errs both ways and a floor would give `sin(0) = -2^-32`. `exp` and `log`
-  keep the floor since their shift-and-add never over-approximates.
-  `sin`/`cos`/`atan2` are within 1 ulp of the true floor, `log` within 2,
-  `exp` within 2^-50 relative, `pow` within 2^-48 relative (its exponent
-  product is formed in Q5.58, not on the Q32.32 grid). Contract results:
-  `log(x<=0)` and `pow(x<=0, y)` return 0 and assert in Debug; `exp`
-  saturates at `INT64_MAX` above 31 ln2 and returns 0 below -33 ln2;
-  `atan2(0, 0) = 0`. The mpmath script is the only place a floating value
-  is computed, and it lives under `tools/`, outside the gate. (2026-09-24,
-  `3ca1482`.)
-- A lane-addressed field (`f.x`, `f.2`) is a vector in the note's space
-  and is zero-padded to the space's dim; a bare name is a scalar of dim
-  1. Needed because the plan's done condition sets only `velocity.x` and
-  `step.cpp` skips a velocity whose dim differs from `pos`. More lanes
-  than the space has is still a reported problem. (2026-09-24, `836a4da`.)
-- Run loop: a foreign commit found at flush time drops the engine's
-  pending ticks and rebuilds; a refused submit forces a rebuild before
-  the next commit; snapshot and diff are taken before any await so ticks
-  during an in-flight commit go to the next one; `mathspace.step` is a
-  no-op while running. Engine seed is 1. (2026-09-24, `a111181`.)
-- The implicit space (notes with `position.*` and no `space` ref) is one
-  per image under id `2^63`, a value no kernel `n<k>` reaches, dim 2.
-  `diff` ignores snapshot notes absent from the before-image, so the
-  implicit space never becomes a kernel op. (2026-09-24, `07f35f4`.)
-- An inexact real (not `k/2^32`) drops the whole field it belongs to from
-  the image and is reported in `buildImage(...).problems`; the note is
-  still created. Rejecting per the plan rather than rounding; see
-  Blocked. (2026-09-24, `07f35f4`.)
-- Mathspace is a plugin over the kernel, not a second store. Durable
-  state is the `.tree`; the engine image is derived. (2026-09-24, from
-  the merge review.)
-- real↔fx64 conversion is exact and lives in JS at the plugin boundary,
-  so no double enters the gated C++ tree.
-- Note ids are kernel ids. The structured id layout is dropped.
-- The engine never allocates ids: `CreateSpace`/`CreateNote` carry the
-  kernel's id; the store rejects zero and duplicates and does not
-  track deleted ids (`0903619`). `ms_serialize` uses ddsim's cap
-  protocol; `ms_error` values equal `mathspace::Error`; `ms_version()`
-  is `MS_ABI_VERSION` 1, separate from the walk's `FORMAT_VERSION`
-  (`8587ec9`).
-- Phase 1 ships one hardcoded bootstrap rule (`position += velocity`) so
-  something moves; phase 3 deletes it.
+- fxmath (`3ca1482`): CORDIC `sin cos atan2` round to nearest at the
+  final shift (a floor gave `sin(0) = -2^-32`), `exp`/`log` floor; error
+  bounds are in `fxmath_test.cpp`; `exp` saturates above 31 ln2. The
+  mpmath oracle under `tools/` is the only floating computation.
+- Phase 1 plugin decisions (git has the details): a lane-addressed key
+  (`f.x`) is a vector zero-padded to the space dim, a bare name a scalar
+  (`836a4da`); the run loop rebuilds on a foreign commit or refused
+  submit, snapshots before any await, seed 1 (`a111181`); the implicit
+  space is id `2^63` dim 2 and never becomes a kernel op; an inexact
+  `real` drops its field into `problems` rather than rounding, see
+  Blocked (`07f35f4`); mathspace is a plugin over the kernel, the image
+  is derived, real↔fx64 conversion is exact and in JS; note ids are
+  kernel ids and the engine never allocates one (`0903619`);
+  `ms_serialize` uses ddsim's cap protocol, `MS_ABI_VERSION` 1 is
+  separate from the walk's `FORMAT_VERSION` (`8587ec9`); the bootstrap
+  rule `pos += velocity` lives until phase 3.
 
 ## Learned
 
@@ -218,33 +190,22 @@ viewer; it is theirs to edit.)
   which showed as 3-7 ulps at |x| ~ 1000 and millions at 2^31. Three
   28-bit-aligned parts (`TWO_PI_32`, `TWO_PI_MID`, `TWO_PI_LO`) fix it
   and cost two extra multiplies.
-- `app/native/build/Release/tapestry_addon.node` was copied from the
-  primary checkout (`/Users/kaelencook/Tapestry/app/native/build/Release/`)
-  because `tapestry/kernel` and `app/native` are identical to
-  `phase-2-implementation-v1` here (`git diff --stat` is empty) and
-  `npm run build:native` needs Electron headers. It is gitignored. The
-  plugin's vitest imports `app/test/helpers/temp-tree.ts` and
-  `app/src/main/plugin-host.ts` by relative path; both are free of
-  runtime Electron imports, so they load in plain Node.
+- `app/native/build/Release/tapestry_addon.node` is copied from the
+  primary checkout (`/Users/kaelencook/Tapestry/app/native/build/Release/`,
+  identical sources; `build:native` needs Electron headers), gitignored.
+  The plugin's vitest imports `app/test/helpers/temp-tree.ts` and
+  `app/src/main/plugin-host.ts`, which load in plain Node.
 - Kernel `real` values print as shortest round-trip decimals
   (`set n1 position.x real 60`), so the `.tree` assertions can match
   whole lines.
-- This worktree has no `node_modules`; the pattern is a symlink to the
-  primary checkout's: `ln -s /Users/kaelencook/Tapestry/node_modules
-  node_modules` (gitignored). vitest 2.1.9 lives there. Plugin tests:
-  `npm test` in `plugins/mathspace` after `npm run engine:wasm`.
-- Plugin files are CommonJS (`require`d by the host), so the vitest config
-  is `vitest.config.mjs` and tests reach `engine.js` through
-  `createRequire` (`test/engine-cjs.js`); `"type": "module"` in
-  package.json would break the host's require.
-- Wasm build: `source ~/emsdk/emsdk_env.sh` (prints 6.0.10), then
-  `cmake --preset wasm-release && cmake --build build/wasm-release`.
-  Configure+build is ~15 s. `node tools/wasm-hash-check.mjs
-  build/wasm-release/mathspace.mjs tests/golden/ms/<f>.actions
-  tests/golden/ms/<f>.sha256` printed `OK` for empty, two-notes and
-  velocity on the first try; the Wasm hashes equal the native goldens.
-  `mathspace.wasm` is 36 KB. `_ms_create` takes a BigInt seed and
-  `_ms_tick` returns one (WASM_BIGINT is on by default).
+- `node_modules` is a gitignored symlink to the primary checkout's
+  (vitest 2.1.9). Plugin files are CommonJS, so the vitest config is
+  `.mjs` and tests reach `engine.js` via `createRequire`. Wasm:
+  `source ~/emsdk/emsdk_env.sh` (6.0.10), then `npm run engine:wasm` in
+  `plugins/mathspace` (~15 s, copies into `plugins/mathspace/wasm/`,
+  untracked), then `npm test` there; `engine.test.js` replays every
+  golden through the Wasm module, so re-recorded goldens need a rebuild.
+  `_ms_create` takes a BigInt seed and `_ms_tick` returns one.
 - `tests/golden/ms/*.actions` are globbed by `CMakeLists.txt`, so a new
   fixture gets its two-process test at configure time with no edit.
   Write fixture hex with a few lines of Python from the grammar in
@@ -253,10 +214,8 @@ viewer; it is theirs to edit.)
   --write-golden <f>.sha256`, then Release and UBSan must agree.
 - Debug/Release/UBSan configure+build+ctest are each ~10-20 s; run all
   three every slice. `mathspace_tests` gets `MATHSPACE_GOLDEN_DIR`.
-- The tapestry kernel builds alone with
-  `cmake -S tapestry -B build/tapestry-kernel -DTAPESTRY_BUILD_RENDER=OFF
-  -DTAPESTRY_BUILD_APP=OFF` and its 59 tests pass in ~2 s. Render ON
-  needs network for glad on first configure.
+- The kernel alone: `cmake -S tapestry -B build/tapestry-kernel
+  -DTAPESTRY_BUILD_RENDER=OFF -DTAPESTRY_BUILD_APP=OFF`, 59 tests, ~2 s.
 - The app stores positions as `position.x`/`position.y` reals measured
   from the note's tree frame origin, plus `pinned bool`
   (`app/src/renderer/layout/placement.ts`). Match these keys exactly.
