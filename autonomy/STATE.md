@@ -31,10 +31,10 @@ Checkpoints in 01 and 03 were deferred to REVIEW.md. 07's blocking-human package
 
 ## Checkpoint
 
-(none pending) REVIEW.md holds items 1 (02.7-02/03 combined check), 2 (02.7-04 shell switch),
-3 (02.7-05 open_file and the workspace guards) and 4 (02.7-06 live watching), all deferred. The next wave is
-wave 7 (02.7-07, the API-key engine). Its first task is the blocking-human check of @anthropic-ai/sdk.
-Under PROTOCOL step 4, 07's package check gets parked in REVIEW.md, not approved.
+(none pending) 02.7-07 is PARKED at its blocking-human SDK check (REVIEW item 5). Plans 01-06 are
+done and phase verification ran (65da872, human_needed; items already in REVIEW 1-4). autonomy/DONE
+is written. On `item 5: approved-own|approved-shared` in RESPONSE, the next session removes DONE's
+effect (the human deletes DONE) and runs wave 7: 02.7-07 Tasks 2 and 3.
 
 ## In progress
 
@@ -71,6 +71,10 @@ Under PROTOCOL step 4, 07's package check gets parked in REVIEW.md, not approved
 - 2026-09-24 15:52: wave 6 (02.7-06). One foreground executor, about 24 min and 259K tokens;
   b63d4a9, 339b2c9, a2c5b52, 10bf222, 90375b4. 38 files and 681 tests pass, typecheck clean. Its
   hands-on checks are queued as REVIEW item 4. Wave 7 (02.7-07) is next; park its package check.
+- 2026-09-24 16:18: wave 7 (02.7-07). Ran the read-only `npm view` check (matches the plan: official
+  repo, no install scripts), parked the whole plan as REVIEW item 5 (f49f35f); nothing installed.
+  Phase verification by gsd-verifier: human_needed, 7/7 applicable SCs, SC8 parked, 681 tests green
+  (65da872). Wrote autonomy/DONE.
 
 ## Learned
 
@@ -98,6 +102,9 @@ Under PROTOCOL step 4, 07's package check gets parked in REVIEW.md, not approved
   workspace tree, and the human verifies those commits.
 
 ## Blocked
+
+- 2026-09-24 16:18: 02.7-07 Task 3 (ApiKeyStore) could be built without the SDK, but the plan orders it
+  after Task 2's engine file and its leak tests need the engine, so the whole plan is parked.
 
 (questions a human would have been asked, with the option taken)
 
