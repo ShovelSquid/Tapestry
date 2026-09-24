@@ -16,10 +16,10 @@ The first phase must prove an actual plugin-authored interaction and readable sa
 
 - [ ] **PLUG-01**: Developer can create and locally load a plugin from a documented starter without modifying or rebuilding the core.
 - [ ] **PLUG-02**: Developer can register node schemas, commands and property/UI contributions through a versioned public API.
-- [ ] **PLUG-03**: Bundled feature plugins use the same public API and lifecycle as third-party plugins.
+- [x] **PLUG-03**: Bundled feature plugins use the same public API and lifecycle as third-party plugins.
 - [ ] **PLUG-04**: User can enable or disable a plugin and still inspect its persisted content through a readable fallback.
 - [ ] **PLUG-05**: User receives a clear compatibility result when a plugin/API/schema version is unavailable; no silent behavior substitution occurs.
-- [ ] **PLUG-06**: Plugin-originated durable changes pass through validated, recorded core transactions; failed transactions leave the prior state intact.
+- [x] **PLUG-06**: Plugin-originated durable changes pass through validated, recorded core transactions; failed transactions leave the prior state intact.
 - [ ] **PLUG-07**: A failing or unloaded plugin releases its handlers and cannot prevent the base world from being opened.
 
 ### Spatial notebook
@@ -48,7 +48,7 @@ The first phase must prove an actual plugin-authored interaction and readable sa
 - [ ] **HIST-05**: Replay consumes recorded AI/external outcomes and declared randomness without calling a live model or external service.
 - [ ] **HIST-06**: User can load from an optional compatible snapshot or replay from history and obtain the same state.
 - [ ] **HIST-07**: User can edit an event date or note contents without erasing its earlier values or changing historical recording order.
-- [ ] **HIST-08**: Continuous positions and other simulated values can be regenerated from recorded inputs and rules without a position entry for every frame.
+- [x] **HIST-08**: Continuous positions and other simulated values can be regenerated from recorded inputs and rules without a position entry for every frame.
 
 ### Interacting nodes
 
@@ -156,10 +156,10 @@ Each v1 requirement has one owning phase; later phases may exercise it through i
 |-------------|-------|--------|
 | PLUG-01 | Phase 2 | Pending |
 | PLUG-02 | Phase 2 | Pending |
-| PLUG-03 | Phase 2 | Pending |
+| PLUG-03 | Phase 2 | Complete |
 | PLUG-04 | Phase 2 | Pending |
 | PLUG-05 | Phase 2 | Pending |
-| PLUG-06 | Phase 2 | Pending |
+| PLUG-06 | Phase 2 | Complete |
 | PLUG-07 | Phase 2 | Pending |
 | NOTE-01 | Phase 4 | Pending |
 | NOTE-02 | Phase 4 | Pending |
@@ -179,7 +179,7 @@ Each v1 requirement has one owning phase; later phases may exercise it through i
 | HIST-05 | Phase 3 | Pending |
 | HIST-06 | Phase 3 | Pending |
 | HIST-07 | Phase 3 | Pending |
-| HIST-08 | Phase 3 | Pending |
+| HIST-08 | Phase 3 | Complete |
 | RULE-01 | Phase 5 | Pending |
 | RULE-02 | Phase 5 | Pending |
 | RULE-03 | Phase 5 | Pending |

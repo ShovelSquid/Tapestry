@@ -4,16 +4,16 @@ milestone: v1.0
 current_phase: "02.3"
 current_phase_name: Time Threads (INSERTED)
 status: executing
-stopped_at: Completed 02.3-01-PLAN.md
-last_updated: "2026-09-16T07:27:20.300Z"
-last_activity: 2026-09-16
+stopped_at: Completed 02.3-02-PLAN.md
+last_updated: "2026-09-24T18:01:18.639Z"
+last_activity: 2026-09-24
 last_activity_desc: Phase 02.3 execution started
-state_head: edbf0b925548fe427ca5e66d969948138fae40cd
+state_head: 8174c90c7605b454c55bd25072428b57c331917b
 progress:
   total_phases: 10
   completed_phases: 0
   total_plans: 38
-  completed_plans: 18
+  completed_plans: 19
 ---
 
 # Project State
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-09-08)
 Phase: 02.3 (Time Threads (INSERTED)) — EXECUTING
 Plan: 2 of 9
 Status: Ready to execute
-Last activity: 2026-09-16 — Phase 02.3 execution started
+Last activity: 2026-09-24 — Phase 02.3 execution started
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -68,6 +68,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 02.2 P03 | 19 min | 3 tasks | 18 files |
 | Phase 02.2 P04 | 25 min | 3 tasks | 21 files |
 | Phase 02.3 P01 | 8 min | 2 tasks | 6 files |
+| Phase 02.3 P02 | 44 min | 2 tasks | 30 files |
 
 ## Accumulated Context
 
@@ -114,6 +115,9 @@ Recent decisions affecting current work:
 - [Phase 02.2]: [Phase 02.2]: Every value interpolated into the claude mcp add command is single-quoted by shellQuote, and markConnected is throttled to one agents.json write per agent per minute
 - [Phase 02.3]: D-26 rename applied to TreeFrame.tsx, not Canvas.tsx: 02.2's frame work moved every knot call site there
 - [Phase 02.3]: KNOT_TYPE ('tapestry.notes/knot@1') and KNOT_TIE_LABEL ('knot-tie') are exported from KnotNode.tsx and matched with ===, never by substring
+- [Phase 02.3]: [Phase 02.3]: thread.log grammar locked verbatim per Kaelen's checkpoint approval (in/out/ins/del/mark+/mark-/step/marker verbs, integer-millisecond offsets, FORMAT.md escaping, cont-line splitting past 1 MiB)
+- [Phase 02.3]: ThreadService is the single write authority per open thread: replays thread.log on open (never the body checkpoint), applies pushed steps to one authoritative doc, flushes on idle 300ms OR max-wait ~1s OR close OR actor switch
+- [Phase 02.3]: getPropertyValues added as a general kernel read API (Journal::commits() scan, no new verb or value type) mirroring buildHistoryIndex's shape
 
 ### Pending Todos
 
@@ -158,6 +162,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-16T07:27:20.229Z
-Stopped at: Completed 02.3-01-PLAN.md
+Last session: 2026-09-24T18:01:18.554Z
+Stopped at: Completed 02.3-02-PLAN.md
 Resume file: None
