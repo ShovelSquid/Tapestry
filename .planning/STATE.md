@@ -4,11 +4,11 @@ milestone: v1.0
 current_phase: "02.3"
 current_phase_name: Time Threads (INSERTED)
 status: executing
-stopped_at: Completed 02.3-08-PLAN.md
-last_updated: "2026-09-24T23:45:40.569Z"
+stopped_at: Blocked on 02.3-09-PLAN.md Task 1 precondition (vault-service.ts missing)
+last_updated: "2026-09-24T23:49:53.757Z"
 last_activity: 2026-09-24
 last_activity_desc: Phase 02.3 Plan 07 executed (side view, navigation, document at any moment)
-state_head: 62d38ab727b755246ed5c7e8d66096911335e7d8
+state_head: 36d9c3878f6551b264159557e0499225c1364f1a
 progress:
   total_phases: 10
   completed_phases: 0
@@ -151,6 +151,7 @@ None yet.
 - [Research] `.tree` framing/readability with real long notes, canonical hashing of unknown extension fields, and durability failure-injection design need deeper research during Phase 1 planning
 - [Research] Phase 2 needs Electron version pinning, per-plugin isolation design, and ProseMirror forge/release verification before install
 - [Research] Rule numeric contract (ranges, rounding, tick interval) needs targeted spikes during Phase 5 planning; prompt-injection boundary and policy precedence semantics during Phase 6 planning
+- Phase 02.3 Plan 09 blocked: precondition unmet - app/src/main/obsidian/vault-service.ts (created by Phase 02.2 Plans 07/08) does not exist in this worktree/branch (ws/02.3-time-threads). It exists as commit c3f4f3d on phase-2-implementation-v1 and other branches but is not an ancestor of this branch HEAD. This checkout only has 02.2 Plans 01-04 executed. Halting per the plan's precondition rather than creating a second vault-writing path. Needs human decision: merge/rebase 02.2 vault-service work into this branch, or re-sequence phase execution.
 
 ### Quick Tasks Completed
 
@@ -185,6 +186,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-24T23:45:40.517Z
-Stopped at: Completed 02.3-08-PLAN.md
-Resume file: None
+Last session: 2026-09-24T23:49:53.700Z
+Stopped at: Blocked on 02.3-09-PLAN.md Task 1 precondition (vault-service.ts missing)
+Resume file: .planning/phases/02.3-time-threads/02.3-09-PLAN.md
