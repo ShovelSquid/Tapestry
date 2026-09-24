@@ -27,6 +27,14 @@ const SCENE_SCALE = 0.6;
 const HAND_COLORS = [0x22d3ee, 0xf97316];
 const FACE_COLOR = 0xa78bfa;
 const POSE_COLOR = 0x34d399;
+// Dead-zone radius in raw normalized [0,1]-ish coordinate units (measured
+// before normalizedTransform/SCENE_SCALE): frame-to-frame movement smaller
+// than this is treated as detector noise and fully suppressed.
+const JITTER_TOLERANCE = 0.004;
+// EMA ease-per-frame weight (0-1, higher = snappier) applied to movement
+// above JITTER_TOLERANCE. Both are un-tuned starting defaults for this live
+// diagnostic playground, not researched values.
+const SMOOTHING_FACTOR = 0.35;
 
 const FACE_TESSELLATION_INDICES = [
   ...new Set(FaceLandmarker.FACE_LANDMARKS_TESSELATION.flatMap((c) => [c.start, c.end])),
@@ -61,6 +69,62 @@ export function createScene3D(container) {
   let liveGroup = new THREE.Group();
   scene.add(liveGroup);
 
+  // Smoothing state, persisted across update() calls for this scene instance.
+  // Keyed "set:slot:index" (e.g. "hand:0:5") so each tracked point has its
+  // own dead-zone/EMA history independent of every other point.
+  const smoothedPoints = new Map();
+  const prevSlotCounts = { hand: 0, face: 0, pose: 0 };
+
+  // Purge stale smoothing state for slots that disappeared since last frame
+  // (e.g. a hand left the camera view), so a reappearing slot renders at its
+  // fresh detected position instead of easing in from stale history. Must
+  // run once per set per update() call, before that set's points are
+  // smoothed.
+  function resetStaleSlots(set, currentCount) {
+    const prevCount = prevSlotCounts[set];
+    if (currentCount < prevCount) {
+      for (const key of smoothedPoints.keys()) {
+        const [keySet, keySlot] = key.split(":");
+        if (keySet === set && Number(keySlot) >= currentCount) {
+          smoothedPoints.delete(key);
+        }
+      }
+    }
+    prevSlotCounts[set] = currentCount;
+  }
+
+  // Dead-zone + EMA smoothing for a single point. Returns a plain {x,y,z}
+  // object, same shape as a raw landmark, ready to pass into
+  // normalizedTransform.
+  function smoothPoint(set, slot, index, raw) {
+    const key = `${set}:${slot}:${index}`;
+    const prev = smoothedPoints.get(key);
+    if (!prev) {
+      const fresh = { x: raw.x, y: raw.y, z: raw.z };
+      smoothedPoints.set(key, fresh);
+      return fresh;
+    }
+    const dx = raw.x - prev.x;
+    const dy = raw.y - prev.y;
+    const dz = raw.z - prev.z;
+    const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    if (distance < JITTER_TOLERANCE) {
+      return prev;
+    }
+    prev.x += dx * SMOOTHING_FACTOR;
+    prev.y += dy * SMOOTHING_FACTOR;
+    prev.z += dz * SMOOTHING_FACTOR;
+    return prev;
+  }
+
+  // Smooths every point in a slot's full landmarks array (not just a drawn
+  // subset), since both point-cloud indices (e.g. FACE_TESSELLATION_INDICES)
+  // and connector-line indices (e.g. FACE_LANDMARKS_CONTOURS start/end) index
+  // into the full array.
+  function smoothLandmarks(set, slot, landmarks) {
+    return landmarks.map((p, index) => smoothPoint(set, slot, index, p));
+  }
+
   function cloud(points, color) {
     const group = new THREE.Group();
     const geom = new THREE.BufferGeometry();
@@ -90,24 +154,31 @@ export function createScene3D(container) {
     });
     liveGroup = new THREE.Group();
 
+    resetStaleSlots("hand", handsNormalized.length);
+    resetStaleSlots("face", faceLandmarksList.length);
+    resetStaleSlots("pose", poseLandmarksList.length);
+
     handsNormalized.forEach((landmarks, i) => {
+      const smoothed = smoothLandmarks("hand", i, landmarks);
       const color = HAND_COLORS[i % HAND_COLORS.length];
-      liveGroup.add(cloud(landmarks.map(normalizedTransform), color));
-      liveGroup.add(lines(landmarks, HandLandmarker.HAND_CONNECTIONS, color, normalizedTransform));
+      liveGroup.add(cloud(smoothed.map(normalizedTransform), color));
+      liveGroup.add(lines(smoothed, HandLandmarker.HAND_CONNECTIONS, color, normalizedTransform));
     });
 
-    faceLandmarksList.forEach((landmarks) => {
-      const points = FACE_TESSELLATION_INDICES.map((i) => normalizedTransform(landmarks[i]));
+    faceLandmarksList.forEach((landmarks, slot) => {
+      const smoothed = smoothLandmarks("face", slot, landmarks);
+      const points = FACE_TESSELLATION_INDICES.map((i) => normalizedTransform(smoothed[i]));
       liveGroup.add(cloud(points, FACE_COLOR));
       liveGroup.add(
-        lines(landmarks, FaceLandmarker.FACE_LANDMARKS_CONTOURS, FACE_COLOR, normalizedTransform)
+        lines(smoothed, FaceLandmarker.FACE_LANDMARKS_CONTOURS, FACE_COLOR, normalizedTransform)
       );
     });
 
-    poseLandmarksList.forEach((landmarks) => {
-      liveGroup.add(cloud(landmarks.map(normalizedTransform), POSE_COLOR));
+    poseLandmarksList.forEach((landmarks, slot) => {
+      const smoothed = smoothLandmarks("pose", slot, landmarks);
+      liveGroup.add(cloud(smoothed.map(normalizedTransform), POSE_COLOR));
       liveGroup.add(
-        lines(landmarks, PoseLandmarker.POSE_CONNECTIONS, POSE_COLOR, normalizedTransform)
+        lines(smoothed, PoseLandmarker.POSE_CONNECTIONS, POSE_COLOR, normalizedTransform)
       );
     });
 
