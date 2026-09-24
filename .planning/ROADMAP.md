@@ -220,7 +220,7 @@ Plans:
   5. No `thread-center` / `thread-arm` occurrences remain in tracked source under `app/`, `plugins/` or `sdk/`; 2.1's feature works as `knot` / `knot-tie` (D-26)
   6. Each thread stores its own readable frame — `origin.x/y/z`, `direction.x/y/z` and `roll` — and both the live and side views derive their camera from it rather than a hardcoded axis (D-27)
 
-**Plans**: 6/9 plans executed in 8 waves
+**Plans**: 7/9 plans executed in 8 waves
 
 Plans:
 **Wave 1**
@@ -246,7 +246,7 @@ Plans:
 
 **Wave 6** *(blocked on Wave 5)*
 
-- [ ] 02.3-07-PLAN.md — Side view read-back: zoom, pan, fly-to, gravity, date scrubber, document at any moment (D-08, D-15..D-19)
+- [x] 02.3-07-PLAN.md — Side view read-back: zoom, pan, fly-to, gravity, date scrubber, document at any moment (D-08, D-15..D-19)
 
 **Wave 7** *(blocked on Wave 6)*
 

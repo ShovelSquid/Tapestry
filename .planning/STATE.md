@@ -4,16 +4,16 @@ milestone: v1.0
 current_phase: "02.3"
 current_phase_name: Time Threads (INSERTED)
 status: executing
-stopped_at: Completed 02.3-06-PLAN.md
-last_updated: "2026-09-24T21:37:08.418Z"
+stopped_at: Completed 02.3-07-PLAN.md
+last_updated: "2026-09-24T23:35:00.000Z"
 last_activity: 2026-09-24
-last_activity_desc: Phase 02.3 Plan 03 executed (grammar published, replay, readable fallback)
-state_head: 5d8a3cd838aaed7d6bd8b646de6fc5e6c2c1a2e3
+last_activity_desc: Phase 02.3 Plan 07 executed (side view, navigation, document at any moment)
+state_head: 5a775b4
 progress:
   total_phases: 10
   completed_phases: 0
   total_plans: 38
-  completed_plans: 23
+  completed_plans: 24
 ---
 
 # Project State
@@ -28,11 +28,11 @@ See: .planning/PROJECT.md (updated 2026-09-08)
 ## Current Position
 
 Phase: 02.3 (Time Threads (INSERTED)) — EXECUTING
-Plan: 6 of 9
-Status: Ready to execute (Plan 04 next — Wave 3, blocked on Wave 2)
-Last activity: 2026-09-24 — Phase 02.3 Plan 03 executed (grammar published, replay, readable fallback)
+Plan: 7 of 9
+Status: Ready to execute (Plan 08 next — Wave 7, blocked on Wave 6)
+Last activity: 2026-09-24 — Phase 02.3 Plan 07 executed (side view, navigation, document at any moment)
 
-Progress: [█████░░░░░] 53%
+Progress: [██████░░░░] 63%
 
 ## Performance Metrics
 
@@ -73,6 +73,7 @@ Progress: [█████░░░░░] 53%
 | Phase 02.3 P04 | 71 min | 2 tasks | 20 files |
 | Phase 02.3 P05 | 90 min | 3 tasks | 13 files |
 | Phase 02.3 P06 | 62 min | 3 tasks | 15 files |
+| Phase 02.3 P07 | 95 min | 3 tasks | 14 files |
 
 ## Accumulated Context
 
@@ -134,6 +135,10 @@ Recent decisions affecting current work:
 - [Phase 02.3]: Markers get their own MarkerLayer draw call (same doubling-capacity/update-range pattern as GlyphLayer, not its literal buffers) and five procedural signed-distance shapes at a fixed 6-8px screen-space size, never accent colour
 - [Phase 02.3]: [Phase 02.3]: deriveSessions carries no timeoutSeconds parameter -- session boundaries come from in/out records alone, never re-derived from the current thread.timeout, so a settings change can never move a dash already on the line (T-02.3-06-02)
 - [Phase 02.3]: [Phase 02.3]: ThreadService's per-thread time-out timer is a fifth flush trigger; reopening within the still-live window resumes the same session, reopening after it repairs a crash-missing out as its own honestly-timestamped commit before the next write's own batch
+- [Phase 02.3]: side-view.ts's SideView camera reuses live-view.ts's exact D-27 basis derivation (offset in the thread's own right/up/forward basis, never a world-space literal) -- the camera's screen-right axis always equals the thread's stored direction regardless of roll, which is what makes timeToScreenX/screenXToTime simple linear maps
+- [Phase 02.3]: The historical ribbon (both live and side views) is now reconstructed from the thread's own recorded sessions (true-length gaps), replacing Plan 04's one-continuous-span placeholder -- closes a known stub, required for the side view's own D-16 honesty to be real rather than aspirational
+- [Phase 02.3]: Leaving a past stage and leaving the side view are the same handler (handleReturnToNow) -- UI-SPEC describes a past stage's "Return to now" as returning to the live document, exactly what the side view's own toggle does
+- [Phase 02.3]: createDocAtCache parses a thread's commits once and memoizes the last computed moment by reference; a read-only DocAtTimeView EditorView's dispatchTransaction never calls updateState, so a keystroke there cannot change the view's own state at all -- not a guard checked after the fact
 
 ### Pending Todos
 
@@ -178,6 +183,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-24T21:37:08.344Z
-Stopped at: Completed 02.3-06-PLAN.md
+Last session: 2026-09-24T23:35:00.000Z
+Stopped at: Completed 02.3-07-PLAN.md
 Resume file: None
