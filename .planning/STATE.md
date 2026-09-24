@@ -1,19 +1,19 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0
-current_phase: "02.2"
-current_phase_name: Obsidian Bridge
-status: executing
+current_phase: "02.7"
+current_phase_name: File Windows & Workspace Sandbox
+status: planning
 stopped_at: Completed 02.2-07-PLAN.md
-last_updated: "2026-09-23T06:50:00.000Z"
-last_activity: 2026-09-23
+last_updated: "2026-09-24T17:17:19.017Z"
+last_activity: 2026-09-24
 last_activity_desc: Phase 02.4 Lock Model complete and rebased onto the main line; Phase 02.2 still executing
-state_head: c3f4f3d6c993f90c55415c6117705b124bb9667a
+state_head: af3fb8810218389ba4086e3d755b1593c0fd5120
 progress:
-  total_phases: 11
-  completed_phases: 1
-  total_plans: 40
-  completed_plans: 22
+  total_phases: 13
+  completed_phases: 0
+  total_plans: 45
+  completed_plans: 27
 ---
 
 # Project State
@@ -23,13 +23,13 @@ progress:
 See: .planning/PROJECT.md (updated 2026-09-08)
 
 **Core value:** Your world of thoughts must remain readable and under your control — in its spatial interface, its editable relationships and behavior, and its files and branching history.
-**Current focus:** Phase 02.2 — Obsidian Bridge (executing). Phase 02.4 — Lock Model is complete and on the main line; open for Kaelen: WR-02 redo decision, WR-01 owner-matching confirmation, #19 lock naming
+**Current focus:** Phase 02.7 — File Windows & Workspace Sandbox on ws/windows (not planned yet). 02.2 continues on its own branch
 
 ## Current Position
 
-Phase: 02.2 (Obsidian Bridge) — EXECUTING
+Phase: 02.7 (File Windows & Workspace Sandbox) — NOT PLANNED (ws/windows); run /gsd-plan-phase 2.7
 Plan: 8 of 16 (02.2-01 to 02.2-07 complete; 02.2-08 code committed, no summary yet)
-Status: Executing
+Status: planning
 Phase 02.4 (Lock Model): COMPLETE — verified 25/25, 2026-09-16; rebased onto the main line 2026-09-23
 Last activity: 2026-09-24 - Completed quick task 260924-0ii: Add layout as a third lock aspect (lock.layout)
 
@@ -160,6 +160,7 @@ None yet.
 - Phase 2.3 inserted after Phase 2.2: Time Threads: live z-axis writing threads split out of the 2.2 discussion (Kaelen, 2026-09-15); discuss with Kaelen before planning
 - Phase 2.2 edited: goal reworded to cover the agent MCP bridge plus the Obsidian bridge (02.2-CONTEXT D-01)
 - Phase 2.4 inserted after Phase 2.3: Lock Model: allow unless locked; lock aspects replace the D-05 authorship gate (Kaelen, 2026-09-16)
+- Phase 2.7 inserted after Phase 2.5: File Windows & Workspace Sandbox: workspace folder, file windows, agent file tools confined to the root; dogfood on this repo (ws/windows)
 
 ## Deferred Items
 

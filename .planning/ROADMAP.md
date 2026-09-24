@@ -20,6 +20,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [ ] **Phase 2.3: Time Threads** - Live z-axis writing threads: one note and its history, per-letter timing, side-view read-back (INSERTED)
 - [x] **Phase 2.4: Lock Model** - Allow unless locked: lock aspects replace the D-05 authorship gate for agent note commands (INSERTED) (completed 2026-09-16)
 - [ ] **Phase 2.5: Agent Spatial Verbs** - Task-space `look` and `place` for agents: relations in, relations out, refused by `lock.layout` (INSERTED; depends on 2.4)
+- [ ] **Phase 2.7: File Windows & Workspace Sandbox** - Open a workspace folder, edit its files in canvas windows, and give agents file tools confined to that folder; then dogfood Tapestry on its own repo (INSERTED; depends on 2.5)
 - [ ] **Phase 3: Branching History & Deterministic Replay** - History navigation, fork-preserving branches, snapshots, and replay from recorded inputs
 - [ ] **Phase 4: Spatial Notebook** - Bundled note, drawing, property, and provenance-display plugins delivering the usable spatial workspace
 - [ ] **Phase 5: Deterministic Rule Engine** - Typed rule inputs/outputs, fixed-step simulation, forces, and explicit failure semantics
@@ -326,6 +327,29 @@ Plans:
 - [x] 02.5-05-PLAN.md — `create_note` optional `where` beside the unchanged default path; phase gate (SC2, SC5, SC6)
 
 **UI hint**: no
+
+### Phase 2.7: File Windows & Workspace Sandbox (INSERTED)
+
+**Goal**: A person opens a workspace folder in Tapestry and edits its files in windows on the canvas; agents connected over the MCP bridge can list, read, open and write files, but only inside that folder. Tapestry is then used to do its own development: the workspace is pointed at this repository and this branch's work is done from inside it.
+**Mode:** mvp
+**Depends on**: Phase 2.5 (agent actions: MCP bridge, lock model, `look`/`place`)
+**Branch**: `ws/windows` (worktree `Tapestrees/windows`; 2.6 is taken on `ws/spatial-canvas`)
+**Requirements**: TBD
+**Success Criteria** (what must be TRUE):
+
+  1. A person can choose a workspace folder; it is remembered across restarts, and files under it can be opened as editable windows on the canvas that save back to disk
+  2. Agents get file tools (list, read, open-in-window, write) over the existing MCP bridge, attributed as `actor plugin agent.<name>`
+  3. Every agent file path resolves inside the workspace root: `..`, absolute paths outside the root, and symlinks that escape the root are refused with a clear message, and a refusal writes nothing
+  4. With no workspace open, agent file tools refuse rather than falling back to any default directory
+  5. Dogfood: with the workspace set to this repo, Claude Code connected over MCP can open and edit a real source file in a Tapestry window, and the edit shows up in `git diff`
+
+**Plans**: 0 plans
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 2.7 to break down)
+
+**UI hint**: yes
 
 ### Phase 3: Branching History & Deterministic Replay
 
