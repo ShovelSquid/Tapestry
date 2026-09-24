@@ -42,6 +42,10 @@ strictly in order: 01, 02, 03, 04, 05, then 06.
 - 2026-09-24 (interactive, not the driver): committed the 2.6 plans,
   merged phase-2-implementation-v1 at `96ac7f0` (`256fae7`), ported this
   driver from ws/windows. Auto checkpoints stay on (Kaelen's choice).
+- 2026-09-24 12:40 wave 1 (02.6-01 groundwork): 8af7bb8 begin-phase,
+  5ec09c6 fb76ba1 639cd51 feat, f28010b 1d1c606 docs. 24 files / 530
+  tests green, typecheck clean. No checkpoints. Next: wave 2 (02.6-02),
+  whose Task 1 is the blocking-human record-shape gate -> expect WAITING.
 
 ## Learned
 
@@ -53,7 +57,12 @@ strictly in order: 01, 02, 03, 04, 05, then 06.
   decisions. Kaelen wants this on. Only `blocking-human` gates stop.
 - The baseline after the merge (`256fae7`): 21 test files, 443 tests
   passing, typecheck clean. After quick 260924-glr (`e66b3a8`): 22 files,
-  486 tests.
+  486 tests. After 02.6-01 (`1d1c606`): 24 files, 530 tests.
+- Execute-phase here: dispatch-isolation says orchestrator-worktree but
+  worktree.base-check degrades (HEAD != stale origin/HEAD), so executors
+  run sequentially on this tree. One executor per plan, ~8 min for 01.
+- The plan's "NoteCard.tsx unchanged since merge base" check trips on the
+  camera-roll quick task (e66b3a8), not on 2.6 work; ignore that.
 
 ## Blocked
 
