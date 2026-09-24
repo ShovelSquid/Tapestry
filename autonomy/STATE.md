@@ -16,7 +16,7 @@ actions, replay tool, and goldens built before the redirect are kept.
 | Phase | Status |
 | --- | --- |
 | 1 engine over the kernel | built and tested headlessly (`836a4da`); only the human GUI confirmation is open, see Blocked |
-| 2 expressions | in progress: fxmath (`3ca1482`), ast+parser (`1725143`), bytecode (`30fc1a6`) done; vm, action 37, golden `plot`, diff remain |
+| 2 expressions | in progress: fxmath (`3ca1482`), ast+parser (`1725143`), bytecode (`30fc1a6`), vm (`3b25475`) done; action 37 + step eval + golden `plot`, plugin side, diff remain |
 | 3 force rules | not started |
 | 4 constraints | not started |
 | 5 views | not started |
@@ -40,48 +40,45 @@ viewer; it is theirs to edit.)
    `.tree`. If a session cannot drive the GUI, skip this: the headless
    check in `plugins/mathspace/test/tree.test.js` already covers the
    file-level condition. Either way, do not block phase 2 on it.
-2. **Phase 2, next slice: `include/mathspace/expr/vm.hpp` +
-   `src/mathspace/expr/vm.cpp`, test `tests/mathspace/expr_vm_test.cpp`.**
-   `eval(const Program&, const World&, const Note& self, const Note* other,
-   std::array<fx64, MAX_DIM>& out) -> VmError`. Stack of `MAX_STACK_LANES`
-   fx64 lanes (a fixed `std::array`), `sp` and `pc`, loop bound
-   `ops.size()` (jumps are forward, so at most n ops run). Ops as
-   documented in `bytecode.hpp`: `MakeVec` is a no-op on lanes; `MulSV`
-   multiplies the top `dim` lanes by the scalar below them and shifts
-   down; comparisons push `fx64::ONE` or 0; `Lane` copies lane k of the
-   top value; scalar builtins call `ddsim::fxmath`/`fx64` helpers (`sqrt
-   abs min max clamp` from fx64.hpp, `sin cos atan2 exp log pow` from
-   fxmath.hpp); `dot` sums lane products; `norm` is `sqrt(dot(v,v))`;
-   `curve(knots, t)`: knots dim d are samples at t = i/(d-1), t clamped to
-   [0,1], linear between (d == 1 returns the knot). `LoadRef`: Self reads
-   `self`, Other reads `*other` (error `NoOther` when null), Node looks
-   the id up in `world.notes` (id order, binary search; `NoSuchNote`),
-   Space is the note's space (`space.dim` pushes the dim as fx64,
-   `space.<f>` reads the field), World `tick` pushes `world.tick` as
-   fx64 (`UnknownRef` for other names). A referenced field whose dim
-   differs from the op's recorded dim is `DimChanged`. Results are
-   written to `out` and the dim is `program.dim`. Test against the parser
-   + compiler with a resolver built from a real `World`; check
-   `if` only evaluates the taken branch (a `log(-1)` in the untaken arm
-   must not assert in Debug), broadcast, curve endpoints and midpoint,
-   every error. Add a `WorldDims : DimResolver` (in vm.hpp, or a
-   `resolver.hpp`) that reads dims from a `World` + self id, since both
-   the plugin path and the tests need it.
-3. Then action 37 `BindField(note, name, bytecode)` in `action.hpp`/
-   `action.cpp` (payload: the encoded program, `decode` must accept it or
-   the action is rejected `BadAction`; sets `Field::bound` and
-   `bytecode`, dim from `program.dim`), the hash walk already writes
-   bytecode bytes (check `hash.cpp` and bump `FORMAT_VERSION` if the walk
-   changes), `step.cpp` evaluates bound fields each tick in id then name
-   order after the bootstrap rule (record the order), golden
-   `tests/golden/ms/plot.actions` binding a handful of expressions, then
-   the plugin side (`ms_compile` ABI call, `image.js` mapping `f.expr
-   text` to action 37, inspector shows the value). `diff.hpp` (symbolic
-   d/d(self.f.lane)) is needed by phase 4 and can be the last phase 2
-   slice or the first phase 4 slice.
+2. **Phase 2, next slice: action 37 `BindField` + bound-field
+   evaluation in `step()` + golden `plot`.** In `action.hpp`/`action.cpp`:
+   kind 37 `BindField(note u64, name, bytecode bytes)`; `World::apply`
+   decodes the bytecode with `expr::decode` (reject `BadAction` on any
+   error), then sets `Field{name, dim = program.dim, bound = true,
+   bytecode}` keeping existing lanes if the field exists at that dim
+   (else zero), via `set_field` (so `pos` on a Space and dim rules still
+   apply). Unbinding: bind with empty bytes clears `bound`/`bytecode`
+   (or a `SetField` over it; pick one, record). `hash.cpp` already writes
+   `bound` and `bytecode` bytes in the field record (`wire.hpp`), check
+   nothing else changes; bump the walk's rule pin in `version.hpp` since
+   `step()` gains behaviour. `step.cpp`: after the bootstrap rule, for
+   every note in id order, every bound field in name order, `expr::eval`
+   with `other = nullptr` against the pre-step snapshot? No: evaluate
+   against the live world in order (simple, deterministic, record it);
+   on a VM error leave the lanes as they were (phase 3 adds the error
+   field on the node). Golden `tests/golden/ms/plot.actions`: a space,
+   two notes, bind `y.expr` = `sin(self.x)`-like expressions plus a
+   `norm`, a `curve` on `world.tick`, and an `if`; a few checkpoints;
+   record with `ms_replay --write-golden` and confirm Release and UBSan.
+   Fixture hex from Python per `action.hpp`'s grammar; the bytecode bytes
+   come from a tiny doctest or `ms_replay` helper that prints
+   `encode(compile(parse(text)))` (add `ms_replay --compile "<text>"` if
+   there is no simpler way; dims for refs need a world, so compile inside
+   the fixture generator against the same actions).
+3. Then the plugin side: `ms_compile(handle, note_id, text, out, cap)`
+   ABI call (one parser, one grammar, hashed bytecode; compile against
+   the engine's world with `WorldDims`), `image.js` mapping `f.expr text`
+   props to action 37, the snapshot/diff writing evaluated lanes back so
+   the inspector shows the value after a step (phase 2 done condition),
+   a vitest for it. `diff.hpp` (symbolic d/d(self.f.lane)) is needed by
+   phase 4 and can be the last phase 2 slice or the first phase 4 slice.
 
 ## Done
 
+- `3b25475` ms2 vm: `include/mathspace/expr/vm.hpp`, `src/mathspace/expr/vm.cpp`,
+  `tests/mathspace/expr_vm_test.cpp` (every op and builtin, all five
+  reference kinds, run-time NoOther/NoSuchNote/NoSuchField/DimChanged/
+  NoSpace/UnknownRef, malformed programs, bytes round trip).
 - `30fc1a6` ms2 bytecode: `include/mathspace/expr/bytecode.hpp`,
   `src/mathspace/expr/bytecode.cpp`, `tests/mathspace/expr_bytecode_test.cpp`
   (compile with shape check, verify, encode/decode round trips and
@@ -109,6 +106,14 @@ viewer; it is theirs to edit.)
 
 ## Decisions
 
+- VM domain errors (2026-09-24, `3b25475`): `/ 0`, `sqrt(x<0)`,
+  `log(x<=0)`, `pow(x<=0, y)` yield 0 in every build and are not
+  evaluation errors, because `a / norm(a)` at `a = 0` is ordinary physics
+  and an error would stop the whole field. The VM checks before calling
+  fx64/fxmath so their Debug asserts never fire on user data. Reference
+  failures (missing note/field, dim changed, no `other`) are errors.
+  `world.tick` is pushed as an integer mod 2^31. `curve` knots sit at
+  `i/(d-1)` with `t` clamped to [0, 1].
 - Bytecode shapes (2026-09-24, `30fc1a6`): `+ -` need equal dims; `*`
   broadcasts a scalar over a vector (either side); `/` only by a scalar;
   scalar builtins (`min max abs clamp sqrt sin cos atan2 exp log pow`)
