@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest'
 import { EditorState } from 'prosemirror-state'
 import { history, undo } from 'prosemirror-history'
 import { tapestrySchema } from '../editor/schema'
-import { causeOf, graphemes } from './recorder'
+import { causeOf, graphemes, insertedTextOf } from './recorder'
 
 function freshState(): EditorState {
   return EditorState.create({ schema: tapestrySchema, plugins: [history()] })
@@ -60,5 +60,20 @@ describe('graphemes', () => {
 
   it('returns an empty array for empty text', () => {
     expect(graphemes('')).toEqual([])
+  })
+})
+
+describe('insertedTextOf', () => {
+  it('reads the inserted text from an ordinary typing step', () => {
+    const state = freshState()
+    const tr = state.tr.insertText('hi')
+    expect(insertedTextOf(tr.steps[0])).toBe('hi')
+  })
+
+  it('returns an empty string for a step with no slice (a delete)', () => {
+    let state = freshState()
+    state = state.apply(state.tr.insertText('hello'))
+    const delTr = state.tr.delete(1, 3)
+    expect(insertedTextOf(delTr.steps[0])).toBe('')
   })
 })

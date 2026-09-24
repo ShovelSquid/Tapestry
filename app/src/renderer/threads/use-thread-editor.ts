@@ -29,6 +29,7 @@ import { history, redo, undo } from 'prosemirror-history'
 import { collab, getVersion, receiveTransaction } from 'prosemirror-collab'
 import { Step } from 'prosemirror-transform'
 import { tapestrySchema } from '../editor/schema'
+import { insertedTextOf } from './recorder'
 import { causeOf } from './recorder'
 import type { ThreadCause } from '../../shared/threads/grammar'
 
@@ -58,6 +59,16 @@ export interface UseThreadEditorOptions {
     times: number[],
     causes: (ThreadCause | null)[],
   ) => Promise<ThreadPushResult>
+  /**
+   * Optimistic, local-only notification that `text` was inserted at
+   * `tMs` -- fired synchronously inside `dispatchTransaction`, independent
+   * of `onPush`'s async round trip to `ThreadService` (D-09's stage must
+   * never wait on a commit to draw a keystroke; the plan's own words:
+   * "a keystroke is never deferred for the animation"). Never fired for
+   * an intermediate IME composition step (Pitfall 5): a composed run is
+   * reported once, as a single insertion, at composition end.
+   */
+  onLocalInsert?: (tMs: number, text: string) => void
 }
 
 export interface UseThreadEditorResult {
@@ -97,18 +108,26 @@ function deserializeCheckpoint(body: string): ProseMirrorNode {
 // Hook
 // ---------------------------------------------------------------------------
 
-export function useThreadEditor({ nodeId, checkpointBody, ready, onPush }: UseThreadEditorOptions): UseThreadEditorResult {
+export function useThreadEditor({
+  nodeId,
+  checkpointBody,
+  ready,
+  onPush,
+  onLocalInsert,
+}: UseThreadEditorOptions): UseThreadEditorResult {
   const editorRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
   const [isEditable, setIsEditable] = useState(false)
 
   const onPushRef = useRef(onPush)
   onPushRef.current = onPush
+  const onLocalInsertRef = useRef(onLocalInsert)
+  onLocalInsertRef.current = onLocalInsert
 
   // Buffers a composing run's steps; flushed together at composition end
   // (Pitfall 5: an IME's intermediate revisions must not each become their
   // own record).
-  type Captured = { stepJson: unknown; timeMs: number; cause: ThreadCause | null }
+  type Captured = { stepJson: unknown; timeMs: number; cause: ThreadCause | null; insertedText: string }
   const composingBufferRef = useRef<Captured[]>([])
   const wasComposingRef = useRef(false)
 
@@ -155,9 +174,17 @@ export function useThreadEditor({ nodeId, checkpointBody, ready, onPush }: UseTh
 
         const nowMs = Date.now()
         const cause = causeOf(tr)
-        const captured: Captured[] = tr.steps.map((step) => ({ stepJson: step.toJSON(), timeMs: nowMs, cause }))
+        const captured: Captured[] = tr.steps.map((step) => ({
+          stepJson: step.toJSON(),
+          timeMs: nowMs,
+          cause,
+          insertedText: insertedTextOf(step),
+        }))
 
         if (view.composing) {
+          // Nothing is drawn while composing (RESEARCH Pitfall 5): the
+          // committed graphemes land as one cluster at composition end,
+          // below.
           composingBufferRef.current.push(...captured)
           wasComposingRef.current = true
           return
@@ -168,12 +195,20 @@ export function useThreadEditor({ nodeId, checkpointBody, ready, onPush }: UseTh
           const buffered = composingBufferRef.current
           composingBufferRef.current = []
           wasComposingRef.current = false
+          const composedText = buffered.map((s) => s.insertedText).join('')
+          if (composedText) onLocalInsertRef.current?.(nowMs, composedText)
           pushBatch(
             buffered.map((s) => s.stepJson),
             buffered.map((s) => s.timeMs),
             buffered.map((s) => s.cause),
           )
           return
+        }
+
+        // Optimistic, synchronous, per-step: the stage never waits for
+        // onPush's round trip to draw a keystroke.
+        for (const step of captured) {
+          if (step.insertedText) onLocalInsertRef.current?.(step.timeMs, step.insertedText)
         }
 
         pushBatch(

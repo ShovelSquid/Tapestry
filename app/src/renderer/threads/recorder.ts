@@ -13,6 +13,7 @@
 
 import { isHistoryTransaction } from 'prosemirror-history'
 import type { Transaction } from 'prosemirror-state'
+import type { Step } from 'prosemirror-transform'
 import type { ThreadCause } from '../../shared/threads/grammar'
 
 /**
@@ -55,4 +56,21 @@ export function graphemes(text: string): string[] {
   if (text.length === 0) return []
   const segmenter = new Intl.Segmenter('und', { granularity: 'grapheme' })
   return Array.from(segmenter.segment(text), (entry) => entry.segment)
+}
+
+/**
+ * The text one step inserts, read from its `slice` (RESEARCH Pattern 2's
+ * `linesFor`: "inserted text via `slice.content.textBetween(0, size, '\n')`").
+ * Every step this app produces is a `ReplaceStep` (the schema has no
+ * structure-only step types in play here); a step with no `slice` (or an
+ * empty one) inserted nothing, so this returns `''` rather than throwing --
+ * the live stage (`ThreadOverlay`) treats an empty result as "nothing to
+ * draw for this step", the same way it already skips a step that only
+ * deletes.
+ */
+export function insertedTextOf(step: Step): string {
+  const slice = (step as unknown as { slice?: { content: { textBetween(from: number, to: number, blockSeparator?: string): string; size: number } } })
+    .slice
+  if (!slice) return ''
+  return slice.content.textBetween(0, slice.content.size, '\n')
 }
