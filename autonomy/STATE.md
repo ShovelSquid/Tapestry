@@ -61,6 +61,10 @@ are recorded in app/src/main/space/shapes.ts and 02.6-02-SUMMARY.
   719ba90 test, f77abcd 749fff4 docs. 25 files / 559 tests green, typecheck
   clean, ~9 min. No gates; end-of-phase data check queued as REVIEW item 2.
   Next: wave 4 (02.6-04, membership and identity by header digest).
+- 2026-09-24 15:39 wave 4 (02.6-04): executor ran both tasks: 8b85ae5 feat,
+  d6efff1 test, b73ec11 feat, 9508b91 487042b docs. 27 files / 576 tests
+  green, typecheck clean, ~16 min. No gates; data check queued as REVIEW
+  item 3. Next: wave 5 (02.6-05, Ctrl+Z after drag, system-signed fit).
 
 ## Learned
 
@@ -75,6 +79,7 @@ are recorded in app/src/main/space/shapes.ts and 02.6-02-SUMMARY.
   486 tests. After 02.6-01 (`1d1c606`): 24 files, 530 tests.
   After 02.6-02 (`879dcf3`): 25 files, 555 tests.
   After 02.6-03 (`749fff4`): 25 files, 559 tests.
+  After 02.6-04 (`487042b`): 27 files, 576 tests.
 - Execute-phase here: dispatch-isolation says orchestrator-worktree but
   worktree.base-check degrades (HEAD != stale origin/HEAD), so executors
   run sequentially on this tree. One executor per plan, ~8 min for 01.

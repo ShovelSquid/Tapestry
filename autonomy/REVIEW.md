@@ -82,3 +82,30 @@ Use copies only, never real data:
 
 **If the answer is no:** `git revert 82df051` (and 719ba90), delete the scratch folders, and describe the issue in autonomy/RESPONSE.
 Until Plans 04-05 land, open/create/close tree and add-vault still write settings.json; do not run on real data before Plan 06's check.
+
+### 3. Phase 02.6, plan 02.6-04 — membership and identity by header digest (queued by the 15:39 session, 2026-09-24)
+
+**What was built (8b85ae5, d6efff1, b73ec11):** opening, creating or adding a tree writes one
+`add tree` commit signed by the person, then one `record identity` commit signed `system tapestry`
+(once only). Closing writes one person-signed `delete-node` commit. A moved file keeps its frame; a
+copy of an open world is refused; a different world at a tree's path shows as unavailable and writes
+nothing; duplicate entries fold into one system commit. `Forest.tree`/`Tapestry.tree` (or copies) cannot
+be added. Open/create/close/vault handlers no longer write settings.json `trees` (only `trees:setFrame`
+does, until Plan 05). 576 tests green.
+Deviations (see 02.6-04-SUMMARY): Plan 02's first-launch test now expects 3 forest commits; self-file
+protection runs before trees are restored; vault restore carries the expected digest; re-adding a
+member without identity writes the identity commit. `vault:locate` doesn't exist on this branch yet;
+`relocateMember` is ready for it.
+Edge case left for Plan 06: explicitly opening a path now holding a different world gives it a new
+entry; the old tree is hidden that session and reappears as unavailable after relaunch.
+
+**No human gate in this plan**; end-of-phase check, together with items 2 and Plan 06's, copies only
+(same `TAPESTRY_USER_DATA_DIR` / `TAPESTRY_SPACE_DIR` setup as item 2):
+1. Open a tree. `Forest.tree` gains an `add tree` commit signed by you, then a `record identity` commit
+   signed `system tapestry`.
+2. Close it. The latest commit is `remove tree ... from the forest` with `delete-node`; the tree stays
+   gone after a relaunch.
+3. Try to open `/tmp/tapestry-space-scratch/Forest.tree` as a tree: refused with the approved sentence,
+   nothing written.
+
+**If the answer is no:** `git revert b73ec11 d6efff1 8b85ae5` and describe the issue in autonomy/RESPONSE.
