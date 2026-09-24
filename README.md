@@ -104,7 +104,16 @@ the `contact` preset (a bumper and a floor as `max(0, shape(pos))`), and
 `tests/mathspace/rope_chain_test.cpp` comparing the solver with ddsim's
 on ddsim's own `pendulum` and `rope-chain` goldens (equal to rounding for
 the pendulum; the double pendulum diverges, see `autonomy/STATE.md`).
-Phases 5 to 7 are not started.
+Plan phase 5 (views) meets its done condition headlessly: `mathspace/
+view@1` nodes with `project.expr` are evaluated by `ms_project` and
+never stepped, the stage surface `plugins/mathspace/surface/` draws one
+canvas panel per View (seen in a headless browser), and the presets
+`view-2d`, `view-3d` (perspective plus xy, xz, yz over one 3-space) and
+`view-4d` (`[x, y]` and `[z, w]` over one 4-space, the done condition)
+are checked by projecting every note through every view after a run.
+Shapes and rule regions in the surface are optional polish; a human look
+at the panel in the Electron app is still open. Phases 6 and 7 are not
+started.
 
 ## Build
 

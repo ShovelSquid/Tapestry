@@ -17,7 +17,7 @@ replay tool and goldens are kept.
 | 2 expressions | done headlessly (`c5d134e`, `d6e9c0b`): golden `plot` hashes across processes and builds, `<f>.expr text` props bind through the runner so the bound value is committed as a kernel prop after a step (the inspector reads props, so it shows it; a human look is still open like phase 1's), and `diff.hpp` exists for phase 4 |
 | 3 force rules | done headlessly (`e1e30a5`): force and `set.<f>` rules under unary, pair and global scope with `select`, mass integrator, `pinned`, RULE-07 skips on the rule node, goldens `gravity` and `pair`, and `plugins/mathspace/presets/` with the plan's four presets plus the roadmap's `anger`, `gold`, `push`, each a `mathspace.preset.<id>` command; `presets.test.js` runs all seven on one engine build with no skip and the promised field change. The "in the app" clause joins the GUI checklist in Blocked |
 | 4 constraints | done headlessly (`60c8346`, `60cd37e`, `064966d`): `constraint.expr` + `compliance` by fixed XPBD passes over lifted symbolic gradients, goldens `rod` and `contact`, the `contact` preset, the `pendulum`/`rope-chain` comparison against ddsim (numbers under Learned). The "in the app" look joins the GUI checklist in Blocked |
-| 5 views | engine side done (`61ef64f`); stage surface first cut done and seen in a headless browser (`24f1dbb`, `4acdaab`): one canvas 2D panel per View, refreshed on `onTreeChanged`; open: default-view presets, the 4D-through-two-views done condition, shapes and rule regions |
+| 5 views | **done condition met headlessly** (`b27808a`): engine side (`61ef64f`), stage surface (`24f1dbb`, `4acdaab`), default views as presets `view-2d`/`view-3d`/`view-4d`, and one 4-space projected through `[x, y]` and `[z, w]` at once in `projection.test.js` and `presets.test.js`. Shapes and rule regions in the surface are optional polish (Next 2); the in-app look joins the GUI checklist in Blocked |
 | 6 metrics | not started |
 | 7 fold ddsim | not started |
 
@@ -28,29 +28,30 @@ viewer; it is theirs to edit.)
 
 ## Next
 
-1. **Phase 5 third slice: default views as presets and the done
-   condition.** Add `presets/view-2d.json` (identity `[self.position.x,
-   self.position.y]`), `view-3d-perspective.json` and three orthographic
-   `view-3d-{xy,xz,yz}.json`, and a 4D axis-pair example
-   `view-4d-xy.json` / `view-4d-zw.json` (the "axis-pair picker" for
-   N > 3 is two such presets until there is UI). Each is a `.tree`-shaped
-   preset like the others (see `presets.js` for the node list format;
-   note a preset cannot name node ids, so a View preset must create its
-   own `mathspace/space@1` and a couple of notes, or the test must place
-   the view in an existing space by hand). Done condition to meet and
-   test: one 4D space viewable through two View nodes at once. Write it
-   as `test/projection.test.js` case (buildWorld + projectAll over a
-   dim-4 space with `[x, y]` and `[z, w]` views, both placing every note)
-   and as a preset run in `presets.test.js` (the preset test currently
-   expects a field change after stepping; a view preset may need that
-   check relaxed or a moving note included). Then mark phase 5's done
-   condition met in Phases and update README.md's status paragraph.
-2. Phase 5 fourth slice (optional polish, only if cheap): shapes by
-   sampled level sets and rule regions faintly in the surface; three.js
-   only if a 3D panel needs it. The surface refreshes only on
-   `onTreeChanged`, which the app fires for commits from outside the
-   renderer (the runner's, an agent's), not for the human's own drags; a
-   `getNodes` poll while open, or a host change, would close that gap.
+1. **Phase 6 first slice: `metric.expr` on the Space node, engine side.**
+   Read the plan's phase 6 paragraph and `mathspace_design.md`'s metric
+   section first; the plan lists `metric.expr` on `mathspace/space@1`,
+   Christoffel symbols by symbolic differentiation (`expr/diff.hpp` over
+   `expr/lift.hpp`, as the constraint solver does), a geodesic step,
+   `identify`, `embed`, and Poincaré and sphere presets. Smallest first
+   step: a `Space` carries an optional compiled metric (a dim×dim matrix
+   expression of `pos`, bound through a new action like 37 `BindField`,
+   under a new action kind with a golden), evaluated and hashed but not
+   yet used by the integrator; `MS_STEP_VERSION` bump only when step()
+   changes. Decide and record: how a matrix-valued expression is spelled
+   in the grammar (nested vector literal `[[a, b], [c, d]]` or dim²
+   flat vector), and whether `identify`/`embed` are Space props or
+   separate nodes. Then: geodesic integrator step reading the metric
+   (Christoffel from `diff`), golden `poincare`, presets. Plugin side:
+   `image.js` maps `metric.expr` on a space node like `<f>.expr` on a
+   note.
+2. Phase 5 optional polish, only if cheap and only after phase 6 has
+   started: shapes by sampled level sets and rule regions faintly in the
+   surface; three.js only if a 3D panel needs it. The surface refreshes
+   only on `onTreeChanged`, which the app fires for commits from outside
+   the renderer (the runner's, an agent's), not for the human's own
+   drags; a `getNodes` poll while open, or a host change, would close
+   that gap.
 3. **GUI confirmation of phases 1 to 5 (human, or a session that can
    drive Electron).** `npm install` at the root (or symlink node_modules,
    see Learned), `npm run build:native` in `app/` if
@@ -64,12 +65,21 @@ viewer; it is theirs to edit.)
    rise, gold grow, the cart move; a rule node with `scope text pair`,
    `constraint.expr text "norm(other.position - self.position) - 100"`
    between a pinned note and a free one with `velocity.*`, Run, see it
-   swing; click "Open Mathspace" with a View node present and see the
-   panel. Without the app: `npm run dev` in `plugins/mathspace` serves
+   swing; run `mathspace.preset.view-4d`, click "Open Mathspace" and see
+   two panels, then Run and watch only the `zw` panel move. Without the
+   app: `npm run dev` in `plugins/mathspace` serves
    the surface over a stub `window.tapestry` at localhost:5174.
 
 ## Done
 
+- `b27808a` ms5 default views as presets and the done condition:
+  `presets/view-2d.json` (identity over the implicit space),
+  `view-3d.json` (one 3-space, perspective `[x, y] * 400 / (z + 400)` and
+  xy/xz/yz views), `view-4d.json` (one 4-space, `[x, y]` and `[z, w]`);
+  `presets.js` resolves `$<index>` refs over two commits (`applyPreset`);
+  `presets.test.js` projects every view preset after 60 ticks and checks
+  the two-commit shape; `projection.test.js` dim-4 case; manifest lists
+  the three commands.
 - `4acdaab` ms5 surface in a browser: `image.js` uses `TextEncoder`/
   `TextDecoder` instead of Node's `Buffer` (it is bundled into the
   renderer now); the dev page mounts the built `dist/surface.js`; the dev
@@ -121,6 +131,18 @@ viewer; it is theirs to edit.)
 
 ## Decisions
 
+- View presets (`b27808a`): a `ref` must name a live node at commit time
+  and the kernel assigns ids, so a preset cannot point at a node of its
+  own commit. `presets.js` accepts `{ type: 'ref', value: '$k' }` (k a
+  node index in the file, one level only: the target may not have local
+  refs itself; `loadPresets` rejects anything else by file and node) and
+  submits the space in one commit and its members in a second
+  (`preset <id> members`). One `view-3d` preset holds all four 3D views
+  over one space rather than four presets each making a space (the STATE
+  plan said separate files; a preset cannot add a view to an existing
+  space anyway). The "axis-pair picker" for N > 3 is the `view-4d`
+  preset plus editing a View's `project.expr` until there is UI. The
+  presets test now accepts a rule or a view as the preset's active node.
 - Surface data path (`24f1dbb`): API 1 gives a surface no kernel and the
   host has no plugin-to-surface channel (`executeCommand` drops the
   handler's return value; data-drawing's surface reads no kernel data at
