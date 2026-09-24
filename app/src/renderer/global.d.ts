@@ -114,6 +114,19 @@ interface TapestryTreesAPI {
   setFrame(treeId: string, x: number, y: number): Promise<{ ok: boolean; error?: string }>
   /** One drop, the dragged frame first, as one forest commit. Main signs it; no actor is sent. */
   moveFrames(moves: TapestryFrameMove[]): Promise<{ ok: boolean; committed?: boolean; error?: string }>
+  /** Put the last drop back as a new signed forest commit, never a rewind (D-08, D-09). */
+  undoFrames(): Promise<TapestryFrameStepResult>
+  /** Put an undone drop forward again as a new signed forest commit (D-08, D-09). */
+  redoFrames(): Promise<TapestryFrameStepResult>
+}
+
+/** What a frame undo or redo did, and how many drops each way remain. */
+interface TapestryFrameStepResult {
+  ok: boolean
+  committed?: boolean
+  undoable?: number
+  redoable?: number
+  error?: string
 }
 
 interface TapestryPluginsAPI {

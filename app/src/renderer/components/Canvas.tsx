@@ -138,6 +138,11 @@ interface CanvasProps {
   ) => void
   /** Move a frame in renderer state only; the canvas persists the final spot. */
   onFrameMove: (treeId: string, x: number, y: number) => void
+  /**
+   * Called with the result of every recorded drop (2.6 D-08, D-11): App arms
+   * frame undo when it committed, and shows the failure otherwise.
+   */
+  onFramesMoved: (result: { ok: boolean; committed?: boolean; error?: string }) => void
   /** The selected frame, which is the space's focal point and undo target. */
   selectedTreeId: string | null
   onSelectTree: (treeId: string | null) => void
@@ -218,6 +223,7 @@ function Canvas({
   onDeleteNote,
   onPropertyEdit,
   onFrameMove,
+  onFramesMoved,
   selectedTreeId,
   onSelectTree,
 }: CanvasProps, ref: React.ForwardedRef<CanvasHandle>): React.ReactElement {
@@ -442,12 +448,10 @@ function Canvas({
     for (const move of batch.slice(1)) onFrameMove(move.treeId, move.x, move.y)
     if (!frameMoved && batch.length === 1) return
 
-    void window.tapestry.trees.moveFrames(batch).then(
-      (result) => {
-        // Plan 05 turns this into an app-level notice and arms frame undo.
-        if (!result.ok) console.error('[Canvas] frame move not recorded:', result.error)
-      },
-      (err: unknown) => console.error('[Canvas] frame move not recorded:', err),
+    // App arms frame undo on a commit and shows the approved notice (4.12)
+    // on a failure, putting every frame back where the forest has it.
+    void window.tapestry.trees.moveFrames(batch).then(onFramesMoved, (err: unknown) =>
+      onFramesMoved({ ok: false, error: err instanceof Error ? err.message : String(err) }),
     )
   }
 

@@ -48,7 +48,9 @@ import {
   forgetDuplicateMessage,
   moveFrameMessage,
   recordIdentityMessage,
+  redoMoveFrameMessage,
   removeTreeMessage,
+  undoMoveFrameMessage,
 } from './shapes'
 
 /**
@@ -59,6 +61,12 @@ import {
  */
 const FRAME_MIN_WIDTH = 480
 const FRAME_GAP = 64
+
+/**
+ * How many drops frame undo and redo remember in one session (T-2.6-17).
+ * Pushing past it forgets the oldest; the forest's history keeps everything.
+ */
+export const FRAME_HISTORY_LIMIT = 100
 
 // ---------------------------------------------------------------------------
 // Types
@@ -85,11 +93,34 @@ export interface SpaceServiceOptions {
   settings: SettingsStore
   paths: SpacePaths
   hooks?: SpaceServiceHooks
+  /** Steps each frame-history stack keeps; defaults to FRAME_HISTORY_LIMIT. */
+  frameHistoryLimit?: number
 }
 
 /** One tree as the renderer sees it, with its frame from the forest. */
 export interface SpaceTreeSummary extends TreeSummary {
   frame: { x: number; y: number }
+}
+
+/**
+ * One drop as frame undo remembers it (D-09, RESEARCH Pattern 3): every
+ * placement it changed, with the origin read from the forest before the write
+ * (`before`) and the origin written (`after`). `name` is the dragged frame.
+ */
+interface FrameStep {
+  name: string
+  entries: Array<{
+    edgeId: string
+    before: { x: number; y: number }
+    after: { x: number; y: number }
+  }>
+}
+
+/** What a frame undo or redo did, and how many steps each way remain. */
+export interface FrameStepResult {
+  committed: boolean
+  undoable: number
+  redoable: number
 }
 
 // ---------------------------------------------------------------------------
@@ -105,11 +136,19 @@ export class SpaceService {
   private home: TapestryHome | null = null
   private forest: ForestStore | null = null
 
+  // Frame undo and redo for this session (D-08, D-09). In memory only: the
+  // forest's history is the durable record, and a relaunch starts empty.
+  private readonly frameHistoryLimit: number
+  private undoSteps: FrameStep[] = []
+  private redoSteps: FrameStep[] = []
+
   constructor(options: SpaceServiceOptions) {
     this.registry = options.registry
     this.settings = options.settings
     this.paths = options.paths
     this.hooks = options.hooks ?? {}
+    const limit = options.frameHistoryLimit ?? FRAME_HISTORY_LIMIT
+    this.frameHistoryLimit = Number.isInteger(limit) && limit > 0 ? limit : FRAME_HISTORY_LIMIT
   }
 
   /** Whether the Tapestry tree and the forest are open. */
@@ -310,8 +349,14 @@ export class SpaceService {
     }
 
     const seen = new Set<string>()
-    const resolved: Array<{ name: string; edgeId: string; x: number; y: number; changed: boolean }> =
-      []
+    const resolved: Array<{
+      name: string
+      edgeId: string
+      x: number
+      y: number
+      before: { x: number; y: number }
+      changed: boolean
+    }> = []
     for (const move of moves) {
       if (!move || typeof move !== 'object' || Array.isArray(move)) {
         throw new Error('Each frame move must be an object')
@@ -336,6 +381,9 @@ export class SpaceService {
         edgeId: placement.edgeId,
         x,
         y,
+        // The stored origin, read from the forest: frame undo writes this
+        // back, and the renderer never supplies it (T-2.6-16).
+        before: { x: placement.x, y: placement.y },
         changed: x !== placement.x || y !== placement.y,
       })
     }
@@ -348,7 +396,77 @@ export class SpaceService {
       actor,
       moveFrameMessage(changes[0].name, changes.length - 1),
     )
+
+    this.pushStep(this.undoSteps, {
+      name: changes[0].name,
+      entries: changes.map(({ edgeId, x, y, before }) => ({ edgeId, before, after: { x, y } })),
+    })
+    this.redoSteps = []
     return { committed: true }
+  }
+
+  // -------------------------------------------------------------------------
+  // Frame undo and redo (D-08, D-09)
+  // -------------------------------------------------------------------------
+
+  /**
+   * Put the last recorded drop back, as a new commit signed by `actor`.
+   *
+   * The forest is never rewound (D-09): a rewound forest refuses the next
+   * drag. Instead the origins read from the forest before the drop are
+   * written again. An entry applies only while its placement is still live
+   * and still at the origin the drop wrote; one moved since (by a fit, or by
+   * a stand-in removed) is skipped. A step where nothing applies writes
+   * nothing and is still consumed.
+   */
+  undoFrames(actor: Actor): FrameStepResult {
+    return this.stepFrames(this.undoSteps, this.redoSteps, actor, undoMoveFrameMessage)
+  }
+
+  /** The mirror of `undoFrames`: put an undone drop forward again. */
+  redoFrames(actor: Actor): FrameStepResult {
+    return this.stepFrames(this.redoSteps, this.undoSteps, actor, redoMoveFrameMessage)
+  }
+
+  private stepFrames(
+    from: FrameStep[],
+    to: FrameStep[],
+    actor: Actor,
+    message: (name: string) => string,
+  ): FrameStepResult {
+    const forest = this.requireReady()
+    const step = from.pop()
+    if (!step) return this.frameStepResult(false)
+
+    const live = new Map<string, { x: number; y: number }>()
+    for (const member of forest.members()) {
+      if (member.placement) live.set(member.placement.edgeId, member.placement)
+    }
+    const applied = step.entries.filter((entry) => {
+      const current = live.get(entry.edgeId)
+      return current !== undefined && current.x === entry.after.x && current.y === entry.after.y
+    })
+    if (applied.length === 0) return this.frameStepResult(false)
+
+    forest.setOrigins(
+      applied.map(({ edgeId, before }) => ({ edgeId, x: before.x, y: before.y })),
+      actor,
+      message(step.name),
+    )
+    this.pushStep(to, {
+      name: step.name,
+      entries: applied.map(({ edgeId, before, after }) => ({ edgeId, before: after, after: before })),
+    })
+    return this.frameStepResult(true)
+  }
+
+  private pushStep(stack: FrameStep[], step: FrameStep): void {
+    stack.push(step)
+    while (stack.length > this.frameHistoryLimit) stack.shift()
+  }
+
+  private frameStepResult(committed: boolean): FrameStepResult {
+    return { committed, undoable: this.undoSteps.length, redoable: this.redoSteps.length }
   }
 
   // -------------------------------------------------------------------------
@@ -577,6 +695,8 @@ export class SpaceService {
     this.home?.close()
     this.forest = null
     this.home = null
+    this.undoSteps = []
+    this.redoSteps = []
   }
 
   /** The forest, or the approved 4.9 refusal when the space is not open. */

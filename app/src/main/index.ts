@@ -573,6 +573,38 @@ app.whenReady().then(async () => {
   })
 
   /**
+   * Put the last drop back (2.6 D-08, D-09): a new forest commit signed by
+   * the person, writing origins main read from the forest before the drop.
+   * The renderer sends nothing; the forest is never rewound, so `kernel:undo`
+   * never reaches it (the forest is not in the registry).
+   *
+   * Does not emit 'trees-changed': the renderer refreshes the frames itself
+   * when something was committed.
+   */
+  ipcMain.handle('trees:undoFrames', () => {
+    try {
+      const actor = getHumanActor()
+      if (!space || !space.ready) return { ok: false, error: SPACE_NOT_OPEN }
+      const { committed, undoable, redoable } = space.undoFrames(actor)
+      return { ok: true, committed, undoable, redoable }
+    } catch (err) {
+      return { ok: false, error: errorMessage(err) }
+    }
+  })
+
+  /** Put an undone drop forward again (2.6 D-08, D-09); the mirror of `trees:undoFrames`. */
+  ipcMain.handle('trees:redoFrames', () => {
+    try {
+      const actor = getHumanActor()
+      if (!space || !space.ready) return { ok: false, error: SPACE_NOT_OPEN }
+      const { committed, undoable, redoable } = space.redoFrames(actor)
+      return { ok: true, committed, undoable, redoable }
+    } catch (err) {
+      return { ok: false, error: errorMessage(err) }
+    }
+  })
+
+  /**
    * Open an existing world beside the ones already in the space.
    *
    * Nothing is closed: D-15 is precisely that several trees share one space.

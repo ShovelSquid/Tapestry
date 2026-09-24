@@ -145,6 +145,24 @@ export function moveFrameMessage(name: string, pushed: number): string {
   return pushed > 0 ? `${base} and push ${pushed} aside` : base
 }
 
+/**
+ * The person undid a drop: every frame it moved is written back (D-09). A new
+ * commit, never a rewind. `name` is the frame that was dragged.
+ */
+export function undoMoveFrameMessage(name: string): string {
+  return `undo move frame "${name}"`
+}
+
+/** The person redid a drop they had undone (D-09). */
+export function redoMoveFrameMessage(name: string): string {
+  return `redo move frame "${name}"`
+}
+
+/** The system moved a frame clear of its neighbours when it first appeared (D-12). */
+export function fitFrameMessage(name: string): string {
+  return `fit frame "${name}" beside its neighbours`
+}
+
 /** The person put a tree in the space, or opened a member from its new path (D-03). */
 export function addTreeMessage(name: string): string {
   return `add tree "${name}"`

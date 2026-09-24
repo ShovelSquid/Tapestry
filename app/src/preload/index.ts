@@ -103,6 +103,24 @@ const tapestryAPI = {
       moves: Array<{ treeId: string; x: number; y: number }>,
     ): Promise<{ ok: boolean; committed?: boolean; error?: string }> =>
       ipcRenderer.invoke('trees:moveFrames', moves),
+
+    /** Put the last drop back as a new signed forest commit, never a rewind (D-08, D-09). */
+    undoFrames: (): Promise<{
+      ok: boolean
+      committed?: boolean
+      undoable?: number
+      redoable?: number
+      error?: string
+    }> => ipcRenderer.invoke('trees:undoFrames'),
+
+    /** Put an undone drop forward again as a new signed forest commit (D-08, D-09). */
+    redoFrames: (): Promise<{
+      ok: boolean
+      committed?: boolean
+      undoable?: number
+      redoable?: number
+      error?: string
+    }> => ipcRenderer.invoke('trees:redoFrames'),
   },
 
   plugins: {
