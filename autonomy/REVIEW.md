@@ -134,3 +134,38 @@ clears frame history and fit allowance.
    any, is signed `system tapestry`.
 
 **If the answer is no:** `git revert 9340af9 ed0a42f 1ee3adc` and describe the issue in autonomy/RESPONSE.
+
+### 5. Phase 02.6, plan 02.6-06 — end-of-phase check on copied data (queued by the 16:08 session, 2026-09-24)
+
+**What was built (9b9ff29, 6247076):** launch with no pointer recovers a half-finished upgrade without
+importing twice: an existing `Tapestry.tree` is reopened and the pointer rewritten last (case B(i)); a
+lone `Forest.tree` is reused unwritten and a new Tapestry tree names its digest (case C(i)); a foreign
+file is refused with the 4.7 wording and left byte-identical. A space that can't open shows why in the
+app-error banner (4.1 banner), once per distinct message; add-tree / add-vault refusals now show the
+approved sentences verbatim. The settings writers `addTree`, `setTreeFrame`, `removeTree`,
+`migrateLastOpened` are deleted (2.2 delete); every settings write carries `trees` unchanged. Reader's
+guide: `tapestry/docs/tree/forest.md`. 30 files / 619 app tests, 59/59 kernel tests, typecheck clean.
+Deviations (see 02.6-06-SUMMARY): a Plan 01 test that expected `trees: []` in a brand-new settings file
+now expects no `trees` key; refusals travel as a dedicated error type that main turns into the notice.
+
+**Plan 06's human check was deferred** (approved-deferred, PROTOCOL step 4). It also covers items 2-4;
+do it once, on copies only. Close every Tapestry window first, then:
+`cp -R ~/Library/Application\ Support/@tapestry/app /tmp/tapestry-ud-copy && mkdir -p /tmp/tapestry-space-scratch`
+`TAPESTRY_USER_DATA_DIR=/tmp/tapestry-ud-copy TAPESTRY_SPACE_DIR=/tmp/tapestry-space-scratch npm --prefix app run dev`
+1. Your trees appear where they were. `Forest.tree` and `Tapestry.tree` exist in the space folder. In the
+   copy's `settings.json`, `trees` is unchanged, `version` is 2, and the pointer is set.
+2. Open `Forest.tree` in a text editor: you can tell which tree each stand-in is, where each frame sits,
+   and who wrote each commit. Compare with `tapestry/docs/tree/forest.md`.
+3. Drag a frame into another: one move, one commit. Ctrl+Z: both return. Ctrl+Shift+Z: they move again.
+   Edit a note and press Ctrl+Z: the note edit is undone.
+4. Add a tree, close it, relaunch: the closed tree is gone, and its removal is a signed commit.
+5. Quit. Rename one member's file, relaunch: it is listed as can't-be-found. Add it again from its new
+   name: it returns to its old frame.
+6. Open tree on `Forest.tree`: the approved refusal.
+7. Quit. Rename `Tapestry.tree` in the space folder and relaunch: the approved message, an empty space,
+   nothing new written. Rename it back and relaunch: everything returns.
+8. With one window running, launch a second with the same variables: the approved locked message
+   appears in the second window.
+
+**If the answer is no:** `git revert 6247076 9b9ff29` for this plan (items 2-4 list theirs), and describe
+the issue in autonomy/RESPONSE.
