@@ -21,37 +21,27 @@ Nothing. Tree is clean.
 
 ## Next
 
-1. **Build scaffolding for the `mathspace` library.** In `CMakeLists.txt`:
-   change the `ddsim` glob to non-recursive `src/*.cpp`; add
-   `add_library(mathspace STATIC)` over `src/mathspace/*.cpp` with public
-   include `include/`, linking `ddsim_settings` and `ddsim` (for
-   `fx64.hpp` and `sha256_bytes`); add `mathspace_tests` over
-   `tests/mathspace/*.cpp` with doctest discovery. Create
-   `include/mathspace/ids.hpp` (u64 structured `NoteId`: branch 8 bits,
-   group 32, index 24, reuse the masks from `ddsim/ids.hpp`) and one
-   trivial test so the target builds and `ctest` runs it. Confirm the
-   forbidden-token gate still passes and reports the new files.
-2. **`include/mathspace/note.hpp`**: `Field` (name up to 31 bytes, dim 1
+1. **`include/mathspace/note.hpp`**: `Field` (name up to 31 bytes, dim 1
    to 8, `fx64 value[8]`, `bound` flag, bytecode bytes empty for now),
    `Note` (id, space id, kind enum Space/Note/Rule/View, sorted fields
    vector). Helpers: `find_field`, `set_field` (insert sorted),
    `erase_field`. Tests for sort order and replacement.
-3. **`include/mathspace/world.hpp` + `src/mathspace/world.cpp`**: `World`
+2. **`include/mathspace/world.hpp` + `src/mathspace/world.cpp`**: `World`
    with seed, tick, sorted notes vector, `next_group`. `create_space(dim)`,
    `create_note(space, kind, group?)`, `set_field`, `delete_note`,
    `delete_field`, all returning an error code and leaving state untouched
    on failure. `step()` increments tick only. Tests.
-4. **Canonical walk + hash** in `src/mathspace/hash.cpp`, per the plan's
+3. **Canonical walk + hash** in `src/mathspace/hash.cpp`, per the plan's
    walk, plus `serialize`/`restore` strict inverse. Tests: round-trip hash
    equality, tampered byte rejected, restore failure leaves state untouched.
-5. **Actions** `include/mathspace/action.hpp`: kinds 32 to 36 with the
+4. **Actions** `include/mathspace/action.hpp`: kinds 32 to 36 with the
    ddsim header layout, bounds-checked decoder into a local, `World::apply`.
    Tests per kind including malformed payloads.
-6. **Replay tool and goldens**: `tools/ms_replay/main.cpp`, fixture format
+5. **Replay tool and goldens**: `tools/ms_replay/main.cpp`, fixture format
    shared with `tests/golden_support.hpp` where possible,
    `tests/golden/ms/empty.actions` and `two-notes.actions` with `.sha256`,
    wired into the two-process CTest loop in `CMakeLists.txt`.
-7. **Tapestry Space page** (phase 1 done condition): `PageKind::Space`,
+6. **Tapestry Space page** (phase 1 done condition): `PageKind::Space`,
    page owns a mathspace `World`, notes drawn as labelled dots, drag
    issues `SetField pos`, `.tapestry` delta line `mspace <page> <base64
    actions>`; reload and compare hash. Link `mathspace` into
@@ -64,7 +54,13 @@ its oracle tests.
 
 ## Done
 
-(nothing yet)
+- `3cd79d9` ms1 step 1: build scaffolding. `mathspace` static lib over
+  `src/mathspace/*.cpp`, `mathspace_tests` over `tests/mathspace/*.cpp`
+  (doctest prefix `ms.`), `include/mathspace/ids.hpp` (`NoteId`,
+  `SpaceId`, ddsim NodeId layout via ddsim's masks),
+  `include/mathspace/version.hpp`. Gate reports 20 clean sources.
+- `1d6f2f1` autonomy: driver `${budget_args[@]+...}` guard for bash 3.2
+  `set -u` (was left uncommitted by the driver fix).
 
 ## Decisions
 
@@ -72,7 +68,10 @@ its oracle tests.
 
 ## Learned
 
-(surprises about the codebase or the machine worth passing on)
+- Full Debug configure+build+ctest is ~10 s; Release the same. Run both
+  every slice, it is cheap.
+- `mathspace_tests` gets `MATHSPACE_GOLDEN_DIR` = `tests/golden/ms`
+  (directory does not exist yet; step 5 creates it).
 
 ## Blocked
 
