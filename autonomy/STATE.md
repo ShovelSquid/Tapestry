@@ -150,31 +150,23 @@ viewer; it is theirs to edit.)
   its problems as `key: reason` in key order joined by `; `, diffed
   against the kernel's text and unset when gone, riding the next commit.
 - `pinned` (`872831b`) is engine-side, not a plugin-side write filter
-  (a filtered diff would let the engine's copy drift from the kernel's).
-  The plugin sends `pinned` 1 only when the app's bool is true.
-- Rule notes in the engine (`22bc70c`, `f90b3c7`): the law is the
-  rule's bound fields evaluated with `self` = each target, never the
-  rule itself; `scope` is a scalar field (0/1/2, absent = unary);
-  targets are the non-Rule notes of the rule's space with `pos`; force
-  is a per-tick accumulator, never a field; `mass` scalar, 1 when
-  absent, <= 0 drops the force; h = 1; a program at the wrong dim
-  skips the rule, a per-target error skips the target silently; `select`
-  is a bound scalar per target. Details in `step.cpp`'s header. Every
-  change to `step()` bumps `MS_STEP_VERSION`; re-recording five goldens
-  is one command line.
-- `diff.hpp` (`d6e9c0b`): a derivative keeps its value's dim, so it
-  reuses the compiler's shapes with a `DimResolver`; `abs min max clamp`
-  differentiate as the fx64 branch goes, `curve` is `Unsupported`,
-  `node(nN).f` is a constant even for self; the output is a tree (no
-  shared subtrees) built with an explicit task stack.
-- Expression text spelling (`c5d134e`): the `.tree` says `self.position`,
-  the engine grammar `pos`; the plugin rewrites the one renamed field
-  before `ms_compile` and maps error offsets back. Compiling happens in
-  the runner, not `buildImage`, because refs need every note present.
-- `ms_compile` errors (`a159268`): a negative return packs
-  `-(stage << 8 | code)` (0 world, 1 parse with the byte offset in
-  `*where`, 2 compile with the Ast index); `ms_compile_error_name` gives
-  a static `"parse:InexactNumber"` string.
+  (a filtered diff would let the engine's copy drift from the kernel's);
+  the plugin sends `pinned` 1 only when the app's bool is true.
+- Rule notes in the engine (`22bc70c`, `f90b3c7`): the law is the rule's
+  bound fields evaluated with `self` = each target; `scope` is a scalar
+  field (0/1/2, absent = unary); targets are the non-Rule notes of the
+  rule's space with `pos`; force is a per-tick accumulator, never a
+  field; `mass` scalar, 1 when absent, <= 0 drops the force; h = 1.
+  Details in `step.cpp`'s header. Every change to `step()` bumps
+  `MS_STEP_VERSION`; re-recording the goldens is one command line.
+- Phase 2 plugin/ABI decisions, one line each (git and the headers have
+  the detail): `diff.hpp` (`d6e9c0b`) keeps a derivative at its value's
+  dim, `curve` is `Unsupported`, `node(nN).f` is a constant; the `.tree`
+  spells `self.position`, the plugin rewrites it to `pos` before
+  `ms_compile` and maps error offsets back, compiling in the runner not
+  `buildImage` (`c5d134e`); `ms_compile` failures pack
+  `-(stage << 8 | code)`, `ms_compile_error_name` gives
+  `"parse:InexactNumber"` (`a159268`).
 - Phase 2 engine decisions live in the headers they concern (`world.hpp`
   bound-field order, `vm.hpp` domain errors, `bytecode.hpp` shapes,
   `parser.hpp` grammar and bounds, `fxmath.hpp` rounding); the plan's
