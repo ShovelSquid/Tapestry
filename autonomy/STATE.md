@@ -16,7 +16,7 @@ replay tool and goldens are kept.
 | 1 engine over the kernel | built and tested headlessly (`836a4da`); only the human GUI confirmation is open, see Blocked |
 | 2 expressions | done headlessly (`c5d134e`, `d6e9c0b`): golden `plot` hashes across processes and builds, `<f>.expr text` props bind through the runner so the bound value is committed as a kernel prop after a step (the inspector reads props, so it shows it; a human look is still open like phase 1's), and `diff.hpp` exists for phase 4 |
 | 3 force rules | done headlessly (`e1e30a5`): force and `set.<f>` rules under unary, pair and global scope with `select`, mass integrator, `pinned`, RULE-07 skips on the rule node, goldens `gravity` and `pair`, and `plugins/mathspace/presets/` with the plan's four presets plus the roadmap's `anger`, `gold`, `push`, each a `mathspace.preset.<id>` command; `presets.test.js` runs all seven on one engine build with no skip and the promised field change. The "in the app" clause joins the GUI checklist in Blocked |
-| 4 constraints | not started |
+| 4 constraints | first slice done (`60c8346`): `constraint.expr` + `compliance` solved by fixed XPBD passes over lifted symbolic gradients, golden `rod`, runner test; open: the `rope-chain` comparison against ddsim, the contact preset and golden `contact` |
 | 5 views | not started |
 | 6 metrics | not started |
 | 7 fold ddsim | not started |
@@ -28,37 +28,39 @@ viewer; it is theirs to edit.)
 
 ## Next
 
-1. **Phase 4 first slice: `constraint.expr` in the engine, rod only.**
-   Read `mathspace_design.md` lines 145-185 (tick order: forces,
-   integrate, ITERATIONS of XPBD projection, `vel = (pos - prev) / h`,
-   set) and `include/ddsim/rules/constraints.hpp` (the loop to copy:
-   `DD_CONSTRAINT_ITERATIONS` Gauss-Seidel passes, epsilon guards).
-   Engine side in `src/mathspace/step.cpp`: a rule whose bound field is
-   `constraint` (scalar program, pair scope for a rod: `C = norm(other.pos
-   - self.pos) - self.rest`) is solved after the integrator and before
-   `set`: for each pass, for each visit in step order, evaluate `C` and
-   its gradient with respect to `self.pos` lanes via
-   `include/mathspace/expr/diff.hpp` (compile `d C / d self.pos.<lane>`
-   once per rule per lane at bind time or on first step; decide, record),
-   then the XPBD correction `dpos = -C / (|grad|^2 + compliance/h^2) *
-   grad` on `self` only (pair visits both orders, so `other` gets its own
-   visit), clamped per pass; `compliance` a scalar field on the rule,
-   0 when absent. Keep `prev` per note inside `step()` and set `vel =
-   (pos - prev) / h` after the passes so the integrator is unchanged.
-   `MS_STEP_VERSION` 8. Constant `MS_CONSTRAINT_ITERATIONS` in `step.hpp`
-   (ddsim's value). Doctest: a two-note rod at rest distance 10 pulled
-   apart by a force returns toward 10 within the passes; golden `rod`
-   (two notes, one rod rule, a gravity rule, 60 ticks) recorded via
-   `golden_test.cpp` under `MS_WRITE_FIXTURES=1`, then the six
-   `.sha256` via `ms_replay --write-golden`, Debug/Release/UBSan agree.
-   Plugin side is zero: `image.js` already binds any `<f>.expr` on a
-   rule; add one runner test with `constraint.expr`.
-2. Phase 4 second slice: the comparison test against ddsim's `rope-chain`
-   golden (`tests/golden/rope-chain.actions`): write the chain as notes
-   and a rod rule, step both engines, compare positions within a stated
-   tolerance (not the hash; the walks differ). Then Point-vs-Shape
-   contact as a preset (`C = max(0, shape(pos))`), golden `contact`.
-3. **GUI confirmation of phases 1 to 3 (human, or a session that can
+1. **Phase 4 second slice: the comparison test against ddsim's
+   `rope-chain` golden.** Read `tests/golden/rope-chain.actions` and the
+   ddsim replay path (`tools/dd_replay` or the ddsim tests; find how a
+   ddsim `State` is built from that fixture and stepped) and
+   `include/ddsim/rules/constraints.hpp`. Write a doctest in a new
+   `tests/mathspace/rope_chain_test.cpp` that builds the same chain as
+   mathspace notes (one Note per particle with `pos`, `velocity`, `mass`,
+   `pinned` for a static particle) plus one pair rod rule with a `select`
+   that picks chain neighbours (e.g. a per-note scalar `link` holding the
+   neighbour's id and `select` = `other.id == self.link`... the grammar
+   has no `id`; instead give each note `k` = its chain index and select
+   `abs(other.k - self.k) == 1`, rest = the fixture's rest length; if the
+   fixture has several lengths, one rule per length) and a unary gravity
+   force `[0, DD_GRAVITY_Y_PER_TICK * self.mass]`, steps both engines the
+   fixture's tick count, and compares each particle's position within a
+   stated tolerance (not the hash: ddsim corrects both ends in one visit,
+   mathspace one end per visit, so a free-free rod's residual after four
+   passes is 2^-8 of the stretch, see Decisions). Record the tolerance
+   and the worst deviation under Learned; that number is what justifies
+   phase 7.
+2. Phase 4 third slice: Point-vs-Shape contact as a preset,
+   `C = max(0, shape(pos))`. Decide how a Shape note exposes `shape(pos)`
+   (design: a scalar expression over `pos`; simplest is a unary rule whose
+   `constraint` is `max(0, r - norm(self.pos - node(nS).pos))` for a
+   circle of radius r at note S, i.e. "stay outside" or `min(0, ...)` for
+   "stay inside"); note `diff.hpp`'s `max` derivative is the branch taken,
+   so a zero branch gives a flat gradient and the visit is silently
+   skipped, exactly "no contact". Preset `contact` in
+   `plugins/mathspace/presets/` + `presets.test.js` case, golden `contact`
+   via `golden_test.cpp` under `MS_WRITE_FIXTURES=1`, six `.sha256`,
+   Debug/Release/UBSan. Then phase 4's done condition is met: say so in
+   Phases and README.
+3. **GUI confirmation of phases 1 to 4 (human, or a session that can
    drive Electron).** `npm install` at the root (or symlink node_modules,
    see Learned), `npm run build:native` in `app/` if
    `app/native/build/Release/tapestry_addon.node` is missing, `npm run
@@ -68,10 +70,21 @@ viewer; it is theirs to edit.)
    "self.position.x * 2"`, Step, see `y real ...` in the inspector; run
    `mathspace.preset.anger`, `mathspace.preset.gold`,
    `mathspace.preset.push` on a fresh tree, Run, watch Sam's `anger`
-   rise, gold grow, the cart move.
+   rise, gold grow, the cart move; a rule node with `scope text pair`,
+   `constraint.expr text "norm(other.position - self.position) - 100"`
+   between a pinned note and a free one with `velocity.*`, Run, see it
+   swing.
 
 ## Done
 
+- `60c8346` ms4 rod: `expr/lift.hpp` (bytecode back to an Ast, round-trip
+  tested over every op shape), `constraint` + `compliance` on a Rule note
+  solved after the integrator by `MS_CONSTRAINT_ITERATIONS` XPBD passes
+  with the gradient from `diff.hpp`, `velocity = pos - prev` after the
+  passes, `Skip::BadGradient`, `MS_STEP_VERSION` 8 (all goldens
+  re-recorded), golden `rod` (pendulum, 60 ticks), doctests for the pinned
+  anchor, compliance, free rod, unary manifold and whole-rule skips, one
+  runner test with `constraint.expr` and `compliance` (no plugin change).
 - `e1e30a5` ms3 presets: `presets/<id>.json` (rule node + bodies in
   `.tree` spelling), `presets.js` lists them in name order into
   `mathspace.preset.<id>` commands that submit one `createNode` commit;
@@ -104,6 +117,25 @@ viewer; it is theirs to edit.)
 
 ## Decisions
 
+- Constraints (`60c8346`). The engine holds bytecode only, so the
+  gradient comes from lifting the program back to an Ast (`lift.hpp`),
+  differentiating per `pos` lane and compiling against `RuleDims`, once
+  per rule per step (no cache to invalidate on a rebind; a profile can
+  ask for one). Only `self.pos` moves per visit: `dpos = w_self * dl *
+  g`, `dl = -C / ((w_self + w_other) |g|^2 + compliance)`, w = 1/mass, 0
+  when pinned or mass <= 0, w_other 0 without `other`; that split is
+  ddsim's `wa/(wa+wb)` exactly for a rod whose other end is pinned, and
+  for a free-free rod the two ordered visits each halve the error, so a
+  pass quarters it and four passes leave 2^-8 of the stretch (ddsim
+  meets a lone rod in one pass). A denominator below 2^-16 is a silent
+  visit skip (ddsim's len2 guard), a pinned self a silent skip (RULE-08),
+  notes without `velocity` are moved (the projection is a position write;
+  `pinned` is the one hold), the velocity derivation touches only what
+  the integrator moves. `MS_CONSTRAINT_ITERATIONS` (4) and
+  `MS_CONSTRAINT_EPS_RAW` live in `version.hpp` next to
+  `MS_STEP_VERSION` (there is no `step.hpp`), `CONSTRAINT_FIELD` and
+  `COMPLIANCE_FIELD` in `world.hpp`. `compliance` must be an unbound
+  scalar; bound or vector reads as 0.
 - Presets (`e1e30a5`) are self-consistent worlds: every note carries
   every field its rule reads (`Sam` has `chips 0`, so the pair rule's
   `select other.chips > 0` gates cleanly), so a fresh tree shows no
@@ -168,6 +200,14 @@ viewer; it is theirs to edit.)
 
 ## Learned
 
+- doctest's `CHECK(a && b)` is a compile error ("Expression Too
+  Complex"): bind the conjunction to a `bool` first. A golden with a new
+  name needs `touch tests/golden/ms/<f>.actions <f>.sha256` before the
+  build (the glob), then `MS_WRITE_FIXTURES=1 mathspace_tests
+  -tc="*golden <f>*"` fails once on the empty `.sha256` after writing the
+  `.actions`; `ms_replay --write-golden` fills it. Rebuilding the Wasm
+  (`source ~/emsdk/emsdk_env.sh; npm run engine:wasm`) is needed after any
+  golden re-record or the plugin's `engine.test.js` fails on old hashes.
 - Goldens with bytecode (`plot`, `gravity`, `pair`) are generated by
   `golden_test.cpp` and rewritten under `MS_WRITE_FIXTURES=1` (a new one
   needs an empty `.actions` and `.sha256` touched first, then the
