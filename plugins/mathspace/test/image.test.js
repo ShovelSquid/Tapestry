@@ -179,11 +179,30 @@ describe('buildImage', () => {
       { id: 'n2', type: 'tapestry.notes/note@1', props: { space: { type: 'ref', value: 'n1' }, 'position.x': real(1), 'position.y': real(0) } },
       { id: 'n3', type: SPACE_TYPE, props: { dim: { type: 'int', value: 2 }, 'force.expr': { type: 'text', value: '[1, 1]' } } },
     ])
-    expect(img.problems).toEqual([{ id: 'n3', key: 'force.expr', reason: 'a space binds only metric.expr' }])
+    expect(img.problems).toEqual([{ id: 'n3', key: 'force.expr', reason: 'a space binds only metric.expr or identify.expr' }])
     expect(img.bindings.map((b) => `${b.node} ${b.name} ${b.text}`)).toEqual(['n1 metric [1, 1]', 'n5 force [0, 0]'])
     expect(img.bindings[0].id).toBe(1n)
     expect(img.rules).toEqual(new Map([['n1', 'stale'], ['n3', null], ['n5', null]]))
     expect([...img.fields.keys()]).toEqual([2n, 5n]) // spaces carry no before-image: diff() never commits their lanes
+  })
+  it('space nodes: identify lanes are a SetField on the space after its CreateSpace; identify.expr binds; other numeric fields are problems', () => {
+    const img = buildImage([
+      { id: 'n1', type: SPACE_TYPE, props: { dim: { type: 'int', value: 2 }, 'identify.x': real(100) } },
+      { id: 'n2', type: 'tapestry.notes/note@1', props: { space: { type: 'ref', value: 'n1' }, 'position.x': real(1), 'position.y': real(0) } },
+      { id: 'n3', type: SPACE_TYPE, props: { dim: { type: 'int', value: 3 }, 'identify.expr': { type: 'text', value: '[0, 0, 4]' }, mass: real(2) } },
+      { id: 'n4', type: SPACE_TYPE, props: { dim: { type: 'int', value: 2 }, identify: real(7) } },
+    ])
+    expect(img.problems).toEqual([
+      { id: 'n3', key: 'mass', reason: 'a space carries only identify lanes' },
+      { id: 'n4', key: 'identify', reason: 'identify has 1 lanes, space has 2' },
+    ])
+    expect(hexOf(img.actions[0])).toBe(hexOf(encodeCreateSpace(1n, 2)))
+    expect(hexOf(img.actions[1])).toBe(hexOf(encodeSetField(1n, { name: 'identify', dim: 2, lanes: [100n * ONE, 0n] })))
+    expect(hexOf(img.actions[2])).toBe(hexOf(encodeCreateSpace(3n, 3)))
+    expect(hexOf(img.actions[3])).toBe(hexOf(encodeCreateSpace(4n, 2)))
+    expect(hexOf(img.actions[4])).toBe(hexOf(encodeCreateNote(2n, 1n, 1)))
+    expect(img.bindings.map((b) => `${b.node} ${b.name} ${b.text}`)).toEqual(['n3 identify [0, 0, 4]'])
+    expect([...img.fields.keys()]).toEqual([2n])
   })
   it('maps pinned bool true to the scalar pinned 1 and sends nothing for false', () => {
     const img = buildImage([

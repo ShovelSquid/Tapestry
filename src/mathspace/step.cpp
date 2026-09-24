@@ -47,6 +47,13 @@
 // lanes on the Space note stay as set, and the bound-field pass at the
 // end leaves `metric` alone as it leaves a rule's law. A note without `velocity` never
 // moves, however much force it collects; the rule never creates fields.
+// Identified charts (phase 6, world.hpp IDENTIFY_FIELD): after the
+// velocity derivation that follows the constraint passes, a Space with a
+// dim-N `identify` of half-widths L_k has each moving note's pos lane
+// wrapped into [-L_k, L_k) by one fx64 expression per lane (the
+// version.hpp note for 11). Pinned notes are wrapped too: a wrap is a
+// change of chart representative, not motion.
+//
 // A note whose scalar `pinned` is nonzero is held still (RULE-08): it
 // still collects force (a later pair rule may read it as `other`), but
 // neither its velocity nor its pos changes. Space notes are not
@@ -436,6 +443,7 @@ const char* skip_name(std::uint8_t reason) {
     case Skip::NoTargetField: return "NoTargetField";
     case Skip::BadGradient: return "BadGradient";
     case Skip::BadMetric: return "BadMetric";
+    case Skip::BadIdentify: return "BadIdentify";
     default: return "?";
     }
 }
@@ -599,6 +607,43 @@ void World::step() {
         }
         for (std::uint8_t lane = 0; lane < pos->dim; ++lane) {
             vel->value[lane] = pos->value[lane] - prev[i][lane];
+        }
+    }
+    // Identified spaces (world.hpp IDENTIFY_FIELD), space id order: wrap
+    // every Note-kind note's pos lane k with L_k > 0 into [-L_k, L_k).
+    // The velocity above is already derived, so a wrap never shows up
+    // as a jump in it.
+    for (const Note& space : notes) {
+        if (space.kind != NoteKind::Space) {
+            continue;
+        }
+        const Field* ident = find_field(space, IDENTIFY_FIELD);
+        if (ident == nullptr) {
+            continue;
+        }
+        const SpaceId sid = space_of(space.id);
+        const std::uint8_t dim = space_dim(sid);
+        if (ident->dim != dim) {
+            report.skip(space.id, Skip::BadIdentify);
+            continue;
+        }
+        for (Note& n : notes) {
+            if (n.kind != NoteKind::Note || n.space != sid) {
+                continue;
+            }
+            Field* pos = find_field(n, POS_FIELD);
+            if (pos == nullptr || pos->dim != dim) {
+                continue;
+            }
+            for (std::uint8_t lane = 0; lane < dim; ++lane) {
+                const fx64 half = ident->value[lane];
+                if (half.raw <= 0) {
+                    continue;
+                }
+                const fx64 period = half + half;
+                const fx64 turns = fx64::from_int(((pos->value[lane] + half) / period).floor_to_int());
+                pos->value[lane] -= period * turns;
+            }
         }
     }
     for (std::size_t r = 0; r < notes.size(); ++r) {

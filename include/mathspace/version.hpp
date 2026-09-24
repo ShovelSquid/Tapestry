@@ -47,7 +47,17 @@ const char* version();
 //      note where some g_kk < MS_METRIC_EPS; an evaluation error or a
 //      metric that is not a dim-N program with a gradient is reported on
 //      the Space note. Euclidean without a metric, bit for bit as 9.
-inline constexpr std::uint32_t MS_STEP_VERSION = 10u;
+//  11: identify. A Space note with a field `identify` (dim N, bound or
+//      plain; the lanes as they stand when step() begins) of half-widths
+//      L_k glues the chart to itself: after the velocity derivation and
+//      before the set rules, every Note-kind note of the space with a
+//      dim-N `pos` has each lane k with L_k > 0 wrapped into [-L_k, L_k)
+//      as `pos_k - 2 L_k * floor((pos_k + L_k) / (2 L_k))`, one fx64
+//      expression per lane (no loop). A lane with L_k <= 0 is not
+//      wrapped. `identify` at another dim is reported on the Space note
+//      as BadIdentify and nothing wraps. Velocity is untouched, so a wrap
+//      is invisible to the integrator. Without `identify`, as 10.
+inline constexpr std::uint32_t MS_STEP_VERSION = 11u;
 
 // The constraint solver's fixed pass count (ddsim's
 // DD_CONSTRAINT_ITERATIONS, never a convergence check) and the guard

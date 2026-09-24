@@ -39,7 +39,10 @@ const LANE_LETTERS = ['x', 'y', 'z', 'w']
 const IMPLICIT_SPACE_ID = 1n << 63n
 const IMPLICIT_SPACE_DIM = 2
 const SPACE_TYPE = 'mathspace/space@1'
-const METRIC_FIELD = 'metric' // world.hpp METRIC_FIELD: the one field a space binds
+const METRIC_FIELD = 'metric' // world.hpp METRIC_FIELD: the diagonal of the chart's metric
+const IDENTIFY_FIELD = 'identify' // world.hpp IDENTIFY_FIELD: half-widths that wrap each pos lane
+/** The fields a space node carries, plain or bound; anything else on a space is a problem. */
+const SPACE_FIELDS = [METRIC_FIELD, IDENTIFY_FIELD]
 const RULE_TYPE = 'mathspace/rule@1'
 /** A View: `project.expr` maps a note of its space to the page plane. */
 const VIEW_TYPE = 'mathspace/view@1'
@@ -342,18 +345,24 @@ function engineSource(text) {
  * failures are reported in `mathspace.error` like a rule's.
  *
  * A space node is created by CreateSpace, never CreateNote, and carries
- * no fields of its own except the one binding the engine reads there:
- * `metric.expr` (plan phase 6), the diagonal of the chart's metric in
- * terms of `self.position`, which the engine's geodesic step applies to
- * every note of the space. It compiles like a rule's law (the space's
- * own `pos` has the space dim, so `self.position` resolves) and its
- * failures, compile-time or the engine's BadMetric/VmError skips, are
- * reported on the space node in `mathspace.error`. Any other `<f>.expr`
- * on a space is a problem there, not a silent no-op.
+ * only the fields the engine reads there (plan phase 6): `metric.expr`,
+ * the diagonal of the chart's metric in terms of `self.position`, which
+ * the engine's geodesic step applies to every note of the space; and
+ * `identify`, the half-widths that wrap each note's position lane into
+ * [-L, L), as lane props (`identify.x real 100`, zero-padded to the
+ * space dim like any vector) or as `identify.expr` evaluated on the
+ * space. The metric compiles like a rule's law (the space's own `pos`
+ * has the space dim, so `self.position` resolves) and its failures,
+ * compile-time or the engine's BadMetric/VmError skips, are reported on
+ * the space node in `mathspace.error`, as BadIdentify is. Any other
+ * `<f>.expr` or numeric field on a space is a problem there, not a
+ * silent no-op. A space has no before-image, so diff() never commits
+ * its lanes back (a bound `identify` stays a formula in the tree).
  */
 function buildImage(nodes) {
   const problems = []
   const spaces = new Map() // u64 → dim
+  const spaceFields = new Map() // u64 → Map name → { dim, lanes }
   const notes = [] // { id, space, fields }
   const rules = new Map() // node id → its mathspace.error text now (null when none)
   const errorText = (node) => {
@@ -374,12 +383,26 @@ function buildImage(nodes) {
     }
     spaces.set(id, dim)
     for (const b of bindingsOf(node, problems)) {
-      if (b.name !== METRIC_FIELD) {
-        problems.push({ id: node.id, key: `${kernelName(b.name)}.expr`, reason: `a space binds only ${METRIC_FIELD}.expr` })
+      if (!SPACE_FIELDS.includes(b.name)) {
+        problems.push({ id: node.id, key: `${kernelName(b.name)}.expr`, reason: `a space binds only ${SPACE_FIELDS.map((f) => `${f}.expr`).join(' or ')}` })
         continue
       }
       spaceBindings.push({ id, node: node.id, name: b.name, text: b.text })
     }
+    const fields = fieldsOf(node, dim, problems)
+    for (const [name, f] of fields) {
+      if (name === 'dim') { fields.delete(name); continue } // the space's own dim, read above, not a field
+      if (name !== IDENTIFY_FIELD) {
+        problems.push({ id: node.id, key: laneKey(name, 0, f.dim), reason: `a space carries only ${IDENTIFY_FIELD} lanes` })
+        fields.delete(name)
+        continue
+      }
+      if (f.dim !== dim) {
+        problems.push({ id: node.id, key: kernelName(name), reason: `${kernelName(name)} has ${f.dim} lanes, space has ${dim}` })
+        fields.delete(name)
+      }
+    }
+    spaceFields.set(id, fields)
   }
 
   let usesImplicit = false
@@ -441,6 +464,12 @@ function buildImage(nodes) {
   if (usesImplicit) spaceIds.push(IMPLICIT_SPACE_ID)
   for (const sid of spaceIds) {
     actions.push(encodeCreateSpace(sid, sid === IMPLICIT_SPACE_ID ? IMPLICIT_SPACE_DIM : spaces.get(sid)))
+    const fields = spaceFields.get(sid)
+    if (!fields) continue
+    for (const name of [...fields.keys()].sort(compareNames)) {
+      const f = fields.get(name)
+      actions.push(encodeSetField(sid, { name, dim: f.dim, lanes: f.lanes }))
+    }
   }
   notes.sort((a, b) => byId(a.id, b.id))
   for (const n of notes) {

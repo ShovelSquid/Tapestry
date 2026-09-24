@@ -459,11 +459,11 @@ TEST_CASE("a pair rule visits every ordered pair with other bound; global visits
 }
 
 TEST_CASE("the step version is pinned in the walk") {
-    CHECK(MS_STEP_VERSION == 10u);
+    CHECK(MS_STEP_VERSION == 11u);
     const World w;
     const auto bytes = serialize(w);
     // magic 4 | FORMAT_VERSION 4 | DD_FX_FORMAT_ID 4 | rule version 4
-    CHECK(bytes[12] == 10);
+    CHECK(bytes[12] == 11);
     CHECK(bytes[13] == 0);
     CHECK(bytes[14] == 0);
     CHECK(bytes[15] == 0);
@@ -752,4 +752,51 @@ TEST_CASE("a degenerate chart point skips the correction silently; a note withou
     CHECK(field(w, A, POS_FIELD).value[1] == fx64::from_int(1));
     CHECK(field(w, B, POS_FIELD).value[0] == fx64::from_int(50));
     CHECK(field(w, B, POS_FIELD).value[1] == fx64::from_int(50));
+}
+
+// Phase 6: `identify` on a Space note wraps pos lanes into [-L, L).
+TEST_CASE("identify of half-width 100 on x wraps x into the half-open interval and leaves y open, velocity untouched") {
+    World w = metric_world(99, 0, 2 * fx64::ONE, 3 * fx64::ONE);
+    REQUIRE(w.set_field(S, vec(IDENTIFY_FIELD.data(), 2, 100, 0)) == Error::Ok);
+    w.step();
+    CHECK(w.reports.empty());
+    // 99 + 2 = 101 -> 101 - 200 = -99. y runs on: 3.
+    CHECK(field(w, A, POS_FIELD).value[0] == fx64::from_int(-99));
+    CHECK(field(w, A, POS_FIELD).value[1] == fx64::from_int(3));
+    CHECK(field(w, A, VELOCITY_FIELD).value[0] == fx64::from_int(2));
+    // Backwards past -100 lands just under 100; a note far out wraps in one step.
+    World b = metric_world(-99, 0, -2 * fx64::ONE, 0);
+    REQUIRE(b.set_field(S, vec(IDENTIFY_FIELD.data(), 2, 100, 0)) == Error::Ok);
+    REQUIRE(b.create_note(B, space_of(S), NoteKind::Note) == Error::Ok);
+    REQUIRE(b.set_field(B, vec("pos", 2, 1050, -7)) == Error::Ok);
+    b.step();
+    CHECK(field(b, A, POS_FIELD).value[0] == fx64::from_int(99));
+    CHECK(field(b, B, POS_FIELD).value[0] == fx64::from_int(50));
+    CHECK(field(b, B, POS_FIELD).value[1] == fx64::from_int(-7));
+    // The boundary itself: exactly L maps to -L, so the interval is half open.
+    World e = metric_world(98, 0, 2 * fx64::ONE, 0);
+    REQUIRE(e.set_field(S, vec(IDENTIFY_FIELD.data(), 2, 100, 0)) == Error::Ok);
+    e.step();
+    CHECK(field(e, A, POS_FIELD).value[0] == fx64::from_int(-100));
+    CHECK(w.well_formed());
+}
+
+TEST_CASE("identify at the wrong dim is reported on the space and wraps nothing, a bound identify wraps by its evaluated lanes") {
+    World w = metric_world(99, 0, 2 * fx64::ONE, 0);
+    REQUIRE(w.set_field(S, vec(IDENTIFY_FIELD.data(), 1, 100)) == Error::Ok);
+    w.step();
+    REQUIRE(w.reports.size() == 1);
+    CHECK(w.reports[0].rule == S);
+    CHECK(std::string(skip_name(w.reports[0].reason)) == "BadIdentify");
+    CHECK(field(w, A, POS_FIELD).value[0] == fx64::from_int(101));
+    // Bound: the lanes are zero on the first step (nothing wraps), then
+    // hold the evaluated value for the second.
+    World b = metric_world(99, 0, 2 * fx64::ONE, 0);
+    REQUIRE(b.bind_field(S, IDENTIFY_FIELD, code_for(b, S, "[100, 0]")) == Error::Ok);
+    b.step();
+    CHECK(b.reports.empty());
+    CHECK(field(b, A, POS_FIELD).value[0] == fx64::from_int(101));
+    CHECK(field(b, S, IDENTIFY_FIELD).value[0] == fx64::from_int(100));
+    b.step();
+    CHECK(field(b, A, POS_FIELD).value[0] == fx64::from_int(-97));
 }

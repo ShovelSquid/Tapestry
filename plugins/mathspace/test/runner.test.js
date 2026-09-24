@@ -534,3 +534,37 @@ describe('Runner with a metric on a space', () => {
     runner.dispose()
   })
 })
+
+describe('Runner with identify on a space', () => {
+  const SPACE = 'mathspace/space@1'
+  const text = (value) => ({ type: 'text', value })
+  const real = (value) => ({ type: 'real', value })
+  const nodes = [
+    // x wraps at ±100, y is open: 99 + 2 lands at -99.
+    { id: 'n1', type: SPACE, props: { dim: { type: 'int', value: 2 }, 'identify.x': real(100) } },
+    { id: 'n2', type: 'tapestry.notes/note@1', props: { space: { type: 'ref', value: 'n1' }, 'position.x': real(99), 'position.y': real(5), 'velocity.x': real(2), 'velocity.y': real(1) } },
+    // A bound identify holds zero lanes on the first step, so it wraps only from the second.
+    { id: 'n3', type: SPACE, props: { dim: { type: 'int', value: 2 }, 'identify.expr': text('[100, 0]') } },
+    { id: 'n4', type: 'tapestry.notes/note@1', props: { space: { type: 'ref', value: 'n3' }, 'position.x': real(99), 'position.y': real(0), 'velocity.x': real(2), 'velocity.y': real(0) } },
+  ]
+
+  it('wraps a note past the half-width and never commits the space\'s lanes', async () => {
+    const kernel = fakeKernel(nodes)
+    const { runner } = makeRunner()
+    await runner.stepOnce(kernel)
+    expect(runner.image.problems).toEqual([])
+    expect(kernel.state.commits[0].ops).toEqual([
+      { op: 'setProperty', target: 'n2', key: 'position.x', type: 'real', value: -99 },
+      { op: 'setProperty', target: 'n2', key: 'position.y', type: 'real', value: 6 },
+      { op: 'setProperty', target: 'n4', key: 'position.x', type: 'real', value: 101 },
+      { op: 'advance', ticks: 1 },
+    ])
+    await runner.stepOnce(kernel)
+    expect(kernel.state.commits[1].ops).toEqual([
+      { op: 'setProperty', target: 'n2', key: 'position.x', type: 'real', value: -97 },
+      { op: 'setProperty', target: 'n2', key: 'position.y', type: 'real', value: 7 },
+      { op: 'setProperty', target: 'n4', key: 'position.x', type: 'real', value: -97 },
+      { op: 'advance', ticks: 1 },
+    ])
+  })
+})

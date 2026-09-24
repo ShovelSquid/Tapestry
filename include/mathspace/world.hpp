@@ -63,6 +63,7 @@ enum class Skip : std::uint8_t {
     NoTargetField,  // set.<f>: the target lacks `f`, or holds it at another dim
     BadGradient,    // constraint: its program does not lift, differentiate or compile per pos lane
     BadMetric,      // a Space's `metric` is not a program of the space dim, or has no gradient
+    BadIdentify,    // a Space's `identify` is not of the space dim
 };
 const char* skip_name(std::uint8_t reason);
 
@@ -186,6 +187,15 @@ inline constexpr std::uint8_t PROJECT_DIM = 2;
 // inverse; a full tensor would be a later `metric.<row>` set. Absent or
 // unbound, the chart is Euclidean.
 inline constexpr std::string_view METRIC_FIELD = "metric";
+
+// On a Space note: a dim-N `identify` of half-widths L_k (plain lanes, or
+// bound and evaluated on the space at the end of each step like any of
+// its values) glues the chart to itself: lane k of every Note-kind
+// note's `pos` in the space is wrapped into [-L_k, L_k) after each step's
+// motion (step.cpp). L_k of 0 (or negative) leaves that lane open. Wrap
+// one lane of a plane for a cylinder, both for a torus; the sphere's phi
+// lane is the use case. Topology enters here without a mesh.
+inline constexpr std::string_view IDENTIFY_FIELD = "identify";
 
 // Bumped whenever the canonical walk (hash.cpp) changes shape. Pinned in
 // the walk itself so old bytes are rejected instead of misread.
