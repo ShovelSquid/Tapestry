@@ -4,6 +4,8 @@
  *
  * Pan: drag empty space, or a frame's background (1:1, never eased).
  * Zoom: Ctrl+wheel or pinch, gliding around the pointer position.
+ * Roll: Shift+wheel about the pointer; Q and E turn 15 degrees and 0 levels,
+ * about the viewport centre. A roll released near a quarter turn settles on it.
  *
  * Canvas owns what is global to the space -- the camera, which note is
  * hovered, selected or being connected -- and TreeFrame owns what belongs to
@@ -44,10 +46,12 @@ import {
   CameraRig,
   FLY_TAU_MS,
   IDENTITY_CAMERA,
+  ROLL_KEY_STEP_DEG,
   ZOOM_TAU_MS,
   cameraTransformCss,
   centerOn,
   panBy,
+  rollDeltaFromWheel,
   screenDeltaToWorld,
   screenToWorld,
   zoomAbout,
@@ -172,6 +176,16 @@ const BACKGROUND_CLASSES = [
 function isBackground(target: HTMLElement, viewport: HTMLElement | null): boolean {
   if (target === viewport) return true
   return BACKGROUND_CLASSES.some((cls) => target.classList.contains(cls))
+}
+
+/**
+ * True when a key event is aimed at something the person is typing into, so
+ * a canvas shortcut must leave the key alone.
+ */
+function isTypingTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false
+  if (target.isContentEditable) return true
+  return target.closest('.ProseMirror, input, textarea, select, [contenteditable]') !== null
 }
 
 function containsPoint(rect: FrameRect, x: number, y: number): boolean {
@@ -607,6 +621,20 @@ function Canvas({
 
         rig.easeTo((c) => zoomAbout(c, factor, pointerX, pointerY, MIN_ZOOM, MAX_ZOOM), ZOOM_TAU_MS)
         kick()
+      } else if (e.shiftKey) {
+        // Shift+wheel rolls the canvas about the pointer. Shift with a
+        // two-finger scroll used to pan sideways; it now rolls, the gesture
+        // the design names. Chromium on macOS exposes no trackpad rotate
+        // gesture (WebKit's gesturechange exists only in Safari), so roll
+        // comes from Shift+wheel, Q/E and 0 rather than a trackpad twist.
+        const rect = viewport.getBoundingClientRect()
+        rig.roll(
+          rollDeltaFromWheel(e.deltaX, e.deltaY, e.deltaMode),
+          e.clientX - rect.left,
+          e.clientY - rect.top,
+          performance.now(),
+        )
+        kick()
       } else {
         // Two-finger pan is direct manipulation: 1:1, never eased.
         rig.direct((c) =>
@@ -718,6 +746,35 @@ function Canvas({
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   }, [selectedRef, editingRef, onDeleteNote, selectNote])
+
+  // -----------------------------------------------------------------------
+  // Keyboard roll: Q and E turn the canvas, 0 levels it, about the centre.
+  // Never while typing, and never with Cmd, Ctrl or Alt held (Cmd+Q and
+  // Cmd+0 belong to the app menu).
+  // -----------------------------------------------------------------------
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return
+      if (e.metaKey || e.ctrlKey || e.altKey) return
+      if (editingRef) return
+      if (isTypingTarget(e.target)) return
+      const viewport = viewportRef.current
+      if (!viewport) return
+
+      const cx = viewport.clientWidth / 2
+      const cy = viewport.clientHeight / 2
+      const key = e.key.toLowerCase()
+      if (key === 'q') rig.roll(-ROLL_KEY_STEP_DEG, cx, cy, performance.now())
+      else if (key === 'e') rig.roll(ROLL_KEY_STEP_DEG, cx, cy, performance.now())
+      else if (key === '0') rig.resetRoll(cx, cy)
+      else return
+      e.preventDefault()
+      kick()
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [editingRef, rig, kick])
 
   // -----------------------------------------------------------------------
   // Render

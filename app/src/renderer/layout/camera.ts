@@ -26,7 +26,7 @@
  * for bit, so an unrolled canvas is drawn exactly as before.
  */
 
-import { clampZoom } from './wheel'
+import { clampZoom, normalizeWheelDelta } from './wheel'
 
 // ---------------------------------------------------------------------------
 // Camera and constants
@@ -59,6 +59,15 @@ export const SETTLE_PAN_PX = 0.5
 export const SETTLE_ZOOM_REL = 5e-4
 /** ...and the roll within 0.05 degrees. */
 export const SETTLE_ROLL_DEG = 0.05
+
+/** Shift+wheel roll rate: a 100 px scroll turns the canvas 25 degrees. */
+export const ROLL_DEG_PER_PX = 0.25
+/** One press of Q or E. */
+export const ROLL_KEY_STEP_DEG = 15
+/** A roll released this close to a quarter turn (inclusive) settles onto it. */
+export const ROLL_SNAP_WINDOW_DEG = 4
+/** How long roll input must pause before the snap may pull (spike 011: never while the hand is moving). */
+export const ROLL_SNAP_IDLE_MS = 150
 
 const DEG = Math.PI / 180
 
@@ -171,6 +180,41 @@ export function zoomAbout(
   }
 }
 
+/**
+ * Turn the canvas by `deltaDeg` about the screen point (sx, sy), keeping the
+ * world point under it fixed: pan' = s + R(delta) * (pan - s).
+ */
+export function rollAbout(cam: Camera, deltaDeg: number, sx: number, sy: number): Camera {
+  const r = rotate(cam.panX - sx, cam.panY - sy, deltaDeg)
+  return { panX: sx + r.x, panY: sy + r.y, zoom: cam.zoom, roll: normalizeRoll(cam.roll + deltaDeg) }
+}
+
+/** Turn the canvas to exactly `rollDeg` about (sx, sy), the short way round. */
+export function rollTo(cam: Camera, rollDeg: number, sx: number, sy: number): Camera {
+  const turned = rollAbout(cam, shortestRollDelta(cam.roll, rollDeg), sx, sy)
+  return { ...turned, roll: normalizeRoll(rollDeg) }
+}
+
+/**
+ * The quarter turn a released roll should settle onto, or null when the roll
+ * is more than ROLL_SNAP_WINDOW_DEG from every quarter turn.
+ */
+export function snapRoll(roll: number): number | null {
+  const nearest = Math.round(roll / 90) * 90
+  if (Math.abs(roll - nearest) > ROLL_SNAP_WINDOW_DEG) return null
+  // + 0 turns a -0 from Math.round into 0.
+  return normalizeRoll(nearest) + 0
+}
+
+/**
+ * Degrees to roll for a Shift+wheel event. The dominant axis is used because
+ * macOS turns Shift+mouse-wheel into deltaX. Positive deltaY turns clockwise.
+ */
+export function rollDeltaFromWheel(deltaX: number, deltaY: number, deltaMode: number): number {
+  const dominant = Math.abs(deltaY) >= Math.abs(deltaX) ? deltaY : deltaX
+  return normalizeWheelDelta(dominant, deltaMode) * ROLL_DEG_PER_PX
+}
+
 /** Pan so the world point (wx, wy) sits at the viewport's centre. */
 export function centerOn(
   cam: Camera,
@@ -181,6 +225,63 @@ export function centerOn(
 ): Camera {
   const r = rotate(wx * cam.zoom, wy * cam.zoom, cam.roll)
   return { ...cam, panX: viewportW / 2 - r.x, panY: viewportH / 2 - r.y }
+}
+
+// ---------------------------------------------------------------------------
+// Element measurement under the camera
+// ---------------------------------------------------------------------------
+
+/** The parts of an element layoutSize reads; structural, so this module stays DOM-free. */
+export interface MeasurableElement {
+  getBoundingClientRect(): { width: number; height: number }
+  offsetWidth: number
+  offsetHeight: number
+}
+
+/**
+ * An element's size in world units (its own local CSS px).
+ *
+ * At roll 0 this is the bounding size divided by zoom, the canvas's old
+ * fractional measurement, unchanged. Rolled, the bounding box is the
+ * axis-aligned hull of the turned element and says nothing direct about its
+ * size, so the layout size is used instead: offsetWidth and offsetHeight,
+ * which the browser rounds to whole px.
+ */
+export function layoutSize(
+  el: MeasurableElement,
+  zoom: number,
+  roll: number,
+): { width: number; height: number } {
+  if (roll === 0) {
+    const rect = el.getBoundingClientRect()
+    return { width: rect.width / zoom, height: rect.height / zoom }
+  }
+  return { width: el.offsetWidth, height: el.offsetHeight }
+}
+
+/**
+ * A screen point in an element's own local px, given the element's
+ * axis-aligned screen bounds (`aabb`, from getBoundingClientRect), its layout
+ * size, and the zoom and roll it is drawn under.
+ *
+ * Rolled, the element's local origin is not the bounding box's top-left: it
+ * is the corner the rotation carried there, found from the per-axis minimum
+ * of the rotated corner offsets. The point is then un-rotated about it.
+ */
+export function screenToElementLocal(
+  point: { x: number; y: number },
+  aabb: { left: number; top: number },
+  size: { width: number; height: number },
+  zoom: number,
+  roll: number,
+): { x: number; y: number } {
+  if (roll === 0) return { x: (point.x - aabb.left) / zoom, y: (point.y - aabb.top) / zoom }
+  const w = rotate(size.width * zoom, 0, roll)
+  const h = rotate(0, size.height * zoom, roll)
+  const minX = Math.min(0, w.x, h.x, w.x + h.x)
+  const minY = Math.min(0, w.y, h.y, w.y + h.y)
+  const r = rotate(point.x - (aabb.left - minX), point.y - (aabb.top - minY), -roll)
+  return { x: r.x / zoom, y: r.y / zoom }
 }
 
 // ---------------------------------------------------------------------------
@@ -281,11 +382,20 @@ function sameCamera(a: Camera, b: Camera): boolean {
  * it. `hold` is a grab: the target becomes whatever is drawn, which stops an
  * ease where it is. `easeTo` moves only the target and lets `tick` glide the
  * drawn camera after it, at the tau of the most recent eased input.
+ *
+ * Roll input also arms a soft snap: once ROLL_SNAP_IDLE_MS pass with no more
+ * roll input, a target roll within ROLL_SNAP_WINDOW_DEG of a quarter turn
+ * eases onto it. Any further roll input re-arms the wait, and a direct move or
+ * a grab disarms it, so the snap never pulls against a moving hand.
  */
 export class CameraRig {
   protected _target: Camera
   protected _drawn: Camera
   protected _tau = 0
+  /** When the last roll input arrived, while a snap is pending; else null. */
+  protected _rollInputAt: number | null = null
+  /** The screen point the pending snap turns about. */
+  protected _snapAnchor = { x: 0, y: 0 }
 
   constructor(initial: Camera) {
     this._target = { ...initial }
@@ -339,26 +449,45 @@ export class CameraRig {
   }
 
   /**
-   * Advance the drawn camera by one frame. Returns true while another frame
-   * is needed, so the caller's animation loop stops and the page idles once
-   * the camera has arrived.
+   * Roll by `deltaDeg` about the screen point (sx, sy), computed against the
+   * target, and arm the soft snap.
    */
-  tick(nowMs: number, dtMs: number): boolean {
-    this.beforeStep(nowMs)
-    if (this.settled) return this.pending()
-    const out = step(this._drawn, this._target, dtMs, this._tau)
-    this._drawn = out.camera
-    return !out.settled || this.pending()
+  roll(deltaDeg: number, sx: number, sy: number, nowMs: number): void {
+    if (!this.easeTo((c) => rollAbout(c, deltaDeg, sx, sy), ROLL_TAU_MS)) return
+    this._rollInputAt = nowMs
+    this._snapAnchor = { x: sx, y: sy }
   }
 
-  /** Hook: the hand has taken over (direct or hold). */
-  protected onHand(): void {}
+  /** Ease back to exactly level about (sx, sy). Arms no snap. */
+  resetRoll(sx: number, sy: number): void {
+    this._rollInputAt = null
+    this.easeTo((c) => rollTo(c, 0, sx, sy), ROLL_TAU_MS)
+  }
 
-  /** Hook: runs at the start of each tick, before the drawn camera moves. */
-  protected beforeStep(_nowMs: number): void {}
+  /**
+   * Advance the drawn camera by one frame. Returns true while another frame
+   * is needed, including while a snap is waiting out its idle time, so the
+   * caller's animation loop stops and the page idles once nothing is left.
+   */
+  tick(nowMs: number, dtMs: number): boolean {
+    // The soft snap: after the idle time, settle a near-quarter-turn roll.
+    if (this._rollInputAt !== null && nowMs - this._rollInputAt >= ROLL_SNAP_IDLE_MS) {
+      this._rollInputAt = null
+      const snap = snapRoll(this._target.roll)
+      if (snap !== null && snap !== this._target.roll) {
+        const { x, y } = this._snapAnchor
+        this.easeTo((c) => rollTo(c, snap, x, y), ROLL_TAU_MS)
+      }
+    }
+    const pending = this._rollInputAt !== null
+    if (this.settled) return pending
+    const out = step(this._drawn, this._target, dtMs, this._tau)
+    this._drawn = out.camera
+    return !out.settled || pending
+  }
 
-  /** Hook: true while something (such as a snap) still needs frames. */
-  protected pending(): boolean {
-    return false
+  /** The hand has taken over: no snap may pull against it. */
+  protected onHand(): void {
+    this._rollInputAt = null
   }
 }

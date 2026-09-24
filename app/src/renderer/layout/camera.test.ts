@@ -18,16 +18,23 @@ import {
   cameraTransformCss,
   centerOn,
   normalizeRoll,
+  ROLL_SNAP_IDLE_MS,
+  layoutSize,
   panBy,
+  rollAbout,
+  rollDeltaFromWheel,
+  rollTo,
   screenDeltaToWorld,
+  screenToElementLocal,
   screenToWorld,
   shortestRollDelta,
+  snapRoll,
   step,
   worldToScreen,
   zoomAbout,
   type Camera,
 } from './camera'
-import { clampZoom } from './wheel'
+import { PIXELS_PER_LINE, clampZoom } from './wheel'
 
 const MIN = 0.1
 const MAX = 5
@@ -310,5 +317,185 @@ describe('CameraRig', () => {
     expect(rig.target).toEqual(panBy(target, 5, 9))
     expect(rig.drawn).toEqual(panBy(drawn, 5, 9))
     expect(rig.tick(32, 16)).toBe(true)
+  })
+})
+
+describe('roll about a point', () => {
+  const sx = 512.5
+  const sy = 300.25
+
+  it('rollAbout keeps the world point under (sx, sy) fixed', () => {
+    for (const delta of [15, -90, 137, 180]) {
+      const c = cam(-40, 220, 1.6, 25)
+      const before = screenToWorld(c, sx, sy)
+      const after = screenToWorld(rollAbout(c, delta, sx, sy), sx, sy)
+      expect(Math.abs(after.x - before.x)).toBeLessThan(1e-9)
+      expect(Math.abs(after.y - before.y)).toBeLessThan(1e-9)
+    }
+  })
+
+  it('+90 then -90 returns the original camera', () => {
+    const c = cam(-40, 220, 1.6, 25)
+    expectCameraClose(rollAbout(rollAbout(c, 90, sx, sy), -90, sx, sy), c, 9)
+  })
+
+  it('rollTo lands on the exact angle', () => {
+    const c = cam(-40, 220, 1.6, 33.3333)
+    expect(rollTo(c, 0, sx, sy).roll).toBe(0)
+    expect(rollTo(c, -180, sx, sy).roll).toBe(180)
+  })
+
+  it('step takes the short way across the seam', () => {
+    const tau = 80
+    const first = step(cam(0, 0, 1, 170), cam(0, 0, 1, -170), 16, tau).camera
+    expect(first.roll > 170 || first.roll < -170).toBe(true)
+    let c = cam(0, 0, 1, 170)
+    let travelled = 0
+    for (let i = 0; i < 200; i += 1) {
+      const out = step(c, cam(0, 0, 1, -170), 16, tau)
+      travelled += Math.abs(shortestRollDelta(c.roll, out.camera.roll))
+      c = out.camera
+      if (out.settled) break
+    }
+    expect(c.roll).toBe(-170)
+    expect(Math.abs(travelled - 20)).toBeLessThan(1e-9)
+  })
+})
+
+describe('snapRoll', () => {
+  it('snaps within 4 degrees of a quarter turn, inclusive', () => {
+    expect(snapRoll(3)).toBe(0)
+    expect(snapRoll(-4)).toBe(0)
+    expect(snapRoll(4.01)).toBeNull()
+    expect(snapRoll(88)).toBe(90)
+    expect(snapRoll(-92)).toBe(-90)
+    expect(snapRoll(178)).toBe(180)
+    expect(snapRoll(-177)).toBe(180)
+    expect(snapRoll(45)).toBeNull()
+  })
+})
+
+describe('rollDeltaFromWheel', () => {
+  it('turns 0.25 degrees per pixel on the dominant axis', () => {
+    expect(rollDeltaFromWheel(0, 100, 0)).toBe(25)
+    expect(rollDeltaFromWheel(100, 0, 0)).toBe(25)
+    expect(rollDeltaFromWheel(10, -100, 0)).toBe(-25)
+  })
+
+  it('normalises line-mode deltas first', () => {
+    expect(rollDeltaFromWheel(0, 3, 1)).toBe(3 * PIXELS_PER_LINE * 0.25)
+  })
+})
+
+describe('CameraRig soft snap', () => {
+  const sx = 400
+  const sy = 300
+
+  function tickTo(rig: CameraRig, from: number, to: number): boolean {
+    let more = false
+    for (let t = from + 10; t <= to; t += 10) more = rig.tick(t, 10)
+    return more
+  }
+
+  it('snaps a near-level roll to level after the idle time, not before', () => {
+    const rig = new CameraRig(IDENTITY_CAMERA)
+    rig.roll(3, sx, sy, 0)
+    tickTo(rig, 0, 100)
+    expect(rig.target.roll).toBe(3)
+    // The drawn roll has settled at 3 by now, but a snap is still pending.
+    expect(tickTo(rig, 100, 140)).toBe(true)
+    tickTo(rig, 140, 160)
+    expect(rig.target.roll).toBe(0)
+  })
+
+  it('never snaps a roll outside the window', () => {
+    const rig = new CameraRig(IDENTITY_CAMERA)
+    rig.roll(10, sx, sy, 0)
+    tickTo(rig, 0, 1000)
+    expect(rig.target.roll).toBe(10)
+    expect(rig.tick(1010, 10)).toBe(false)
+  })
+
+  it('never snaps while roll input continues', () => {
+    const rig = new CameraRig(IDENTITY_CAMERA)
+    for (let t = 0; t <= 400; t += 50) {
+      rig.roll(0.3, sx, sy, t)
+      tickTo(rig, t, t + 50)
+      if (t + 50 < 400 + ROLL_SNAP_IDLE_MS) expect(rig.target.roll).not.toBe(0)
+    }
+    tickTo(rig, 450, 400 + ROLL_SNAP_IDLE_MS)
+    expect(rig.target.roll).toBe(0)
+  })
+
+  it('a direct move or a grab cancels a pending snap', () => {
+    const a = new CameraRig(IDENTITY_CAMERA)
+    a.roll(3, sx, sy, 0)
+    tickTo(a, 0, 50)
+    a.direct((c) => panBy(c, 5, 0))
+    tickTo(a, 50, 500)
+    expect(a.target.roll).toBe(3)
+
+    const b = new CameraRig(IDENTITY_CAMERA)
+    b.roll(3, sx, sy, 0)
+    tickTo(b, 0, 50)
+    b.hold()
+    tickTo(b, 50, 500)
+    expect(b.target.roll).not.toBe(0)
+  })
+
+  it('resetRoll eases to exactly level and arms no snap', () => {
+    const rig = new CameraRig(cam(10, 20, 1.3, 47))
+    rig.resetRoll(sx, sy)
+    expect(rig.target.roll).toBe(0)
+    let t = 0
+    while (rig.tick((t += 16), 16)) expect(t).toBeLessThan(3000)
+    expect(rig.drawn.roll).toBe(0)
+  })
+})
+
+describe('layoutSize', () => {
+  const el = {
+    getBoundingClientRect: () => ({ width: 301.7, height: 123.3 }),
+    offsetWidth: 240,
+    offsetHeight: 98,
+  }
+
+  it('is the bounding size over zoom at roll 0', () => {
+    expect(layoutSize(el, 1.3, 0)).toEqual({ width: 301.7 / 1.3, height: 123.3 / 1.3 })
+  })
+
+  it('is the layout size when rolled', () => {
+    expect(layoutSize(el, 1.3, 30)).toEqual({ width: 240, height: 98 })
+  })
+})
+
+describe('screenToElementLocal', () => {
+  it('is (p - topLeft) / zoom at roll 0', () => {
+    const local = screenToElementLocal({ x: 300.3, y: 91.1 }, { left: 120.7, top: 40.2 }, { width: 200, height: 80 }, 1.7, 0)
+    expect(local.x).toBe((300.3 - 120.7) / 1.7)
+    expect(local.y).toBe((91.1 - 40.2) / 1.7)
+  })
+
+  it('recovers a local point inside a rotated element from its bounding box', () => {
+    const w = 260
+    const h = 110
+    const originWorld = { x: 75, y: -30 }
+    for (const roll of [30, 135, -60, 180]) {
+      const c = cam(410, 260, 1.4, roll)
+      const corners = [
+        [0, 0],
+        [w, 0],
+        [0, h],
+        [w, h],
+      ].map(([x, y]) => worldToScreen(c, originWorld.x + x, originWorld.y + y))
+      const left = Math.min(...corners.map((p) => p.x))
+      const top = Math.min(...corners.map((p) => p.y))
+      for (const [lx, ly] of [[0, 0], [37.5, 12.25], [w, h], [130, 90]]) {
+        const p = worldToScreen(c, originWorld.x + lx, originWorld.y + ly)
+        const local = screenToElementLocal(p, { left, top }, { width: w, height: h }, 1.4, roll)
+        expect(Math.abs(local.x - lx)).toBeLessThan(1e-6)
+        expect(Math.abs(local.y - ly)).toBeLessThan(1e-6)
+      }
+    }
   })
 })
