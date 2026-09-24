@@ -692,9 +692,10 @@ void World::step() {
             if (!f.bound) {
                 continue;
             }
-            // A Space's `metric` is a law over its notes, not a value of
-            // the space (the integrator evaluates it per note above).
-            if (n.kind == NoteKind::Space && f.name == METRIC_FIELD) {
+            // A Space's `metric` and `embed` are laws over its notes, not
+            // values of the space (the integrator evaluates the metric
+            // per note above, ms_project the embed on demand).
+            if (n.kind == NoteKind::Space && (f.name == METRIC_FIELD || f.name == EMBED_FIELD)) {
                 continue;
             }
             expr::Program program;

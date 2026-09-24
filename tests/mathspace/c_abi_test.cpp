@@ -347,3 +347,54 @@ TEST_CASE("ms_project evaluates a View's project against a note without touching
     CHECK(ms_project(h.w, V.value, A.value, out) == -((MS_STAGE_WORLD << 8) | MS_ERR_BAD_DIM));
     CHECK(ms_version() == 3u);
 }
+
+namespace {
+std::vector<std::uint8_t> compileOn(ms_world* w, NoteId note, const std::string& text) {
+    const int32_t needed = ms_compile(w, note.value, text.data(), static_cast<uint32_t>(text.size()), nullptr, 0, nullptr);
+    REQUIRE(needed > 0);
+    std::vector<std::uint8_t> code(static_cast<std::size_t>(needed));
+    REQUIRE(ms_compile(w, note.value, text.data(), static_cast<uint32_t>(text.size()), code.data(),
+                       static_cast<uint32_t>(code.size()), nullptr) == needed);
+    return code;
+}
+} // namespace
+
+TEST_CASE("ms_project embeds the note through the space's bound embed first, so project may read self.embed") {
+    // A 2-space (theta, phi) on the unit sphere, embedded into 3-space;
+    // the view drops z (looks down the z axis) and scales by 100.
+    Handle h(2);
+    constexpr NoteId V{5};
+    for (const auto& a : {encode_create_space(S, 2), encode_create_note(A, space_of(S), NoteKind::Note),
+                          encode_set_field(A, vec("pos", 2, 0, 0)), encode_create_note(V, space_of(S), NoteKind::View)}) {
+        REQUIRE(applyTo(h.w, a) == MS_OK);
+    }
+    // Without an embed on the space, self.embed does not compile on the view.
+    const std::string project = "[100 * self.embed.x, 100 * self.embed.y]";
+    CHECK(ms_compile(h.w, V.value, project.data(), static_cast<uint32_t>(project.size()), nullptr, 0, nullptr) ==
+          -((MS_STAGE_COMPILE << 8) | static_cast<int>(expr::CompileError::UnknownRef)));
+    const std::string embed = "[sin(self.pos.x) * cos(self.pos.y), sin(self.pos.x) * sin(self.pos.y), cos(self.pos.x)]";
+    REQUIRE(applyTo(h.w, encode_bind_field(S, "embed", compileOn(h.w, S, embed))) == MS_OK);
+    REQUIRE(applyTo(h.w, encode_bind_field(V, "project", compileOn(h.w, V, project))) == MS_OK);
+    int64_t out[2] = {7, 7};
+    // The pole: embed (0, 0, 1), page (0, 0).
+    CHECK(ms_project(h.w, V.value, A.value, out) == 0);
+    CHECK(out[0] == 0);
+    CHECK(out[1] == 0);
+    // On the equator at phi = 0: embed (1, 0, 0), page (100, 0) to within fxmath's sin/cos.
+    Field eq = vec("pos", 2, 0, 0);
+    eq.value[0] = fx64::from_raw(6746518852); // pi / 2 in Q32.32
+    REQUIRE(applyTo(h.w, encode_set_field(A, eq)) == MS_OK);
+    const auto before = hashOf(h.w);
+    const auto notes_before = notesOf(h.w);
+    CHECK(ms_project(h.w, V.value, A.value, out) == 0);
+    CHECK(out[0] > fx64::from_int(99).raw);
+    CHECK(out[0] <= fx64::from_int(100).raw);
+    CHECK(out[1] < fx64::ONE);
+    CHECK(out[1] > -fx64::ONE);
+    // Projecting touched nothing.
+    CHECK(hashOf(h.w) == before);
+    CHECK(notesOf(h.w) == notes_before);
+    // An embed that is not dim 3 is the space's fault: BadDim for every note.
+    REQUIRE(applyTo(h.w, encode_bind_field(S, "embed", compileOn(h.w, S, "[self.pos.x, self.pos.y]"))) == MS_OK);
+    CHECK(ms_project(h.w, V.value, A.value, out) == -((MS_STAGE_WORLD << 8) | MS_ERR_BAD_DIM));
+}

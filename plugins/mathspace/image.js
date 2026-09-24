@@ -41,8 +41,9 @@ const IMPLICIT_SPACE_DIM = 2
 const SPACE_TYPE = 'mathspace/space@1'
 const METRIC_FIELD = 'metric' // world.hpp METRIC_FIELD: the diagonal of the chart's metric
 const IDENTIFY_FIELD = 'identify' // world.hpp IDENTIFY_FIELD: half-widths that wrap each pos lane
-/** The fields a space node carries, plain or bound; anything else on a space is a problem. */
-const SPACE_FIELDS = [METRIC_FIELD, IDENTIFY_FIELD]
+const EMBED_FIELD = 'embed' // world.hpp EMBED_FIELD: the chart into 3-space, read by views as self.embed
+/** The fields a space node binds; anything else bound on a space is a problem. */
+const SPACE_FIELDS = [METRIC_FIELD, IDENTIFY_FIELD, EMBED_FIELD]
 const RULE_TYPE = 'mathspace/rule@1'
 /** A View: `project.expr` maps a note of its space to the page plane. */
 const VIEW_TYPE = 'mathspace/view@1'
@@ -351,8 +352,12 @@ function engineSource(text) {
  * `identify`, the half-widths that wrap each note's position lane into
  * [-L, L), as lane props (`identify.x real 100`, zero-padded to the
  * space dim like any vector) or as `identify.expr` evaluated on the
- * space. The metric compiles like a rule's law (the space's own `pos`
- * has the space dim, so `self.position` resolves) and its failures,
+ * space; and `embed.expr`, a dim-3 map of the chart into Euclidean
+ * 3-space that the engine evaluates only when a View of the space
+ * projects a note, so the view's `project.expr` may read `self.embed.x`
+ * (never physics, never the hash). The metric compiles like a rule's
+ * law (the space's own `pos` has the space dim, so `self.position`
+ * resolves) and its failures,
  * compile-time or the engine's BadMetric/VmError skips, are reported on
  * the space node in `mathspace.error`, as BadIdentify is. Any other
  * `<f>.expr` or numeric field on a space is a problem there, not a

@@ -98,3 +98,39 @@ describe('projectAll', () => {
     }
   })
 })
+
+describe('projectAll through a space embed', () => {
+  it('a view of an embedded space reads self.embed; a bad embed fails every view of the space', async () => {
+    const mod = await loadModule()
+    const sphere = text('[sin(self.position.x) * cos(self.position.y), sin(self.position.x) * sin(self.position.y), cos(self.position.x)]')
+    const nodes = [
+      { id: 'n1', type: 'mathspace/space@1', props: { dim: { type: 'int', value: 2 }, 'embed.expr': sphere } },
+      // The pole and a point on the equator at phi = pi / 2 (as close as a real gets).
+      { id: 'n2', type: NOTE, props: { space: ref('n1'), 'position.x': real(0), 'position.y': real(0) } },
+      { id: 'n3', type: NOTE, props: { space: ref('n1'), 'position.x': real(1.5707963267341256), 'position.y': real(1.5707963267341256) } },
+      // Looking down z, and from the side.
+      { id: 'n4', type: VIEW, props: { space: ref('n1'), 'project.expr': text('[100 * self.embed.x, 100 * self.embed.y]') } },
+      { id: 'n5', type: VIEW, props: { space: ref('n1'), 'project.expr': text('[100 * self.embed.x, 100 * self.embed.z]') } },
+      // Chart coordinates still work in the same space.
+      { id: 'n6', type: VIEW, props: { space: ref('n1'), 'project.expr': text('[self.position.x, self.position.y]') } },
+      // A space whose embed is not a map into 3-space: every view of it fails.
+      { id: 'n7', type: 'mathspace/space@1', props: { dim: { type: 'int', value: 2 }, 'embed.expr': text('[self.position.x, self.position.y]') } },
+      { id: 'n8', type: NOTE, props: { space: ref('n7'), 'position.x': real(1), 'position.y': real(2) } },
+      { id: 'n9', type: VIEW, props: { space: ref('n7'), 'project.expr': text('[self.position.x, self.position.y]') } },
+    ]
+    const { engine, image } = buildWorld(nodes, mod)
+    try {
+      expect(image.problems).toEqual([])
+      expect(image.bindings.map((b) => `${b.node} ${b.name}`)).toEqual(['n1 embed', 'n4 project', 'n5 project', 'n6 project', 'n7 embed', 'n9 project'])
+      const out = projectAll(engine, image)
+      expect(out.views).toEqual([{ id: 'n4' }, { id: 'n5' }, { id: 'n6' }, { id: 'n9', error: 'world:BadDim' }])
+      const round = (p) => (p === null ? null : p.map((v) => Math.round(v * 1000) / 1000))
+      const byId = Object.fromEntries(out.points.map((p) => [p.id, Object.fromEntries(Object.entries(p.byView).map(([v, q]) => [v, round(q)]))]))
+      expect(byId.n2).toEqual({ n4: [0, 0], n5: [0, 100], n6: [0, 0] })
+      expect(byId.n3).toEqual({ n4: [0, 100], n5: [0, 0], n6: [1.571, 1.571] })
+      expect(byId.n8).toEqual({ n4: null, n5: null, n6: null })
+    } finally {
+      engine.destroy()
+    }
+  })
+})

@@ -201,8 +201,43 @@ int32_t ms_project(const ms_world* w, uint64_t view, uint64_t note, int64_t out[
     if (program.dim != mathspace::PROJECT_DIM) {
         return failure(MS_STAGE_WORLD, MS_ERR_BAD_DIM);
     }
+    // The space's `embed` (world.hpp EMBED_FIELD), when bound: the note
+    // is embedded first and `project` sees the result as `self.embed`.
+    // A copy of the note, so the world is untouched and nothing enters
+    // the hash. An embed that is not dim 3 is the space's fault and so
+    // BadDim on every view of the space (projection.js's view errors);
+    // a failure to evaluate is an eval error on this note.
+    mathspace::Note embedded;
+    const mathspace::Note* subject = self;
+    if (const mathspace::Note* space = w->world.find_space(v->space)) {
+        const mathspace::Field* e = mathspace::find_field(*space, mathspace::EMBED_FIELD);
+        if (e != nullptr && e->bound) {
+            mathspace::expr::Program embed;
+            if (mathspace::expr::decode(e->bytecode.data(), e->bytecode.size(), embed, where) !=
+                mathspace::expr::CompileError::Ok) {
+                return failure(MS_STAGE_WORLD, MS_ERR_BAD_BYTECODE);
+            }
+            if (embed.dim != mathspace::EMBED_DIM) {
+                return failure(MS_STAGE_WORLD, MS_ERR_BAD_DIM);
+            }
+            mathspace::expr::Lanes image{};
+            const mathspace::expr::VmError err = mathspace::expr::eval(embed, w->world, *self, nullptr, image);
+            if (err != mathspace::expr::VmError::Ok) {
+                return failure(MS_STAGE_EVAL, static_cast<int>(err));
+            }
+            embedded = *self;
+            mathspace::Field f;
+            f.name = std::string(mathspace::EMBED_FIELD);
+            f.dim = mathspace::EMBED_DIM;
+            f.value = image;
+            if (!mathspace::set_field(embedded, std::move(f))) {
+                return failure(MS_STAGE_WORLD, MS_ERR_TOO_MANY_FIELDS);
+            }
+            subject = &embedded;
+        }
+    }
     mathspace::expr::Lanes lanes{};
-    const mathspace::expr::VmError err = mathspace::expr::eval(program, w->world, *self, nullptr, lanes);
+    const mathspace::expr::VmError err = mathspace::expr::eval(program, w->world, *subject, nullptr, lanes);
     if (err != mathspace::expr::VmError::Ok) {
         return failure(MS_STAGE_EVAL, static_cast<int>(err));
     }

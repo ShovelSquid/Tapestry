@@ -56,7 +56,9 @@ const char* version();
 //      expression per lane (no loop). A lane with L_k <= 0 is not
 //      wrapped. `identify` at another dim is reported on the Space note
 //      as BadIdentify and nothing wraps. Velocity is untouched, so a wrap
-//      is invisible to the integrator. Without `identify`, as 10.
+//      is invisible to the integrator. Without `identify`, as 10. The
+//      bound-field pass also leaves a Space's bound `embed` alone, like
+//      its `metric`: ms_project evaluates it per note, outside the hash.
 inline constexpr std::uint32_t MS_STEP_VERSION = 11u;
 
 // The constraint solver's fixed pass count (ddsim's

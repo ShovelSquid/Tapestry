@@ -325,6 +325,16 @@ std::uint8_t RuleDims::dim(RefKind ref, std::uint64_t id, std::string_view name)
         if (name == POS_FIELD) {
             return world.space_dim(rule.space);
         }
+        // A View's `self.embed` is the space's embedding of the note
+        // (ms_project), when the space has one bound.
+        if (rule.kind == NoteKind::View && name == EMBED_FIELD) {
+            if (const Note* space = world.find_space(rule.space)) {
+                const Field* e = find_field(*space, EMBED_FIELD);
+                if (e != nullptr && e->bound) {
+                    return e->dim;
+                }
+            }
+        }
         for (const Note& n : world.notes) {
             if (n.kind != NoteKind::Note || n.space != rule.space) {
                 continue;

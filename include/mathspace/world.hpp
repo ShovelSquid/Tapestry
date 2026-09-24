@@ -197,6 +197,17 @@ inline constexpr std::string_view METRIC_FIELD = "metric";
 // lane is the use case. Topology enters here without a mesh.
 inline constexpr std::string_view IDENTIFY_FIELD = "identify";
 
+// On a Space note: a bound dim-3 `embed`, a map from the chart (in terms
+// of `self.pos`) into Euclidean 3-space, for drawing a curved chart
+// convincingly and never for physics. Like a View's `project` it is
+// evaluated only on demand by ms_project: when the view's space holds a
+// bound `embed`, the note is embedded first and its `project` runs
+// against a copy of the note carrying the plain dim-3 field `embed`, so
+// `project.expr` may read `self.embed.x` (RuleDims resolves it for a
+// View). step() leaves the space's `embed` alone as it leaves `metric`.
+inline constexpr std::string_view EMBED_FIELD = "embed";
+inline constexpr std::uint8_t EMBED_DIM = 3;
+
 // Bumped whenever the canonical walk (hash.cpp) changes shape. Pinned in
 // the walk itself so old bytes are rejected instead of misread.
 //   1: initial walk. 2: next_group dropped, the step version pin added
