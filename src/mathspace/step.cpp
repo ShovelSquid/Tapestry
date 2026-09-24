@@ -28,6 +28,7 @@ void World::step() {
         }
     }
     ++tick;
+    notes_dirty = true;
 }
 
 } // namespace mathspace

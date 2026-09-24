@@ -84,6 +84,19 @@ struct World {
     // Sorted, unique ids and well-formed fields; the tests' invariant check.
     bool well_formed() const;
 
+    // The snapshot (snapshot.cpp): what the plugin diffs against the
+    // kernel after a step. Per note in id order:
+    //   u64 id | u8 field_count | per field in name order:
+    //     u8 name_len | name | u8 dim | dim x i64 (raw fx64)
+    // No seed, tick, space id, kind, bound flag or bytecode: the kernel
+    // already holds those, or they are not state a step can change.
+    // Rebuilt lazily, so mutators pay nothing and a rejected apply never
+    // touches it. Both cache members are excluded from operator== and
+    // from the hash walk: they are a view of the notes, not state.
+    const std::vector<std::uint8_t>& notes_bytes() const;
+    mutable bool notes_dirty = true;
+    mutable std::vector<std::uint8_t> notes_cache;
+
     friend bool operator==(const World& a, const World& b) {
         return a.seed == b.seed && a.tick == b.tick && a.notes == b.notes;
     }

@@ -102,6 +102,7 @@ Error World::create_space(NoteId id, std::uint8_t dim) {
     pos.dim = dim;
     mathspace::set_field(space, std::move(pos));
     insert_note(*this, std::move(space));
+    notes_dirty = true;
     return Error::Ok;
 }
 
@@ -120,6 +121,7 @@ Error World::create_note(NoteId id, SpaceId space, NoteKind kind) {
     note.space = space;
     note.kind = kind;
     insert_note(*this, std::move(note));
+    notes_dirty = true;
     return Error::Ok;
 }
 
@@ -146,6 +148,7 @@ Error World::set_field(NoteId note_id, Field field) {
         return Error::TooManyFields;
     }
     mathspace::set_field(*note, std::move(field));
+    notes_dirty = true;
     return Error::Ok;
 }
 
@@ -159,6 +162,7 @@ Error World::delete_note(NoteId note_id) {
     }
     const std::size_t i = static_cast<std::size_t>(note - notes.data());
     notes.erase(notes.begin() + static_cast<std::ptrdiff_t>(i));
+    notes_dirty = true;
     return Error::Ok;
 }
 
@@ -174,6 +178,7 @@ Error World::delete_field(NoteId note_id, std::string_view name) {
         return Error::LockedField;
     }
     erase_field(*note, name);
+    notes_dirty = true;
     return Error::Ok;
 }
 

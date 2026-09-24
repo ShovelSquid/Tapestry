@@ -145,6 +145,7 @@ Error restore(World& w, const std::uint8_t* bytes, std::size_t len) {
         return Error::BadBytes;
     }
     w = std::move(local);
+    w.notes_dirty = true;
     return Error::Ok;
 }
 
