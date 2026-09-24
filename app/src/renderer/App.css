@@ -1301,3 +1301,42 @@ html, body, #root {
   outline: 2px solid #4A7CFF;
   outline-offset: 2px;
 }
+
+/* 02.3-07: every new side-view navigation control (the date scrubber, the
+   stage's own focus point) gets the identical 2px accent ring at 2px offset
+   (UI-SPEC "Keyboard map": ":focus-visible rings are 2px accent at 2px
+   offset on every new control"). */
+.tap-thread-scrubber:focus-visible,
+.tap-thread-nav-focusable:focus-visible {
+  outline: 2px solid var(--tap-accent);
+  outline-offset: 2px;
+}
+
+/* 02.3-07: the side view's read-only past stage (D-08, D-18) -- 1px solid
+   --tap-thread-line border, caret hidden. The typer keeps its own surface
+   and Body type; only the border and caret change (UI-SPEC "Side view
+   read-back": "Past stage (read-only) treatment"). */
+.tap-thread-past-stage {
+  border: 1px solid var(--tap-thread-line) !important;
+  caret-color: transparent;
+}
+
+/* 02.3-07: this phase's first prefers-reduced-motion rule (UI-SPEC "Motion
+   and prefers-reduced-motion": "No reduced-motion rule exists in the
+   renderer today ... this phase introduces the first one"). The stage's own
+   per-frame streaming and fly-to interpolation are gated in JS
+   (ThreadOverlay.tsx / navigation.ts's `flyTo` reducedMotion option); this
+   CSS rule covers everything else the renderer draws with a transition or
+   animation -- transient chips, hover/press easing, and any future
+   CSS-driven motion -- with the standard "kill all CSS motion" pattern, so a
+   new component never has to remember to add its own reduced-motion
+   exception (UI-SPEC: "Nothing is removed by reduced motion -- only the
+   movement between states"). */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

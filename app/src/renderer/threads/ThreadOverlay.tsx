@@ -38,10 +38,13 @@ import {
 import { GlyphLayer } from './stage/glyphs'
 import { getGlyphCache } from './stage/glyph-cache'
 import { createLiveView, type LiveViewHandle } from './stage/live-view'
-import { SideView, SIDE_ZOOM_DURATION_FACTOR } from './stage/side-view'
+import { SideView, SIDE_ZOOM_DURATION_FACTOR, centerForZoomAroundScreenX, clampSpanSeconds } from './stage/side-view'
+import { stepMarker, markerLabel } from './stage/markers'
 import { getStageRenderer, isWebglAvailable } from './stage/renderer'
 import { readStageTokens } from './stage/tokens'
-import { loadSessions } from './SessionBridge'
+import { loadSessions, formatDuration, useSessions } from './SessionBridge'
+import DateScrubber from './DateScrubber'
+import { NAV_KEYS, dayIndexOf, dayStartMs, flyTo, gravityStep, zoomStep, type NavAction } from './navigation'
 import { parseThreadFrame, parseThreadSettings, type ThreadFrame, type ThreadNodeProps } from '../../shared/threads/settings'
 import { parseSlowdown, type SlowdownCurve } from '../../shared/threads/slowdown'
 import { docAt, type ThreadCommitEntry, type ThreadLetter } from '../../shared/threads/replay'
@@ -145,6 +148,23 @@ function secondsSince(startMs: number, atMs: number): number {
   return (atMs - startMs) / 1000
 }
 
+/** UI-SPEC "Gap and scrubber honesty": "an Ink bar whose height is that
+ * day's letters relative to the busiest day." Buckets each session's own
+ * letter count into the UTC day its `startMs` falls on -- a session
+ * spanning midnight is counted on its start day only, a documented
+ * simplification (this bar is a navigational aid, not a byte-exact ledger). */
+function dailyLetterCountsFromSessions(sessions: readonly DerivedSession[], firstDateMs: number): number[] {
+  if (sessions.length === 0) return []
+  const firstDay = dayStartMs(firstDateMs)
+  const counts: number[] = []
+  for (const session of sessions) {
+    const index = dayIndexOf(session.startMs, firstDay)
+    if (index < 0) continue
+    counts[index] = (counts[index] ?? 0) + session.letterCount
+  }
+  return counts
+}
+
 export default function ThreadOverlay({
   treeId,
   nodeId,
@@ -173,6 +193,28 @@ export default function ThreadOverlay({
   // button's own label and re-render.
   const [view, setViewState] = useState<'live' | 'side'>('live')
   const viewRef = useRef<'live' | 'side'>('live')
+
+  // Side-view navigation state (D-17, Task 2): `sideSnapshot` mirrors the
+  // SideView's own centre/span in absolute ms, throttled rather than synced
+  // every animation frame, purely so the DateScrubber's accent bracket and
+  // the polite zoom announcement have something to render from -- the
+  // camera itself is never driven by React state (that stays 100% on
+  // `stageRuntimeRef.current.sideView`, read every frame in `renderFrame`).
+  const [sideSnapshot, setSideSnapshot] = useState<{ centerMs: number; spanMs: number } | null>(null)
+  const [focusedSessionIndex, setFocusedSessionIndex] = useState<number | null>(null)
+  const [focusedMarkerIndex, setFocusedMarkerIndex] = useState(-1)
+  const [announcement, setAnnouncement] = useState('')
+  const sessions = useSessions(treeId, nodeId)
+
+  const dragRef = useRef<{ x: number } | null>(null)
+  const pointerRef = useRef<{ x: number; y: number } | null>(null)
+  const lastPointerSampleRef = useRef<{ x: number; y: number; t: number } | null>(null)
+  const pointerSpeedRef = useRef(0)
+  const lastWheelOrDragAtRef = useRef(-Infinity)
+  const lastGravityFrameAtRef = useRef(0)
+  const lastSideSnapshotAtRef = useRef(0)
+  const lastZoomAnnounceAtRef = useRef(0)
+  const flyToCancelRef = useRef<(() => void) | null>(null)
 
   const stageContainerRef = useRef<HTMLDivElement>(null)
   const stageRuntimeRef = useRef<StageRuntime | null>(null)
@@ -300,11 +342,239 @@ export default function ThreadOverlay({
       stage.sideView.setView(nowSeconds / 2, initialSpan, nowSeconds)
       viewRef.current = 'side'
       setViewState('side')
+      setSideSnapshot({ centerMs: stage.threadStartMs + (nowSeconds / 2) * 1000, spanMs: initialSpan * 1000 })
     } else {
       viewRef.current = 'live'
       setViewState('live')
+      setFocusedSessionIndex(null)
+      setFocusedMarkerIndex(-1)
     }
   }, [])
+
+  // -------------------------------------------------------------------
+  // Side-view navigation (D-17, Task 2): fly-to, wheel/drag pan+zoom, the
+  // keyboard map, and hover gravity. All of it reads/writes the SideView
+  // instance directly through `stageRuntimeRef` -- React state below exists
+  // only for what must actually re-render (the scrubber, announcements,
+  // focus rings), never to drive the camera itself.
+  // -------------------------------------------------------------------
+
+  const syncSideSnapshot = useCallback(() => {
+    const stage = stageRuntimeRef.current
+    if (!stage) return
+    setSideSnapshot({
+      centerMs: stage.threadStartMs + stage.sideView.centerSeconds * 1000,
+      spanMs: stage.sideView.spanSeconds * 1000,
+    })
+  }, [])
+
+  const announceZoomThrottled = useCallback((spanSeconds: number) => {
+    const now = performance.now()
+    if (now - lastZoomAnnounceAtRef.current < 500) return
+    lastZoomAnnounceAtRef.current = now
+    setAnnouncement(`Showing ${formatDuration(spanSeconds * 1000)} across the view`)
+  }, [])
+
+  const flyToSession = useCallback(
+    (session: DerivedSession, reducedMotion: boolean) => {
+      const stage = stageRuntimeRef.current
+      if (!stage) return
+      flyToCancelRef.current?.()
+      const durationSeconds = secondsSince(stage.threadStartMs, Date.now())
+      const targetSeconds = secondsSince(stage.threadStartMs, session.startMs)
+      const targetSpan = clampSpanSeconds(60, durationSeconds)
+      const from = { centerSeconds: stage.sideView.centerSeconds, spanSeconds: stage.sideView.spanSeconds }
+      const to = { centerSeconds: targetSeconds, spanSeconds: targetSpan }
+      flyToCancelRef.current = flyTo(
+        from,
+        to,
+        (v) => {
+          stage.sideView.setView(v.centerSeconds, v.spanSeconds, durationSeconds)
+          syncSideSnapshot()
+        },
+        () => {
+          const when = new Date(session.startMs)
+          setAnnouncement(
+            `Session ${session.index}, ${when.toLocaleDateString()} ${when.toLocaleTimeString()}, ${session.letterCount} letters, by ${session.authors.join(', ')}`,
+          )
+        },
+        { reducedMotion },
+      )
+    },
+    [syncSideSnapshot],
+  )
+
+  const handleStageWheel = useCallback(
+    (e: React.WheelEvent<HTMLDivElement>) => {
+      const stage = stageRuntimeRef.current
+      if (!stage || viewRef.current !== 'side') return
+      e.preventDefault()
+      lastWheelOrDragAtRef.current = performance.now()
+      const rect = e.currentTarget.getBoundingClientRect()
+      const pointerX = e.clientX - rect.left
+      const durationSeconds = secondsSince(stage.threadStartMs, Date.now())
+      const atSeconds = stage.sideView.screenXToTime(pointerX)
+      // spike 001's own wheel-to-zoom curve (thread.js:778): exponential in
+      // deltaY, so a fast fling zooms further than a slow nudge.
+      const zoomFactor = Math.exp(e.deltaY * 0.002)
+      const newSpan = clampSpanSeconds(stage.sideView.spanSeconds * zoomFactor, durationSeconds)
+      const newCenter = centerForZoomAroundScreenX(pointerX, rect.width, atSeconds, newSpan)
+      stage.sideView.setView(newCenter, newSpan, durationSeconds)
+      syncSideSnapshot()
+      announceZoomThrottled(newSpan)
+    },
+    [announceZoomThrottled, syncSideSnapshot],
+  )
+
+  const handleStagePointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (viewRef.current !== 'side') return
+    dragRef.current = { x: e.clientX }
+    e.currentTarget.setPointerCapture(e.pointerId)
+  }, [])
+
+  const handleStagePointerMove = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      const stage = stageRuntimeRef.current
+      if (!stage) return
+      const rect = e.currentTarget.getBoundingClientRect()
+      const x = e.clientX - rect.left
+      const y = e.clientY - rect.top
+      const nowPerf = performance.now()
+      const last = lastPointerSampleRef.current
+      if (last) {
+        const dt = (nowPerf - last.t) / 1000
+        if (dt > 0) pointerSpeedRef.current = Math.hypot(x - last.x, y - last.y) / dt
+      }
+      lastPointerSampleRef.current = { x, y, t: nowPerf }
+      pointerRef.current = { x, y }
+
+      if (viewRef.current === 'side' && dragRef.current && e.buttons === 1) {
+        lastWheelOrDragAtRef.current = nowPerf
+        const dx = e.clientX - dragRef.current.x
+        dragRef.current = { x: e.clientX }
+        const durationSeconds = secondsSince(stage.threadStartMs, Date.now())
+        const newCenter = stage.sideView.panByPixels(dx)
+        stage.sideView.setView(newCenter, stage.sideView.spanSeconds, durationSeconds)
+        syncSideSnapshot()
+      }
+    },
+    [syncSideSnapshot],
+  )
+
+  const handleStagePointerUp = useCallback(() => {
+    dragRef.current = null
+  }, [])
+
+  const handleStagePointerLeave = useCallback(() => {
+    pointerRef.current = null
+    dragRef.current = null
+  }, [])
+
+  const handleScrub = useCallback(
+    (centerMs: number) => {
+      const stage = stageRuntimeRef.current
+      if (!stage) return
+      lastWheelOrDragAtRef.current = performance.now()
+      const durationSeconds = secondsSince(stage.threadStartMs, Date.now())
+      const centerSeconds = secondsSince(stage.threadStartMs, centerMs)
+      stage.sideView.setView(centerSeconds, stage.sideView.spanSeconds, durationSeconds)
+      syncSideSnapshot()
+    },
+    [syncSideSnapshot],
+  )
+
+  const handleStageKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLDivElement>) => {
+      const stage = stageRuntimeRef.current
+      if (!stage || viewRef.current !== 'side') return
+      const action: NavAction | undefined = NAV_KEYS[e.key]
+      if (!action) return
+      const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
+      const durationSeconds = secondsSince(stage.threadStartMs, Date.now())
+
+      switch (action) {
+        case 'return-to-now': {
+          e.preventDefault()
+          viewRef.current = 'live'
+          setViewState('live')
+          setAnnouncement('Back to now. You can write again.')
+          return
+        }
+        case 'prev-session':
+        case 'next-session': {
+          e.preventDefault()
+          if (stage.sessions.length === 0) return
+          const direction = action === 'next-session' ? 1 : -1
+          const nextIndex =
+            focusedSessionIndex === null
+              ? direction > 0
+                ? 0
+                : stage.sessions.length - 1
+              : Math.min(stage.sessions.length - 1, Math.max(0, focusedSessionIndex + direction))
+          setFocusedSessionIndex(nextIndex)
+          flyToSession(stage.sessions[nextIndex], reducedMotion)
+          return
+        }
+        case 'prev-marker':
+        case 'next-marker': {
+          e.preventDefault()
+          const allMarkers = stage.sessions.flatMap((s) => s.markers)
+          if (allMarkers.length === 0) return
+          const direction = action === 'next-marker' ? 1 : -1
+          const nextIndex = stepMarker(allMarkers, focusedMarkerIndex, direction)
+          setFocusedMarkerIndex(nextIndex)
+          setAnnouncement(markerLabel(allMarkers[nextIndex]))
+          return
+        }
+        case 'zoom-in':
+        case 'zoom-out': {
+          e.preventDefault()
+          const direction = action === 'zoom-in' ? -1 : 1
+          const newSpan = zoomStep(stage.sideView.spanSeconds, direction, durationSeconds)
+          stage.sideView.setView(stage.sideView.centerSeconds, newSpan, durationSeconds)
+          syncSideSnapshot()
+          announceZoomThrottled(newSpan)
+          return
+        }
+        case 'pan-left':
+        case 'pan-right': {
+          e.preventDefault()
+          const fraction = e.shiftKey ? 1 : 0.1
+          const delta = stage.sideView.spanSeconds * fraction * (action === 'pan-right' ? 1 : -1)
+          stage.sideView.setView(stage.sideView.centerSeconds + delta, stage.sideView.spanSeconds, durationSeconds)
+          syncSideSnapshot()
+          return
+        }
+        case 'home': {
+          e.preventDefault()
+          stage.sideView.setView(0, stage.sideView.spanSeconds, durationSeconds)
+          syncSideSnapshot()
+          return
+        }
+        case 'end': {
+          e.preventDefault()
+          stage.sideView.setView(durationSeconds, stage.sideView.spanSeconds, durationSeconds)
+          syncSideSnapshot()
+          return
+        }
+        case 'open-focused': {
+          // Wired to doc-at-T in this plan's own next task; a documented
+          // no-op seam until then.
+          e.preventDefault()
+          return
+        }
+        case 'toggle-separate-authors': {
+          // D-23/L-2 strand separation is not built by this plan (it has no
+          // twisted-strand rendering yet to separate) -- a documented no-op
+          // seam for the plan that adds it.
+          return
+        }
+        default:
+          return
+      }
+    },
+    [announceZoomThrottled, flyToSession, focusedMarkerIndex, focusedSessionIndex, syncSideSnapshot],
+  )
 
   const handleClose = useCallback(() => {
     window.tapestry.thread
@@ -490,6 +760,52 @@ export default function ThreadOverlay({
       // by its own setView()/resize() calls, never per frame.
       if (viewRef.current === 'live') {
         stage.liveView.tick(nowSeconds)
+      } else if (viewRef.current === 'side' && pointerRef.current && stage.sessions.length > 0 && container) {
+        // D-17 hover gravity: pulls the view centre toward the nearest
+        // session only while the pointer is actually hovering near one --
+        // gravityStep itself returns 0 whenever the pointer is moving too
+        // fast, too far away, or a wheel/drag happened too recently, so
+        // "there is no pull while moving freely" holds by construction, not
+        // by a separate check here.
+        const pointer = pointerRef.current
+        const stageWidth = container.clientWidth
+        const stageHeight = container.clientHeight
+        const pillY = stageHeight / 2
+        let nearestDistancePx = Infinity
+        let nearestSeconds = 0
+        let nearestLetterCount = 0
+        for (const session of stage.sessions) {
+          const x = stage.sideView.timeToScreenX(secondsSince(stage.threadStartMs, session.startMs))
+          if (x < 0 || x > stageWidth) continue
+          const distancePx = Math.hypot(x - pointer.x, pillY - pointer.y)
+          if (distancePx < nearestDistancePx) {
+            nearestDistancePx = distancePx
+            nearestSeconds = secondsSince(stage.threadStartMs, session.startMs)
+            nearestLetterCount = session.letterCount
+          }
+        }
+        const frameDeltaSeconds = (performance.now() - lastGravityFrameAtRef.current) / 1000
+        lastGravityFrameAtRef.current = performance.now()
+        if (Number.isFinite(nearestDistancePx)) {
+          const fraction = gravityStep({
+            distancePx: nearestDistancePx,
+            pointerSpeedPxPerSec: pointerSpeedRef.current,
+            msSinceLastWheelOrDrag: performance.now() - lastWheelOrDragAtRef.current,
+            frameDeltaSeconds,
+            letterCount: nearestLetterCount,
+          })
+          if (fraction > 0) {
+            const newCenter = stage.sideView.centerSeconds + (nearestSeconds - stage.sideView.centerSeconds) * fraction
+            stage.sideView.setView(newCenter, stage.sideView.spanSeconds, nowSeconds)
+            if (performance.now() - lastSideSnapshotAtRef.current > 100) {
+              lastSideSnapshotAtRef.current = performance.now()
+              setSideSnapshot({
+                centerMs: stage.threadStartMs + newCenter * 1000,
+                spanMs: stage.sideView.spanSeconds * 1000,
+              })
+            }
+          }
+        }
       }
       stage.glyphs.syncAtlasTextures(cache)
       const camera = viewRef.current === 'side' ? stage.sideView.camera : stage.liveView.camera
@@ -615,7 +931,18 @@ export default function ThreadOverlay({
 
         {/* D-09 stage area: paper with the ribbon and glyphs, or the
             no-WebGL / context-lost fallback (UI-SPEC "No-stage fallback"). */}
-        <div ref={stageContainerRef} style={styles.stage}>
+        <div
+          ref={stageContainerRef}
+          style={styles.stage}
+          className="tap-thread-nav-focusable"
+          tabIndex={view === 'side' ? 0 : -1}
+          onWheel={handleStageWheel}
+          onPointerDown={handleStagePointerDown}
+          onPointerMove={handleStagePointerMove}
+          onPointerUp={handleStagePointerUp}
+          onPointerLeave={handleStagePointerLeave}
+          onKeyDown={handleStageKeyDown}
+        >
           {stageAvailable === false && <StageFallbackPanel treeId={treeId} nodeId={nodeId} />}
           {stageAvailable !== false && stageError && (
             <StageFallbackPanel reason={stageError} treeId={treeId} nodeId={nodeId} />
@@ -625,6 +952,28 @@ export default function ThreadOverlay({
               {stageStatus}
             </div>
           )}
+
+          {/* D-17: the date scrubber, only in the side view, once the
+              thread has at least one recorded session to scrub across. */}
+          {view === 'side' && sessions.length > 0 && sideSnapshot && (
+            <div style={styles.scrubberWrap}>
+              <DateScrubber
+                firstDateMs={sessions[0].startMs}
+                lastDateMs={sessions[sessions.length - 1].endMs}
+                viewCenterMs={sideSnapshot.centerMs}
+                viewSpanMs={sideSnapshot.spanMs}
+                dailyLetterCounts={dailyLetterCountsFromSessions(sessions, sessions[0].startMs)}
+                onScrub={handleScrub}
+              />
+            </div>
+          )}
+        </div>
+
+        {/* UI-SPEC "Screen-reader announcements for visual-only cues": one
+            polite live region for session/marker focus moves, zoom changes
+            and view-mode transitions. */}
+        <div aria-live="polite" style={styles.visuallyHidden}>
+          {announcement}
         </div>
       </div>
     </div>
@@ -733,5 +1082,22 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 13,
     color: 'var(--tap-muted, #6B6B6B)',
     pointerEvents: 'none',
+  },
+  scrubberWrap: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    bottom: 8,
+  },
+  visuallyHidden: {
+    position: 'absolute',
+    width: 1,
+    height: 1,
+    padding: 0,
+    margin: -1,
+    overflow: 'hidden',
+    clip: 'rect(0, 0, 0, 0)',
+    whiteSpace: 'nowrap',
+    border: 0,
   },
 }
