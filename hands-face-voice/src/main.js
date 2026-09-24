@@ -1,5 +1,6 @@
 import { startHandsAndFace } from "./hands-face.js";
 import { startVoiceWaveform } from "./voice.js";
+import { startTranscription } from "./transcribe.js";
 
 const statusEl = document.getElementById("status");
 const errorBox = document.getElementById("errorBox");
@@ -40,5 +41,22 @@ startMicBtn.addEventListener("click", async () => {
     startMicBtn.disabled = false;
     statusEl.textContent = "microphone failed";
     showError("Microphone", err);
+    return;
+  }
+
+  const finalEl = document.getElementById("transcriptFinal");
+  const interimEl = document.getElementById("transcriptInterim");
+  try {
+    startTranscription({
+      onFinal: (text) => {
+        finalEl.textContent += text + " ";
+      },
+      onInterim: (text) => {
+        interimEl.textContent = text;
+      },
+      onError: (err) => showError("Transcription", err),
+    });
+  } catch (err) {
+    showError("Transcription", err);
   }
 });
