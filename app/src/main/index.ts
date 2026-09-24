@@ -477,6 +477,8 @@ app.whenReady().then(async () => {
       // Closing removes the socket file, so an agent cannot reach the command
       // layer at all while the switch is off.
       await agentServer?.close()
+      // The chat's tools would fail from here on, so its turns stop too.
+      await chatService?.stopAll()
     }
 
     notifyAgentsChanged()
@@ -591,6 +593,13 @@ app.whenReady().then(async () => {
     if (!tree) return { ok: false, error: `Unknown tree ${treeId}` }
 
     const treePath = tree.path
+    // A workspace's chat goes with it: its process group is stopped and its
+    // MCP config file (which holds the panel agent's token) is deleted.
+    if (registry.get(treeId)?.kind === 'workspace') {
+      void chatService?.closeWorkspace(treeId).catch((err) => {
+        console.error('[Main] could not close the workspace chat:', err)
+      })
+    }
     registry.close(treeId)
     settings.removeTree(treePath)
     notifyTreesChanged()
@@ -885,6 +894,15 @@ app.on('window-all-closed', () => {
 // relaunched instance can reopen the same world immediately, and remove the
 // agent socket so a stale file does not outlive the app.
 app.on('will-quit', () => {
+  // No chat process may outlive Tapestry. disposeAll sends SIGTERM to each
+  // chat's process group at once, but will-quit cannot wait for it, so every
+  // group is then killed synchronously as the last resort, and the MCP config
+  // files holding the panel's token are deleted.
+  if (chatService) {
+    void chatService.disposeAll()
+    chatService.killAllNow()
+    chatService = null
+  }
   if (agentServer) {
     void agentServer.close()
     agentServer = null

@@ -125,7 +125,12 @@ export default function App(): React.ReactElement {
     () => ({
       openTreeId: chatTreeId,
       openChat,
-      closeChat: () => setChatPanel(null),
+      // Closing the panel stops the chat's process; its session is kept, so
+      // the next message continues the conversation.
+      closeChat: () => {
+        if (chatTreeId !== null) void window.tapestry.chat.stop(chatTreeId)
+        setChatPanel(null)
+      },
       treeName: (treeId: string) => trees.find((tree) => tree.id === treeId)?.name ?? '',
     }),
     [chatTreeId, openChat, trees],

@@ -89,6 +89,11 @@ export class ClaudeCliEngine implements ChatEngine {
   /** The session exists on Claude Code's side, so the next spawn resumes it. */
   private hasHistory = false
   private proc: RunningProcess | null = null
+  /**
+   * Every process group this engine started that may still be alive, including
+   * one being stopped, so killNow can reach it too.
+   */
+  private readonly liveGroups = new Set<number>()
   private turnBusy = false
   private turnTimer: ReturnType<typeof setTimeout> | null = null
   private sawAssistant = false
@@ -120,7 +125,11 @@ export class ClaudeCliEngine implements ChatEngine {
       this.spawnProcess()
     }
     const proc = this.proc
-    if (!proc) return
+    if (!proc) {
+      // The spawn itself failed and has said why; end the turn it began.
+      this.emit({ type: 'done', ok: false })
+      return
+    }
 
     this.turnBusy = true
     this.sawAssistant = false
@@ -153,6 +162,21 @@ export class ClaudeCliEngine implements ChatEngine {
       // Already closed.
     }
     await this.stop()
+    this.listeners.clear()
+  }
+
+  /**
+   * SIGKILL every process group this engine started, synchronously. For app
+   * quit, where stop() and dispose() cannot be awaited.
+   */
+  killNow(): void {
+    this.disposed = true
+    const proc = this.proc
+    this.proc = null
+    if (proc) proc.stopping = true
+    this.endTurn()
+    for (const pid of this.liveGroups) killGroup(pid, 'SIGKILL')
+    this.liveGroups.clear()
     this.listeners.clear()
   }
 
@@ -193,7 +217,10 @@ export class ClaudeCliEngine implements ChatEngine {
     killGroup(pid, 'SIGTERM')
     const deadline = Date.now() + KILL_GRACE_MS
     while (Date.now() < deadline) {
-      if (!groupAlive(pid)) return
+      if (!groupAlive(pid)) {
+        this.liveGroups.delete(pid)
+        return
+      }
       await new Promise((resolvePromise) => setTimeout(resolvePromise, POLL_MS))
     }
     killGroup(pid, 'SIGKILL')
@@ -201,6 +228,7 @@ export class ClaudeCliEngine implements ChatEngine {
     while (Date.now() < hardDeadline && groupAlive(pid)) {
       await new Promise((resolvePromise) => setTimeout(resolvePromise, POLL_MS))
     }
+    if (!groupAlive(pid)) this.liveGroups.delete(pid)
   }
 
   private spawnProcess(): void {
@@ -235,6 +263,7 @@ export class ClaudeCliEngine implements ChatEngine {
 
     const proc: RunningProcess = { child, pid: child.pid, stopping: false, exited: false, stderr: '' }
     this.proc = proc
+    if (child.pid !== undefined) this.liveGroups.add(child.pid)
 
     // The turn this process is answering ends at most once.
     const failTurn = (event: ChatEvent): void => {
@@ -266,6 +295,12 @@ export class ClaudeCliEngine implements ChatEngine {
     // named from everything the process said.
     child.on('close', (code, signal) => {
       proc.exited = true
+      // The CLI ended on its own: anything it left running in its group (the
+      // MCP shim, a tool process) goes with it.
+      if (!proc.stopping && proc.pid !== undefined) {
+        if (groupAlive(proc.pid)) killGroup(proc.pid, 'SIGKILL')
+        this.liveGroups.delete(proc.pid)
+      }
       const failure = classifyExit({
         code,
         signal,

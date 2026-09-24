@@ -74,4 +74,11 @@ export interface ChatEngine {
 
   /** Stop and release everything this engine holds. */
   dispose(): Promise<void>
+
+  /**
+   * Kill everything this engine started, synchronously and without waiting.
+   * Only for app quit, where nothing can be awaited. Engines with no process
+   * of their own may leave it out.
+   */
+  killNow?(): void
 }

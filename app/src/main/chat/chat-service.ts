@@ -112,6 +112,10 @@ export class ChatService {
   private readonly chats = new Map<string, Chat>()
   /** Issued once per launch, on the first chat that needs it. */
   private token: string | null = null
+  /** Engines not yet fully disposed, for killAllNow. */
+  private readonly liveEngines = new Set<ChatEngine>()
+  /** Trees whose MCP config file may exist. */
+  private readonly configTreeIds = new Set<string>()
 
   constructor(options: ChatServiceOptions) {
     this.options = options
@@ -190,8 +194,24 @@ export class ChatService {
     await Promise.all([...this.chats.keys()].map((treeId) => this.closeWorkspace(treeId)))
   }
 
-  /** Kill every chat's process group at once, synchronously (app quit). */
-  killAllNow(): void {}
+  /**
+   * Kill every chat's process group at once, synchronously, and delete every
+   * MCP config file (app quit, where nothing can be awaited). Reaches engines
+   * that disposeAll has already begun stopping.
+   */
+  killAllNow(): void {
+    for (const engine of this.liveEngines) {
+      try {
+        engine.killNow?.()
+      } catch (err) {
+        console.error('[ChatService] could not kill a chat process:', err)
+      }
+    }
+    this.liveEngines.clear()
+    for (const treeId of this.configTreeIds) this.removeConfigFile(treeId)
+    this.configTreeIds.clear()
+    this.chats.clear()
+  }
 
   /** Stop every running turn (agents were switched off). */
   async stopAll(): Promise<void> {
@@ -240,6 +260,7 @@ export class ChatService {
     }
     const engine = (this.options.createEngine ?? ((o) => new ClaudeCliEngine(o)))(engineOptions)
     chat.engine = engine
+    this.liveEngines.add(engine)
     chat.unsubscribe = engine.onEvent((event) => this.onEngineEvent(chat, engine, event))
 
     const resumeSessionId = fresh ? undefined : (chat.sessionId ?? undefined)
@@ -304,7 +325,10 @@ export class ChatService {
     chat.recovering = false
     chat.unsubscribe?.()
     chat.unsubscribe = null
-    if (engine) await engine.dispose()
+    if (engine) {
+      await engine.dispose()
+      this.liveEngines.delete(engine)
+    }
   }
 
   private record(chat: Chat, event: ChatEvent): void {
@@ -337,6 +361,7 @@ export class ChatService {
   private writeConfigFile(treeId: string, token: string): string {
     this.ensureChatDir()
     const path = this.configPathFor(treeId)
+    this.configTreeIds.add(treeId)
     const server = chatShimLaunch({ ...this.options.launch, token, userDataDir: this.options.userDataDir })
     writePrivateFile(
       path,
@@ -346,6 +371,7 @@ export class ChatService {
   }
 
   private removeConfigFile(treeId: string): void {
+    this.configTreeIds.delete(treeId)
     try {
       unlinkSync(this.configPathFor(treeId))
     } catch {
