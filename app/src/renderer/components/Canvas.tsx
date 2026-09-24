@@ -27,7 +27,7 @@ import React, {
   useState,
 } from 'react'
 import ConnectionLine from './ConnectionLine'
-import TreeFrame, { type TreeFrameHandlers } from './TreeFrame'
+import TreeFrame, { type TreeFrameHandlers, type TreeSubspaces } from './TreeFrame'
 import type { ForestTree, NodeRef } from '../state/use-forest'
 import { nodeKey } from '../state/use-forest'
 import {
@@ -40,6 +40,7 @@ import {
   type PositionedRect,
 } from '../layout/frames'
 import { displayPositions, type DisplaySpot } from '../layout/placement'
+import { isWorkspaceNode, subspaceRects, type DimsOf, type Point } from '../layout/subspaces'
 import { useContextMenu } from './ContextMenu'
 import { ChatContext } from '../state/chat'
 
@@ -128,6 +129,12 @@ interface CanvasProps {
   ) => void
   /** Move a frame in renderer state only; the canvas persists the final spot. */
   onFrameMove: (treeId: string, x: number, y: number) => void
+  /**
+   * Collapse or expand a workspace folder frame (02.7 D-21); `collapsed` is the
+   * state wanted. Resolves once the commit is in and the tree refreshed, so the
+   * space can settle around the frame's new size.
+   */
+  onToggleFolder: (treeId: string, folderId: string, collapsed: boolean, dimsOf: DimsOf) => Promise<void>
   /** The selected frame, which is the space's focal point and undo target. */
   selectedTreeId: string | null
   onSelectTree: (treeId: string | null) => void
@@ -231,6 +238,7 @@ function Canvas({
   onDeleteNote,
   onPropertyEdit,
   onFrameMove,
+  onToggleFolder,
   selectedTreeId,
   onSelectTree,
 }: CanvasProps, ref: React.ForwardedRef<CanvasHandle>): React.ReactElement {
@@ -278,6 +286,24 @@ function Canvas({
     nodeDimsRef.current.set(nodeKey(ref), { width, height })
   }, [])
 
+  /** One tree's measured card sizes, by bare node id, for subspace geometry. */
+  const dimsOfTree = useCallback(
+    (treeId: string): DimsOf =>
+      (nodeId: string) =>
+        nodeDimsRef.current.get(nodeKey({ treeId, nodeId })),
+    [],
+  )
+
+  // Trees whose frame changed size in a commit that has just landed: they are
+  // settled among the other frames on the next render, once the refreshed
+  // nodes are what the rects are computed from.
+  const pendingSettleRef = useRef(new Set<string>())
+  const [settleTick, setSettleTick] = useState(0)
+  const requestSettle = useCallback((treeId: string) => {
+    pendingSettleRef.current.add(treeId)
+    setSettleTick((tick) => tick + 1)
+  }, [])
+
   const handleDragMove = useCallback((ref: NodeRef, x: number, y: number) => {
     setDragPositions((prev) => ({ ...prev, [nodeKey(ref)]: { x, y } }))
   }, [])
@@ -306,6 +332,9 @@ function Canvas({
   // D-05: where every note is drawn, computed once per tree so frame bounds,
   // edges, knot midpoints and cards all agree on a following note's spot.
   const treeSpots = new Map<string, ReadonlyMap<string, DisplaySpot>>()
+  // 02.7 D-21: a workspace tree's folder frames, computed once per render and
+  // shared by the tree frame's bounds and its nested FolderFrames.
+  const treeSubspaces = new Map<string, TreeSubspaces>()
   for (const tree of trees) {
     const overrides = new Map<string, { x: number; y: number }>()
     for (const node of tree.nodes) {
@@ -314,6 +343,29 @@ function Canvas({
     }
     const spots = displayPositions(tree.nodes, tree.edges, overrides)
     treeSpots.set(tree.id, spots)
+
+    if (tree.kind === 'workspace') {
+      const positions: ReadonlyMap<string, Point> = overrides
+      const layout = subspaceRects(tree.nodes, dimsOfTree(tree.id), undefined, positions)
+      treeSubspaces.set(tree.id, { layout, positions, draggingFolderId: null })
+      // The workspace root's cards and top-level folder frames, plus any note
+      // made in the workspace tree that is not a workspace file.
+      const others: ContentBox[] = tree.nodes
+        .filter((node) => !isWorkspaceNode(node))
+        .map((node) => {
+          const dims = nodeDimsRef.current.get(nodeKey({ treeId: tree.id, nodeId: node.id }))
+          const at = overrides.get(node.id)
+          return {
+            x: at ? at.x : Number(node.props['position.x']?.value ?? 0),
+            y: at ? at.y : Number(node.props['position.y']?.value ?? 0),
+            width: dims?.width ?? DEFAULT_NODE_WIDTH,
+            height: dims?.height ?? DEFAULT_NODE_HEIGHT,
+          }
+        })
+      frameRects.set(tree.id, computeFrameBounds(tree.frame, [...layout.rootBoxes, ...others]))
+      continue
+    }
+
     const boxes: ContentBox[] = tree.nodes.map((node) => {
       const key = nodeKey({ treeId: tree.id, nodeId: node.id })
       const drag = dragPositions[key]
@@ -416,6 +468,16 @@ function Canvas({
       void window.tapestry.trees.setFrame(id, x, y)
     }
   }
+
+  useEffect(() => {
+    if (pendingSettleRef.current.size === 0) return
+    const pending = [...pendingSettleRef.current]
+    pendingSettleRef.current.clear()
+    for (const treeId of pending) {
+      if (trees.some((tree) => tree.id === treeId)) settleFrames(treeId)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settleTick, trees])
 
   /**
    * A tree the renderer has not placed yet gets a real spot.
@@ -781,6 +843,16 @@ function Canvas({
     onRegisterDims: registerNodeDims,
     onDragMove: handleDragMove,
     onDragEnd: handleDragEnd,
+    // D-21: expanding a folder can grow the workspace frame into a neighbour.
+    onToggleFolder: (folderRef, collapsed) => {
+      void onToggleFolder(folderRef.treeId, folderRef.nodeId, collapsed, dimsOfTree(folderRef.treeId))
+        .then(() => requestSettle(folderRef.treeId))
+        .catch(() => undefined)
+    },
+    onFolderHeaderPointerDown: (_folderRef, e) => {
+      // A folder header is not canvas background: pressing it must not pan.
+      e.stopPropagation()
+    },
   }
 
   // The in-progress connection line is drawn in world space, above the frames,
@@ -851,6 +923,7 @@ function Canvas({
               onHeaderPointerDown={(e) => handleFrameHeaderPointerDown(tree.id, e)}
               onFrameHover={(hovered) => setHoveredTreeId(hovered ? tree.id : null)}
               handlers={handlers}
+              subspaces={treeSubspaces.get(tree.id)}
             />
           )
         })}

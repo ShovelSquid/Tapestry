@@ -29,6 +29,7 @@ import ChatPanel, { type ChatPanelState } from './components/ChatPanel'
 import { ContextMenuProvider } from './components/ContextMenu'
 import { useForest, type NodeRef } from './state/use-forest'
 import { ChatContext, chatWorkspaceFor, type ChatContextValue, type ChatTarget } from './state/chat'
+import { COLLAPSED_KEY, settleSubspace, type DimsOf } from './layout/subspaces'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -623,6 +624,45 @@ export default function App(): React.ReactElement {
   )
 
   // -----------------------------------------------------------------------
+  // Workspace folder frames (02.7 D-21). Layout only: `collapsed` and
+  // positions are Tapestry's keys, so nothing here reaches a file.
+  // -----------------------------------------------------------------------
+
+  /** The folder's path, for the commit message a person reads in history. */
+  const folderPathOf = useCallback(
+    (treeId: string, folderId: string): string => {
+      const node = trees.find((tree) => tree.id === treeId)?.nodes.find((n) => n.id === folderId)
+      const path = node?.props['file.path']?.value
+      return typeof path === 'string' ? path : folderId
+    },
+    [trees],
+  )
+
+  /**
+   * Collapse or expand a folder frame, as one commit by the person. Expanding
+   * also moves whatever the grown frame now covers (settleSubspace), up to the
+   * workspace frame; collapsing moves nothing.
+   */
+  const handleToggleFolder = useCallback(
+    async (treeId: string, folderId: string, collapsed: boolean, dimsOf: DimsOf) => {
+      const tree = trees.find((t) => t.id === treeId)
+      if (!tree) return
+      const path = folderPathOf(treeId, folderId)
+      const toggle = { op: 'setProperty', target: folderId, key: COLLAPSED_KEY, type: 'bool', value: collapsed }
+      const ops = collapsed
+        ? [toggle]
+        : [toggle, ...settleSubspace(tree.nodes, dimsOf, folderId, { expanded: new Set([folderId]) })]
+      try {
+        await submitChange(treeId, `${collapsed ? 'Collapse' : 'Expand'} folder ${path}`, ops)
+        await refreshTree(treeId)
+      } catch (err) {
+        reportSaveError(`Failed to ${collapsed ? 'collapse' : 'expand'} folder`, err)
+      }
+    },
+    [trees, folderPathOf, submitChange, refreshTree, reportSaveError],
+  )
+
+  // -----------------------------------------------------------------------
   // Plugin error handlers (D-34)
   // -----------------------------------------------------------------------
 
@@ -829,6 +869,7 @@ export default function App(): React.ReactElement {
               onDeleteNote={handleDeleteNote}
               onPropertyEdit={handlePropertyEdit}
               onFrameMove={setFrameLocal}
+              onToggleFolder={handleToggleFolder}
             />
 
             {/* Claude beside the canvas, for one workspace (02.7 D-12) */}

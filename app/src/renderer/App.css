@@ -196,6 +196,26 @@ html, body, #root {
   border: 1px dashed #B0ADA6;
 }
 
+/* A workspace folder's frame (02.7 D-21): the tree frame's design one level
+   down, a shade lighter so a nested frame reads against its parent. The
+   header, border states and radius are the tree frame's own. */
+.tapestry-tree-frame--folder {
+  background: #F7F5F0;
+  border-radius: 12px;
+}
+
+/* Collapsed: the header band alone. */
+.tapestry-tree-frame--folder.tapestry-tree-frame--collapsed {
+  background: #FAF9F7;
+}
+
+/* The collapse/expand chevron sits at the end of row 1, where Tree options
+   sits on a tree frame. */
+.tapestry-frame-folder-toggle {
+  margin-left: auto;
+  flex: none;
+}
+
 /* Fills what is left of the frame under the 64px header band. */
 .tapestry-frame-unavailable-body {
   position: absolute;
