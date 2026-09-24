@@ -15,7 +15,7 @@ actions, replay tool, and goldens built before the redirect are kept.
 
 | Phase | Status |
 | --- | --- |
-| 1 engine over the kernel | in progress (everything but the in-app check is done) |
+| 1 engine over the kernel | built and tested headlessly (`836a4da`); only the human GUI confirmation is open, see Blocked |
 | 2 expressions | not started |
 | 3 force rules | not started |
 | 4 constraints | not started |
@@ -30,25 +30,32 @@ viewer; it is theirs to edit.)
 
 ## Next
 
-1. **Phase 1 done check.** Build the app (`npm install` at the root,
-   `npm run build:native` in `app/`, then the app's dev script; see
-   `app/package.json`), create a note, set `velocity.x real 1` via the
-   inspector or a `set` commit, Run, Pause, confirm the `.tree` has the
-   `set position.x` lines and reopening shows the note moved. Record
-   exactly how the app was launched under Learned. Then mark phase 1
-   done and update `README.md`'s status paragraph. If the GUI cannot be
-   driven from an unattended session, do the headless half: load the
-   plugin through `app/src/main/plugin-host.ts` against a real kernel
-   bridge in an app test (see `app/src/main/*.test.ts` for the pattern),
-   invoke `mathspace.run` then `mathspace.pause`, and assert the `.tree`
-   contains the `set n<k> position.x real …` and `advance` lines; leave
-   the visual confirmation as a one-line human check under Blocked.
-
-Then phase 2 per the plan, starting with `include/ddsim/fxmath.hpp` and
-its oracle tests.
+1. **GUI confirmation of phase 1 (human, or a session that can drive
+   Electron).** `npm install` at the root (or symlink node_modules, see
+   Learned), `npm run build:native` in `app/` if
+   `app/native/build/Release/tapestry_addon.node` is missing, `npm run
+   engine:wasm` in `plugins/mathspace`, then `npm run dev` in `app/`.
+   Create a note, set `velocity.x real 1` in the inspector, run the
+   command `mathspace.run`, watch it move, `mathspace.pause`, check the
+   `.tree`. If a session cannot drive the GUI, skip this: the headless
+   check in `plugins/mathspace/test/tree.test.js` already covers the
+   file-level condition. Either way, do not block phase 2 on it.
+2. **Phase 2, first slice: `include/ddsim/fxmath.hpp`.** Fixed-iteration
+   `sqrt sin cos atan2 exp log pow` over `fx64`, each with a fixed loop
+   bound and no convergence check, tested in `tests/mathspace/fxmath_test.cpp`
+   against an integer oracle (Python-generated table checked in as
+   constants, or a big-integer oracle in the test) with an op-count
+   check. Read `include/ddsim/fx64.hpp` first for the existing mul/div
+   and rounding conventions; keep the forbidden-token gate green.
+3. Phase 2 continues per the plan: `expr/ast.hpp`, `parser.hpp`,
+   `bytecode.hpp`, `vm.hpp`, action 37 `BindField`, golden `plot`.
 
 ## Done
 
+- `836a4da` ms1 real-tree check: `plugins/mathspace/test/tree.test.js`
+  (native kernel + facade + Wasm + run loop, `.tree` lines and reopen,
+  human edit mid-run); `image.js` pads lane-addressed fields to the
+  space dim. `README.md` status section added in the following commit.
 - `a111181` ms1 run loop: `runner.js` (rebuild/tick/flush/start/pause/
   stepOnce/dispose), `index.js` wired, 6 tests with a fake kernel.
 - `07f35f4` ms1 image.js: exact real↔raw, key convention, JS encoders
@@ -79,6 +86,11 @@ its oracle tests.
 
 ## Decisions
 
+- A lane-addressed field (`f.x`, `f.2`) is a vector in the note's space
+  and is zero-padded to the space's dim; a bare name is a scalar of dim
+  1. Needed because the plan's done condition sets only `velocity.x` and
+  `step.cpp` skips a velocity whose dim differs from `pos`. More lanes
+  than the space has is still a reported problem. (2026-09-24, `836a4da`.)
 - Run loop: a foreign commit found at flush time drops the engine's
   pending ticks and rebuilds; a refused submit forces a rebuild before
   the next commit; snapshot and diff are taken before any await so ticks
@@ -115,6 +127,17 @@ its oracle tests.
 
 ## Learned
 
+- `app/native/build/Release/tapestry_addon.node` was copied from the
+  primary checkout (`/Users/kaelencook/Tapestry/app/native/build/Release/`)
+  because `tapestry/kernel` and `app/native` are identical to
+  `phase-2-implementation-v1` here (`git diff --stat` is empty) and
+  `npm run build:native` needs Electron headers. It is gitignored. The
+  plugin's vitest imports `app/test/helpers/temp-tree.ts` and
+  `app/src/main/plugin-host.ts` by relative path; both are free of
+  runtime Electron imports, so they load in plain Node.
+- Kernel `real` values print as shortest round-trip decimals
+  (`set n1 position.x real 60`), so the `.tree` assertions can match
+  whole lines.
 - This worktree has no `node_modules`; the pattern is a symlink to the
   primary checkout's: `ln -s /Users/kaelencook/Tapestry/node_modules
   node_modules` (gitignored). vitest 2.1.9 lives there. Plugin tests:
@@ -163,6 +186,11 @@ its oracle tests.
 
 (questions a human would have been asked; answered by the session's best
 judgement, recorded here so a human can revisit)
+
+- **Phase 1 GUI confirmation.** The plan's done condition says "in the
+  app". Every file-level and determinism clause is covered by tests; an
+  unattended session cannot click Run in Electron. A human should do
+  Next item 1 once and tick this off. (2026-09-24)
 
 - Dragged notes may hold positions that are not `k/2^32` (a drag at a
   fractional zoom divides by the zoom). The plan says such reals are
