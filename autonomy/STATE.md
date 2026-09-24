@@ -3,13 +3,11 @@
 Read fully at the start of every session. Rewrite the "Next" section at
 the end of every session so its first item can be started cold.
 
-**2026-09-24 redirect.** `phase-2-implementation-v1` was merged into this
-branch. It brings the deterministic kernel (`tapestry/kernel/`), the
-Electron app (`app/`), the plugin SDK (`sdk/`), and plugins. Mathspace is
-now the engine over the kernel, hosted as `plugins/mathspace/`, per the
-rewritten `mathspace_plan.md`. The SDL Space page work (`tapestry/core`)
-was reverted to v1's files; that path is abandoned. The store, hash,
-actions, replay tool, and goldens built before the redirect are kept.
+**2026-09-24 redirect.** `phase-2-implementation-v1` (kernel, Electron
+app, SDK, plugins) was merged in; mathspace is the engine over the
+kernel, hosted as `plugins/mathspace/`, per the rewritten plan. The SDL
+Space page path is abandoned; the pre-redirect store, hash, actions,
+replay tool and goldens are kept.
 
 ## Phases
 
@@ -17,7 +15,7 @@ actions, replay tool, and goldens built before the redirect are kept.
 | --- | --- |
 | 1 engine over the kernel | built and tested headlessly (`836a4da`); only the human GUI confirmation is open, see Blocked |
 | 2 expressions | done headlessly (`c5d134e`, `d6e9c0b`): golden `plot` hashes across processes and builds, `<f>.expr text` props bind through the runner so the bound value is committed as a kernel prop after a step (the inspector reads props, so it shows it; a human look is still open like phase 1's), and `diff.hpp` exists for phase 4 |
-| 3 force rules | engine started (`22bc70c`): unary force rules, mass integrator, `RuleDims`, golden `gravity`; select, set rules, pair/global, plugin side, presets, RULE-07/08 open |
+| 3 force rules | engine started (`22bc70c`, `f90b3c7`): unary force rules with `select`, mass integrator, `RuleDims`, golden `gravity`; set rules, pair/global, plugin side, presets, RULE-07/08 open |
 | 4 constraints | not started |
 | 5 views | not started |
 | 6 metrics | not started |
@@ -30,16 +28,7 @@ viewer; it is theirs to edit.)
 
 ## Next
 
-1. **Phase 3, slice 2: `select` on unary rules (engine).** On a Rule
-   note a bound scalar `select` is evaluated per target before `force`;
-   nonzero selects, an evaluation error (a field the note lacks) is a
-   skip, an unbound `select` selects every non-Rule note of the space.
-   Bump `MS_STEP_VERSION` to 4, re-record the five goldens (`ms_replay
-   --write-golden`, then `npm run engine:wasm` + `npm test` in
-   `plugins/mathspace` so `engine.test.js` sees them), add a select to
-   the `gravity` generator (`golden_test.cpp`, `MS_WRITE_FIXTURES=1`) and
-   a `step_test.cpp` case. ~10 lines in `step.cpp`.
-2. **Phase 3, slice 3: plugin side.** `image.js` recognises kernel nodes
+1. **Phase 3, slice 3: plugin side.** `image.js` recognises kernel nodes
    of type `mathspace/rule@1` (check `app/` for how a node type is named
    in `NodeData`) as `NoteKind::Rule`, maps `scope text unary|pair|global`
    to the scalar `scope` (0/1/2), `select.expr`/`force.expr`/`set.<f>.expr`
@@ -52,15 +41,19 @@ viewer; it is theirs to edit.)
    how: a `ms_last_errors` buffer, or a count per rule in the snapshot).
    RULE-08 `pinned`: `image.js` should drop `velocity`/`pos` writes for
    pinned nodes, or the engine could read a `pinned` scalar; decide.
-3. **Phase 3, slice 4: `set.<f>` rules** after the integrator (assign
+   Vitest: a rule node in a `NodeData` array moves a note with velocity
+   through the runner (like `runner.test.js`'s `y real 6`).
+2. **Phase 3, slice 4: `set.<f>` rules** after the integrator (assign
    the target's field `f` from the program, in rule id order), then
    `scope pair` (`other` bound, unordered pairs ascending id, force
    applied to `self` and its negation to `other`? decide against the
-   design: it says "each unordered pair"; record) and `global`.
-4. Presets under `plugins/mathspace/presets/` and the roadmap examples;
+   design: it says "each unordered pair"; record) and `global`. Each is
+   a `MS_STEP_VERSION` bump and a golden re-record (five files, then
+   `npm run engine:wasm` + `npm test` in `plugins/mathspace`).
+3. Presets under `plugins/mathspace/presets/` and the roadmap examples;
    then the GUI checklist (phase 1 item, phase 2 `y.expr`, and a gravity
    rule) for a human.
-5. **GUI confirmation of phases 1 and 2 (human, or a session that can
+4. **GUI confirmation of phases 1 and 2 (human, or a session that can
    drive Electron).** `npm install` at the root (or symlink node_modules,
    see Learned), `npm run build:native` in `app/` if
    `app/native/build/Release/tapestry_addon.node` is missing, `npm run
@@ -71,25 +64,18 @@ viewer; it is theirs to edit.)
 
 ## Done
 
+- `f90b3c7` ms3 `select`: a bound scalar `select` on a rule gates each
+  target (`MS_STEP_VERSION` 4); golden `gravity` gains a lift rule.
 - `22bc70c` ms3 engine: `step.cpp` rewritten (force pass, mass
   integrator, bound fields skip Rule notes), `expr::RuleDims`,
   `ms_compile` picks it for Rule notes, goldens re-recorded under
   `MS_STEP_VERSION` 3, golden `gravity` generated by `golden_test.cpp`
   (`fixtureText`/`checkFixtureText` shared with `plot`).
-- `d6e9c0b` ms2 `diff.hpp`/`diff.cpp`/`expr_diff_test.cpp`: symbolic
-  d/d(self.field.lane), shape-preserving, task-stack build, every rule
-  checked against a finite difference in the VM.
-- `c5d134e` ms2 `<f>.expr` props: `buildImage(...).bindings`,
-  `Runner.rebuild` second pass compiles and binds them, `engineSource`
-  rewrites `.position` to `.pos` in expression text with offsets mapped
-  back; runner vitests see `y real 6` and `v.x`/`v.y` committed.
-- `c44393d` ms2 plugin compile: `Engine.compile` in `engine.js`,
-  `encodeBindField` in `image.js`, vitests bind through Wasm and read the
-  value from the snapshot.
-- `a159268` ms2 `ms_compile(w, note, text, len, out, cap, where)` in the
-  C ABI with `ms_serialize`'s cap protocol, `ms_compile_error_name`,
-  `MS_ERR_BAD_BYTECODE` (the C enum had drifted from `Error`), Wasm
-  export list + `UTF8ToString`, doctests in `c_abi_test.cpp`.
+- Phase 2 plugin/ABI (ms2), one line each: `d6e9c0b` `diff.hpp`
+  symbolic d/d(self.field.lane) checked against finite differences;
+  `c5d134e` `<f>.expr` props bound through the runner's second pass;
+  `c44393d` `Engine.compile` + `encodeBindField`; `a159268` `ms_compile`
+  C ABI with `ms_compile_error_name` and `MS_ERR_BAD_BYTECODE`.
 - Phase 2 engine (ms2), one line each; git has the details: `1abc9d4`
   action 37 BindField + bound evaluation in `step()` + golden `plot`
   (`MS_STEP_VERSION` 2); `3b25475` vm; `30fc1a6` bytecode; `1725143`
@@ -124,61 +110,35 @@ viewer; it is theirs to edit.)
   RULE-07 report is a plugin/ABI question, see Next). `RuleDims` guesses
   a target field's dim from the first non-Rule note in the space that
   has it; the VM's `DimChanged` makes a wrong guess a per-note skip.
-- `diff.hpp` (2026-09-24, `d6e9c0b`): the derivative of a dim-d value
-  is a dim-d value, so the rules reuse the compiler's broadcast shapes
-  unchanged and a `DimResolver` (the same `WorldDims`) supplies ref dims
-  for shaped zeros and the unit vector. `abs min max clamp` differentiate
-  as the branch fx64 takes (ties go the way `ddsim::min/max/clamp` go);
-  `curve` is `Unsupported`; `node(nN).f` is a constant even when nN is
-  self. The output is a tree (copies, never shared subtrees) because the
-  compiler's visit bound assumes one, so `MAX_NODES` is the only bound
-  and a ~45-term product chain overflows it. The build is an explicit
-  task stack, not recursion, so a 600-term sum differentiates.
-- Expression text spelling (2026-09-24, `c5d134e`): the `.tree` says
-  `self.position` (the app's key, and the design doc's example) while
-  the engine grammar sees the store's `pos`; the plugin rewrites the one
-  renamed field after a ref head before `ms_compile` and maps error
-  offsets back. The engine stays ignorant of app names. A bound field
-  takes its program's dim (`bind_field` zeroes the lanes on a shape
-  change), so a scalar expression on a vector-valued prop commits `w
-  real 0` and leaves the stale `w.x`/`w.y` props in the tree; a bind or
-  compile failure is a per-node problem in the log, not a rebuild
-  failure. Compiling happens in the runner, not `buildImage`, because refs
-  need every note present.
-- `ms_compile` errors (2026-09-24, `a159268`): a negative return packs
-  `-(stage << 8 | code)`, stage 0 an `ms_error` (no such note, null
-  argument), 1 a `ParseError` with the byte offset in `*where`, 2 a
-  `CompileError` with the Ast index; `ms_compile_error_name` maps that to
-  a static `"parse:InexactNumber"` string so the plugin never keeps its
-  own enum tables. Compiling is const on the world. `UTF8ToString` was
-  added to the Wasm runtime exports for the name lookup.
-- Phase 2 engine decisions are documented in the headers they concern
-  (git has the reasoning): bound fields evaluate after the integrate
-  rule, notes in id order, fields in name order, against the live world,
-  an evaluation error leaves the lanes, `other` is null until phase 3
-  (`world.hpp`, `1abc9d4`; the plan's `MS_RULE_INTEGRATE_VERSION` is now
-  `MS_STEP_VERSION`, same walk slot); VM domain errors (`/ 0`, `sqrt`,
-  `log`, `pow` out of domain) yield 0, reference failures are errors
-  (`vm.hpp`, `3b25475`); shapes: `+ -` equal dims, `*` broadcasts a
-  scalar, `/` by a scalar only, scalar builtins take scalars, ref dims
-  baked into `LoadRef`, `if` is two forward jumps (`bytecode.hpp`,
-  `30fc1a6`); grammar: keyword `if`, non-associative comparison, exact
-  literals only, no `^`/`len`, `node(n12)` spelling, `MAX_DEPTH` 64,
-  `MAX_NODES` 4096 (`parser.hpp`, `1725143`); fxmath rounds CORDIC to
-  nearest and floors `exp`/`log`, `exp` saturates above 31 ln2
-  (`fxmath.hpp`, `3ca1482`).
+  `select` (`f90b3c7`) is a bound scalar on the rule, evaluated per
+  target before `force`; absent or unbound selects all, an error or
+  zero skips the target, a bound non-scalar skips the rule. Every
+  change to `step()` bumps the pin even mid-phase; re-recording five
+  goldens is one command line.
+- `diff.hpp` (`d6e9c0b`): a derivative keeps its value's dim, so it
+  reuses the compiler's shapes with a `DimResolver`; `abs min max clamp`
+  differentiate as the fx64 branch goes, `curve` is `Unsupported`,
+  `node(nN).f` is a constant even for self; the output is a tree (no
+  shared subtrees) built with an explicit task stack.
+- Expression text spelling (`c5d134e`): the `.tree` says `self.position`,
+  the engine grammar `pos`; the plugin rewrites the one renamed field
+  before `ms_compile` and maps error offsets back. Compiling happens in
+  the runner, not `buildImage`, because refs need every note present.
+- `ms_compile` errors (`a159268`): a negative return packs
+  `-(stage << 8 | code)` (0 world, 1 parse with the byte offset in
+  `*where`, 2 compile with the Ast index); `ms_compile_error_name` gives
+  a static `"parse:InexactNumber"` string.
+- Phase 2 engine decisions live in the headers they concern (`world.hpp`
+  bound-field order, `vm.hpp` domain errors, `bytecode.hpp` shapes,
+  `parser.hpp` grammar and bounds, `fxmath.hpp` rounding); the plan's
+  `MS_RULE_INTEGRATE_VERSION` is `MS_STEP_VERSION`, same walk slot.
 - Phase 1 plugin decisions (git has the details): a lane-addressed key
-  (`f.x`) is a vector zero-padded to the space dim, a bare name a scalar
-  (`836a4da`); the run loop rebuilds on a foreign commit or refused
-  submit, snapshots before any await, seed 1 (`a111181`); the implicit
-  space is id `2^63` dim 2 and never becomes a kernel op; an inexact
-  `real` drops its field into `problems` rather than rounding, see
-  Blocked (`07f35f4`); mathspace is a plugin over the kernel, the image
-  is derived, real↔fx64 conversion is exact and in JS; note ids are
-  kernel ids and the engine never allocates one (`0903619`);
-  `ms_serialize` uses ddsim's cap protocol, `MS_ABI_VERSION` 1 is
-  separate from the walk's `FORMAT_VERSION` (`8587ec9`); the bootstrap
-  rule `pos += velocity` lives until phase 3.
+  (`f.x`) is a vector zero-padded to the space dim, a bare name a scalar;
+  the run loop rebuilds on a foreign commit or refused submit, seed 1;
+  the implicit space is id `2^63` dim 2 and never a kernel op; an inexact
+  `real` drops its field into `problems` (see Blocked); the image is
+  derived, real↔fx64 conversion exact and in JS; note ids are kernel ids;
+  `MS_ABI_VERSION` 1 is separate from the walk's `FORMAT_VERSION`.
 
 ## Learned
 
@@ -234,10 +194,6 @@ viewer; it is theirs to edit.)
 - The SDK (`sdk/src/index.ts`) gives plugins `kernel.getNodes/getNode/
   getEdges/status/submit`; commits are stamped `plugin <dir-name>`.
   Surfaces get no kernel access in API 1.
-- `.claude/CLAUDE.md` (merged from v1, GSD-generated) says work happens
-  in `/Users/kaelencook/Tapestry` on branch `phase-2-implementation-v1`.
-  That is the primary checkout's instruction, not this worktree's; the
-  root `CLAUDE.md` overrides it here.
 
 ## Blocked
 
