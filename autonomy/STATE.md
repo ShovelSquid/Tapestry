@@ -17,7 +17,7 @@ replay tool and goldens are kept.
 | 2 expressions | done headlessly (`c5d134e`, `d6e9c0b`): golden `plot` hashes across processes and builds, `<f>.expr text` props bind through the runner so the bound value is committed as a kernel prop after a step (the inspector reads props, so it shows it; a human look is still open like phase 1's), and `diff.hpp` exists for phase 4 |
 | 3 force rules | done headlessly (`e1e30a5`): force and `set.<f>` rules under unary, pair and global scope with `select`, mass integrator, `pinned`, RULE-07 skips on the rule node, goldens `gravity` and `pair`, and `plugins/mathspace/presets/` with the plan's four presets plus the roadmap's `anger`, `gold`, `push`, each a `mathspace.preset.<id>` command; `presets.test.js` runs all seven on one engine build with no skip and the promised field change. The "in the app" clause joins the GUI checklist in Blocked |
 | 4 constraints | done headlessly (`60c8346`, `60cd37e`, `064966d`): `constraint.expr` + `compliance` by fixed XPBD passes over lifted symbolic gradients, goldens `rod` and `contact`, the `contact` preset, the `pendulum`/`rope-chain` comparison against ddsim (numbers under Learned). The "in the app" look joins the GUI checklist in Blocked |
-| 5 views | engine side done (`61ef64f`): View notes, `project.expr`, `ms_project`, `Engine.project`; the surface and the default-view presets are open |
+| 5 views | engine side done (`61ef64f`); stage surface first cut done and seen in a headless browser (`24f1dbb`, `4acdaab`): one canvas 2D panel per View, refreshed on `onTreeChanged`; open: default-view presets, the 4D-through-two-views done condition, shapes and rule regions |
 | 6 metrics | not started |
 | 7 fold ddsim | not started |
 
@@ -28,46 +28,68 @@ viewer; it is theirs to edit.)
 
 ## Next
 
-1. **Phase 5 second slice: the stage surface, first cut.** Read
-   `plugins/data-drawing/surface/` (its manifest entry, `index.html`,
-   worker and message shape), `sdk/src/index.ts` for what a surface may
-   receive (no kernel access in API 1: the main-process side of the
-   plugin must post the data), and the plan's phase 5. Smallest step:
-   `plugins/mathspace/surface/` registered as a `stage` surface in
-   `tapestry.plugin.json`; the plugin's `index.js` posts, after every
-   runner commit (and once on open), a message `{views: [{id, error?}],
-   points: [{id, byView: {viewId: [x, y] as reals or null}}]}` computed
-   in the main process with `Engine.project` over every View node and
-   every Note-kind note of the same space (ids from `image`; add a
-   `views` list to `buildImage`'s result, or derive it from `rules` plus
-   the node type); the surface draws each view as a panel of dots with
-   plain canvas 2D (three.js and the module Worker can wait until shapes
-   need a level set). A vitest for the message builder (pure function,
-   no Electron). Check how data-drawing's surface gets its data across
-   the process boundary before designing the message.
-2. Phase 5 third slice: default views as presets (identity 2D,
-   perspective and three orthographic 3D, an axis-pair picker for N > 3)
-   as `presets/view-*.json`, plus shapes by sampled level sets and rule
-   regions faintly in the surface (then three.js if a 3D panel needs
-   it). Done condition to meet: one 4D space viewable through two View
-   nodes at once; write that as a preset + runner test.
-3. **GUI confirmation of phases 1 to 4 (human, or a session that can
+1. **Phase 5 third slice: default views as presets and the done
+   condition.** Add `presets/view-2d.json` (identity `[self.position.x,
+   self.position.y]`), `view-3d-perspective.json` and three orthographic
+   `view-3d-{xy,xz,yz}.json`, and a 4D axis-pair example
+   `view-4d-xy.json` / `view-4d-zw.json` (the "axis-pair picker" for
+   N > 3 is two such presets until there is UI). Each is a `.tree`-shaped
+   preset like the others (see `presets.js` for the node list format;
+   note a preset cannot name node ids, so a View preset must create its
+   own `mathspace/space@1` and a couple of notes, or the test must place
+   the view in an existing space by hand). Done condition to meet and
+   test: one 4D space viewable through two View nodes at once. Write it
+   as `test/projection.test.js` case (buildWorld + projectAll over a
+   dim-4 space with `[x, y]` and `[z, w]` views, both placing every note)
+   and as a preset run in `presets.test.js` (the preset test currently
+   expects a field change after stepping; a view preset may need that
+   check relaxed or a moving note included). Then mark phase 5's done
+   condition met in Phases and update README.md's status paragraph.
+2. Phase 5 fourth slice (optional polish, only if cheap): shapes by
+   sampled level sets and rule regions faintly in the surface; three.js
+   only if a 3D panel needs it. The surface refreshes only on
+   `onTreeChanged`, which the app fires for commits from outside the
+   renderer (the runner's, an agent's), not for the human's own drags; a
+   `getNodes` poll while open, or a host change, would close that gap.
+3. **GUI confirmation of phases 1 to 5 (human, or a session that can
    drive Electron).** `npm install` at the root (or symlink node_modules,
    see Learned), `npm run build:native` in `app/` if
    `app/native/build/Release/tapestry_addon.node` is missing, `npm run
-   engine:wasm` in `plugins/mathspace`, then `npm run dev` in `app/`.
-   Create a note, set `velocity.x real 1`, run `mathspace.run`, watch it
-   move, `mathspace.pause`, check the `.tree`; set `y.expr text
-   "self.position.x * 2"`, Step, see `y real ...` in the inspector; run
-   `mathspace.preset.anger`, `mathspace.preset.gold`,
+   engine:wasm` and `npm run build` in `plugins/mathspace`, then `npm run
+   dev` in `app/`. Create a note, set `velocity.x real 1`, run
+   `mathspace.run`, watch it move, `mathspace.pause`, check the `.tree`;
+   set `y.expr text "self.position.x * 2"`, Step, see `y real ...` in the
+   inspector; run `mathspace.preset.anger`, `mathspace.preset.gold`,
    `mathspace.preset.push` on a fresh tree, Run, watch Sam's `anger`
    rise, gold grow, the cart move; a rule node with `scope text pair`,
    `constraint.expr text "norm(other.position - self.position) - 100"`
    between a pinned note and a free one with `velocity.*`, Run, see it
-   swing.
+   swing; click "Open Mathspace" with a View node present and see the
+   panel. Without the app: `npm run dev` in `plugins/mathspace` serves
+   the surface over a stub `window.tapestry` at localhost:5174.
 
 ## Done
 
+- `4acdaab` ms5 surface in a browser: `image.js` uses `TextEncoder`/
+  `TextDecoder` instead of Node's `Buffer` (it is bundled into the
+  renderer now); the dev page mounts the built `dist/surface.js`; the dev
+  server watches `dist/`. Verified with the browser-automation skill
+  against the fixture world: two panels with both notes, `world:BadDim`
+  on the dim-1 view, no console errors.
+- `24f1dbb` ms5 stage surface first cut: `plugins/mathspace/surface/`
+  (Vite library build to `surface/dist/surface.js`, gitignored; `npm run
+  build`), registered as `mathspace.stage` in `index.js` and the
+  manifest; `main.ts` reads `window.tapestry.kernel.getNodes(treeId)`,
+  builds the world with the bundled `world.js` + `engine-core.js` + the
+  plugin's own wasm glue, `projectAll`s and draws with `panels.ts`
+  (grid of panels, uniform fit per view, error text for a failed view);
+  refresh on `onTreeChanged`; `test/panels.test.js`.
+- `fd781d9` ms5 plumbing: `engine-core.js` (the `Engine` class, no
+  `node:` imports; `engine.js` keeps `loadModule` and re-exports),
+  `world.js` `buildWorld(nodes, mod)` extracted from `Runner.rebuild`,
+  `buildImage` returns `notes` and `views` id lists, `projection.js`
+  `projectAll(engine, image)` (a view's own failures found by probing it
+  with itself; per-note failures are `null`), `test/projection.test.js`.
 - `61ef64f` ms5 views, engine side: `NoteKind::View` was already in
   `note.hpp`; `PROJECT_FIELD`/`PROJECT_DIM` in `world.hpp`; step() skips
   Views in the bound-field pass and targets Note-kind notes only
@@ -121,6 +143,18 @@ viewer; it is theirs to edit.)
 
 ## Decisions
 
+- Surface data path (`24f1dbb`): API 1 gives a surface no kernel and the
+  host has no plugin-to-surface channel (`executeCommand` drops the
+  handler's return value; data-drawing's surface reads no kernel data at
+  all), so the STATE plan of "index.js posts a message" was not possible
+  without a host change. The plan's own text has the surface run the
+  engine itself, so the surface reads through `window.tapestry` (the
+  renderer-realm route the SDK's `SurfaceHost` comment sanctions for
+  reading) and builds the runner's engine from the same `buildWorld` and
+  seed; it never calls `submit`. Canvas 2D for now; three.js and a Worker
+  wait for shapes or a 3D panel. Views' `error` in `projectAll` covers
+  `project.expr` compile problems, `world:NoSuchField` and `world:BadDim`;
+  everything else is per note.
 - Views (`61ef64f`): a View is compiled and evaluated like a rule (self
   is a note of its space) but never in step(); it is not a rule target
   even with `pos` (a camera under gravity would be a surprise), though
@@ -170,6 +204,15 @@ viewer; it is theirs to edit.)
 
 ## Learned
 
+- Vite dev serves a CommonJS file under its root untransformed (`require`
+  is not defined in the page), and its watcher ignores `build.outDir`, so
+  a rebuilt `dist/` is served from the old transform cache until restart
+  (`server.watch.ignored: ['!**/dist/**']` fixes it). Anything bundled
+  into the renderer must not touch `Buffer` or `node:`. The
+  browser-automation skill (`~/.claude/skills/browser-automation/
+  browser.mjs <url> --script f.mjs --screenshot p.png`) loads the dev
+  page headlessly and can read the canvas and the status line; a page
+  load there takes 15 to 45 s.
 - ddsim comparison numbers (ms4): the single pendulum agrees to 4 raw at
   tick 1 and at most 3152 raw (2^-20.4 units) over 600 ticks, so the
   lifted-gradient XPBD is ddsim's rod solver up to fx64 rounding. The
