@@ -13,6 +13,7 @@ data-drawing/sim/build/
 plugins/data-drawing/surface/wasm/
 plugins/data-drawing/surface/dist/
 plugins/mathspace/wasm/
+plugins/mathspace/surface/dist/
 
 # Autonomous driver session logs
 autonomy/logs/

@@ -2,13 +2,16 @@
   "name": "@tapestry/plugin-mathspace",
   "version": "0.1.0",
   "private": true,
-  "description": "Mathspace: the deterministic fixed-point engine over the kernel, as WebAssembly",
+  "description": "Mathspace: the deterministic fixed-point engine over the kernel, as WebAssembly, with a stage surface for its views",
   "main": "index.js",
   "scripts": {
     "engine:wasm": "bash scripts/build-wasm.sh",
+    "dev": "vite --config surface/vite.config.ts",
+    "build": "vite build --config surface/vite.config.ts",
     "test": "vitest run --config vitest.config.mjs"
   },
   "devDependencies": {
+    "vite": "^5.4.0",
     "vitest": "2.1.9"
   },
   "license": "MIT"

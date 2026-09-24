@@ -12,6 +12,10 @@
  *   mathspace.preset.<id>
  *                    create the nodes of presets/<id>.json in one commit
  *
+ * The stage surface (surface/, built to surface/dist/surface.js by
+ * `npm run build`) draws every View node's projection of its space; it
+ * reads the tree through the renderer and never writes.
+ *
  * Plugins are plain CommonJS so the host can require() them, and import
  * only from @tapestry/sdk (PLUG-03). This file is the composition file:
  * engine.js wraps the Wasm ABI, image.js maps kernel nodes to engine
@@ -22,6 +26,7 @@
 /** @typedef {import('@tapestry/sdk').TapestryPlugin} TapestryPlugin */
 /** @typedef {import('@tapestry/sdk').PluginContext} PluginContext */
 /** @typedef {import('@tapestry/sdk').CommandContribution} CommandContribution */
+/** @typedef {import('@tapestry/sdk').SurfaceContribution} SurfaceContribution */
 
 const { loadModule } = require('./engine')
 const { Runner } = require('./runner')
@@ -51,6 +56,14 @@ const stepCommand = {
   handler: (context) => runner.stepOnce(context.kernel),
 }
 
+/** @type {SurfaceContribution} */
+const stageSurface = {
+  id: 'mathspace.stage',
+  displayName: 'Mathspace',
+  entry: 'surface/dist/surface.js',
+  placement: 'stage',
+}
+
 /** The presets directory is read once, when the host requires this file. */
 const presets = presetCommands(loadPresets())
 
@@ -65,6 +78,7 @@ const mathspacePlugin = {
     context.registerCommand(pauseCommand)
     context.registerCommand(stepCommand)
     for (const command of presets) context.registerCommand(command)
+    context.registerSurface(stageSurface)
   },
 
   deactivate() {

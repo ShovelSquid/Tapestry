@@ -23,6 +23,8 @@
       "mathspace.preset.push",
       "mathspace.preset.spring-to-anchor"
     ],
-    "surfaces": []
+    "surfaces": [
+      "mathspace.stage"
+    ]
   }
 }
