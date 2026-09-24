@@ -16,6 +16,8 @@ plugins/mathspace/wasm/
 
 # Autonomous driver session logs
 autonomy/logs/
+# Operator's gentle stop for the driver (autonomy/run.sh)
+autonomy/STOP
 
 # OS files
 .DS_Store

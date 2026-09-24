@@ -103,7 +103,13 @@ session is one bounded slice of work. The protocol:
 6. When a phase's done condition in the plan is met, say so in STATE.md
    under "Phases" and update `README.md`'s status paragraph.
 7. When every phase is done, create the file `autonomy/DONE` with a
-   summary and commit it. The driver stops on that file.
+   summary and commit it. The driver stops on that file. "Every phase"
+   means the seven phases in `mathspace_plan.md`: do not invent phases
+   past the plan, start another plan, or polish finished work to have
+   something to commit. If "Next" is empty but a phase's done condition
+   is not met, write the gap into "Next"; if it is met, write DONE.
+   `autonomy/STOP` is the operator's gentle stop, handled by the driver
+   between sessions; never create, delete, or commit it.
 8. Exit. Do not ask questions; there is nobody to answer. If a decision is
    genuinely blocked, write the question under "Blocked" in STATE.md, pick
    the option the plan's spirit favours, record that you did, and continue.
