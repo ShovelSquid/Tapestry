@@ -66,38 +66,12 @@ human:
   `ddsim-glue.d.ts` gone; `sim:wasm` builds only mathspace. Debug,
   Release, UBSan 156/156; data-drawing 113, mathspace 98, typecheck,
   build green. README status rewritten; phase 7 done.
-- `f74d0db` ms7e Worker switch: `ms-sim.ts` (engine + bridge behind
-  ddsim's instance shape, node table kept as NODE_STRIDE records, body
-  table from a filtered `decodeSnapshot`), `SimDriver` over `MsSim`,
-  worker and main-thread transport load `mathspace.mjs`, Vite plugin
-  generalised, the ten fixtures copied to `surface/test/golden/` with
-  mathspace `.sha256` (`MS_WRITE_FIXTURES=1 npm test` re-records). 113
-  plugin tests, typecheck and `npm run build` green.
-- `4d1e6dc` ms7d emission: `emit_segment`/`emit_node`/`curve_weight`
-  ported into `MsBridge.afterStep(notes, tick)` (run after each
-  `engine.step()`), `fxSqrt`/`isqrt128` in `ms-abi.ts`, `fxDiv` fixed to
-  floor, node space id 4 dim 3, deferred end-tick delete, emitted stroke
-  ids refused by StrokeBegin. `ms-bridge.test.ts`: the five one-sample
-  fixtures give ddsim's node table bit for bit (ids every tick, fields
-  once per node) as well as the body. No engine change; Debug and both
-  plugin suites green.
-- `3b6909a` ms7c the bridge: `surface/src/ms-bridge.ts` (kinds 1..4 to
-  mathspace actions, every DD_ERR code reproduced before any state change,
-  `MsBridge.bootstrap` for the body space and rule), `ms-abi.ts` (the
-  mathspace_c.h mirror: encoders, snapshot decoder, `MsEngine`, fx64
-  div/mul over BigInt), `build-wasm.sh` copies `mathspace.*` too.
-  `ms-bridge.test.ts`: five one-sample fixtures bit-equal to ddsim's body
-  table every tick, fifteen rejections code-equal. Debug and both plugin
-  suites green; no engine change.
-- `ff7c851` ms7b brush body rule: force `self.k * (self.target - self.pos)
-  - sqrt(self.k) * self.velocity`, bit-equal to `ddsim::body_substep` for
-  60 ticks at mass 1 and 64 (`brush_body_test.cpp`), golden `brush`,
-  preset `brush` (k = 1/64) with an overshoot test at tick 30. Debug,
-  Release, Wasm, plugin tests green; `MS_STEP_VERSION` unchanged.
-- `4a99d1c` ms7a: `fx64.hpp`, `rng.hpp`, `fxmath.hpp` moved to
-  `include/mathspace/`; `include/ddsim/` holds one-line forwarding stubs
-  until 7f; the two header-scan tests follow; Debug, Release, Wasm and
-  the plugin tests green, no hash change. Phase 7 sliced (Next).
+- Phase 7 (ms7) earlier slices, one line: `f74d0db` 7e Worker switch
+  (`ms-sim.ts`, `SimDriver` over `MsSim`, goldens copied to
+  `surface/test/golden/` with mathspace `.sha256`); `4d1e6dc` 7d emission
+  in `MsBridge.afterStep`; `3b6909a` 7c bridge (`ms-bridge.ts`,
+  `ms-abi.ts`); `ff7c851` 7b brush body rule, golden and preset `brush`;
+  `4a99d1c` 7a `fx64`/`rng`/`fxmath` under `include/mathspace/`.
 - Phase 6 (ms6), one line: `9d47eaf` `embed`; `5b5b55e` `identify`
   (`MS_STEP_VERSION` 11); `c49dd84` `sphere` preset; `566ff24` plugin
   side; `02481a2` engine side (diagonal `metric`, `MS_STEP_VERSION` 10).
@@ -131,41 +105,24 @@ human:
   `MS_FX_FORMAT_ID` keeps ddsim's `0x00200020` so the walk bytes and
   every golden are unchanged.
 - Worker switch (`f74d0db`): the snapshot keeps ddsim's byte layouts
-  (`NODE_STRIDE` 88, `BODY_STRIDE` 56) rather than making `decodeNodes` a
-  view over notes: nothing that renders changes, and the per-tick cost is
-  O(new nodes) instead of a BigInt decode of every note. `MsSim.step` is
-  engine step + `afterStep`; the body table omits `ending` strokes so a
-  pen-up drops the body at once as ddsim's table did. The goldens were
-  COPIED, not moved: `data-drawing/sim`'s own tests still read the
-  originals until 7f deletes the directory. `version()` now reports
+  (`NODE_STRIDE` 88, `BODY_STRIDE` 56); `MsSim.step` is engine step +
+  `afterStep`; the body table omits `ending` strokes; `version()` reports
   `MS_ABI_VERSION`.
-- Emission (`4d1e6dc`): one `afterStep(notes, tick)` on the bridge, not
-  an `afterStep` list on each `Translation` as the slice sketched: the
-  emission pass needs the post-step snapshot anyway, so the end-tick
-  DeleteNote rides on its return value and a caller has one thing to
-  apply per tick. A StrokeEnd with no samples on its tick deletes the
-  body at once (ddsim skipped that tick's integration for it); one with
-  samples marks the stroke `ending`, the step integrates, `afterStep`
-  emits and then deletes. Emitted nodes carry `tick` and `brush` as fx64
-  integers (`fxFromInt`), no `scale_band` (always 0 in ddsim). The node
-  cap is the bridge's `nodeCount`; the "stroke id in use" check is a Set
-  of stroke ids that have emitted, since nodes are never deleted.
-- Bridge (`3b6909a`): the body note lives in a dim-2 space (id 1, the
-  stroke plane's (u, v)) with the rule (id 2); emitted nodes (7d) get
-  their own dim-3 space (id 4), so the rule never needs `select`. The
-  force is compiled against a template note (id 3) that carries the body
-  fields and is deleted after BindField, because `ms_compile` takes
-  field dims from the notes present. Body id is
-  `make_node_id(branch, ordinal, 2^24 - 1)`, an index no emission reaches.
-  The body carries `k` and `spacing`, never `mass` (7b). `pos` is set from
-  the FIRST sample ever (where ddsim placed the body) and `target` from
-  the last sample of the tick. A StrokeBegin's body has no `pos` until
-  its first sample, so the rule does not visit it (no skip is reported).
-- Brush body (`ff7c851`): the brush mass lives in `k` = 1 / mass on the body
-  note, never in the note's `mass`, so the one division matches ddsim's
-  `derive_params`; `c` is `sqrt(self.k)` in the rule (2 zeta = 1) and is
-  not stored. The preset test asserts the overshoot at tick 30, not 60:
-  the damped period at k = 1/64 is about 58 ticks.
+- Emission (`4d1e6dc`): one `afterStep(notes, tick)` on the bridge whose
+  return value carries the end-tick DeleteNote; a StrokeEnd with no
+  samples on its tick deletes the body at once, one with samples marks
+  it `ending`, integrates, emits, then deletes. Emitted nodes carry
+  `tick` and `brush` as fx64 integers, no `scale_band`; the node cap is
+  `bridge.nodeCount`.
+- Bridge (`3b6909a`): body note in a dim-2 space (id 1) with the rule (id
+  2), emitted nodes in a dim-3 space (id 4), force compiled against a
+  template note (id 3) deleted after BindField; body id
+  `make_node_id(branch, ordinal, 2^24 - 1)`; `pos` from the FIRST sample
+  ever, `target` from the last sample of the tick; no `pos` before the
+  first sample, so the rule does not visit it.
+- Brush body (`ff7c851`): brush mass lives in `k` = 1 / mass, never in
+  `mass`; `c` is `sqrt(self.k)` in the rule; the preset test asserts the
+  overshoot at tick 30 (damped period at k = 1/64 is about 58 ticks).
 - Phase 7 (`4a99d1c`): the rope-chain deviation is ACCEPTED, not fixed.
   Mathspace visits ordered pairs and moves only `self`, so letting a
   pair constraint write `other` too would correct every rod twice per
