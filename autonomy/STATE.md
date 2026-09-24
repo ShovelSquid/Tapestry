@@ -29,7 +29,14 @@ strictly in order: 01, 02, 03, 04, 05, then 06.
 
 ## Checkpoint
 
-(none pending)
+- Phase 02.6, plan 02.6-02, **Task 1** (checkpoint:decision,
+  gate="blocking-human"): record shape #17, settings migration #18, Ctrl+Z
+  reach, new wording. Written to autonomy/WAITING 2026-09-24 ~12:55.
+  No executor was spawned and nothing of Task 2 exists yet.
+- To resume: spawn the gsd-executor for 02.6-02 with RESPONSE's text
+  verbatim as Kaelen's Task 1 answer (pre-resolved), starting at Task 2.
+  Task 2 records every numbered item (1.1-1.12, 2.1-2.7, cases A-J,
+  Part 3, 4.1-4.12) in shapes.ts and 02.6-02-SUMMARY § Checkpoint decisions.
 
 ## In progress
 
@@ -46,6 +53,10 @@ strictly in order: 01, 02, 03, 04, 05, then 06.
   5ec09c6 fb76ba1 639cd51 feat, f28010b 1d1c606 docs. 24 files / 530
   tests green, typecheck clean. No checkpoints. Next: wave 2 (02.6-02),
   whose Task 1 is the blocking-human record-shape gate -> expect WAITING.
+- 2026-09-24 12:51 wave 2 (02.6-02): Task 1 is the first task and a
+  blocking-human gate, so it was presented straight from the plan (no
+  executor spawn; see memory gsd-execute-phase-in-conductor). WAITING
+  written; only this STATE.md committed.
 
 ## Learned
 
