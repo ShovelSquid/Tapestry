@@ -11,8 +11,8 @@
 // with fixed offsets purely so multiple clouds don't overlap, not because
 // that's their true relative position in space.
 
-import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js";
-import { OrbitControls } from "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/controls/OrbitControls.js";
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { HandLandmarker, FaceLandmarker } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.17";
 
 const HAND_SCALE = 4; // meters -> scene units, sized for visibility
