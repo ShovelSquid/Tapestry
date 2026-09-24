@@ -177,7 +177,7 @@ describe('MCP shim over stdio', () => {
     }
   })
 
-  it('advertises exactly the ten tools, with no actor argument anywhere', async () => {
+  it('advertises exactly the twelve tools, with no actor argument anywhere', async () => {
     const listed = await request(2, 'tools/list', {})
     expect(listed.error).toBeUndefined()
 
@@ -193,9 +193,11 @@ describe('MCP shim over stdio', () => {
       'connect_notes',
       'create_note',
       'delete_note',
+      'edit_file',
       'list_trees',
       'look',
       'place',
+      'read_file',
       'read_note',
       'rename_note',
       'search_notes',

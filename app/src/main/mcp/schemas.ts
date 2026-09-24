@@ -186,6 +186,29 @@ export const ConnectNotesArgs = z
   })
   .strict()
 
+// Workspace file tools (02.7 D-07, D-08)
+const WorkspaceRef = z.string().min(1).max(200)
+const WorkspacePath = z.string().min(1).max(4096)
+
+export const ReadFileArgs = z
+  .object({
+    workspace: WorkspaceRef.optional(),
+    path: WorkspacePath,
+    offset: z.number().int().min(1).optional(),
+    limit: z.number().int().min(1).max(10000).optional(),
+  })
+  .strict()
+
+export const EditFileArgs = z
+  .object({
+    workspace: WorkspaceRef.optional(),
+    path: WorkspacePath,
+    old_string: z.string().min(1).max(4194304),
+    new_string: z.string().max(4194304),
+    replace_all: z.boolean().optional(),
+  })
+  .strict()
+
 // ---------------------------------------------------------------------------
 // Tool table
 // ---------------------------------------------------------------------------
@@ -273,5 +296,21 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = Object.freeze([
       'Connects two notes in the same tree, optionally with a short label. Connections may join any notes, including notes you did not create.',
     schema: ConnectNotesArgs,
     annotations: {},
+  },
+  {
+    name: 'read_file',
+    title: 'Read a file in a workspace',
+    description:
+      'Reads a text file in a workspace folder open in Tapestry. `path` is relative to the workspace root, or an absolute path inside it; `workspace` may be left out when one workspace is open or the path is absolute. Returns the exact text, the line count and the note that shows the file. Use `offset` (first line, from 1) and `limit` (lines) to page long files. Paths that leave the workspace, pass through a symbolic link, point into .git or are ignored by git are refused.',
+    schema: ReadFileArgs,
+    annotations: { readOnlyHint: true },
+  },
+  {
+    name: 'edit_file',
+    title: 'Replace an exact string in a workspace file',
+    description:
+      "Replaces `old_string` with `new_string` in a text file in a workspace folder open in Tapestry. The file is saved to disk at once and the workspace's tree records the change as yours. `old_string` must match exactly, including whitespace and line endings, and must occur once unless `replace_all` is true. Paths follow the same rules as read_file. A refusal writes nothing.",
+    schema: EditFileArgs,
+    annotations: { destructiveHint: false },
   },
 ])

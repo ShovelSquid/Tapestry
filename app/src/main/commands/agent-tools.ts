@@ -19,6 +19,8 @@ import type { Actor } from './actor'
 import type { ConnectionCommands, ConnectionEndpoint } from './connections'
 import type { CommandResult, NoteCommands } from './notes'
 import type { SpatialCommands } from './spatial'
+import type { WorkspaceFileCommands } from './file-tools'
+import { NO_WORKSPACE_MESSAGE } from '../workspace/sandbox'
 import type { WherePlacement } from '../../renderer/layout/placement'
 import { TOOL_DEFINITIONS } from '../mcp/schemas'
 
@@ -30,6 +32,8 @@ export interface AgentCommands {
   notes: NoteCommands
   connections: ConnectionCommands
   spatial: SpatialCommands
+  /** Workspace file tools (02.7); absent means no workspace can be open. */
+  files?: WorkspaceFileCommands
 }
 
 /** Flatten a zod failure into one readable line. */
@@ -110,6 +114,26 @@ export function runAgentTool(
       return commands.connections.connect(
         actor,
         parsed.data as { from: ConnectionEndpoint; to: ConnectionEndpoint; label?: string },
+      )
+
+    case 'read_file':
+      if (!commands.files) return { ok: false, error: NO_WORKSPACE_MESSAGE }
+      return commands.files.readFile(
+        parsed.data as { workspace?: string; path: string; offset?: number; limit?: number },
+      )
+
+    case 'edit_file':
+      // The actor is the socket's, never read from the arguments.
+      if (!commands.files) return { ok: false, error: NO_WORKSPACE_MESSAGE }
+      return commands.files.editFile(
+        actor,
+        parsed.data as {
+          workspace?: string
+          path: string
+          old_string: string
+          new_string: string
+          replace_all?: boolean
+        },
       )
 
     default:

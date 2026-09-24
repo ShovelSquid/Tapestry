@@ -19,7 +19,9 @@ import {
   WORKSPACE_TEXT_TYPE,
 } from './shapes'
 import type { NodeData } from '../kernel-bridge'
-import { makeTempWorkspace, type TempWorkspace } from '../../../test/helpers/temp-workspace'
+import { agentActor } from '../commands/actor'
+import { WorkspaceFileCommands } from '../commands/file-tools'
+import { hashTree, makeTempWorkspace, type TempWorkspace } from '../../../test/helpers/temp-workspace'
 
 const cleanups: Array<() => void> = []
 afterEach(() => {
@@ -162,5 +164,98 @@ describe('addWorkspace', () => {
     }
     expect(existsSync(join(ws.root, '.git'))).toBe(false)
     expect(service.openWorkspaces()[0].git).toBe(false)
+  })
+})
+
+/** The `@commit` blocks of a journal, in order. */
+function commitBlocks(tree: OpenTree): string[] {
+  return journal(tree).split('@commit ').slice(1)
+}
+
+describe('editFile (agent writes, D-04/D-06)', () => {
+  it('writes the file, keeps its mode and records the edit as the agent', async () => {
+    const { ws, service } = setup()
+    const tree = await service.addWorkspace(ws.root)
+    const files = new WorkspaceFileCommands(service)
+    const script = join(ws.root, 'scripts', 'run.sh')
+
+    const result = files.editFile(agentActor('claude'), {
+      path: 'scripts/run.sh',
+      old_string: 'echo run',
+      new_string: 'echo ran',
+    })
+    expect(result.ok, JSON.stringify(result)).toBe(true)
+    expect(readFileSync(script, 'utf-8')).toBe('#!/bin/sh\necho ran\n')
+    expect(statSync(script).mode & 0o7777).toBe(0o755)
+    const last = commitBlocks(tree).at(-1)!
+    expect(last).toContain('actor plugin agent.claude')
+    expect(last).toContain('edit scripts/run.sh (1 replacement)')
+    expect(String(byPath(tree).get('scripts/run.sh')!.props[FILE_TEXT].value)).toBe('#!/bin/sh\necho ran\n')
+    expect(readdirSync(join(ws.root, 'scripts'))).toEqual(['run.sh'])
+  })
+
+  it('observes an outside change first, then records the agent edit', async () => {
+    const { ws, service } = setup()
+    const tree = await service.addWorkspace(ws.root)
+    const files = new WorkspaceFileCommands(service)
+    writeFileSync(join(ws.root, 'src', 'hello.ts'), "export const greeting = 'hi'\n")
+    const before = commitBlocks(tree).length
+
+    const result = files.editFile(agentActor('claude'), {
+      path: 'src/hello.ts',
+      old_string: "'hi'",
+      new_string: "'hey'",
+    })
+    expect(result.ok, JSON.stringify(result)).toBe(true)
+
+    const blocks = commitBlocks(tree)
+    expect(blocks.length).toBe(before + 2)
+    expect(blocks.at(-2)).toContain('actor plugin workspace.bridge')
+    expect(blocks.at(-2)).toContain('observed change to src/hello.ts')
+    expect(blocks.at(-1)).toContain('actor plugin agent.claude')
+    expect(blocks.at(-1)).toContain('edit src/hello.ts (1 replacement)')
+  })
+
+  it('refuses a missing, repeated or unchanged string and writes nothing', async () => {
+    const { ws, service } = setup()
+    const tree = await service.addWorkspace(ws.root)
+    const files = new WorkspaceFileCommands(service)
+    writeFileSync(join(ws.root, 'src', 'nested', 'deep.txt'), 'twice twice\n')
+    await service.catchUp(tree.id)
+
+    const cases: Array<[{ path: string; old_string: string; new_string: string }, string]> = [
+      [{ path: 'src/hello.ts', old_string: 'nowhere', new_string: 'x' }, 'old_string was not found in src/hello.ts'],
+      [
+        { path: 'src/nested/deep.txt', old_string: 'twice', new_string: 'once' },
+        'old_string occurs 2 times in src/nested/deep.txt; add surrounding lines to make it unique, or pass replace_all',
+      ],
+      [{ path: 'src/hello.ts', old_string: 'hello', new_string: 'hello' }, 'new_string must differ from old_string'],
+      [{ path: 'image.png', old_string: 'PNG', new_string: 'GIF' }, 'image.png is not a text file (contains a NUL byte); Tapestry shows only its name and size'],
+    ]
+    for (const [args, error] of cases) {
+      const digest = hashTree(ws.dir)
+      const size = statSync(tree.path).size
+      expect(files.editFile(agentActor('claude'), args)).toEqual({ ok: false, error })
+      expect(hashTree(ws.dir)).toBe(digest)
+      expect(statSync(tree.path).size).toBe(size)
+    }
+
+    const all = files.editFile(agentActor('claude'), {
+      path: 'src/nested/deep.txt',
+      old_string: 'twice',
+      new_string: 'once',
+      replace_all: true,
+    })
+    expect(all.ok && all.value.replacements).toBe(2)
+    expect(commitBlocks(tree).at(-1)).toContain('edit src/nested/deep.txt (2 replacements)')
+  })
+
+  it('refuses everything with no workspace open', () => {
+    const registry = new TreeRegistry()
+    const service = new WorkspaceService(registry, { treesDir: '/nonexistent-tapestry-test' })
+    const files = new WorkspaceFileCommands(service)
+    const read = files.readFile({ path: 'src/hello.ts' })
+    expect(read.ok).toBe(false)
+    expect(!read.ok && read.error).toMatch(/^No workspace is open in Tapestry/)
   })
 })
