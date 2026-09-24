@@ -5,7 +5,13 @@ Answer any item by writing into `autonomy/RESPONSE` (for example
 
 ## Open
 
-### 1. Moved from autonomy/WAITING (not yet resolved; the next session resolves it per PROTOCOL step 4)
+### 1. 02.7-03 Task 3: combined hands-on check for 02.7-02 and 02.7-03 (open, deferred)
+
+Resolved by the session at 2026-09-24 15:15, following PROTOCOL step 4: 02.7-03 continued with
+`approved (deferred to human review, see autonomy/REVIEW.md)`. The SUMMARY is 5aa025f, and it marks every
+step below as deferred, not passed. Before continuing, 516 tests passed and typecheck was clean.
+If you find issues, write them in RESPONSE. The next session fixes them with 02.7 gap-closure plans.
+To undo: there's nothing to revert beyond the SUMMARY/STATE docs commit, because the code is b9b0a4a..6a79054.
 
 Phase 02.7, plan 02.7-03, Task 3: the combined hands-on check (checkpoint:human-verify, blocking).
 It covers 02.7-02 (the chat panel, Ask Claude…, connect-on-start) and 02.7-03 (folder subspaces).
@@ -59,4 +65,4 @@ Known limits the executor reported (not part of the check):
 - Agents cannot `place` workspace files yet, because the default layout lock ties file notes to plugin workspace.watcher. 02.7-05 or the lock plan should decide this.
 - An open file window inside a folder can be covered by a sibling folder frame drawn later. Its z-index only applies inside its own folder.
 
-When done, write your answer (`approved`, or the issues you saw) into `autonomy/RESPONSE`, delete this file, and rerun `autonomy/run.sh`.
+When done, write your answer (`item 1: approved`, or the issues you saw) into `autonomy/RESPONSE`.

@@ -27,30 +27,14 @@ run strictly in order (CONTEXT D-17, D-21): 01, 02, 03, 04, 05, 06, then 07.
   legitimacy check for @anthropic-ai/sdk, which also asks where to install:
   node_modules here is a symlink into ~/Tapestry. It is never auto-approved.
 
-The checkpoints in 01, 03 and 07 need the human, so expect to write
-autonomy/WAITING when each is reached.
+Checkpoints in 01 and 03 were deferred to REVIEW.md. 07's blocking-human package check has to be parked, not faked.
 
 ## Checkpoint
 
-02.7-03 Task 3, the combined `checkpoint:human-verify` for 02.7-02 and 02.7-03
-(gate=blocking). Tasks 1 and 2 are committed (b9b0a4a..6a79054). The steps
-are in autonomy/WAITING. To resume, continue 02.7-03 at Task 3 with the
-RESPONSE text as the user's answer. On `approved`, write 02.7-03-SUMMARY.md
-(it needs the executor's deviations, listed below) and update STATE and
-ROADMAP. If RESPONSE lists issues, fix them inside 02.7-03. The plan ledger
-base is 53773af.
-Executor deviations for the SUMMARY:
-- Card estimate is 280x280 and rowStep is 304, not 280x200 with 224px rows.
-- A folder's cards yield as one block.
-- Collapsed headers don't move.
-- subspaces.ts takes its node type from placement.ts.
-- The append test watches the disk instead of using editFile.
-- The folder drag lives in Canvas (Task 2).
-- Settling waits for the tree to refresh.
-- The two drop tests passed at RED; look and place carried the RED.
-Known limits:
-- Agents can't `place` workspace files, because the layout lock ties them to plugin workspace.watcher.
-- A sibling folder frame can cover an open file window.
+(none pending) The 02.7-03 combined check was approved as deferred and is queued as
+autonomy/REVIEW.md item 1. The next wave is wave 4 (02.7-04, the Allow shell switch).
+Under PROTOCOL step 4, 07's package check gets parked in REVIEW.md, not
+approved.
 
 ## In progress
 
@@ -75,6 +59,9 @@ Known limits:
   and 290K tokens. Tasks 1 and 2 are in 5 commits (b9b0a4a..6a79054). 28 files
   and 516 tests pass, typecheck clean. Stopped at the combined Task 3
   checkpoint and wrote WAITING.
+- 2026-09-24 15:15: resolved the 02.7-03 checkpoint with a deferred approval (no RESPONSE came),
+  following PROTOCOL step 4. An executor wrote the SUMMARY and updated STATE/ROADMAP (5aa025f).
+  516 tests pass and typecheck is clean. It's REVIEW item 1. Wave 4 is next.
 
 ## Learned
 
