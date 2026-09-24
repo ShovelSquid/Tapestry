@@ -18,11 +18,15 @@ function showError(context, err) {
   errorBox.textContent = `${context}: ${err.message || err}`;
 }
 
+// Created once: a failed camera start re-enables the button, and a retry
+// must not stack a second canvas and render loop into the panel.
+let scene3D = null;
+
 startCameraBtn.addEventListener("click", async () => {
   startCameraBtn.disabled = true;
   statusEl.textContent = "loading hand/face models...";
   try {
-    const scene3D = createScene3D(document.getElementById("scene3d"));
+    scene3D ??= createScene3D(document.getElementById("scene3d"));
     await startHandsAndFace({
       video: document.getElementById("video"),
       canvas: document.getElementById("overlay"),
@@ -92,10 +96,10 @@ startRecordingBtn.addEventListener("click", async () => {
   chooseFolderBtn.disabled = true;
   try {
     activeRecording = await startRecording({
-      onStatus: ({ name, bytesWritten, recording }) => {
+      onStatus: ({ name, bytesWritten, recording, failed }) => {
         recordStatusEl.textContent = recording
           ? `recording ${name} — ${formatBytes(bytesWritten)}`
-          : `saved ${name} — ${formatBytes(bytesWritten)}`;
+          : `saved ${name} — ${formatBytes(bytesWritten)}${failed ? " (cut short by an error)" : ""}`;
       },
       onError: (err) => showError("Recording", err),
     });

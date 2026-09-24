@@ -28,28 +28,39 @@ export async function startHandsAndFace({ video, canvas, metricsEl, onLandmarks,
   canvas.width = video.videoWidth || 640;
   canvas.height = video.videoHeight || 480;
 
-  const vision = await FilesetResolver.forVisionTasks(
-    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.17/wasm"
-  );
+  let handLandmarker, faceLandmarker, poseLandmarker;
+  try {
+    const vision = await FilesetResolver.forVisionTasks(
+      "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.17/wasm"
+    );
 
-  const handLandmarker = await HandLandmarker.createFromOptions(vision, {
-    baseOptions: { modelAssetPath: HAND_MODEL, delegate: "GPU" },
-    runningMode: "VIDEO",
-    numHands: 2,
-  });
+    handLandmarker = await HandLandmarker.createFromOptions(vision, {
+      baseOptions: { modelAssetPath: HAND_MODEL, delegate: "GPU" },
+      runningMode: "VIDEO",
+      numHands: 2,
+    });
 
-  const faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
-    baseOptions: { modelAssetPath: FACE_MODEL, delegate: "GPU" },
-    runningMode: "VIDEO",
-    numFaces: 1,
-    outputFaceBlendshapes: true,
-  });
+    faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
+      baseOptions: { modelAssetPath: FACE_MODEL, delegate: "GPU" },
+      runningMode: "VIDEO",
+      numFaces: 1,
+      outputFaceBlendshapes: true,
+    });
 
-  const poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
-    baseOptions: { modelAssetPath: POSE_MODEL, delegate: "GPU" },
-    runningMode: "VIDEO",
-    numPoses: 1,
-  });
+    poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
+      baseOptions: { modelAssetPath: POSE_MODEL, delegate: "GPU" },
+      runningMode: "VIDEO",
+      numPoses: 1,
+    });
+  } catch (err) {
+    // A model failed to load: release the camera and any models that did
+    // load, so a retry doesn't open a second stream on top of this one.
+    stream.getTracks().forEach((t) => t.stop());
+    video.srcObject = null;
+    handLandmarker?.close();
+    faceLandmarker?.close();
+    throw err;
+  }
 
   let lastFrameTime = performance.now();
   let running = true;

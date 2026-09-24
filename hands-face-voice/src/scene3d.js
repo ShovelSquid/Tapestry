@@ -28,6 +28,10 @@ const HAND_COLORS = [0x22d3ee, 0xf97316];
 const FACE_COLOR = 0xa78bfa;
 const POSE_COLOR = 0x34d399;
 
+const FACE_TESSELLATION_INDICES = [
+  ...new Set(FaceLandmarker.FACE_LANDMARKS_TESSELATION.flatMap((c) => [c.start, c.end])),
+];
+
 function normalizedTransform(p) {
   return [(p.x - 0.5) * SCENE_SCALE, -(p.y - 0.5) * SCENE_SCALE, -p.z * SCENE_SCALE];
 }
@@ -77,7 +81,13 @@ export function createScene3D(container) {
   }
 
   function update({ handsNormalized = [], faceLandmarksList = [], poseLandmarksList = [] }) {
+    // Removing a group doesn't free its GPU buffers; without dispose() every
+    // frame's geometries stay resident and WebGL memory grows unbounded.
     scene.remove(liveGroup);
+    liveGroup.traverse((obj) => {
+      obj.geometry?.dispose();
+      obj.material?.dispose();
+    });
     liveGroup = new THREE.Group();
 
     handsNormalized.forEach((landmarks, i) => {
@@ -87,10 +97,7 @@ export function createScene3D(container) {
     });
 
     faceLandmarksList.forEach((landmarks) => {
-      const tessellationIndices = new Set(
-        FaceLandmarker.FACE_LANDMARKS_TESSELATION.flatMap((c) => [c.start, c.end])
-      );
-      const points = [...tessellationIndices].map((i) => normalizedTransform(landmarks[i]));
+      const points = FACE_TESSELLATION_INDICES.map((i) => normalizedTransform(landmarks[i]));
       liveGroup.add(cloud(points, FACE_COLOR));
       liveGroup.add(
         lines(landmarks, FaceLandmarker.FACE_LANDMARKS_CONTOURS, FACE_COLOR, normalizedTransform)

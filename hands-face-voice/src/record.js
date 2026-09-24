@@ -38,12 +38,20 @@ export async function startRecording({ onStatus, onError }) {
     audio: true,
   });
 
+  const stopTracks = () => stream.getTracks().forEach((t) => t.stop());
+
   const baseName = sessionBaseName();
   const videoName = `${baseName}.webm`;
-  const fileHandle = await directoryHandle.getFileHandle(videoName, {
-    create: true,
-  });
-  const writable = await fileHandle.createWritable();
+  let writable;
+  try {
+    const fileHandle = await directoryHandle.getFileHandle(videoName, {
+      create: true,
+    });
+    writable = await fileHandle.createWritable();
+  } catch (err) {
+    stopTracks(); // otherwise the camera light stays on with nothing recording
+    throw err;
+  }
 
   const mimeType = pickMimeType();
   const recorder = new MediaRecorder(
@@ -53,20 +61,36 @@ export async function startRecording({ onStatus, onError }) {
 
   const startedAt = new Date().toISOString();
   let bytesWritten = 0;
+  let failure = null;
   // createWritable() is a single stream; concurrent write() calls on it
   // race and can interleave or throw, so every chunk is chained onto the
   // previous write rather than fired independently.
   let writeChain = Promise.resolve();
 
+  // A failed write (e.g. disk full) or recorder error ends capture right
+  // away and is reported once; stop() still saves what was written before it.
+  function fail(err) {
+    if (failure) return;
+    failure = err;
+    if (recorder.state !== "inactive") recorder.stop();
+    stopTracks();
+    onError?.(new Error(`${err.message || err} — press Stop to save what was captured`));
+  }
+
   recorder.ondataavailable = (event) => {
     if (!event.data || event.data.size === 0) return;
-    bytesWritten += event.data.size;
-    writeChain = writeChain.then(() => writable.write(event.data));
-    onStatus?.({ name: videoName, bytesWritten, recording: true });
+    writeChain = writeChain
+      .then(async () => {
+        if (failure) return;
+        await writable.write(event.data);
+        bytesWritten += event.data.size;
+        onStatus?.({ name: videoName, bytesWritten, recording: true });
+      })
+      .catch(fail);
   };
 
   recorder.onerror = (event) => {
-    onError?.(event.error ?? new Error("MediaRecorder error"));
+    fail(event.error ?? new Error("MediaRecorder error"));
   };
 
   recorder.start(1000); // 1s timeslices so writes land incrementally, not all at stop
@@ -74,11 +98,15 @@ export async function startRecording({ onStatus, onError }) {
   return {
     name: videoName,
     async stop() {
-      await new Promise((resolve) => {
-        recorder.addEventListener("stop", resolve, { once: true });
-        recorder.stop();
-      });
-      stream.getTracks().forEach((t) => t.stop());
+      // The recorder may already have stopped itself after an error; waiting
+      // for a "stop" event that has already fired would hang forever.
+      if (recorder.state !== "inactive") {
+        await new Promise((resolve) => {
+          recorder.addEventListener("stop", resolve, { once: true });
+          recorder.stop();
+        });
+      }
+      stopTracks();
       await writeChain;
       await writable.close();
 
@@ -89,6 +117,7 @@ export async function startRecording({ onStatus, onError }) {
         startedAt,
         stoppedAt,
         bytesWritten,
+        ...(failure && { error: String(failure.message || failure) }),
       };
       const sidecarHandle = await directoryHandle.getFileHandle(
         `${baseName}.json`,
@@ -98,7 +127,7 @@ export async function startRecording({ onStatus, onError }) {
       await sidecarWritable.write(JSON.stringify(sidecar, null, 2));
       await sidecarWritable.close();
 
-      onStatus?.({ name: videoName, bytesWritten, recording: false });
+      onStatus?.({ name: videoName, bytesWritten, recording: false, failed: !!failure });
       return sidecar;
     },
   };
