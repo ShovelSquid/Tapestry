@@ -4,341 +4,280 @@ Companion to `mathspace_design.md`. That file says what the thing is. This
 one says what gets built, in what order, where it lives, and how each step
 is known to be done.
 
+Revised 2026-09-24 after merging `phase-2-implementation-v1`: the main
+line has a deterministic kernel (`tapestry/kernel/`) whose node model is
+the note store this plan originally set out to build, an Electron app
+that already renders nodes at `position.x`/`position.y`, a plugin SDK, and
+a roadmap whose phase 5 ("Deterministic Rule Engine", requirements
+RULE-01..08 in `.planning/REQUIREMENTS.md`) is this engine. Mathspace is
+now built as that engine, over the kernel, as a plugin.
+
 ## The core, restated
 
-The core is **spatial notes in an N-dimensional space**. Not physics, not
-expressions, not rendering. A note has an id, belongs to a space, and has
-named fields. `pos` is the one field every note has. Everything else,
-including `mass`, `shape`, `vel`, and `colour`, is a field somebody added,
-and the simulation only does something with it because a rule note says
-so. The engine core never learns a field name.
+The core is **spatial notes in an N-dimensional space**. The kernel
+already provides notes: a node is an id, a type string, and typed
+properties, changed only through recorded ops, journaled to a readable
+`.tree` file. Mathspace adds what the kernel deliberately does not have:
+a fixed-point simulation over those properties, expressions, rules,
+constraints, views, and metric spaces.
 
-That ordering is what the phases below protect. Phase 1 is a usable idea
-space with zero physics. Each later phase adds a capability by adding a
-kind of note, never by changing the store.
+Any node becomes spatial by carrying position properties. `mass`,
+`velocity`, shape, and colour are properties somebody added, and the
+engine only does something with them because a rule node says so. The
+engine core never learns a property name.
 
 ## Foundational decisions
 
 These are hard to change later, so they are decided now.
 
-**Where it lives.** A new static library `mathspace` in this repo,
-headers under `include/mathspace/`, sources under `src/mathspace/`, tests
-under `tests/mathspace/`. It reuses `ddsim/fx64.hpp` and the SHA-256
-helper from `src/hash.cpp` and links `ddsim_settings` for the compile
-flags. The forbidden-token gate already globs `include/` and `src/`
-recursively, so the no-float rule covers it for free. The `ddsim` source
-glob must become non-recursive (`src/*.cpp`) so the two libraries do not
-absorb each other's translation units. `ddsim` itself is left untouched
-until phase 7 migrates its particles onto notes.
+**The kernel is the store. Mathspace never owns durable state.** Durable
+truth is the `.tree` journal. Mathspace keeps an in-memory **engine
+image**: the `fx64` mirror of the nodes that participate in a space,
+rebuilt from kernel nodes in id order and updated incrementally. The
+image has a canonical byte walk and a SHA-256 hash for determinism tests
+and checkpoint verification; that hash is never written into the `.tree`.
 
-**Numeric type.** `fx64` Q32.32, and nothing else, in anything hashed.
-Rendering converts to `double` at the bridge and never writes back.
+**Where the code lives.** The `mathspace` static library stays in this
+repo at `include/mathspace/` and `src/mathspace/`, tests under
+`tests/mathspace/`, reusing `ddsim/fx64.hpp` and the SHA-256 helper. The
+forbidden-token gate covers it. The engine is built to WebAssembly with
+the existing `wasm-release` preset and hosted by `plugins/mathspace/`,
+a plugin in the Electron app that runs in the main process, reads nodes
+through the SDK's `kernel.getNodes()`, and submits plugin-signed commits
+through `kernel.submit()`. The native addon route is deliberately not
+used: the project constraint is that a normal feature must not require a
+core fork, and a plugin is the proof.
 
-**Identity.** Note ids are `u64` with ddsim's `NodeId` layout from
-`include/ddsim/ids.hpp`: 8 bits of branch, 32 bits of group ordinal, 24
-bits of index within the group. A group is whatever created the notes
-together: a brush stroke, a paste, a preset load. A note placed by hand is
-a group of one. This is chosen over plain sequential ids for the reason
-stated in `rules/emit.hpp`: inserting a stroke into a session leaves every
-other stroke's ids untouched, which the data-drawing plugin relies on and
-which an idea space with undo and branching will rely on too. Ascending
-numeric order is still (branch, group, index), so storage stays sorted by
-a `lower_bound` insert exactly as `state.nodes` is today. Spaces are
-notes too and take the next group ordinal. Field names are short UTF-8
-strings, at most 31 bytes, and a note's fields are kept sorted by name so
-the byte walk needs no map.
+**Numeric type.** `fx64` Q32.32, and nothing else, inside the engine.
+Kernel `real` values are IEEE doubles. Conversion is exact in both
+directions and happens in JavaScript at the plugin boundary, never in
+C++: a real `r` is accepted only if `r * 2^32` is an integer with
+magnitude below 2^53, and it is sent to the engine as that raw int64. The
+engine's outputs are raw int64 converted back the same way. Every value
+the engine can produce is therefore exactly representable as a `real`,
+the `.tree` stays readable (`position.x real 12.5`), and no double ever
+enters `include/` or `src/`. The usable range is about ±2 million world
+units at 2^-32 resolution, enough for an idea space.
 
-**Dimension.** Fixed per space, set at creation, 1 to 8 for the first
-version. A note's `pos` has exactly its space's dimension. Notes cannot
-change space in place; moving is delete plus create, which keeps the
-per-space invariants simple.
+**Identity.** Note ids are kernel `NodeId`s: sequential `u64`, never
+reused, tombstoned on delete. The structured branch/group/index layout
+from the earlier plan is dropped; grouping and branching are the kernel's
+job (roadmap phase 3), not an id-layout trick.
 
-**Field storage.** A field is a fixed-length `fx64` vector of length 1 to
-8 plus an optional bound expression. Stored values are state and are
-hashed. A bound expression replaces the stored value on every tick
-before rules run; bound fields are hashed by their bytecode, not their
-value. Strings are not a field type. Labels for the idea-space use live
-in Tapestry's page, not in the note.
+**Property conventions.** Keys follow the app's existing convention:
+- a vector field `f` of dim N is `f.x f.y f.z f.w` for N ≤ 4 and
+  `f.0 … f.(N-1)` for N > 4, each a `real`;
+- a scalar field is one `real` (or `int` when integer-valued, as in
+  `anger int 3`);
+- a bound field `f` stores its formula as `f.expr text "…"` and its last
+  computed value in `f` (or `f.x` …), so the file shows both;
+- membership is `space ref n<k>`; a node with `position.*` and no
+  `space` ref lives in the implicit space of its tree frame (2D
+  Euclidean, identity metric), which is how every existing note already
+  behaves in the app;
+- Space, Rule, and View nodes are `mathspace/space@1`, `mathspace/rule@1`,
+  `mathspace/view@1` with their fields as properties (`dim int`,
+  `metric.expr text`, `scope text`, `select.expr text`, `force.expr text`,
+  `constraint.expr text`, `compliance real`, `project.expr text`).
 
-**The action log is the API.** Every mutation is a ddsim-style action:
-`u8 kind | u8 version | u16 reserved | u32 payload_len | payload`, decoded
-into a local and committed only on OK. Text grammar sits on top and is
-compiled to actions by the bridge. Mathspace actions start at kind 32 so
-they never collide with ddsim's 1 to 6.
+**Commit granularity.** The engine runs ticks in memory. A commit is
+submitted on pause, on any human edit that touches a participating node,
+and every `MS_COMMIT_EVERY` ticks while running (default 60, one second).
+Each commit carries `set` lines for every durable field that changed
+since the last commit and one `advance k`. Replaying the `.tree` without
+the engine reproduces every committed state, so the file is readable and
+complete on its own. The engine's determinism is checked separately:
+goldens over action fixtures, and a checkpoint test that re-runs the
+engine from commit i for k ticks and requires the result to equal commit
+i+1's `set` lines exactly.
 
-**Hash walk.** `"MSP1" | u32 version pins ... | u64 seed | u64 tick |
-u32 note_count | per note in id order: u64 id | u64 space_id | u8 kind |
-u8 field_count | per field in name order: u8 name_len | name | u8 dim |
-u8 bound | dim x i64 value | u32 bytecode_len | bytecode`. Kinds are
-`Space`, `Note`, `Rule`, `View`, and exist so the bridge and renderer
-can find things, not so the solver can branch.
+**Actions remain the engine ABI.** The ddsim-style action grammar
+(kinds 32 to 36, header `u8 kind | u8 version | u16 reserved | u32 len`)
+is how the plugin feeds the engine and how goldens and the two-process
+tests drive it. It is not a durable format; the `.tree` is.
 
-**Input media write values; they define nothing.** The store and the
-rule engine own all logic and never reference strokes, brushes, or pens.
-Data drawing is the first input medium: a producer of `SetField` actions
-whose value is that it locks down the richest human signal available, the
-pen sample from `ddsim/state.hpp` (position, pressure, tilt, twist, at a
-fixed tick rate). The `Sample` record is the reference shape of an input
-event. It is not the reference shape of a note. Shader values (colour,
-size, glow, opacity) are fields in the same way, and a View note declares
-which fields feed which vertex attributes. The renderer reads them and
-never derives them.
+**Human edits during a run.** The SDK has no change subscription. Before
+each commit the plugin reads `status()`; if the journal advanced by
+commits it did not make, it rebuilds the image from `getNodes()` before
+continuing, so a drag or a formula edit takes effect within one commit
+interval and is never overwritten by stale engine output.
 
-The brush pipeline is one preset built from that input: a body note with
-`pos`, `vel`, and a `target` the samples write into, a spring-damper
-force rule, emission of notes along the path, and a pressure curve. As a
-worked example of "nothing is special", ddsim's `Node` maps field for
-field:
+## Phase 1 — the engine over the kernel
 
-| ddsim `Node` | mathspace note field |
-| --- | --- |
-| `x, y, z` | `pos`, dim 3 |
-| pressure (consumed at emission today, not stored) | `pressure`, stored |
-| `weight` | `weight = curve(note(brush).curve, self.pressure)`, bound |
-| radius times weight (computed by the renderer today) | `size = note(brush).radius * self.weight`, bound |
-| `dir_x, dir_y` | `dir` |
-| `vx, vy` | `vel` |
-| `tick`, `brush` | `tick`, `brush`, integer-valued |
+**Goal.** Nodes in the running Electron app move under the engine, the
+motion is recorded readably in the `.tree`, and a golden proves the run
+is deterministic. The store, hash walk, actions, replay tool, and goldens
+built before the merge are kept; the SDL Space page is gone.
 
-The brush itself is a note holding `mass`, `radius`, `spacing`, and the
-17-knot `curve`. The brush body is a note with `pos`, `vel`, and a
-`target` field pen samples write into, driven by a preset spring-damper
-force rule that reads `note(brush).mass`. Pressure and size are therefore
-ordinary variables: a user can rebind `size`, or write `mass = weight`
-so a heavy stroke attracts things. The store is not allowed to know any
-of these names.
-
-Two consequences for the phases: the expression language needs a
-`curve(knots, t)` op (piecewise-linear over 17 knots, the integer
-interpolation from `rules/emit.hpp`) so `weight` can be a formula rather
-than C++; and emission at spacing, which creates notes rather than
-setting values, lives in the input bridge as preset logic that emits
-`CreateNote` and `SetField` actions, reading `spacing` from the brush
-note. The engine sees only actions, so replay is unaffected by which
-preset produced them. A general "rule that spawns notes" inside the
-engine is deferred until a second need for it appears. A different
-preset can map pressure straight to `mass` or tilt to a colour angle with
-no brush concept at all.
-
-## Phase 1 — the spatial note store
-
-**Goal.** Create spaces and notes, move them, save and load them, and
-see them in Tapestry. No expressions, no rules, no physics.
+Physics in this phase is one bootstrap rule compiled into the engine:
+`position += velocity` per tick for any note with a `velocity` field,
+pinned under `MS_RULE_INTEGRATE_VERSION`. Phase 3 replaces it with a
+rule node and deletes it. It exists so phase 1 has something visible.
 
 Deliverables:
 
-- `include/mathspace/note.hpp`: `Field`, `Note`, `Space` header data.
-- `include/mathspace/world.hpp`, `src/mathspace/world.cpp`: the store,
-  `apply()`, `step()` (only advances tick), `hash()`, `serialize()`,
-  `restore()`.
-- `include/mathspace/action.hpp`: kinds 32 `CreateSpace(dim)`, 33
-  `CreateNote(space, kind)`, 34 `SetField(note, name, dim, values)`, 35
-  `DeleteNote`, 36 `DeleteField`.
-- `src/mathspace/hash.cpp`: the walk above and its strict inverse.
-- `tests/mathspace/store_test.cpp`: create, set, delete, id stability,
-  serialize round-trip hashes identical, rejected action leaves state
-  untouched.
-- `tools/ms_replay/main.cpp` and the first two golden fixtures under
-  `tests/golden/ms/` wired into the existing two-process CTest loop.
+- `include/mathspace/ids.hpp`: `NoteId` becomes a plain sequential `u64`
+  matching `tapestry::kernel::NodeId`. Drop the group layout and its
+  tests. `SpaceId` stays as a distinct type over the same value.
+- Bootstrap integrate rule in `src/mathspace/step.cpp`, versioned in
+  `version.hpp` and in the hash walk.
+- Snapshot bytes: `World` exposes a flat little-endian record per note
+  (`u64 id | u8 field_count | per field: name | dim | dim x i64`) so the
+  plugin can read changed values after a step without a per-field call.
+- C ABI `include/mathspace/mathspace_c.h` + `src/mathspace/ms_c.cpp`:
+  `ms_create(seed)`, `ms_destroy`, `ms_apply(bytes, len)`, `ms_step`,
+  `ms_tick`, `ms_hash`, `ms_serialize`, `ms_restore`, `ms_notes_ptr`,
+  `ms_notes_len`. Mirrors `ddsim_c.h` and returns the same error codes
+  where they apply.
+- `wasm/mathspace_wasm.cpp` and a `mathspace_wasm` target in the
+  `wasm-release` preset exporting the `ms_*` symbols.
+- `plugins/mathspace/`: `tapestry.plugin.json`, `package.json`,
+  `index.js` (activate registers commands `mathspace.run`,
+  `mathspace.pause`, `mathspace.step`), `engine.js` (loads the Wasm),
+  `image.js` (kernel `NodeData` → actions, exact real↔raw conversion,
+  property-key conventions, diff → `set` ops), `scripts/build-wasm.sh`
+  mirroring the data-drawing one. Vitest tests for `image.js`: exact
+  conversion round-trips, rejected reals, key mapping, diff output.
+- Goldens: `tests/golden/ms/velocity.actions` + `.sha256`, and a
+  checkpoint fixture `plugins/mathspace/test/fixtures/velocity.json`
+  (a `NodeData` array plus the expected `set` ops after 60 ticks).
 
-Tapestry side:
-
-- `tapestry/core/Space.hpp`: a `PageKind::Space` page owns one mathspace
-  `World`. Dragging a note in the page issues `SetField pos`. Notes render
-  as labelled dots with the page's text body as the label source, so an
-  idea space is usable immediately: place thoughts, drag them, save.
-- `.tapestry` format gains `mspace <page-id> <base64 action bytes>` delta
-  lines. A save appends the actions since the last save, which is the
-  same append-only discipline the format already has.
-
-Done when: a 2D and a 3D space can be created in Tapestry, notes placed
-and dragged, saved, reopened, and the mathspace hash after reload equals
-the hash before save. Golden fixtures pass in two processes and in Debug
-and Release.
+Done when: in the app, a note given `velocity.x real 1` moves across the
+canvas under the Run command, Pause leaves a commit whose `set
+position.x` lines are in the `.tree`, reopening the file shows the note
+where it stopped, and the golden and checkpoint tests pass in Debug and
+Release and across two processes.
 
 ## Phase 2 — expressions
 
-**Goal.** A field can be a formula. This is the graphing-calculator
-capability and the foundation everything after stands on. Still no
-physics.
+Unchanged in substance. A field can be a formula stored as `f.expr text`.
 
-Deliverables:
+- `include/mathspace/expr/ast.hpp`, `parser.hpp`, `diff.hpp`,
+  `bytecode.hpp`, `vm.hpp` and their sources; `include/ddsim/fxmath.hpp`
+  with fixed-iteration `sin cos atan2 exp log pow` built first and tested
+  against an integer oracle with an op-count check.
+- Grammar: scalars, vectors, `+ - * /`, comparison, `if`, `min max abs
+  clamp sqrt sin cos atan2 exp log pow`, `dot norm`, `curve(knots, t)`,
+  component access, references `self.f`, `other.f`, `node(n12).f`,
+  `space.dim`, `world.tick`.
+- Action 37 `BindField(note, name, bytecode)`; the plugin compiles text
+  to bytecode in JS or via a `ms_compile` ABI call (decide in-phase;
+  record it).
+- A `shape.expr` on a node is drawn by the phase 5 surface; in this
+  phase it is only evaluated and hashed.
 
-- `include/mathspace/expr/ast.hpp`, `parser.hpp`, `src/mathspace/expr/parser.cpp`:
-  scalars, vectors, `+ - * /`, comparison, `if`, `min max abs clamp
-  sqrt sin cos atan2 exp log pow`, `dot norm`, `curve(knots, t)`
-  (ddsim's 17-knot pressure curve, so brush weight is a formula), component
-  access, and
-  references `self.<field>`, `other.<field>`, `space.dim`, `world.tick`,
-  `note(<id>).<field>`.
-- `include/mathspace/expr/diff.hpp`: symbolic differentiation with
-  common-subexpression elimination.
-- `include/mathspace/expr/bytecode.hpp`, `vm.hpp`, `src/mathspace/expr/vm.cpp`:
-  flat bytecode, stack VM with a fixed maximum stack, zero allocation per
-  evaluation, every op bounded.
-- `include/ddsim/fxmath.hpp`: fixed-iteration CORDIC `sin cos atan2`,
-  range-reduced `exp log`, `pow` by `exp(b * log(a))`. This is the
-  riskiest single piece and is built first inside the phase.
-- Action 37 `BindField(note, name, expr_bytecode)`. The text grammar is
-  compiled in the bridge; the sim only ever sees bytecode.
-- `tests/mathspace/fxmath_test.cpp`: every function against a
-  high-precision integer oracle across the full range, plus an exact
-  op-count check so the fixed-iteration promise is tested, not assumed.
-- `tests/mathspace/expr_test.cpp`: parse, print, diff against hand-derived
-  results, eval against oracle, bytecode round-trip, identical bytecode
-  for identical source.
-
-Tapestry side:
-
-- A note's field editor accepts `name = <expr>`. A `shape` field whose
-  expression is `f(x)` gets drawn by sampling on a view grid and tracing
-  the zero level set. This is the plot of `y = sin(x)` on a page.
-
-Done when: `tests/golden/ms/plot.actions` binds a handful of shapes and
-hashes identically across processes and builds, and a Tapestry space
-page plots them.
+Done when: `tests/golden/ms/plot.actions` binds a handful of expressions
+and hashes identically across processes and builds, and a bound field's
+value appears in the app's inspector after a step.
 
 ## Phase 3 — rules: forces and assignments
 
-**Goal.** Notes with a `mass` field move under user-written laws.
-`mass` is not special to the engine. The gravity rule mentions it.
+Rule nodes drive properties. This is roadmap phase 5's RULE-01..05.
 
-Deliverables:
+- `mathspace/rule@1` nodes with `scope` (unary, pair, global),
+  `select.expr`, and `force.expr` or `set.<field>.expr`.
+- `src/mathspace/step.cpp`: force rules accumulate in id order; the
+  integrator is the bootstrap rule generalized to N components and
+  reading `mass`; `set` rules run after. The bootstrap rule is deleted
+  and its golden re-recorded under the new version pin.
+- Presets under `plugins/mathspace/presets/`: `gravity-field`, `nbody`,
+  `drag`, `spring-to-anchor`, and the roadmap's required examples:
+  proximity-to-chips raises `anger`, a `gold` accumulator, a movement/
+  force example.
+- RULE-07: every failure the engine can detect (missing definition,
+  incompatible dims, a cycle between `set` rules, two rules writing one
+  field, an exceeded bound) is a deterministic error code that the plugin
+  writes onto the rule node as `mathspace.error text` in the same commit,
+  so the failure is visible and recorded.
+- RULE-08: a node with `pinned bool true` is excluded from every rule's
+  writes; the plugin never touches `event`.
 
-- `include/mathspace/rule.hpp`: a Rule note's fields `scope` (unary,
-  pair, global), `select` (bound expression yielding 0 or 1), and
-  `force` or `set <field>` (bound expression).
-- `src/mathspace/step.cpp`: the tick order from the design. Force rules
-  accumulate in id order; the integrator is the existing ddsim
-  semi-implicit step generalized to N components; `set` rules run after.
-  `vel` is created on a note the first time a force applies, so a note
-  with no `mass` is inert forever.
-- Action 38 `SetRuleScope`. Everything else a rule needs is fields.
-- Presets as text files under `presets/`: `gravity-field.ms`,
-  `nbody.ms`, `drag.ms`, `spring-to-anchor.ms`.
-- `tests/golden/ms/pendulum-force.actions`: a spring-plus-gravity
-  pendulum written entirely as text, checked against a hand-computed
-  first few ticks and then frozen as a golden.
-
-Done when: N-body gravity among a few dozen notes runs in a 2D and a 3D
-space from the same rule text, and a regional gravity rule (a rule with
-its own `shape`, and `select = inside(self.shape, other.pos)`) affects
-only the notes inside.
+Done when: the three roadmap examples run in the app from preset rule
+nodes with no engine change between them.
 
 ## Phase 4 — constraints
 
-**Goal.** The general solver. Rods, contacts, and "stay on this surface"
-from one mechanism.
-
-Deliverables:
-
-- Rule field `constraint` (scalar expression `C`) and `compliance`.
-- `src/mathspace/solve.cpp`: fixed-iteration XPBD. For each constraint
-  rule in id order, for each selected tuple in id order, evaluate `C` and
-  its symbolic gradient with respect to each participating `pos`, project
-  weighted by inverse mass, clamped per pass. Velocity is derived from
-  position change, exactly as ddsim does now.
-- Contact preset: `constraint C = max(0, note(<shape>).shape(self.pos))`.
-- `tests/golden/ms/rod-chain.actions` and `contact-plane.actions`.
-- A comparison test that runs ddsim's `rope-chain` fixture and the
-  equivalent mathspace text and checks the trajectories agree to within
-  a few `fx64` ulps per tick for the first hundred ticks. Exact equality
-  is not expected, since the gradient path differs, but this test is
-  what justifies deleting the hardcoded constraint in phase 7.
-
-Done when: a rope hangs, a ball rests on `y = 0`, and a note constrained
-to `|pos| = R` orbits on a sphere in a 3D Euclidean space.
+Unchanged: `constraint.expr` + `compliance`, fixed-iteration XPBD with
+symbolic gradients in `src/mathspace/solve.cpp`, contact preset, rod and
+contact goldens, and the comparison test against ddsim's `rope-chain`
+that justifies phase 7.
 
 ## Phase 5 — views and projection
 
-**Goal.** Spaces with more than two dimensions are seeable, and the
-projection is itself a note.
+Two-dimensional spaces already render in the app's canvas. This phase is
+for everything else.
 
-Deliverables:
+- `mathspace/view@1` nodes with `project.expr`.
+- `plugins/mathspace/surface/`: a stage surface (placement `stage`, like
+  `datadrawing.canvas`) with a three.js scene that reads the engine
+  snapshot from a module Worker, draws notes at `project(pos)`, shapes by
+  sampled level sets, rule regions faintly. Read-only, as the SDK
+  requires; input goes back through the plugin's main-process commands.
+- Default views as presets: identity for 2D, perspective and three
+  orthographic views for 3D, an axis-pair picker for N > 3.
 
-- View note fields `project` (bound expression from `space.dim` to 2),
-  plus non-hashed view state for the sampling grid and camera.
-- `tapestry/render/Space.cpp`: draws notes at `project(pos)` with
-  instanced sprites, shapes by sampled level sets in projected space,
-  rule regions faintly. Reads state only.
-- Default views shipped as presets: identity for 2D, perspective and
-  three orthographic views for 3D, a pair-of-axes picker for N > 3.
-
-Done when: the same 4D space is viewable through two different View
-notes on two different Tapestry pages at once.
+Done when: one 4D space is viewable through two View nodes at once.
 
 ## Phase 6 — metric spaces
 
-**Goal.** Non-Euclidean spaces from a typed metric.
-
-Deliverables:
-
-- Space fields `metric` (N by N bound expressions, default identity),
-  `identify` (wrap maps), `embed` (optional).
-- Christoffel symbols by symbolic differentiation of `metric`, compiled
-  once per edit.
-- Geodesic integrator replacing the straight-line step when the metric is
-  not the identity, same fixed-step discipline.
-- `len(a, b)` in the expression language routes through the metric.
-- Presets: `poincare-disk.ms`, `sphere-chart.ms`, `torus-wrap.ms`.
-- `tests/golden/ms/poincare-orbit.actions`.
-
-Done when: one note text runs in a Euclidean space and a Poincaré disk
-and the two trajectories visibly differ the right way.
+Unchanged: `metric.expr` on the Space node, Christoffel symbols by
+symbolic differentiation, geodesic step, `identify`, `embed`, and the
+Poincaré and sphere presets.
 
 ## Phase 7 — fold ddsim in
 
-**Goal.** One engine, not two.
+`data-drawing/sim/` is the live ddsim the data-drawing plugin builds; the
+root `include/ddsim` copy has diverged (particles, constraints). Phase 7
+ends the duplication:
 
-- Brush body becomes a preset rule; pen samples become `SetField` actions
-  on a target field. Emission at spacing moves into the data-drawing
-  bridge as preset logic that issues `CreateNote` and `SetField
-  pressure` actions; `weight` and `size` are bound expressions from that
-  point on and the renderer stops computing size. The brush validator's
-  stability check moves to where the preset's constants are edited.
-- `Particle` and `Constraint` become notes and constraint rules. Their
-  actions (kinds 5 and 6) are kept as thin adapters that emit mathspace
-  actions, so existing fixtures still replay.
-- `rules/brush_body.hpp` and `rules/constraints.hpp` are deleted once
-  the phase 4 comparison test and the brush goldens pass through the
-  adapters.
+- The brush body becomes a preset rule; pen samples become `SetField`
+  actions on a target field; emission at spacing lives in the
+  data-drawing plugin's bridge and emits `CreateNote`/`SetField`.
+- The data-drawing plugin switches its Worker to the mathspace Wasm and
+  keeps its action-kind 1..6 adapters so existing goldens replay.
+- `data-drawing/sim/` and `include/ddsim/rules/` are deleted;
+  `fx64.hpp`, `rng.hpp`, `fxmath.hpp` move under `include/mathspace/`.
 
 ## Sequencing and effort
 
 | Phase | Depends on | Rough size |
 | --- | --- | --- |
-| 1 store | nothing | 1 to 2 weeks |
+| 1 engine over the kernel | merge (done) | 1 to 2 weeks |
 | 2 expressions | 1 | 2 to 3 weeks, fxmath is half of it |
-| 3 force rules | 2 | 1 week |
+| 3 force rules | 2 | 1 to 2 weeks (RULE-07 handling is real work) |
 | 4 constraints | 3 | 1 to 2 weeks |
-| 5 views | 2 | 1 week, can run alongside 3 and 4 |
+| 5 views | 2 | 1 to 2 weeks, can run alongside 3 and 4 |
 | 6 metrics | 4, 5 | 2 weeks |
-| 7 fold ddsim | 4 | 1 week |
-
-Phase 1 is deliberately small so the idea space exists before the
-mathematics does. Phase 5 is independent of physics and should start as
-soon as phase 2 lands if a second person is available.
+| 7 fold ddsim | 4 | 1 to 2 weeks |
 
 ## Invariants every phase must keep
 
-- No floats, no `<cmath>`, no unordered containers in `include/` or
-  `src/`. The gate enforces it.
+- No floats, `<cmath>`, `<random>`, or unordered containers in
+  `include/`, `src/`, `wasm/`. The gate enforces it. Doubles exist only
+  in JavaScript at the plugin boundary, converted exactly.
 - Every loop bound is fixed at compile time or by state, never by
   convergence.
 - Every iteration over notes, fields, or tuples is in id order or name
   order.
-- A rejected action leaves the state byte-identical.
+- A rejected action leaves the engine image byte-identical; a rejected
+  proposal leaves the kernel untouched (the kernel already guarantees
+  this).
 - Two processes replaying the same fixture produce the same hash, in
   Debug and Release, on every commit.
+- The `.tree` is complete without the engine: every committed state is
+  readable and replayable from `set` lines alone.
 - Rendering and view state never enter the hash.
+- Plugins import only from the SDK. No Electron, no host internals.
 
 ## Open questions, with the answer I would take
 
-- **Text grammar surface.** Small S-expression-free infix, one field per
-  line, as in the design. Take that; it is what a graphing calculator
-  looks like.
-- **Maximum dimension 8.** Enough for anything a person will type. Raise
-  it later by changing one constant and one walk field.
-- **Should Tapestry link mathspace directly or through the Wasm C ABI?**
-  Directly. Tapestry is native C++ and lives in this repo. The C ABI stays
-  for the browser plugin and gets mathspace exports in phase 7.
+- **Where does text compile to bytecode?** In JS inside the plugin, so
+  the engine ABI stays binary and the parser has good tests in Vitest.
+  Revisit if two hosts need it.
+- **Frame-local positions.** The app measures `position.*` from a tree's
+  frame origin. The implicit space per tree frame handles this in phase
+  1; an explicit `mathspace/space@1` node with `dim` above 2 is its own
+  coordinate system and is not frame-local. Record any change.
+- **Tick rate.** 60 Hz, matching `DD_TICK_HZ`. The kernel's `advance`
+  counts ticks; the plugin's timer paces them and never enters the
+  engine.

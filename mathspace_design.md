@@ -213,25 +213,31 @@ Rendering reads the state; it never writes it. That is the invariant from
 semantic-world and it is what lets neural or fancier rendering be bolted
 on later without touching truth.
 
-### 6. `bridge` — a Space is a page
+### 6. `bridge` — the kernel is the store
 
-In Tapestry, a Space note is a page. Its body text is the note list, one
-note per line, in the same one-line-per-field style the `.tapestry` format
-already uses:
+Tapestry's deterministic kernel (`tapestry/kernel/`) already is the note
+store: a node is an id, a type, and typed properties, changed only by
+recorded ops and journaled to a readable `.tree` file. Mathspace does not
+duplicate it. Notes are kernel nodes; fields are properties; a formula is
+a `text` property next to the value it computes:
 
 ```
-space 1 dim 2 metric I
-note 2 point pos (0, 0) vel (1, 0) mass 1
-note 3 shape f(x) = x.y - sin(x.x)
-note 4 rule pair select has(mass) force = -G * self.mass * other.mass * (self.pos - other.pos) / len(self.pos, other.pos)^3
-note 5 rule unary select has(mass) constraint C = shape_3(self.pos) compliance 0
-note 6 view project(x) = x
+create-node n2 tapestry.notes/note@1
+set n2 position.x real 0
+set n2 position.y real 0
+set n2 velocity.x real 1
+set n2 mass real 1
+create-node n3 mathspace/rule@1
+set n3 scope text "pair"
+set n3 select.expr text "has(mass)"
+set n3 force.expr text "-G * self.mass * other.mass * (self.position - other.position) / len(self.position, other.position)^3"
 ```
 
-Editing a line is an action. Actions go through ddsim's existing action
-log so replay, goldens, and two-process determinism checks cover
-expressions for free. The `.tapestry` delta format gains one line kind,
-`mnote <id> <text>`, and a delta that changes one formula costs one line.
+The engine keeps an in-memory fixed-point image of the participating
+nodes, runs ticks, and periodically submits a plugin-signed commit of
+`set` lines plus `advance k`. The file is complete without the engine;
+the engine's determinism is checked by goldens and by re-running between
+commits. `mathspace_plan.md` has the conventions and the commit rules.
 
 Data drawing sits on top: a brush stroke becomes Point notes with a spring
 Rule, driven by pen samples as force contributions. The brush-body rule in

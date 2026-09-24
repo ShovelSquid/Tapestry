@@ -39,30 +39,10 @@ Rect settingsPageRect(Vec2 topLeft);
 // leaves them out and input treats a press as an ordinary page drag.
 bool settingsControlsInteractive(double zoom);
 
-// Space page geometry shared by input and rendering. A note's `pos` is in
-// page-local world units with the body's top-left as origin, so the app can
-// turn a click into a pos and the renderer can turn a pos into a dot using
-// the same two functions.
-constexpr double kSpaceDotRadius = 4.0; // world units
-
-// World-space point of page-local (0, 0): the body's top-left.
-Vec2 spaceBodyOrigin(const Page& page);
-
-// The note whose dot is under `worldPoint` (topmost = highest id wins),
-// or an unassigned id. `slackWorld` widens the hit circle so small dots at
-// low zoom stay grabbable.
-mathspace::NoteId spaceNoteAt(const Page& page, const SpaceState* space,
-                              Vec2 worldPoint, double slackWorld);
-
 // View-state the page renderer needs beyond the world itself: what is
 // selected, and what the settings page should display.
 struct PageUiState {
     std::uint64_t selectedId = 0;
-    // A note being dragged on a Space page: drawn displaced by
-    // dragNoteOffset (world units) until release applies the SetField.
-    std::uint64_t dragNotePage = 0;
-    mathspace::NoteId dragNote;
-    Vec2 dragNoteOffset {0.0, 0.0};
     double zoom = 1.0;         // current camera zoom, shown in the zoom field
     bool invertScroll = false;
     bool editingZoom = false;

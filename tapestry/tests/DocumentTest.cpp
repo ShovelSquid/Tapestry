@@ -8,7 +8,6 @@
 // save must never destroy the snapshots before it.
 
 #include "core/Document.hpp"
-#include "mathspace/action.hpp"
 
 #include <cstdio>
 #include <cstdlib>
@@ -267,100 +266,6 @@ void deltasCarryStructuralChanges() {
     std::remove(path.c_str());
 }
 
-std::string spaceHash(const World& world, std::uint64_t pageId) {
-    const tapestry::SpaceState* space = world.space(pageId);
-    if (space == nullptr) {
-        return "";
-    }
-    std::uint8_t digest[32];
-    mathspace::hash(space->world, digest);
-    static const char* hexDigits = "0123456789abcdef";
-    std::string out;
-    for (const std::uint8_t b : digest) {
-        out.push_back(hexDigits[b >> 4]);
-        out.push_back(hexDigits[b & 0x0f]);
-    }
-    return out;
-}
-
-mathspace::Field pos2(int x, int y) {
-    mathspace::Field f;
-    f.name = "pos";
-    f.dim = 2;
-    f.value[0] = mathspace::fx64::from_int(x);
-    f.value[1] = mathspace::fx64::from_int(y);
-    return f;
-}
-
-// A Space page's mathspace world survives save and load with the same hash,
-// through a baseline and through deltas, and a page that is not a Space
-// refuses actions.
-void spaceActionsRoundTrip() {
-    const std::string path = scratchPath("space");
-    DocumentState state = sampleState();
-    World world = sampleWorld();
-    const std::uint64_t pageId = world.addPage(PageKind::Space, "Ideas",
-        "first\nsecond", {0.0, 0.0, 400.0, 300.0});
-    const std::uint64_t notePage = world.pages().front().id;
-
-    check(world.space(pageId) == nullptr, "no space state before the first action");
-    check(world.applySpaceAction(notePage, mathspace::encode_create_space(2))
-              == mathspace::Error::NoSuchSpace,
-        "a non-Space page refuses actions");
-
-    mathspace::NoteId spaceId;
-    check(world.applySpaceAction(pageId, mathspace::encode_create_space(2), &spaceId)
-              == mathspace::Error::Ok, "CreateSpace applies");
-    mathspace::NoteId a;
-    check(world.applySpaceAction(pageId,
-              mathspace::encode_create_note(mathspace::space_of(spaceId), mathspace::NoteKind::Note), &a)
-              == mathspace::Error::Ok, "CreateNote applies");
-    check(world.applySpaceAction(pageId, mathspace::encode_set_field(a, pos2(1, 2)))
-              == mathspace::Error::Ok, "SetField applies");
-    // A rejected action changes nothing, including the log.
-    const std::string beforeReject = spaceHash(world, pageId);
-    check(world.applySpaceAction(pageId, std::vector<std::uint8_t> {})
-              == mathspace::Error::BadAction, "empty bytes are BadAction");
-    check(spaceHash(world, pageId) == beforeReject && world.space(pageId)->log.size() == 3,
-        "a rejected action leaves the world and log untouched");
-
-    check(tapestry::saveDocument(path, state, world), "baseline save with a space succeeds");
-    {
-        DocumentState loaded;
-        World loadedWorld;
-        check(tapestry::loadDocument(path, loaded, loadedWorld), "load with a space succeeds");
-        check(loadedWorld.space(pageId) != nullptr
-                  && spaceHash(loadedWorld, pageId) == spaceHash(world, pageId),
-            "the mathspace hash after reload equals the hash before save (baseline)");
-        check(loadedWorld.space(pageId) != nullptr && loadedWorld.space(pageId)->log.size() == 3,
-            "the full log came back");
-    }
-
-    // A delta carries only the appended actions.
-    const long baselineSize = fileSize(path);
-    check(world.applySpaceAction(pageId, mathspace::encode_set_field(a, pos2(5, 6)))
-              == mathspace::Error::Ok, "second SetField applies");
-    check(tapestry::saveDocument(path, state, world), "delta save with a space succeeds");
-    check(tapestry::countSnapshots(path) == 2, "the space delta is one version");
-    check(fileSize(path) - baselineSize < baselineSize / 2, "the space delta is small");
-    {
-        DocumentState loaded;
-        World loadedWorld;
-        check(tapestry::loadDocument(path, loaded, loadedWorld), "load after delta succeeds");
-        check(spaceHash(loadedWorld, pageId) == spaceHash(world, pageId),
-            "the mathspace hash after reload equals the hash before save (delta)");
-        check(loadedWorld.space(pageId) != nullptr && loadedWorld.space(pageId)->log.size() == 4,
-            "the delta appended one action");
-        // The loaded page keeps accepting actions where the log left off.
-        check(loadedWorld.applySpaceAction(pageId, mathspace::encode_delete_note(a))
-                  == mathspace::Error::Ok, "the loaded space accepts a further action");
-    }
-    check(tapestry::saveDocument(path, state, world), "unchanged space save succeeds");
-    check(tapestry::countSnapshots(path) == 2, "an unchanged space adds no version");
-
-    std::remove(path.c_str());
-}
-
 void refusesForeignAndMissingFiles() {
     const std::string missing = scratchPath("missing");
     DocumentState state;
@@ -406,7 +311,6 @@ int main() {
     deltasStaySmall();
     unchangedSavesWriteNothing();
     deltasCarryStructuralChanges();
-    spaceActionsRoundTrip();
     refusesForeignAndMissingFiles();
 
     if (g_failures != 0) {

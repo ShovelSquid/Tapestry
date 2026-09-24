@@ -48,7 +48,6 @@ const char* kindName(PageKind kind) {
     case PageKind::Conversation: return "conversation";
     case PageKind::File:         return "file";
     case PageKind::Settings:     return "settings";
-    case PageKind::Space:        return "space";
     case PageKind::Note:         break;
     }
     return "note";
@@ -59,7 +58,6 @@ bool kindFromName(const std::string& name, PageKind& kind) {
     if (name == "conversation") { kind = PageKind::Conversation; return true; }
     if (name == "file")         { kind = PageKind::File; return true; }
     if (name == "settings")     { kind = PageKind::Settings; return true; }
-    if (name == "space")        { kind = PageKind::Space; return true; }
     return false;
 }
 
@@ -80,7 +78,6 @@ struct Accumulated {
     DocumentState state;
     std::vector<Page> pages;
     std::vector<Stroke> strokes;
-    std::vector<SpaceState> spaces; // sorted by page id
     std::uint64_t ticks = 0;
     bool hasBaseline = false;
 };
@@ -136,106 +133,6 @@ Page* mutablePage(std::vector<Page>& pages, std::uint64_t id) {
     return nullptr;
 }
 
-const SpaceState* findSpace(const std::vector<SpaceState>& spaces, std::uint64_t pageId) {
-    for (const SpaceState& s : spaces) {
-        if (s.pageId == pageId) return &s;
-    }
-    return nullptr;
-}
-
-// The SpaceState for `pageId`, created fresh (seeded with the page id, empty
-// log) and inserted in id order when absent.
-SpaceState& spaceFor(std::vector<SpaceState>& spaces, std::uint64_t pageId) {
-    auto it = std::lower_bound(spaces.begin(), spaces.end(), pageId,
-        [](const SpaceState& s, std::uint64_t id) { return s.pageId < id; });
-    if (it == spaces.end() || it->pageId != pageId) {
-        SpaceState fresh;
-        fresh.pageId = pageId;
-        fresh.world = mathspace::World(pageId);
-        it = spaces.insert(it, std::move(fresh));
-    }
-    return *it;
-}
-
-// Action bytes travel as standard base64 (padded) so one action is one line
-// of printable text, like every other field of the format.
-std::string base64Encode(const std::vector<std::uint8_t>& bytes) {
-    static const char* alphabet =
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    std::string out;
-    out.reserve((bytes.size() + 2) / 3 * 4);
-    std::size_t i = 0;
-    for (; i + 3 <= bytes.size(); i += 3) {
-        const unsigned v = (unsigned {bytes[i]} << 16) | (unsigned {bytes[i + 1]} << 8) | bytes[i + 2];
-        out.push_back(alphabet[(v >> 18) & 63]);
-        out.push_back(alphabet[(v >> 12) & 63]);
-        out.push_back(alphabet[(v >> 6) & 63]);
-        out.push_back(alphabet[v & 63]);
-    }
-    const std::size_t rest = bytes.size() - i;
-    if (rest == 1) {
-        const unsigned v = unsigned {bytes[i]} << 16;
-        out.push_back(alphabet[(v >> 18) & 63]);
-        out.push_back(alphabet[(v >> 12) & 63]);
-        out += "==";
-    } else if (rest == 2) {
-        const unsigned v = (unsigned {bytes[i]} << 16) | (unsigned {bytes[i + 1]} << 8);
-        out.push_back(alphabet[(v >> 18) & 63]);
-        out.push_back(alphabet[(v >> 12) & 63]);
-        out.push_back(alphabet[(v >> 6) & 63]);
-        out.push_back('=');
-    }
-    return out;
-}
-
-int base64Value(char c) {
-    if (c >= 'A' && c <= 'Z') return c - 'A';
-    if (c >= 'a' && c <= 'z') return c - 'a' + 26;
-    if (c >= '0' && c <= '9') return c - '0' + 52;
-    if (c == '+') return 62;
-    if (c == '/') return 63;
-    return -1;
-}
-
-// Strict: length a multiple of four, padding only as the last one or two
-// characters. Anything else is corruption, not a variant.
-bool base64Decode(const std::string& text, std::vector<std::uint8_t>& out) {
-    if (text.size() % 4 != 0) {
-        return false;
-    }
-    out.clear();
-    out.reserve(text.size() / 4 * 3);
-    for (std::size_t i = 0; i < text.size(); i += 4) {
-        const bool last = i + 4 == text.size();
-        int pad = 0;
-        if (last && text[i + 3] == '=') pad = (text[i + 2] == '=') ? 2 : 1;
-        unsigned v = 0;
-        for (std::size_t k = 0; k < 4; ++k) {
-            const char c = text[i + k];
-            if (k >= 4 - static_cast<std::size_t>(pad)) {
-                v <<= 6;
-                continue;
-            }
-            const int d = base64Value(c);
-            if (d < 0) {
-                return false;
-            }
-            v = (v << 6) | static_cast<unsigned>(d);
-        }
-        out.push_back(static_cast<std::uint8_t>((v >> 16) & 0xff));
-        if (pad < 2) out.push_back(static_cast<std::uint8_t>((v >> 8) & 0xff));
-        if (pad < 1) out.push_back(static_cast<std::uint8_t>(v & 0xff));
-    }
-    return true;
-}
-
-// One line per action from `from` onward, in log order.
-void writeSpaceActions(std::ostream& out, const SpaceState& space, std::size_t from) {
-    for (std::size_t i = from; i < space.log.size(); ++i) {
-        out << "mspace " << space.pageId << ' ' << base64Encode(space.log[i]) << '\n';
-    }
-}
-
 void writePage(std::ostream& out, const Page& page) {
     char buffer[256];
     std::snprintf(buffer, sizeof(buffer),
@@ -263,9 +160,6 @@ void writeBaseline(std::ostream& out, const DocumentState& state,
     out << "settings invert " << (state.invertScroll ? 1 : 0) << '\n';
     for (const Page& page : world.pages()) {
         writePage(out, page);
-    }
-    for (const SpaceState& space : world.spaces()) {
-        writeSpaceActions(out, space, 0);
     }
     writeStrokes(out, world.strokes());
     out << "end\n";
@@ -317,28 +211,6 @@ bool writeDelta(std::ostream& out, const Accumulated& previous,
         }
     }
 
-    // A space page's log is append-only, so the file's copy is normally a
-    // prefix of the live one and the delta is just the tail. If it is not
-    // (the file was edited by hand), the page is reset and rewritten whole
-    // rather than left describing a different world.
-    for (const SpaceState& space : world.spaces()) {
-        if (findPage(world.pages(), space.pageId) == nullptr) {
-            continue; // the page's drop line removes its space too
-        }
-        const SpaceState* before = findSpace(previous.spaces, space.pageId);
-        std::size_t from = 0;
-        if (before != nullptr) {
-            const bool prefix = before->log.size() <= space.log.size()
-                && std::equal(before->log.begin(), before->log.end(), space.log.begin());
-            if (prefix) {
-                from = before->log.size();
-            } else {
-                body << "mreset " << space.pageId << '\n';
-            }
-        }
-        writeSpaceActions(body, space, from);
-    }
-
     for (const Page& before : previous.pages) {
         if (findPage(world.pages(), before.id) == nullptr) {
             body << "drop " << before.id << '\n';
@@ -380,7 +252,6 @@ bool applyBlock(std::istream& in, std::uint64_t tick, bool baseline,
     if (baseline) {
         acc.pages.clear();
         acc.strokes.clear();
-        acc.spaces.clear();
         acc.state = DocumentState {};
     }
     acc.ticks = tick;
@@ -494,40 +365,6 @@ bool applyBlock(std::istream& in, std::uint64_t tick, bool baseline,
                 std::remove_if(acc.pages.begin(), acc.pages.end(),
                     [id](const Page& p) { return p.id == id; }),
                 acc.pages.end());
-            acc.spaces.erase(
-                std::remove_if(acc.spaces.begin(), acc.spaces.end(),
-                    [id](const SpaceState& s) { return s.pageId == id; }),
-                acc.spaces.end());
-        } else if (valueAfter(line, "mspace", value)) {
-            // An action is applied as it is read, so a line the store rejects
-            // is a corrupt block like any other malformed line.
-            std::istringstream fields(value);
-            unsigned long long id = 0;
-            std::string encoded;
-            std::string extra;
-            std::vector<std::uint8_t> action;
-            if (!(fields >> id >> encoded) || (fields >> extra)
-                || !base64Decode(encoded, action)) {
-                return false;
-            }
-            const Page* page = findPage(acc.pages, id);
-            if (page == nullptr || page->kind != PageKind::Space) {
-                return false;
-            }
-            SpaceState& space = spaceFor(acc.spaces, id);
-            if (space.world.apply(action) != mathspace::Error::Ok) {
-                return false;
-            }
-            space.log.push_back(std::move(action));
-        } else if (valueAfter(line, "mreset", value)) {
-            unsigned long long id = 0;
-            if (std::sscanf(value.c_str(), "%llu", &id) != 1
-                || findPage(acc.pages, id) == nullptr) {
-                return false;
-            }
-            SpaceState& space = spaceFor(acc.spaces, id);
-            space.world = mathspace::World(id);
-            space.log.clear();
         } else if (valueAfter(line, "order", value)) {
             std::vector<Page> reordered;
             reordered.reserve(acc.pages.size());
@@ -626,9 +463,6 @@ World toWorld(const Accumulated& acc) {
     }
     for (const Stroke& stroke : acc.strokes) {
         world.adoptStroke(stroke);
-    }
-    for (const SpaceState& space : acc.spaces) {
-        world.adoptSpace(space);
     }
     return world;
 }

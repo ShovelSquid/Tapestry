@@ -3,11 +3,19 @@
 Read fully at the start of every session. Rewrite the "Next" section at
 the end of every session so its first item can be started cold.
 
+**2026-09-24 redirect.** `phase-2-implementation-v1` was merged into this
+branch. It brings the deterministic kernel (`tapestry/kernel/`), the
+Electron app (`app/`), the plugin SDK (`sdk/`), and plugins. Mathspace is
+now the engine over the kernel, hosted as `plugins/mathspace/`, per the
+rewritten `mathspace_plan.md`. The SDL Space page work (`tapestry/core`)
+was reverted to v1's files; that path is abandoned. The store, hash,
+actions, replay tool, and goldens built before the redirect are kept.
+
 ## Phases
 
 | Phase | Status |
 | --- | --- |
-| 1 store | not started |
+| 1 engine over the kernel | in progress (store/hash/actions/replay done; ids, ABI, wasm, plugin remain) |
 | 2 expressions | not started |
 | 3 force rules | not started |
 | 4 constraints | not started |
@@ -17,165 +25,108 @@ the end of every session so its first item can be started cold.
 
 ## In progress
 
-Nothing. (`autonomy/watch.py` is the operator's log viewer, committed in
-`b2a884d`; it is theirs to edit.)
+Nothing. Tree is clean. (`autonomy/watch.py` is the operator's log
+viewer; it is theirs to edit.)
 
 ## Next
 
-The Tapestry Space page (phase 1 done condition) is split into three
-slices; 2a and 2b are done, 2c remains.
+1. **Kernel ids.** Rewrite `include/mathspace/ids.hpp`: `NoteId` is a
+   plain sequential `u64` (kernel `NodeId`), drop the branch/group/index
+   layout, masks, `make_note_id`, and their tests in
+   `tests/mathspace/ids_test.cpp`. Keep `SpaceId` as a distinct type over
+   the same value. Fix every caller (`world.cpp`, `action.cpp`, fixtures
+   in `tests/golden/ms/*.actions` if they encode structured ids — check
+   `tools/ms_replay` and `tests/mathspace/fixture.hpp`). Re-record the
+   two goldens if the walk changed; say so in the commit.
+2. **Bootstrap integrate rule.** `src/mathspace/step.cpp`: in
+   `World::step`, for each note in id order that has both `position` and
+   `velocity` fields of equal dim, `position += velocity`. Pin
+   `MS_RULE_INTEGRATE_VERSION = 1` in `version.hpp` and write it into the
+   hash walk. Golden `tests/golden/ms/velocity.actions` + `.sha256`.
+3. **Snapshot bytes.** `World::notes_bytes()` refreshed by `apply` and
+   `step`: per note in id order `u64 id | u8 field_count | per field in
+   name order: u8 name_len | name | u8 dim | dim x i64`. Test: bytes match
+   a hand-built expectation; stable across serialize/restore.
+4. **C ABI.** `include/mathspace/mathspace_c.h`, `src/mathspace/ms_c.cpp`:
+   `ms_version, ms_create(seed), ms_destroy, ms_apply(ptr,len), ms_step,
+   ms_tick, ms_hash(out32), ms_serialize(out_ptr,out_len), ms_restore,
+   ms_notes_ptr, ms_notes_len`. Same error-code style as `ddsim_c.h`.
+   Tests through the ABI only, like `tools/ddsim_replay` does.
+5. **Wasm target.** `wasm/mathspace_wasm.cpp` and a `mathspace_wasm`
+   executable in the `EMSCRIPTEN` block of `CMakeLists.txt`, exporting
+   the `ms_*` symbols plus malloc/free, output `mathspace.mjs`. Building
+   needs Emscripten 6.0.10 at `$EMSDK`; if it is not installed, install
+   it under `~/emsdk` per `plugins/data-drawing/surface/scripts/build-wasm.sh`
+   (network required) and record the outcome under Learned.
+6. **Plugin skeleton.** `plugins/mathspace/`: `tapestry.plugin.json`
+   (api "1", commands `mathspace.run`, `mathspace.pause`,
+   `mathspace.step`), `package.json` (workspace member, vitest),
+   `scripts/build-wasm.sh` mirroring data-drawing's but building the root
+   project's `wasm-release` preset and copying `mathspace.mjs/.wasm`
+   into `plugins/mathspace/wasm/` (gitignored), `engine.js` loading it.
+7. **`image.js`.** Kernel `NodeData` → engine actions: exact real↔raw
+   int64 conversion (reject reals that are not `k / 2^32` with `|k| <
+   2^53`), key conventions (`f.x f.y f.z f.w`, `f.0..` above dim 4,
+   `space ref`, implicit space per tree frame), and `diff(before,
+   after)` → `set` ops. Vitest tests for all three.
+8. **Run loop and commits.** In `index.js`: on `mathspace.run`, build the
+   image from `getNodes()`, step at 60 Hz with `setInterval`, every 60
+   ticks or on pause read the snapshot, diff, `kernel.submit('plugin',
+   'mathspace', 'advance', [...sets, {op:'advance', ticks:k}])`. Before
+   each commit compare `status().lastGoodSeq` with the seq of our last
+   commit; if others committed, rebuild the image first. Checkpoint
+   fixture `plugins/mathspace/test/fixtures/velocity.json`.
+9. **Phase 1 done check.** Build the app (`npm install` at the root,
+   `npm run build:native` in `app/`, then the app's dev script; see
+   `app/package.json`), create a note, set `velocity.x real 1` via the
+   inspector or a `set` commit, Run, Pause, confirm the `.tree` has the
+   `set position.x` lines and reopening shows the note moved. Record
+   exactly how the app was launched under Learned. Then mark phase 1
+   done and update `README.md`'s status paragraph.
 
-1. **2c input.** In `tapestry/app/main.cpp`: a "new 2D space" / "new 3D
-   space" command (menu entry or key, next to wherever new Note pages are
-   made) creating a Space page and applying
-   `encode_create_space(dim)`; click in a Space page's body creates a
-   note (`encode_create_note(space_of(spaceId), NoteKind::Note)` then
-   `encode_set_field(id, pos)` with pos = click point minus the body's
-   top-left, in world units, `fx64::from_int` or q16 rounding); dragging
-   a dot issues one SetField pos on release (not per frame). The
-   space's id is the id of the world's single `NoteKind::Space` note.
-   Body geometry: top-left is `page.rect.x + kPadding`,
-   `page.rect.y + kPageTitleBarHeight + kPadding/2` (Pages.cpp), dot
-   radius 4 world units; a hit-test helper next to `pageTextRegionAt`
-   in Pages.hpp keeps input and render on the same geometry. Body text
-   editing on a Space page is now label editing (one line per note);
-   decide whether a click on a dot vs. blank body still opens the body
-   editor. Then check phase 1's done condition (2D and 3D spaces
-   created, notes placed and dragged, saved, reopened, hash equal) and
-   mark it in Phases and README.md.
-
-Then phase 2, per the plan, starting with `include/ddsim/fxmath.hpp` and
+Then phase 2 per the plan, starting with `include/ddsim/fxmath.hpp` and
 its oracle tests.
 
 ## Done
 
-- `a118cba` ms1 step 7 (Space page 2b): `drawPages` threads
-  `world.space(page.id)` into `drawPage`; `drawSpaceBody` draws each
-  non-Space note in id order as a dot at `pos` lanes 0,1 (fx64 raw/2^32
-  to double only at the nanovg call) labelled with the i-th body line.
-  Verified by a windowed `--screenshot` over a generated fixture.
-
-- `bdf03eb` ms1 step 7 (Space page 2a): tapestry CMake bridge to root
-  `mathspace`, `PageKind::Space`, `core/Space.hpp` SpaceState (World +
-  log), `World::applySpaceAction/space/adoptSpace`, `.tapestry` `mspace`
-  and `mreset` lines, DocumentTest hash-equal round trip via baseline and
-  delta. Headless run still clean.
-
-- `a9297de` ms1 step 6: `tools/ms_replay/main.cpp` (ddsim_replay CLI twin over
-  `World`), `tests/mathspace/fixture.hpp` (parser copy, identical grammar),
-  goldens `empty` and `two-notes` under `tests/golden/ms` with `.sha256`
-  from native-release, confirmed by native-debug; `golden_test.cpp` checks
-  hand hex == encoders, replay == direct build, in-process == committed.
-  CMake `ms_replay` + `ms_golden_two_process_<n>` via `two_process.cmake`.
-
-- `0978fb6` ms1 step 5: `action.hpp` kinds 32..36 + encoders,
-  `action.cpp` `World::apply` (`Error::BadAction` for grammar, mutator
-  errors for content), `wire.hpp` shared field record. 8 tests incl.
-  every truncation/extension of every kind and log-replay == direct.
-- `4c8a5de` ms1 step 4: `hash.cpp` walk + `hash`/`serialize`/`restore`
-  (strict, local-then-swap, `Error::BadBytes`), `MAX_FIELDS` 255 cap with
-  `Error::TooManyFields`. 9 tests incl. every-single-byte tamper.
-- `1832b88` ms1 step 3: `world.hpp`/`world.cpp` World store: create_space,
-  create_note, set_field, delete_note, delete_field, step, well_formed,
-  Error enum + error_name. 12 tests incl. untouched-on-reject checks.
-- `d7a8862` ms1 step 2: `note.hpp`/`note.cpp` Field, Note, NoteKind,
-  `find_field`/`set_field`/`erase_field`/`fields_well_formed`, tests.
-- `3cd79d9` ms1 step 1: build scaffolding. `mathspace` static lib over
-  `src/mathspace/*.cpp`, `mathspace_tests` over `tests/mathspace/*.cpp`
-  (doctest prefix `ms.`), `include/mathspace/ids.hpp` (`NoteId`,
-  `SpaceId`, ddsim NodeId layout via ddsim's masks),
-  `include/mathspace/version.hpp`. Gate reports 20 clean sources.
-- `1d6f2f1` autonomy: driver `${budget_args[@]+...}` guard for bash 3.2
-  `set -u` (was left uncommitted by the driver fix).
+- `3cd79d9` ms1 step 1: build scaffolding (`mathspace` lib, tests, ids).
+- `1d6f2f1` autonomy: driver bash 3.2 guard.
+- ms1 note store, world, hash walk, actions 32..36, replay tool, goldens
+  `empty` and `two-notes` (commits up to `943b9bb`).
+- SDL Space page (`bdf03eb`..`8774401`): reverted in the redirect commit;
+  kept in history only.
+- `215602c` merge of `phase-2-implementation-v1`.
 
 ## Decisions
 
-- **A space's dimension is the dim of the Space note's own `pos` field**
-  (zero vector, set by create_space). The plan's hash walk has no per-note
-  dim slot, so dim had to be a field; `pos` is the one name the store
-  already knows structurally. Rewriting a Space's pos at another dim is
-  PosDimMismatch; deleting it is LockedField.
-- `create_note` always allocates a fresh group ordinal (group of one,
-  index 0). Appending to an existing group (stroke emission) is deferred
-  until the input bridge needs it; it will need a per-group counter that
-  must be serialized, so decide it then.
-- `delete_note` on a Space that still holds notes is SpaceNotEmpty, not
-  a cascade. Explicit over hidden mutation; can be relaxed later.
-- `next_group` is state that must round-trip through serialize/restore,
-  else a restored world could reuse a deleted group's ordinal and diverge
-  from the original on the next create. It goes into the hash walk as
-  `u32 next_group` immediately after `u64 tick`. This is a deliberate
-  addition to the plan's walk, recorded here rather than made silently.
-- A Space note is top level: its `space` id is unassigned (0), and that
-  zero is what the hash walk writes for it.
-- Field names: 1 to 31 bytes, no byte below 0x20. Anything else is
-  legal in the store; the phase 2 grammar narrows what it parses.
-- `Field::value` is `std::array<fx64, 8>`; lanes at index >= dim are
-  always zero (set_field enforces), so `operator==` on Field matches
-  hashed-byte equality.
-
-- **Walk pins are `u32 FORMAT_VERSION` (world.hpp, =1) then `u32
-  ddsim::DD_FX_FORMAT_ID`.** Bump FORMAT_VERSION on any walk change.
-- **A note holds at most 255 fields** (`MAX_FIELDS`), because the walk's
-  field count is one byte. Replacing an existing name at capacity is fine;
-  a new name is `TooManyFields`.
-- `restore` reuses `ddsim::ByteReader` from `ddsim/action.hpp` (public
-  header, bounds-checked) rather than a copy; the writer helpers are
-  re-implemented in hash.cpp since ddsim's are TU-local.
-- A bound field's value lanes are still written to the walk (the phase 2
-  evaluated value is state until the next tick overwrites it).
-
-- **`apply` reports grammar and content separately.** Bytes the grammar
-  cannot account for (short, bad header, unknown kind, trailing byte, dim
-  above 8, bound byte not 0/1) are `BadAction`; anything that decodes is
-  handed to the mutator and gets its error (`BadDim`, `BadName`,
-  `NoSuchNote`...). So a replayed log and a direct build agree on every
-  result code, which the replay tool will rely on.
-- `src/mathspace/wire.hpp` is library-internal (not under include/): the
-  field record and LE writers shared by the walk and SetField. Public
-  callers use `serialize`/`restore` and the `encode_*` functions.
-- Encoders do not validate; they exist so tests and tools never hand-pack
-  bytes. Validation happens once, in `apply`.
-
-- **Tapestry links mathspace by `add_subdirectory(${PROJECT_SOURCE_DIR}/..
-  ${CMAKE_BINARY_DIR}/physics-engine)`** with `DDSIM_BUILD_TESTS` forced
-  OFF first (the root only forces it off under Emscripten). Chosen over a
-  duplicate library definition so there is one source list; the root's
-  forbidden-token gate still runs at tapestry configure.
-- **A Space page keeps its whole action log** (`SpaceState::log`), because
-  mathspace has no journal; the baseline writes it all, a delta writes the
-  tail past the file's copy, and `mreset <page>` precedes a full rewrite
-  when the file's log is not a prefix (hand-edited file). `mspace` lines
-  are applied as they are parsed, so a rejected action is a corrupt block.
-- A Space page's mathspace `World` is seeded with the page id.
-  `applySpaceAction` on a missing or non-Space page returns
-  `mathspace::Error::NoSuchSpace` rather than adding a tapestry error type.
-- `PageKind::Space` is appended after `Settings`; the format writes kinds
-  by name ("space") so the numeric position only matters in memory.
+- Mathspace is a plugin over the kernel, not a second store. Durable
+  state is the `.tree`; the engine image is derived. (2026-09-24, from
+  the merge review.)
+- real↔fx64 conversion is exact and lives in JS at the plugin boundary,
+  so no double enters the gated C++ tree.
+- Note ids are kernel ids. The structured id layout is dropped.
+- Phase 1 ships one hardcoded bootstrap rule (`position += velocity`) so
+  something moves; phase 3 deletes it.
 
 ## Learned
 
-- Tapestry configure works on this machine (glad fetched, SDL2 present);
-  full tapestry build ~1 min, its three test binaries run in under a
-  second. Only warnings are pre-existing macOS deprecations in
-  `FileDialog_mac.mm`.
-- Full Debug configure+build+ctest is ~10 s; Release the same. Run both
-  every slice, it is cheap.
-- The token gate scans comments too: writing the name of the forbidden
-  container family in a header comment fails configure. Say "hash
-  containers".
-- Rendering is not exercised headless (`gfx.vg` is null, so drawPages is
-  never called). To see a Space page: generate a `.tapestry` with a
-  throwaway program linked against `build/tapestry/libtapestry_core.a`
-  + `physics-engine/libmathspace.a` + `libddsim.a` + `third_party/
-  libnanovg.a` (`-I tapestry -I include`), then run
-  `tapestry --file F --frames 5 --size 640x480 --screenshot out.png`
-  under a `perl -e 'alarm 60; exec @ARGV'` cap; a cocoa window opens
-  fine on this machine unattended and the run takes ~2 s. Read the PNG.
-- `mathspace_tests` and `ms_replay` get `MATHSPACE_GOLDEN_DIR` =
-  `tests/golden/ms`. New fixtures there are picked up at configure
-  (GLOB CONFIGURE_DEPENDS); write the `.sha256` from native-release,
-  then run native-debug's ctest to confirm before committing.
+- Full Debug configure+build+ctest of the root tree is ~10 s; Release
+  the same. Run both every slice, it is cheap.
+- `mathspace_tests` gets `MATHSPACE_GOLDEN_DIR` = `tests/golden/ms`.
+- The tapestry kernel builds alone with
+  `cmake -S tapestry -B build/tapestry-kernel -DTAPESTRY_BUILD_RENDER=OFF
+  -DTAPESTRY_BUILD_APP=OFF` and its 59 tests pass in ~2 s. Render ON
+  needs network for glad on first configure.
+- The app stores positions as `position.x`/`position.y` reals measured
+  from the note's tree frame origin, plus `pinned bool`
+  (`app/src/renderer/layout/placement.ts`). Match these keys exactly.
+- The SDK (`sdk/src/index.ts`) gives plugins `kernel.getNodes/getNode/
+  getEdges/status/submit`; commits are stamped `plugin <dir-name>`.
+  Surfaces get no kernel access in API 1.
+- `.claude/CLAUDE.md` (merged from v1, GSD-generated) says work happens
+  in `/Users/kaelencook/Tapestry` on branch `phase-2-implementation-v1`.
+  That is the primary checkout's instruction, not this worktree's; the
+  root `CLAUDE.md` overrides it here.
 
 ## Blocked
 

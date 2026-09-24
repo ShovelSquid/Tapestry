@@ -1,7 +1,6 @@
 #pragma once
 
 #include "core/Page.hpp"
-#include "core/Space.hpp"
 #include "core/Stroke.hpp"
 
 #include <cstdint>
@@ -41,17 +40,6 @@ public:
     const Stroke* strokeById(std::uint64_t id) const;
     void adoptStroke(Stroke stroke);
 
-    // Applies one mathspace action (mathspace/action.hpp bytes) to the Space
-    // page `pageId`, creating its SpaceState on first use, and appends the
-    // action to the page's log on success. NoSuchSpace when the page is
-    // missing or is not a Space page; otherwise mathspace's own result, and
-    // a rejected action leaves the page's world and log untouched.
-    mathspace::Error applySpaceAction(std::uint64_t pageId,
-                                      const std::vector<std::uint8_t>& action,
-                                      mathspace::NoteId* created = nullptr);
-    // nullptr until the page's first successful action.
-    const SpaceState* space(std::uint64_t pageId) const;
-
     // Union of every page rect. Zero-size when there are no pages; check
     // empty() before framing.
     Rect contentBounds() const;
@@ -64,22 +52,16 @@ public:
     // Deserialization only: appends a page that keeps its saved id, and moves
     // the id counter past it. Everything else should go through addPage.
     void adopt(Page page);
-    // Deserialization only: installs a replayed SpaceState (replacing any
-    // with the same page id).
-    void adoptSpace(SpaceState state);
     void setTicks(std::uint64_t ticks);
 
     const std::vector<Page>& pages() const { return m_pages; }
     const std::vector<Stroke>& strokes() const { return m_strokes; }
-    // Sorted by page id.
-    const std::vector<SpaceState>& spaces() const { return m_spaces; }
     std::uint64_t ticks() const { return m_ticks; }
     bool empty() const { return m_pages.empty() && m_strokes.empty(); }
 
 private:
     std::vector<Page> m_pages;
     std::vector<Stroke> m_strokes;
-    std::vector<SpaceState> m_spaces;
     std::uint64_t m_nextId = 1;
     std::uint64_t m_nextStrokeId = 1;
     std::uint64_t m_ticks = 0;

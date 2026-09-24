@@ -2,13 +2,9 @@
 
 #include <nanovg.h>
 
-#include "mathspace/note.hpp"
-#include "mathspace/world.hpp"
-
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
-#include <utility>
 #include <vector>
 
 namespace tapestry {
@@ -42,7 +38,6 @@ NVGcolor accentFor(PageKind kind) {
     case PageKind::Conversation: return nvgRGBA(110, 150, 235, 255);
     case PageKind::File:         return nvgRGBA(126, 204, 158, 255);
     case PageKind::Settings:     return nvgRGBA(168, 142, 235, 255);
-    case PageKind::Space:        return nvgRGBA(235, 184, 110, 255);
     case PageKind::Note:         break;
     }
     return nvgRGBA(232, 196, 120, 255);
@@ -282,83 +277,7 @@ void drawPageCaret(NVGcontext* vg, const Page& page, const Camera& camera,
                 std::max(8.0f, fontSize * 1.25f));
 }
 
-// Space page body: each mathspace note in the page's world is a dot at its
-// `pos` field, labelled with the matching line of the page body (i-th note
-// in id order gets the i-th line). Page-local units are world units with the
-// body's top-left as the origin, so a note at pos (0,0) sits in the corner
-// and 1 unit is 1 world unit, the same scale as page text. fx64 leaves the
-// authoritative state here and only here: raw / 2^32 to a double feeds the
-// draw call and nothing else, so the hash never sees it. A 3-space draws x
-// and y and ignores z for now. Until the first action the page has no
-// SpaceState and there is nothing to draw.
-void drawSpaceBody(NVGcontext* vg, const Page& page, const SpaceState* space,
-                   const Camera& camera, const FontSet& fonts,
-                   const PageUiState& ui) {
-    if (space == nullptr) {
-        return;
-    }
-    const double zoom = camera.zoom();
-    const Vec2 origin = spaceBodyOrigin(page);
-    const Vec2 originPx = camera.worldToScreen(origin.x, origin.y);
-    const auto bodyX = static_cast<float>(originPx.x);
-    const auto bodyY = static_cast<float>(originPx.y);
-    const auto dotR = static_cast<float>(std::max(1.5, kSpaceDotRadius * zoom));
-    const double bodyPx = kBodySize * zoom;
-    const bool labels = fonts.ok() && bodyPx >= kMinBodyPx;
-    if (labels) {
-        nvgFontFaceId(vg, fonts.regular);
-        nvgFontSize(vg, static_cast<float>(bodyPx));
-        nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-    }
-    constexpr double kUnit = 4294967296.0; // 2^32, fx64's scale
-    const NVGcolor accent = accentFor(PageKind::Space);
-
-    // Body lines, as [start, end) byte ranges; line i labels note i.
-    std::vector<std::pair<const char*, const char*>> lines;
-    {
-        const char* cursor = page.body.c_str();
-        const char* const bodyEnd = cursor + page.body.size();
-        while (cursor < bodyEnd) {
-            const char* nl = std::find(cursor, bodyEnd, '\n');
-            lines.emplace_back(cursor, nl);
-            cursor = nl == bodyEnd ? bodyEnd : nl + 1;
-        }
-    }
-
-    std::size_t noteIndex = 0;
-    for (const mathspace::Note& note : space->world.notes) { // id order
-        if (note.kind == mathspace::NoteKind::Space) {
-            continue;
-        }
-        const std::size_t index = noteIndex++;
-        const mathspace::Field* pos = mathspace::find_field(note, mathspace::POS_FIELD);
-        if (pos == nullptr) {
-            continue; // a note without a position has nowhere to be drawn
-        }
-        double x = static_cast<double>(pos->value[0].raw) / kUnit;
-        double y = pos->dim >= 2
-            ? static_cast<double>(pos->value[1].raw) / kUnit : 0.0;
-        if (ui.dragNotePage == page.id && ui.dragNote == note.id) {
-            x += ui.dragNoteOffset.x;
-            y += ui.dragNoteOffset.y;
-        }
-        const auto sx = static_cast<float>(bodyX + x * zoom);
-        const auto sy = static_cast<float>(bodyY + y * zoom);
-
-        nvgBeginPath(vg);
-        nvgCircle(vg, sx, sy, dotR);
-        nvgFillColor(vg, withAlpha(accent, 220));
-        nvgFill(vg);
-
-        if (labels && index < lines.size() && lines[index].first != lines[index].second) {
-            nvgFillColor(vg, nvgRGBA(196, 205, 224, 200));
-            nvgText(vg, sx + dotR * 1.8f, sy, lines[index].first, lines[index].second);
-        }
-    }
-}
-
-void drawPage(NVGcontext* vg, const Page& page, const SpaceState* space,
-              const Camera& camera,
+void drawPage(NVGcontext* vg, const Page& page, const Camera& camera,
               const FontSet& fonts, const PageUiState& ui) {
     const bool selected = page.id == ui.selectedId;
     const double zoom = camera.zoom();
@@ -450,12 +369,6 @@ void drawPage(NVGcontext* vg, const Page& page, const SpaceState* space,
     nvgIntersectScissor(vg, bodyX, bodyY, bodyW, bodyH);
     if (page.kind == PageKind::Settings) {
         drawSettingsBody(vg, page, camera, fonts, ui);
-    } else if (page.kind == PageKind::Space
-               && !(ui.editingPageId == page.id
-                    && ui.editingRegion == PageTextRegion::Body)) {
-        // The body text is the note labels; while it is being edited the
-        // text itself is shown (with its caret), otherwise the dots are.
-        drawSpaceBody(vg, page, space, camera, fonts, ui);
     } else if (!page.body.empty()) {
         const double bodyPx = kBodySize * zoom;
         const double lineStepPx = bodyPx * kBodyLineHeight;
@@ -591,40 +504,6 @@ std::size_t pageTextIndexAt(NVGcontext* vg, const Page& page,
     return page.body.size();
 }
 
-Vec2 spaceBodyOrigin(const Page& page) {
-    return {page.rect.x + kPadding,
-            page.rect.y + kPageTitleBarHeight + kPadding * 0.5};
-}
-
-mathspace::NoteId spaceNoteAt(const Page& page, const SpaceState* space,
-                              Vec2 worldPoint, double slackWorld) {
-    mathspace::NoteId hit;
-    if (space == nullptr || page.minimized) {
-        return hit;
-    }
-    const Vec2 origin = spaceBodyOrigin(page);
-    const double r = kSpaceDotRadius + slackWorld;
-    constexpr double kUnit = 4294967296.0;
-    for (const mathspace::Note& note : space->world.notes) { // id order
-        if (note.kind == mathspace::NoteKind::Space) {
-            continue;
-        }
-        const mathspace::Field* pos = mathspace::find_field(note, mathspace::POS_FIELD);
-        if (pos == nullptr) {
-            continue;
-        }
-        const double x = origin.x + static_cast<double>(pos->value[0].raw) / kUnit;
-        const double y = origin.y + (pos->dim >= 2
-            ? static_cast<double>(pos->value[1].raw) / kUnit : 0.0);
-        const double dx = worldPoint.x - x;
-        const double dy = worldPoint.y - y;
-        if (dx * dx + dy * dy <= r * r) {
-            hit = note.id; // later (higher) ids draw on top, so they win
-        }
-    }
-    return hit;
-}
-
 SettingsLayout settingsLayout(const Page& page) {
     const double rowStartY = page.rect.y + kPageTitleBarHeight + 12.0;
     const double controlRight = page.rect.right() - kPadding;
@@ -665,7 +544,7 @@ void drawPages(NVGcontext* vg, const World& world, const Camera& camera,
 
     for (const Page& page : world.pages()) {
         if (page.displayRect().intersects(visible)) {
-            drawPage(vg, page, world.space(page.id), camera, fonts, ui);
+            drawPage(vg, page, camera, fonts, ui);
             if (page.id == ui.selectedId) {
                 drawResizeHandles(vg, page, camera);
             }

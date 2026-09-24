@@ -117,53 +117,6 @@ Rect World::contentBounds() const {
     return found ? bounds : Rect {};
 }
 
-namespace {
-
-std::vector<SpaceState>::iterator spaceLowerBound(std::vector<SpaceState>& spaces,
-                                                  std::uint64_t pageId) {
-    return std::lower_bound(spaces.begin(), spaces.end(), pageId,
-        [](const SpaceState& s, std::uint64_t id) { return s.pageId < id; });
-}
-
-} // namespace
-
-mathspace::Error World::applySpaceAction(std::uint64_t pageId,
-                                         const std::vector<std::uint8_t>& action,
-                                         mathspace::NoteId* created) {
-    const Page* page = pageById(pageId);
-    if (page == nullptr || page->kind != PageKind::Space) {
-        return mathspace::Error::NoSuchSpace;
-    }
-    auto it = spaceLowerBound(m_spaces, pageId);
-    if (it == m_spaces.end() || it->pageId != pageId) {
-        SpaceState fresh;
-        fresh.pageId = pageId;
-        fresh.world = mathspace::World(pageId);
-        it = m_spaces.insert(it, std::move(fresh));
-    }
-    const mathspace::Error result = it->world.apply(action, created);
-    if (result == mathspace::Error::Ok) {
-        it->log.push_back(action);
-    }
-    return result;
-}
-
-const SpaceState* World::space(std::uint64_t pageId) const {
-    for (const SpaceState& s : m_spaces) {
-        if (s.pageId == pageId) return &s;
-    }
-    return nullptr;
-}
-
-void World::adoptSpace(SpaceState state) {
-    auto it = spaceLowerBound(m_spaces, state.pageId);
-    if (it != m_spaces.end() && it->pageId == state.pageId) {
-        *it = std::move(state);
-    } else {
-        m_spaces.insert(it, std::move(state));
-    }
-}
-
 void World::adopt(Page page) {
     // Deserialization path: the page keeps the id it was saved with, and the
     // id counter moves past it so later addPage calls never collide.

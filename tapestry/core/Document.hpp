@@ -45,10 +45,6 @@ struct DocumentState {
 //   pbody <text, newlines escaped as \n>
 //   drop <id>                                     (page removed)
 //   order <id> <id> …                             (draw order changed)
-//   mspace <page-id> <base64 action bytes>       (one mathspace action of a
-//                                                  Space page; a delta holds
-//                                                  those appended since)
-//   mreset <page-id>                              (the page's log restarts)
 //   strokes <count>                               (vector stroke set changed)
 //   stroke <id> <point-count>
 //   spoint <x> <y> <pressure>

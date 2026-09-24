@@ -122,15 +122,6 @@ add_subdirectory(third_party)
 # Core library — camera, geometry, the page world, and rendering primitives.
 # No windowing, no SDL, no event loop, so it stays testable without a display.
 # ---------------------------------------------------------------------------
-# ---------------------------------------------------------------------------
-# mathspace — the spatial note store behind PageKind::Space, built from the
-# repository root project (which also owns ddsim). Its doctest suite is the
-# root project's business, so tests are forced off here; the root's
-# forbidden-token gate still runs at configure over its include/ and src/.
-# ---------------------------------------------------------------------------
-set(DDSIM_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-add_subdirectory(${PROJECT_SOURCE_DIR}/.. ${CMAKE_BINARY_DIR}/physics-engine)
-
 add_library(tapestry_core STATIC
     core/Camera.cpp
     core/Document.cpp
@@ -142,7 +133,7 @@ target_sources(tapestry_core PRIVATE render/Strokes.cpp)
 
 target_include_directories(tapestry_core PUBLIC ${PROJECT_SOURCE_DIR})
 target_link_libraries(tapestry_core
-    PUBLIC tapestry_settings nanovg mathspace)
+    PUBLIC tapestry_settings nanovg)
 
 # ---------------------------------------------------------------------------
 # Application. Optional: the core library must always build on machines with no
