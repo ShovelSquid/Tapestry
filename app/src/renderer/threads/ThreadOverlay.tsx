@@ -42,7 +42,7 @@ import { SideView, SIDE_ZOOM_DURATION_FACTOR, centerForZoomAroundScreenX, clampS
 import { stepMarker, markerLabel } from './stage/markers'
 import { getStageRenderer, isWebglAvailable } from './stage/renderer'
 import { readAuthorPalette, readStageTokens } from './stage/tokens'
-import { StrandLayer, deriveAuthorSpans } from './stage/strands'
+import { StrandLayer, deriveAuthorSpans, separationChipText, SEPARATION_BOOST_MAX_PX } from './stage/strands'
 import { loadSessions, formatDuration, useSessions } from './SessionBridge'
 import DateScrubber from './DateScrubber'
 import { NAV_KEYS, dayIndexOf, dayStartMs, flyTo, gravityStep, zoomStep, type NavAction } from './navigation'
@@ -222,6 +222,25 @@ interface StageRuntime {
   pauseOpen: boolean
   firstBreakpointSeconds: number
   timeoutSeconds: number
+
+  // D-23/L-2 (Task 3): the drag-apart / `A`-key display transform. Pure
+  // render state -- strands.ts itself carries no commit path, so none of
+  // this can ever reach the document no matter how it is driven.
+  /** Latched by the `A` key (or held while actively dragging); the target
+   * `renderFrame` eases `separationCurrentPx` toward every frame. */
+  separationTargetPx: number
+  /** The actual boost applied to `StrandLayer` this frame -- eases toward
+   * `separationTargetPx` (240ms-ish) unless reduced motion is active, in
+   * which case it jumps straight to the target (UI-SPEC "release snaps
+   * instead of springing"). */
+  separationCurrentPx: number
+  /** True only while a drag gesture (not the `A` latch) is actively pulling
+   * the strands apart -- on release, the target returns to whatever the `A`
+   * latch alone would call for. */
+  separationDragActive: boolean
+  /** `A` toggles this; independent of a drag, so releasing a drag while
+   * latched leaves the strands apart. */
+  separationLatched: boolean
 }
 
 function secondsSince(startMs: number, atMs: number): number {
@@ -299,6 +318,12 @@ export default function ThreadOverlay({
   const [selfActorId, setSelfActorId] = useState('user.unknown')
   const [typerOrderedAgentNames, setTyperOrderedAgentNames] = useState<string[]>([])
   const [initialLiveLetters, setInitialLiveLetters] = useState<Array<{ grapheme: string; actor: string }>>([])
+
+  // D-23/L-2: "Showing agent.[name] on its own. The document hasn't
+  // changed." -- visible while the strands are pulled apart, by drag or the
+  // `A` key alike.
+  const [separationChip, setSeparationChip] = useState<string | null>(null)
+  const separationDragStartYRef = useRef<number | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -660,6 +685,11 @@ export default function ThreadOverlay({
   const handleStagePointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     if (viewRef.current !== 'side') return
     dragRef.current = { x: e.clientX }
+    // D-23/L-2: every drag's vertical component is a candidate strand
+    // separation, independent of the existing horizontal pan above -- a
+    // diagonal drag can do both, which is the honest reading of an
+    // inherently ambiguous gesture.
+    separationDragStartYRef.current = e.clientY
     clickCandidateRef.current = { x: e.clientX, y: e.clientY }
     e.currentTarget.setPointerCapture(e.pointerId)
   }, [])
@@ -689,8 +719,29 @@ export default function ThreadOverlay({
         stage.sideView.setView(newCenter, stage.sideView.spanSeconds, durationSeconds)
         syncSideSnapshot()
       }
+
+      // D-23/L-2: dragging a strand perpendicular to the line separates the
+      // strands, up to 120px (UI-SPEC "Spacing"). No commit path exists
+      // anywhere in this gesture -- it only ever calls
+      // `StrandLayer.setSeparationBoost`, a per-frame uniform write.
+      if (
+        viewRef.current === 'side' &&
+        separationDragStartYRef.current !== null &&
+        e.buttons === 1 &&
+        stage.strands.chunkCount > 0
+      ) {
+        const dy = Math.abs(e.clientY - separationDragStartYRef.current)
+        stage.separationDragActive = dy > 2
+        stage.separationTargetPx = stage.separationLatched
+          ? SEPARATION_BOOST_MAX_PX
+          : Math.min(SEPARATION_BOOST_MAX_PX, dy)
+        if (stage.separationDragActive && !separationChip) {
+          const firstAgent = stage.orderedAgentNames[0]
+          if (firstAgent) setSeparationChip(separationChipText(firstAgent))
+        }
+      }
     },
-    [syncSideSnapshot],
+    [separationChip, syncSideSnapshot],
   )
 
   // D-18: "click any point on the line opens the document at that moment."
@@ -699,12 +750,26 @@ export default function ThreadOverlay({
   // handled as a drag by handleStagePointerMove.
   const CLICK_MOVEMENT_THRESHOLD_PX = 5
 
+  /** D-23/L-2: releasing a drag springs the strands back over ~240ms unless
+   * the `A` key has latched them apart, in which case they stay apart --
+   * `renderFrame`'s own easing (or an instant snap under reduced motion) is
+   * what actually moves `separationCurrentPx`; this only sets the target. */
+  const endSeparationDrag = useCallback(() => {
+    separationDragStartYRef.current = null
+    const stage = stageRuntimeRef.current
+    if (!stage || !stage.separationDragActive) return
+    stage.separationDragActive = false
+    stage.separationTargetPx = stage.separationLatched ? SEPARATION_BOOST_MAX_PX : 0
+    if (!stage.separationLatched) setSeparationChip(null)
+  }, [])
+
   const handleStagePointerUp = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
       const stage = stageRuntimeRef.current
       const candidate = clickCandidateRef.current
       dragRef.current = null
       clickCandidateRef.current = null
+      endSeparationDrag()
       if (!stage || viewRef.current !== 'side' || !candidate) return
       const movedPx = Math.hypot(e.clientX - candidate.x, e.clientY - candidate.y)
       if (movedPx > CLICK_MOVEMENT_THRESHOLD_PX) return
@@ -712,13 +777,14 @@ export default function ThreadOverlay({
       const atSeconds = stage.sideView.screenXToTime(e.clientX - rect.left)
       openMomentAt(stage.threadStartMs + atSeconds * 1000)
     },
-    [openMomentAt],
+    [endSeparationDrag, openMomentAt],
   )
 
   const handleStagePointerLeave = useCallback(() => {
     pointerRef.current = null
     dragRef.current = null
-  }, [])
+    endSeparationDrag()
+  }, [endSeparationDrag])
 
   const handleScrub = useCallback(
     (centerMs: number) => {
@@ -820,9 +886,23 @@ export default function ThreadOverlay({
           return
         }
         case 'toggle-separate-authors': {
-          // D-23/L-2 strand separation is not built by this plan (it has no
-          // twisted-strand rendering yet to separate) -- a documented no-op
-          // seam for the plan that adds it.
+          // D-23/L-2: the keyboard equal of the drag -- a drag-only action
+          // would fail DRAW-04. Latching is independent of any drag in
+          // progress, so releasing a drag while latched leaves the strands
+          // apart.
+          e.preventDefault()
+          if (stage.strands.chunkCount === 0) return // nothing to separate: no agent has written here
+          stage.separationLatched = !stage.separationLatched
+          stage.separationTargetPx = stage.separationLatched || stage.separationDragActive ? SEPARATION_BOOST_MAX_PX : 0
+          const firstAgent = stage.orderedAgentNames[0]
+          setSeparationChip(
+            stage.separationLatched && firstAgent ? separationChipText(firstAgent) : null,
+          )
+          setAnnouncement(
+            stage.separationLatched
+              ? 'Showing each author on its own line.'
+              : 'Twisting the authors back together.',
+          )
           return
         }
         default:
@@ -989,6 +1069,10 @@ export default function ThreadOverlay({
         pauseOpen: false,
         firstBreakpointSeconds,
         timeoutSeconds: history.timeoutSeconds,
+        separationTargetPx: 0,
+        separationCurrentPx: 0,
+        separationDragActive: false,
+        separationLatched: false,
       }
     }
 
@@ -1038,6 +1122,21 @@ export default function ThreadOverlay({
       if (!stage) return
       const nowMs = Date.now()
       const nowSeconds = secondsSince(stage.threadStartMs, nowMs)
+
+      // D-23/L-2: ease the drag-apart/`A`-key separation toward its target
+      // every frame (a ~240ms spring at 60fps); reduced motion snaps
+      // straight to the target instead (UI-SPEC "release snaps instead of
+      // springing"). A pure uniform write on strands.ts's own material --
+      // never anything that could reach the document.
+      if (stage.separationCurrentPx !== stage.separationTargetPx) {
+        stage.separationCurrentPx = reducedMotion
+          ? stage.separationTargetPx
+          : stage.separationCurrentPx + (stage.separationTargetPx - stage.separationCurrentPx) * 0.15
+        if (Math.abs(stage.separationTargetPx - stage.separationCurrentPx) < 0.5) {
+          stage.separationCurrentPx = stage.separationTargetPx
+        }
+        stage.strands.setSeparationBoost(stage.separationCurrentPx)
+      }
 
       const idle = nowSeconds - stage.lastActivitySeconds
       if (idle < stage.timeoutSeconds) {
@@ -1318,6 +1417,15 @@ export default function ThreadOverlay({
             </div>
           )}
 
+          {/* D-23/L-2: "Showing agent.[name] on its own. The document
+              hasn't changed." -- visible while the strands are pulled
+              apart, by drag or the `A` key alike. */}
+          {separationChip && (
+            <div style={styles.separationChip} role="status">
+              {separationChip}
+            </div>
+          )}
+
           {/* D-17: the date scrubber, only in the side view, once the
               thread has at least one recorded session to scrub across. */}
           {view === 'side' && sessions.length > 0 && sideSnapshot && (
@@ -1462,6 +1570,19 @@ const styles: Record<string, React.CSSProperties> = {
     transform: 'translate(-50%, -50%)',
     fontSize: 13,
     color: 'var(--tap-muted, #6B6B6B)',
+    pointerEvents: 'none',
+  },
+  separationChip: {
+    position: 'absolute',
+    left: '50%',
+    top: 12,
+    transform: 'translateX(-50%)',
+    fontSize: 13,
+    padding: '4px 10px',
+    borderRadius: 6,
+    background: 'var(--tap-surface, #FFFFFF)',
+    color: 'var(--tap-ink, #2C2C2C)',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
     pointerEvents: 'none',
   },
   scrubberWrap: {

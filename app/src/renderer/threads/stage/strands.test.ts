@@ -6,7 +6,19 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { computeTwistWindows, deriveAuthorSpans, splitSpanByTwistWindows, SPAN_GAP_SECONDS } from './strands'
+import {
+  computeTwistWindows,
+  deriveAuthorSpans,
+  separationChipText,
+  splitSpanByTwistWindows,
+  SPAN_GAP_SECONDS,
+} from './strands'
+
+describe('separationChipText (D-23/L-2)', () => {
+  it('names the agent and states plainly that the document has not changed', () => {
+    expect(separationChipText('claude')).toBe("Showing agent.claude on its own. The document hasn't changed.")
+  })
+})
 
 const THREAD_START = 0
 

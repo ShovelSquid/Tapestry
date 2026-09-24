@@ -40,9 +40,24 @@ export const STRAND_SEPARATION_PX = 6
 export const STRAND_SEPARATION_MIN_PX = 4
 export const STRAND_SEPARATION_MAX_PX = 12
 
+/** UI-SPEC "Spacing": "Strand drag-apart travel: 120px maximum." */
+export const SEPARATION_BOOST_MAX_PX = 120
+
 /** Seconds per strand chunk (mirrors `ribbon.ts`'s `CHUNK`, the same
  * floating-origin precision reasoning). */
 const CHUNK_SECONDS = 600
+
+/**
+ * UI-SPEC "Agents writing live": the chip shown while a strand is pulled
+ * apart (drag or the `A` key). Named here, once, so `ThreadOverlay.tsx`
+ * never risks the copy drifting from what this module's own behaviour
+ * actually does — a display transform with no commit path anywhere in this
+ * file, so the document really hasn't changed no matter how far apart the
+ * strands are pulled.
+ */
+export function separationChipText(agentName: string): string {
+  return `Showing agent.${agentName} on its own. The document hasn't changed.`
+}
 
 // ---------------------------------------------------------------------------
 // Pure span/twist derivation (no WebGL — unit-testable on its own)
@@ -201,12 +216,19 @@ function createStrandMaterial(uniforms: StageUniforms, authorColors: THREE.Vecto
       uSeparationMinPx: { value: STRAND_SEPARATION_MIN_PX },
       uSeparationMaxPx: { value: STRAND_SEPARATION_MAX_PX },
       uTwistPeriod: { value: TWIST_PERIOD_SECONDS },
+      // D-23/L-2: the drag-apart / `A`-key display transform. Always 0 by
+      // default (parallel strands at their ordinary 6-12px separation);
+      // ThreadOverlay.tsx drives this toward `SEPARATION_BOOST_MAX_PX` while
+      // dragging or latched, and back to 0 on release -- a pure per-frame
+      // uniform write, never a document edit (no commit path exists in this
+      // file at all).
+      uSeparationBoost: { value: 0 },
     },
     vertexShader:
       STAGE_COMMON_GLSL +
       /* glsl */ `
       attribute float aBlock, aOffset, aLocal, aSide, aAuthor, aTwist, aStrandSign;
-      uniform float uSeparationPx, uSeparationMinPx, uSeparationMaxPx, uMinPx, uWidth, uTwistPeriod;
+      uniform float uSeparationPx, uSeparationMinPx, uSeparationMaxPx, uMinPx, uWidth, uTwistPeriod, uSeparationBoost;
       varying float vLocal, vSide, vAuthor;
       void main() {
         float rel = relTime(aBlock, aOffset);
@@ -214,12 +236,13 @@ function createStrandMaterial(uniforms: StageUniforms, authorColors: THREE.Vecto
         vec2 axis = threadAxis();
         vec2 perp = vec2(-axis.y, axis.x);
         float upp = unitsPerPx(mv);
-        float sepPx = clamp(uSeparationPx, uSeparationMinPx, uSeparationMaxPx);
+        float sepPx = clamp(uSeparationPx, uSeparationMinPx, uSeparationMaxPx) + uSeparationBoost;
         // The person (aStrandSign < 0) is always the near strand; an agent
         // (aStrandSign > 0) is the far one. Inside a twist window the sign
         // itself oscillates -- "one smooth crossing per 1.0s of thread time"
         // (UI-SPEC) -- so the two strands trade places smoothly rather than
-        // snapping.
+        // snapping. While separated (uSeparationBoost > 0), the extra
+        // distance keeps them legible as two lines even mid-twist.
         float sign = aStrandSign;
         if (aTwist > 0.5) {
           sign = aStrandSign * cos(6.28318530718 * rel / uTwistPeriod);
@@ -309,6 +332,20 @@ export class StrandLayer {
 
   setUniforms(uniforms: StageUniforms, authorColors: THREE.Vector3[]): void {
     this.mesh.material = createStrandMaterial(uniforms, authorColors)
+  }
+
+  /**
+   * D-23/L-2: sets the drag-apart / `A`-key separation boost, clamped to
+   * `[0, SEPARATION_BOOST_MAX_PX]` (UI-SPEC "Strand drag-apart travel: 120px
+   * maximum"). A pure per-frame uniform write — this file has no commit or
+   * kernel-submit call of any kind, so the document is unaffected regardless
+   * of how far apart the strands are pulled.
+   */
+  setSeparationBoost(px: number): void {
+    const material = this.mesh.material as THREE.ShaderMaterial | undefined
+    if (!material) return
+    const clamped = Math.max(0, Math.min(SEPARATION_BOOST_MAX_PX, px))
+    ;(material.uniforms.uSeparationBoost as THREE.IUniform<number>).value = clamped
   }
 
   private static allocate(capacity: number, self: StrandLayer): THREE.BufferGeometry {
