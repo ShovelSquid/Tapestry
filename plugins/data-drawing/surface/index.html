@@ -4,13 +4,23 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Data Drawing — surface dev page</title>
+    <!--
+      Query parameters (dev-host.ts / main.ts):
+        ?webgl=1        force the WebGL 2 backend (default: WebGPU when present)
+        ?transport=main run the sim on the main thread instead of the Worker
+        ?cycles=N       mount / dispose the surface N times (250 ms apart), then
+                        mount once more and print `cycles: mounted=… disposed=… lost=…`
+    -->
     <style>
       html, body { margin: 0; height: 100%; background: #111; color: #ddd; }
       #surface { position: fixed; inset: 0; }
+      #cycles { position: fixed; left: 8px; bottom: 8px; z-index: 10; margin: 0; padding: 4px 8px; font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; color: #cfe8d8; background: rgba(0, 0, 0, 0.7); border: 1px solid #2f4f3f; border-radius: 4px; pointer-events: none; }
+      #cycles:empty { display: none; }
     </style>
   </head>
   <body>
     <div id="surface"></div>
+    <pre id="cycles"></pre>
     <script type="module" src="/src/dev-host.ts"></script>
   </body>
 </html>

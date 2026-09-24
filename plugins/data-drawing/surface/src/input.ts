@@ -64,7 +64,7 @@ export const PEN_FACTS = {
   predictedPerMoveMax: 10, // [MEASURED] predictedPerMove.max — predicted events are preview-only
   rawUpdatePerSecond: 250, // [MEASURED] pointerrawupdate fires in this document at ~250 / s
   isSecureContext: true, // [MEASURED] tapestry-plugin:// is a secure context (pointerrawupdate available)
-  crossOriginIsolated: false, // [MEASURED] no SharedArrayBuffer; snapshots stay transferred ArrayBuffers
+  crossOriginIsolated: false, // [MEASURED] no shared memory available; snapshots stay transferred ArrayBuffers
   gpu: true, // [MEASURED] navigator.gpu present (WebGPU path for 01-07)
   strokes: 4, // [MEASURED] pointerdowns on the stage during the run
   samples: 605, // [MEASURED] coalesced samples ingested
