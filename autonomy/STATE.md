@@ -16,7 +16,7 @@ actions, replay tool, and goldens built before the redirect are kept.
 | Phase | Status |
 | --- | --- |
 | 1 engine over the kernel | built and tested headlessly (`836a4da`); only the human GUI confirmation is open, see Blocked |
-| 2 expressions | in progress: fxmath (`3ca1482`), ast+parser (`1725143`), bytecode (`30fc1a6`), vm (`3b25475`) done; action 37 + step eval + golden `plot`, plugin side, diff remain |
+| 2 expressions | engine side done: fxmath (`3ca1482`), ast+parser (`1725143`), bytecode (`30fc1a6`), vm (`3b25475`), action 37 + step eval + golden `plot` (`1abc9d4`). Open: the plugin side (inspector shows a bound value), then `diff.hpp` |
 | 3 force rules | not started |
 | 4 constraints | not started |
 | 5 views | not started |
@@ -40,41 +40,40 @@ viewer; it is theirs to edit.)
    `.tree`. If a session cannot drive the GUI, skip this: the headless
    check in `plugins/mathspace/test/tree.test.js` already covers the
    file-level condition. Either way, do not block phase 2 on it.
-2. **Phase 2, next slice: action 37 `BindField` + bound-field
-   evaluation in `step()` + golden `plot`.** In `action.hpp`/`action.cpp`:
-   kind 37 `BindField(note u64, name, bytecode bytes)`; `World::apply`
-   decodes the bytecode with `expr::decode` (reject `BadAction` on any
-   error), then sets `Field{name, dim = program.dim, bound = true,
-   bytecode}` keeping existing lanes if the field exists at that dim
-   (else zero), via `set_field` (so `pos` on a Space and dim rules still
-   apply). Unbinding: bind with empty bytes clears `bound`/`bytecode`
-   (or a `SetField` over it; pick one, record). `hash.cpp` already writes
-   `bound` and `bytecode` bytes in the field record (`wire.hpp`), check
-   nothing else changes; bump the walk's rule pin in `version.hpp` since
-   `step()` gains behaviour. `step.cpp`: after the bootstrap rule, for
-   every note in id order, every bound field in name order, `expr::eval`
-   with `other = nullptr` against the pre-step snapshot? No: evaluate
-   against the live world in order (simple, deterministic, record it);
-   on a VM error leave the lanes as they were (phase 3 adds the error
-   field on the node). Golden `tests/golden/ms/plot.actions`: a space,
-   two notes, bind `y.expr` = `sin(self.x)`-like expressions plus a
-   `norm`, a `curve` on `world.tick`, and an `if`; a few checkpoints;
-   record with `ms_replay --write-golden` and confirm Release and UBSan.
-   Fixture hex from Python per `action.hpp`'s grammar; the bytecode bytes
-   come from a tiny doctest or `ms_replay` helper that prints
-   `encode(compile(parse(text)))` (add `ms_replay --compile "<text>"` if
-   there is no simpler way; dims for refs need a world, so compile inside
-   the fixture generator against the same actions).
-3. Then the plugin side: `ms_compile(handle, note_id, text, out, cap)`
-   ABI call (one parser, one grammar, hashed bytecode; compile against
-   the engine's world with `WorldDims`), `image.js` mapping `f.expr text`
-   props to action 37, the snapshot/diff writing evaluated lanes back so
-   the inspector shows the value after a step (phase 2 done condition),
-   a vitest for it. `diff.hpp` (symbolic d/d(self.f.lane)) is needed by
-   phase 4 and can be the last phase 2 slice or the first phase 4 slice.
+2. **Phase 2, next slice: the plugin side.** (a) `ms_compile` in
+   `include/mathspace/mathspace_c.h` + `src/mathspace/ms_c.cpp`:
+   `int ms_compile(handle, uint64 note_id, const char* text, size_t len,
+   uint8_t* out, size_t cap)` using ddsim's cap protocol like
+   `ms_serialize` (cap 0 returns the needed length), compiling with
+   `expr::parse` then `expr::compile(ast, expr::WorldDims{world, note})`;
+   errors return a negative code carrying the stage and offset, or write
+   an error string; decide, keep it small; export it in
+   `wasm/mathspace_wasm.cpp` and `scripts/build-wasm.sh`'s exported
+   function list. (b) `plugins/mathspace/image.js`: a kernel prop
+   `<f>.expr text "<source>"` becomes a `BindField` action (kind 37, `u64
+   note | u8 len | name | u32 code_len | code`) after the note's
+   `SetField`s, calling `ms_compile` through `engine.js`; compile failures
+   go to `buildImage(...).problems` (and, phase 3, onto the node as
+   `mathspace.error`). Bound fields are bound *after* every note exists,
+   so a second pass over the image is needed for `node(nN)` refs. (c)
+   `snapshot`/`diff` already carry a bound field's lanes, so the
+   inspector shows `<f>.x real ...` after a step once (b) lands; check
+   with a vitest in `plugins/mathspace/test/` that binds `y.expr` =
+   `sin(self.x)` style text and sees the value in the diff. Then phase 2's
+   done condition is met except the human GUI look; say so in STATE and
+   README.
+3. `diff.hpp` (symbolic d/d(self.f.lane) on the Ast, then compile the
+   derivative) is needed by phase 4's XPBD gradients; it can be the last
+   phase 2 slice or the first phase 4 slice.
 
 ## Done
 
+- `1abc9d4` ms2 action 37: `bind_field`, `Error::BadBytecode`, bytecode
+  validated in `set_field`/`well_formed`, bound evaluation in `step()`,
+  `MS_STEP_VERSION` 2 (was `MS_RULE_INTEGRATE_VERSION` 1), goldens
+  re-recorded, `tests/golden/ms/plot.{actions,sha256}` generated by
+  `golden_test.cpp` (`MS_WRITE_FIXTURES=1`). Wasm rebuilt locally and
+  the plugin's 34 vitest tests pass against the new goldens.
 - `3b25475` ms2 vm: `include/mathspace/expr/vm.hpp`, `src/mathspace/expr/vm.cpp`,
   `tests/mathspace/expr_vm_test.cpp` (every op and builtin, all five
   reference kinds, run-time NoOther/NoSuchNote/NoSuchField/DimChanged/
@@ -106,6 +105,18 @@ viewer; it is theirs to edit.)
 
 ## Decisions
 
+- Action 37 and step evaluation (2026-09-24, `1abc9d4`): `SetField`'s
+  record already carried `bound` and bytecode, so `BindField` is the
+  convenient form and both paths validate in `set_field` (a bound field
+  decodes at its dim, an unbound one has no bytecode). Bound fields are
+  evaluated after the integrate rule, notes in id order, fields in name
+  order, against the live world (so a field sees this tick's `pos` and
+  the bound fields before it by name, and the previous tick's value of
+  those after it). `other` is null until phase 3. An evaluation error
+  leaves the lanes; the bytecode is decoded on every evaluation (cheap,
+  no cache yet). The walk pin was renamed to `MS_STEP_VERSION` since it
+  now covers more than the integrate rule; `mathspace_plan.md` still
+  says `MS_RULE_INTEGRATE_VERSION` (same slot in the walk, not edited).
 - VM domain errors (2026-09-24, `3b25475`): `/ 0`, `sqrt(x<0)`,
   `log(x<=0)`, `pow(x<=0, y)` yield 0 in every build and are not
   evaluation errors, because `a / norm(a)` at `a = 0` is ordinary physics
@@ -185,6 +196,12 @@ viewer; it is theirs to edit.)
 
 ## Learned
 
+- Golden fixtures whose actions carry bytecode cannot be written by
+  hand: `golden_test.cpp` generates `plot.actions` from a list of
+  expressions compiled against the world as it is built, and rewrites
+  the file under `MS_WRITE_FIXTURES=1`; `.sha256` is still recorded with
+  `ms_replay --write-golden`. macOS has no `timeout`; rely on the tool's
+  own limit.
 - The `Ast` is post-order with children as contiguous runs in `Ast::args`,
   so `to_sexpr` is one index loop over a `vector<string>`; the bytecode
   compiler can be the same loop. Variadic children must be collected in
