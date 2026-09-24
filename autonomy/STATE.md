@@ -15,7 +15,7 @@ actions, replay tool, and goldens built before the redirect are kept.
 
 | Phase | Status |
 | --- | --- |
-| 1 engine over the kernel | in progress (store/hash/actions/replay/ids/snapshot/ABI/wasm/plugin skeleton/image done; run loop, app check remain) |
+| 1 engine over the kernel | in progress (everything but the in-app check is done) |
 | 2 expressions | not started |
 | 3 force rules | not started |
 | 4 constraints | not started |
@@ -30,31 +30,27 @@ viewer; it is theirs to edit.)
 
 ## Next
 
-1. **Run loop and commits.** In `index.js`: on `mathspace.run`, build the
-   image from `getNodes()`, step at 60 Hz with `setInterval`, every 60
-   ticks or on pause read the snapshot, diff, `kernel.submit('plugin',
-   'mathspace', 'advance', [...sets, {op:'advance', ticks:k}])`. Before
-   each commit compare `status().lastGoodSeq` with the seq of our last
-   commit; if others committed, rebuild the image first. `image.js`
-   already gives `buildImage(nodes)` → `{actions, fields, types,
-   problems}`, `parseSnapshot(engine.notes())` and `diff(fields, snap,
-   types)` → setProperty ops; the checkpoint fixture
-   `test/fixtures/velocity.json` exists and passes. Test the loop with a
-   fake `kernel` object (getNodes/status/submit recording calls) and
-   fake timers.
-2. **Phase 1 done check.** Build the app (`npm install` at the root,
+1. **Phase 1 done check.** Build the app (`npm install` at the root,
    `npm run build:native` in `app/`, then the app's dev script; see
    `app/package.json`), create a note, set `velocity.x real 1` via the
    inspector or a `set` commit, Run, Pause, confirm the `.tree` has the
    `set position.x` lines and reopening shows the note moved. Record
    exactly how the app was launched under Learned. Then mark phase 1
-   done and update `README.md`'s status paragraph.
+   done and update `README.md`'s status paragraph. If the GUI cannot be
+   driven from an unattended session, do the headless half: load the
+   plugin through `app/src/main/plugin-host.ts` against a real kernel
+   bridge in an app test (see `app/src/main/*.test.ts` for the pattern),
+   invoke `mathspace.run` then `mathspace.pause`, and assert the `.tree`
+   contains the `set n<k> position.x real …` and `advance` lines; leave
+   the visual confirmation as a one-line human check under Blocked.
 
 Then phase 2 per the plan, starting with `include/ddsim/fxmath.hpp` and
 its oracle tests.
 
 ## Done
 
+- `a111181` ms1 run loop: `runner.js` (rebuild/tick/flush/start/pause/
+  stepOnce/dispose), `index.js` wired, 6 tests with a fake kernel.
 - `07f35f4` ms1 image.js: exact real↔raw, key convention, JS encoders
   pinned to `velocity.actions`, `buildImage`, `parseSnapshot`, `diff`,
   checkpoint fixture `test/fixtures/velocity.json` (16 tests).
@@ -83,6 +79,11 @@ its oracle tests.
 
 ## Decisions
 
+- Run loop: a foreign commit found at flush time drops the engine's
+  pending ticks and rebuilds; a refused submit forces a rebuild before
+  the next commit; snapshot and diff are taken before any await so ticks
+  during an in-flight commit go to the next one; `mathspace.step` is a
+  no-op while running. Engine seed is 1. (2026-09-24, `a111181`.)
 - The implicit space (notes with `position.*` and no `space` ref) is one
   per image under id `2^63`, a value no kernel `n<k>` reaches, dim 2.
   `diff` ignores snapshot notes absent from the before-image, so the
