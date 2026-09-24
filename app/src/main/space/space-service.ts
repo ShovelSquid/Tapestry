@@ -38,6 +38,9 @@ import {
   classifySpace,
   differentWorldReason,
   importFromSettings,
+  problemMessage,
+  recoverForest,
+  recoverHome,
   reopenFromPointer,
   reservedFileRefusal,
   type SpacePaths,
@@ -72,6 +75,18 @@ export const FRAME_HISTORY_LIMIT = 100
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
+
+/**
+ * The approved 4.9 refusal: a space action while no space is open. A class of
+ * its own so main can tell it from any other failure and show its sentence
+ * verbatim (T-2.6-21).
+ */
+export class SpaceRefusal extends Error {
+  constructor() {
+    super(SPACE_NOT_OPEN)
+    this.name = 'SpaceRefusal'
+  }
+}
 
 export interface SpaceServiceHooks {
   /** Called for each restored member path, so main can approve it for IPC. */
@@ -148,6 +163,13 @@ export class SpaceService {
   // or the person moves its frame.
   private fitEligible = new Set<string>()
 
+  // Why the last launch did not open the space, shown in the window (4.1).
+  private problem: SpaceProblem | null = null
+
+  // Every 4.10 sentence the registry has been given to throw, so a refusal
+  // can be recognised and shown verbatim rather than as a generic failure.
+  private readonly reservedRefusals = new Set<string>()
+
   constructor(options: SpaceServiceOptions) {
     this.registry = options.registry
     this.settings = options.settings
@@ -167,11 +189,12 @@ export class SpaceService {
   // -------------------------------------------------------------------------
 
   /**
-   * Open the space: import on first launch (case A) or reopen from the
-   * pointer (cases D-H), then restore every member from the forest.
+   * Open the space: import on first launch (case A), reopen from the pointer
+   * (cases D-H), or finish an upgrade that lost its pointer (cases B and C,
+   * as approved), then restore every member from the forest.
    *
    * A problem opens no member and writes nothing (case G: if the forest is
-   * locked, every member would be too).
+   * locked, every member would be too). It is kept for `problemNotice`.
    */
   async start(): Promise<{ problem: SpaceProblem | null; restored: number }> {
     if (this.ready) throw new Error('The space is already open')
@@ -193,17 +216,21 @@ export class SpaceService {
         opened = reopenFromPointer(homePath)
         break
       case 'recover-home':
-        // Case B: approved as (i); Plan 06 implements it. Until then, write nothing.
-        opened = { kind: 'not-set-up', path: homePath }
+        // Case B, answer B(i): reuse it, re-add the pointer, import nothing.
+        opened = recoverHome(this.settings, this.paths)
         break
       case 'recover-forest':
-        // Case C: approved as (i); Plan 06 implements it. Until then, write nothing.
-        opened = { kind: 'not-set-up', path: this.paths.forest }
+        // Case C, answer C(i): reuse it, create the Tapestry tree, import nothing.
+        opened = recoverForest(this.settings, this.paths)
         break
     }
 
-    if ('kind' in opened) return { problem: opened, restored: 0 }
+    if ('kind' in opened) {
+      this.problem = opened
+      return { problem: opened, restored: 0 }
+    }
 
+    this.problem = null
     this.home = opened.home
     this.forest = opened.forest
     // Tapestry's own files are never members (RESEARCH Pitfall 4). Reserved
@@ -211,7 +238,11 @@ export class SpaceService {
     this.registry.setReserved({
       paths: [opened.forest.path, opened.home.path],
       ids: [opened.forest.digest(), opened.home.digest()],
-      refusal: reservedFileRefusal,
+      refusal: (fileName) => {
+        const sentence = reservedFileRefusal(fileName)
+        this.reservedRefusals.add(sentence)
+        return sentence
+      },
     })
     const restored = await this.restoreMembers(opened.forest)
     for (const member of opened.forest.members()) this.fitEligible.add(member.nodeId)
@@ -317,6 +348,26 @@ export class SpaceService {
     } catch (err) {
       console.error('[SpaceService] approvePath hook threw:', err)
     }
+  }
+
+  // -------------------------------------------------------------------------
+  // Notices (answers 4.1-4.10)
+  // -------------------------------------------------------------------------
+
+  /** The approved sentence for why the space did not open, or null when it did. */
+  problemNotice(): string | null {
+    return this.problem ? problemMessage(this.problem) : null
+  }
+
+  /**
+   * The sentence to show verbatim for a refused space action: the 4.9 refusal
+   * while no space is open, or a 4.10 refusal of Tapestry's own file. Any
+   * other failure returns null, and the window keeps its usual wording.
+   */
+  noticeFor(err: unknown): string | null {
+    if (err instanceof SpaceRefusal) return err.message
+    if (err instanceof Error && this.reservedRefusals.has(err.message)) return err.message
+    return null
   }
 
   // -------------------------------------------------------------------------
@@ -751,9 +802,9 @@ export class SpaceService {
     this.fitEligible.clear()
   }
 
-  /** The forest, or the approved 4.9 refusal when the space is not open. */
+  /** The forest, or the approved 4.9 refusal (`SpaceRefusal`) when the space is not open. */
   private requireReady(): ForestStore {
-    if (!this.forest || !this.home) throw new Error(SPACE_NOT_OPEN)
+    if (!this.forest || !this.home) throw new SpaceRefusal()
     return this.forest
   }
 }

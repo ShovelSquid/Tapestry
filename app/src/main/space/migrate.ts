@@ -49,7 +49,6 @@ export type SpaceProblemKind =
   | 'forest-locked'
   | 'forest-foreign'
   | 'forest-mismatch'
-  | 'not-set-up'
   | 'setup-failed'
 
 /** Why the space did not open. Whenever one is returned, nothing was written. */
@@ -64,7 +63,7 @@ export interface SpaceProblem {
 export type SpaceLaunch = 'import' | 'reopen' | 'recover-home' | 'recover-forest'
 
 // ---------------------------------------------------------------------------
-// Wording (answers 4.2-4.9, approved at the Plan 02 checkpoint)
+// Wording (answers 4.2-4.11, approved at the Plan 02 checkpoint)
 // ---------------------------------------------------------------------------
 
 /** 4.9: a space action while no space is open. */
@@ -100,7 +99,6 @@ export function problemMessage(problem: SpaceProblem): string {
       return `${file} at ${path} isn't the forest your Tapestry tree names, so Tapestry left it alone. The space stays empty until the right file is back.`
     case 'home-foreign':
     case 'forest-foreign':
-    case 'not-set-up':
       return `${file} at ${path} isn't a Tapestry file, so Tapestry left it alone and didn't set up your space.`
     case 'setup-failed':
       return `Tapestry couldn't set up your space in ${path}: ${problem.reason ?? 'unknown error'}. Nothing in settings.json was changed.`
@@ -116,7 +114,8 @@ export function problemMessage(problem: SpaceProblem): string {
  *
  * A pointer means reopen (cases D-H), and the file it names is the one
  * checked, not the default path. Without a pointer, an existing Tapestry tree
- * is case B and a lone forest is case C: both mean an earlier setup stopped
+ * is case B (`recoverHome`) and a lone forest is case C (`recoverForest`):
+ * either an older build dropped the pointer or an earlier setup stopped
  * part-way, and importing again would start a second identity. Otherwise this
  * is a first launch (case A).
  */
@@ -251,7 +250,19 @@ export function reopenFromPointer(
 ): { home: TapestryHome; forest: ForestStore } | SpaceProblem {
   const home = TapestryHome.open(homePath)
   if (!(home instanceof TapestryHome)) return homeProblem(home, homePath)
+  return openReferencedForest(home, homePath)
+}
 
+/**
+ * The forest an open Tapestry tree names, checked against its digest.
+ *
+ * On any problem the Tapestry tree is closed too, so the caller holds
+ * nothing. Shared by reopen (D-H) and case B, so both check the same way.
+ */
+function openReferencedForest(
+  home: TapestryHome,
+  homePath: string,
+): { home: TapestryHome; forest: ForestStore } | SpaceProblem {
   let ref
   try {
     ref = home.forestRef()
@@ -289,6 +300,98 @@ export function reopenFromPointer(
     forest.close()
     home.close()
     return { kind: 'forest-mismatch', path: ref.pathHint }
+  }
+
+  return { home, forest }
+}
+
+// ---------------------------------------------------------------------------
+// Case B: no pointer, but a Tapestry tree at the default path
+// ---------------------------------------------------------------------------
+
+/**
+ * Finish an upgrade whose pointer went missing (case B, answer B(i)).
+ *
+ * The usual cause is an older build rewriting settings.json without the
+ * pointer, or a crash between creating the Tapestry tree and writing it.
+ * The Tapestry tree at the default path is opened and its forest checked
+ * exactly as a reopen would. Only when both are Tapestry's own is the pointer
+ * written again, last. Nothing is imported: the forest already holds the
+ * arrangement, and importing `trees` a second time would duplicate it
+ * (T-2.6-19).
+ *
+ * A file that is not a Tapestry tree is `home-foreign` (4.7) and is never
+ * written to; no forest is created beside it (T-2.6-18).
+ */
+export function recoverHome(
+  settings: SettingsStore,
+  paths: SpacePaths,
+): { home: TapestryHome; forest: ForestStore } | SpaceProblem {
+  const opened = reopenFromPointer(paths.home)
+  if ('kind' in opened) return opened
+
+  try {
+    settings.setTapestryPointer(paths.home)
+  } catch (err) {
+    // Nothing was created, so nothing is removed: both files were already there.
+    opened.forest.close()
+    opened.home.close()
+    return { kind: 'setup-failed', path: dirname(paths.home), reason: errorMessage(err) }
+  }
+  return opened
+}
+
+// ---------------------------------------------------------------------------
+// Case C: no pointer, only a forest at the default path
+// ---------------------------------------------------------------------------
+
+/**
+ * Finish an upgrade that stopped after the forest (case C, answer C(i)).
+ *
+ * The forest is opened read-only first. Only when it holds the forest's space
+ * node is it reused: a new Tapestry tree referencing its digest is created in
+ * one system commit, then the pointer is written last. Nothing is imported
+ * and the forest is not written to, so its history is exactly what it was.
+ *
+ * A file that is not a forest is `forest-foreign` (4.7) and is never written
+ * to. If the pointer cannot be written, the Tapestry tree this call created
+ * is removed again, so the next launch is case C once more.
+ */
+export function recoverForest(
+  settings: SettingsStore,
+  paths: SpacePaths,
+): { home: TapestryHome; forest: ForestStore } | SpaceProblem {
+  const forest = ForestStore.open(paths.forest)
+  if (!(forest instanceof ForestStore)) return forestProblem(forest, paths.forest)
+
+  let digest: string
+  try {
+    digest = forest.digest()
+  } catch (err) {
+    forest.close()
+    return { kind: 'forest-damaged', path: paths.forest, reason: errorMessage(err) }
+  }
+
+  let home: TapestryHome
+  try {
+    home = TapestryHome.createReferencing(
+      paths.home,
+      { digest, pathHint: forest.path },
+      SYSTEM_ACTOR,
+      createHomeMessage(FOREST_FILE),
+    )
+  } catch (err) {
+    forest.close()
+    return { kind: 'setup-failed', path: dirname(paths.home), reason: errorMessage(err) }
+  }
+
+  try {
+    settings.setTapestryPointer(paths.home)
+  } catch (err) {
+    home.close()
+    forest.close()
+    removeCreated(home.path)
+    return { kind: 'setup-failed', path: dirname(paths.home), reason: errorMessage(err) }
   }
 
   return { home, forest }

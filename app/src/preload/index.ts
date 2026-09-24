@@ -71,17 +71,24 @@ const tapestryAPI = {
       }>
     > => ipcRenderer.invoke('trees:list'),
 
-    open: (path: string): Promise<{ ok: boolean; treeId?: string; error?: string }> =>
+    /** `notice`, when present, is an approved refusal to show verbatim (4.9, 4.10). */
+    open: (
+      path: string,
+    ): Promise<{ ok: boolean; treeId?: string; error?: string; notice?: string }> =>
       ipcRenderer.invoke('trees:open', path),
 
     create: (
       path: string,
       worldName: string,
-    ): Promise<{ ok: boolean; treeId?: string; error?: string }> =>
+    ): Promise<{ ok: boolean; treeId?: string; error?: string; notice?: string }> =>
       ipcRenderer.invoke('trees:create', path, worldName),
 
-    close: (treeId: string): Promise<{ ok: boolean; error?: string }> =>
+    close: (treeId: string): Promise<{ ok: boolean; error?: string; notice?: string }> =>
       ipcRenderer.invoke('trees:close', treeId),
+
+    /** Why the space did not open, in the approved wording, or null (4.1-4.8). */
+    spaceProblem: (): Promise<{ message: string | null }> =>
+      ipcRenderer.invoke('trees:spaceProblem'),
 
     /** Show the tree's `.tree` file in Finder. Main resolves the path. */
     reveal: (treeId: string): Promise<{ ok: boolean; error?: string }> =>
@@ -172,7 +179,9 @@ const tapestryAPI = {
    * refuses any other root, creates `<vault>/<name>.tree` and catches up.
    */
   vault: {
-    add: (root: string): Promise<{ ok: boolean; treeId?: string; error?: string }> =>
+    add: (
+      root: string,
+    ): Promise<{ ok: boolean; treeId?: string; error?: string; notice?: string }> =>
       ipcRenderer.invoke('vault:add', root),
   },
 

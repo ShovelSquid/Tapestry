@@ -31,8 +31,8 @@ import { SpatialCommands } from './commands/spatial'
 import { runAgentTool, type AgentCommands } from './commands/agent-tools'
 import { AgentRegistry, agentSocketPath } from './agents/registry'
 import { AgentSocketServer } from './agents/socket-server'
-import { SpaceService } from './space/space-service'
-import { SPACE_NOT_OPEN, problemMessage, type SpacePaths } from './space/migrate'
+import { SpaceRefusal, SpaceService } from './space/space-service'
+import { SPACE_NOT_OPEN, type SpacePaths } from './space/migrate'
 import { FOREST_FILE, HOME_FILE, HOME_LOCATION } from './space/shapes'
 
 // ---------------------------------------------------------------------------
@@ -520,17 +520,17 @@ app.whenReady().then(async () => {
    * disagree about what is in the space (T-2.6-24).
    */
   async function openIntoSpace(open: () => TreeEntry | Promise<TreeEntry>): Promise<
-    { ok: true; treeId: string } | { ok: false; error: string }
+    { ok: true; treeId: string } | { ok: false; error: string; notice?: string }
   > {
     try {
       const actor = getHumanActor()
-      if (!space || !space.ready) return { ok: false, error: SPACE_NOT_OPEN }
+      if (!space || !space.ready) throw new SpaceRefusal()
       const before = new Set(registry.summary().map((t) => t.id))
       const tree = await open()
       try {
         // A vault's first read is awaited above, so the space may have been
         // closed by a quit in the meantime.
-        if (!space) throw new Error(SPACE_NOT_OPEN)
+        if (!space) throw new SpaceRefusal()
         space.addMember(tree, actor)
       } catch (err) {
         if (!before.has(tree.id)) registry.close(tree.id)
@@ -539,9 +539,29 @@ app.whenReady().then(async () => {
       notifyTreesChanged()
       return { ok: true, treeId: tree.id }
     } catch (err) {
-      return { ok: false, error: errorMessage(err) }
+      return spaceFailure(err)
     }
   }
+
+  /**
+   * A failed space action. `notice` carries an approved sentence (4.9 or
+   * 4.10) the window shows verbatim in place of its generic wording.
+   */
+  function spaceFailure(err: unknown): { ok: false; error: string; notice?: string } {
+    const notice = err instanceof SpaceRefusal ? err.message : space?.noticeFor(err) ?? undefined
+    return notice === undefined
+      ? { ok: false, error: errorMessage(err) }
+      : { ok: false, error: errorMessage(err), notice }
+  }
+
+  /**
+   * Why the space did not open, in the approved wording (4.2-4.8), or null.
+   * The window asks on load and on every trees-changed, and shows each
+   * distinct message once in the app-error banner (answer 4.1).
+   */
+  ipcMain.handle('trees:spaceProblem', () => {
+    return { message: space?.problemNotice() ?? null }
+  })
 
   ipcMain.handle('trees:list', () => {
     // Frames come from placement edges in the forest (2.6 D-04), never from
@@ -641,7 +661,7 @@ app.whenReady().then(async () => {
     if (typeof treeId !== 'string') return { ok: false, error: 'Unknown tree' }
     try {
       const actor = getHumanActor()
-      if (!space || !space.ready) return { ok: false, error: SPACE_NOT_OPEN }
+      if (!space || !space.ready) throw new SpaceRefusal()
       if (!registry.entry(treeId)) return { ok: false, error: `Unknown tree ${treeId}` }
 
       // The forest first, while the registry entry still joins to its
@@ -652,7 +672,7 @@ app.whenReady().then(async () => {
       notifyTreesChanged()
       return { ok: true }
     } catch (err) {
-      return { ok: false, error: errorMessage(err) }
+      return spaceFailure(err)
     }
   })
 
@@ -816,11 +836,12 @@ app.whenReady().then(async () => {
   // (D-10); afterwards it reopens from the settings pointer. A tree that has
   // been moved, deleted or damaged comes back as an unavailable frame holding
   // its reason. A space that cannot open writes nothing and opens no member
-  // (D-14); Plan 06 shows the problem in the window.
+  // (D-14); the window asks for the problem through `trees:spaceProblem`.
   try {
-    const started = await space.start()
-    if (started.problem) {
-      console.error('[Main] space did not open:', problemMessage(started.problem))
+    await space.start()
+    const problem = space.problemNotice()
+    if (problem !== null) {
+      console.error('[Main] space did not open:', problem)
     }
   } catch (err) {
     console.error('[Main] space did not open:', err)

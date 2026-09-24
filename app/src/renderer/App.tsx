@@ -252,6 +252,41 @@ export default function App(): React.ReactElement {
   }, [refreshAgents, refreshTree])
 
   // -----------------------------------------------------------------------
+  // Space problem (2.6 D-14, answers 4.1-4.8)
+  // -----------------------------------------------------------------------
+
+  /** The last space problem shown, so each distinct message appears once. */
+  const shownSpaceProblemRef = useRef<string | null>(null)
+
+  // Main opens the space after the window loads, then says trees-changed, so
+  // the question is asked on mount and again on every trees-changed. A space
+  // that could not open says why in the app-error banner, which stays until
+  // dismissed (4.1); the same message is not shown twice.
+  useEffect(() => {
+    let cancelled = false
+    const check = () => {
+      window.tapestry.trees
+        .spaceProblem()
+        .then(({ message }) => {
+          if (cancelled) return
+          if (message !== null && message !== shownSpaceProblemRef.current) {
+            showAppError(message)
+          }
+          shownSpaceProblemRef.current = message
+        })
+        .catch((err) => {
+          console.error('Could not ask whether the space opened:', err)
+        })
+    }
+    check()
+    const removeTreesChanged = window.tapestry.onTreesChanged(check)
+    return () => {
+      cancelled = true
+      removeTreesChanged()
+    }
+  }, [showAppError])
+
+  // -----------------------------------------------------------------------
   // User name (D-07)
   // -----------------------------------------------------------------------
 
@@ -297,11 +332,20 @@ export default function App(): React.ReactElement {
    * Every failure reads as the UI-SPEC's file-open error rather than as the
    * raw reason: a damaged header, an unreadable file and a copy of a world
    * that is already open all arrive here as text, and what Kaelen can do next
-   * is the same in each case.
+   * is the same in each case. The exception is a refusal main marks with a
+   * `notice` (no space open, 4.9; Tapestry's own file, 4.10), which is shown
+   * word for word, because the generic sentence would be wrong about it.
    */
   const addTreeToSpace = useCallback(
-    async (filePath: string, result: { ok: boolean; treeId?: string; error?: string }) => {
+    async (
+      filePath: string,
+      result: { ok: boolean; treeId?: string; error?: string; notice?: string },
+    ) => {
       if (!result.ok || !result.treeId) {
+        if (result.notice) {
+          setNotice(result.notice)
+          return
+        }
         setNotice(
           `Could not open ${fileNameOf(filePath)} -- The file may be damaged or in an ` +
             'unrecognized format. Create a new world or choose another file.',
@@ -349,6 +393,10 @@ export default function App(): React.ReactElement {
 
     const added = await window.tapestry.vault.add(picked.folderPath)
     if (!added.ok || !added.treeId) {
+      if (added.notice) {
+        setNotice(added.notice)
+        return
+      }
       setNotice(
         `Could not add ${fileNameOf(picked.folderPath)} as a tree -- ` +
           `${added.error ?? 'unknown error'} Nothing in the vault was changed.`,

@@ -101,12 +101,15 @@ interface TapestryFrameMove {
 
 interface TapestryTreesAPI {
   list(): Promise<TapestryTreeSummary[]>
-  open(path: string): Promise<{ ok: boolean; treeId?: string; error?: string }>
+  /** `notice`, when present, is an approved refusal to show verbatim (4.9, 4.10). */
+  open(path: string): Promise<{ ok: boolean; treeId?: string; error?: string; notice?: string }>
   create(
     path: string,
     worldName: string,
-  ): Promise<{ ok: boolean; treeId?: string; error?: string }>
-  close(treeId: string): Promise<{ ok: boolean; error?: string }>
+  ): Promise<{ ok: boolean; treeId?: string; error?: string; notice?: string }>
+  close(treeId: string): Promise<{ ok: boolean; error?: string; notice?: string }>
+  /** Why the space did not open, in the approved wording, or null (4.1-4.8). */
+  spaceProblem(): Promise<{ message: string | null }>
   /** Show the tree's file in Finder. The renderer names an id, never a path. */
   reveal(treeId: string): Promise<{ ok: boolean; error?: string }>
   /** Try a damaged, locked or missing tree again (UI-SPEC "Reopen tree"). */
@@ -219,7 +222,7 @@ interface TapestryVaultStatus {
 
 interface TapestryVaultAPI {
   /** Mirror the vault folder as its own tree. Main refuses an unpicked root. */
-  add(root: string): Promise<{ ok: boolean; treeId?: string; error?: string }>
+  add(root: string): Promise<{ ok: boolean; treeId?: string; error?: string; notice?: string }>
 }
 
 interface TapestrySettingsAPI {
