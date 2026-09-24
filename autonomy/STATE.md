@@ -31,10 +31,9 @@ Checkpoints in 01 and 03 were deferred to REVIEW.md. 07's blocking-human package
 
 ## Checkpoint
 
-(none pending) The 02.7-03 combined check was approved as deferred and is queued as
-autonomy/REVIEW.md item 1. The next wave is wave 4 (02.7-04, the Allow shell switch).
-Under PROTOCOL step 4, 07's package check gets parked in REVIEW.md, not
-approved.
+(none pending) REVIEW.md holds item 1 (02.7-02/03 combined check) and item 2 (02.7-04 shell-switch
+hands-on check), both deferred. The next wave is wave 5 (02.7-05, full file tools, refusals, locks).
+Under PROTOCOL step 4, 07's package check gets parked in REVIEW.md, not approved.
 
 ## In progress
 
@@ -62,6 +61,9 @@ approved.
 - 2026-09-24 15:15: resolved the 02.7-03 checkpoint with a deferred approval (no RESPONSE came),
   following PROTOCOL step 4. An executor wrote the SUMMARY and updated STATE/ROADMAP (5aa025f).
   516 tests pass and typecheck is clean. It's REVIEW item 1. Wave 4 is next.
+- 2026-09-24 15:20: wave 4 (02.7-04). One foreground executor, about 10 min and 177K tokens;
+  2401525, 4603701, 8b1cc76. 28 files and 534 tests pass, typecheck clean. The backstop hands-on
+  check is queued as REVIEW item 2. Wave 5 is next.
 
 ## Learned
 
@@ -83,6 +85,7 @@ approved.
   32 minutes in the foreground without tripping it either: subagent events
   reach the stream-json log, so foreground executors are safe.
 - After 02.7-02: 26 test files, 499 tests. After 02.7-03 Tasks 1 and 2: 28 files, 516.
+  After 02.7-04: 28 files, 534.
 - Executors must not launch the app before a checkpoint. On the first open,
   the app writes commits (such as the subspace arrangement) into the real
   workspace tree, and the human verifies those commits.

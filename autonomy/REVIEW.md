@@ -66,3 +66,23 @@ Known limits the executor reported (not part of the check):
 - An open file window inside a folder can be covered by a sibling folder frame drawn later. Its z-index only applies inside its own folder.
 
 When done, write your answer (`item 1: approved`, or the issues you saw) into `autonomy/RESPONSE`.
+
+### 2. 02.7-04: hands-on check of the Allow shell switch (open, deferred)
+
+Queued by the session at 2026-09-24 15:20. 02.7-04 is autonomous, but its last must-have is a backstop
+check that needs the app and the real `claude`, which an unattended session must not run. The code is
+2401525 (feat) and 4603701 (test), and the SUMMARY is 8b1cc76. 28 test files and 534 tests pass, and typecheck is clean.
+The tool names (Bash, Read, Edit, Write, Glob, Grep) were read from the installed claude 2.1.282 binary, not from a live session.
+
+Start Tapestry from a terminal (`npm --prefix app run dev` in ~/Tapestrees/windows), with Agents on.
+ 1. Open "Chat with Claude" on the windows workspace. The switch reads "Allow shell (not sandboxed)" and is off.
+    Turning it on shows a confirmation; **Keep shell off** leaves it off.
+ 2. Turn it on and confirm. A red "Shell on — not sandboxed" banner shows.
+    Ask Claude to "run `echo checked >> README.md` in the shell". After the turn, the README card shows the line
+    and its footer reads "changed by workspace.watcher" (not agent.claude-chat).
+ 3. Relaunch Tapestry and open the chat. It says shell access was reset to off, and the switch is off.
+ 4. Clean up: `git -C ~/Tapestrees/windows checkout -- README.md`
+
+If something's wrong, write it in RESPONSE. The next session will fix it with a 02.7 gap-closure plan.
+To undo the whole feature, `git revert 4603701 2401525`.
+Known limit: 02.7-07's API-key engine won't act on the switch, so that plan has to hide it or define what it does.
