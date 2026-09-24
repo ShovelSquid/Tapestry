@@ -17,7 +17,14 @@
 import type { Actor } from './actor'
 import type { CommitResult, NodeData, OpObject } from '../kernel-bridge'
 import type { OpenTree, TreeKind, TreeRegistry } from '../trees/registry'
-import { CHILD_GAP, DEFAULT_NOTE_WIDTH, GREW_FROM_LABEL } from '../../renderer/layout/placement'
+import {
+  CHILD_GAP,
+  DEFAULT_NOTE_WIDTH,
+  GREW_FROM_LABEL,
+  resolveWhere,
+  whereRefusalText,
+  type WherePlacement,
+} from '../../renderer/layout/placement'
 import { checkLock, isAgentActor, type LockAspect } from './locks'
 
 // ---------------------------------------------------------------------------
@@ -225,11 +232,18 @@ export class NoteCommands {
    * contains a moment where the note exists unattached. That is only possible
    * because `getNextIds()` (Plan 02) predicts the id the new node will get,
    * letting the edge name it before it exists.
+   *
+   * `where` (02.5 SC2) is optional. Without it nothing changes: the note goes
+   * to the right of its parent, with no collision step and no `pinned` key
+   * (D-02). With it, the spot comes from the same `resolveWhere` as `place`;
+   * near its own parent the note follows (`pinned` bool false, D-01), any
+   * other relation is fixed, and the value adds `follows`. A refusal writes
+   * nothing.
    */
   createFrom(
     actor: Actor,
-    args: { tree: string; grewFrom: string; title: string; text: string },
-  ): CommandResult<{ tree: string; note: string; edge: string; seq: number }> {
+    args: { tree: string; grewFrom: string; title: string; text: string; where?: WherePlacement },
+  ): CommandResult<{ tree: string; note: string; edge: string; seq: number; follows?: boolean }> {
     let tree: OpenTree
     try {
       tree = this.registry.resolveRef(args.tree)
@@ -252,6 +266,34 @@ export class NoteCommands {
     // refused as firmly as a malformed id.
     if (typeof args.grewFrom !== 'string' || !NODE_ID_RE.test(args.grewFrom)) {
       return { ok: false, error: `grewFrom ${String(args.grewFrom)} is not a live note in ${tree.name}` }
+    }
+
+    // 02.5 SC2: a `where` refusal that needs no world comes before reconciling,
+    // so it never discards a person's redo.
+    const where = args.where
+    if (where !== undefined) {
+      const anchors: Array<{ role: 'near' | 'beyond' | 'from'; id: unknown }> =
+        where !== null && typeof where === 'object' && 'beyond' in where
+          ? [
+              { role: 'beyond', id: where.beyond },
+              { role: 'from', id: where.from },
+            ]
+          : [{ role: 'near', id: (where as { near?: unknown } | null)?.near }]
+      for (const anchor of anchors) {
+        if (typeof anchor.id !== 'string' || !NODE_ID_RE.test(anchor.id)) {
+          return { ok: false, error: `${anchor.role} ${String(anchor.id)} is not a live note in ${tree.name}` }
+        }
+      }
+      if ('beyond' in where && where.beyond === where.from) {
+        return {
+          ok: false,
+          error: whereRefusalText(
+            { ok: false, reason: 'same-note', role: 'beyond', anchor: where.beyond, from: where.from },
+            '',
+            tree.name,
+          ),
+        }
+      }
     }
 
     try {
@@ -291,8 +333,36 @@ export class NoteCommands {
           label: GREW_FROM_LABEL,
         },
       ]
+      let message = `grow note "${title}" from ${args.grewFrom}`
+      let follows: boolean | undefined
 
-      const result = bridge.submitAs(actor, `grow note "${title}" from ${args.grewFrom}`, ops)
+      // 02.5 SC2: the spot the agent asked for, resolved against the tree as
+      // it is now plus the new note's own grew-from edge, so near its parent
+      // it follows exactly where it will be drawn (D-01, D-06). Anchors are
+      // looked up only in this tree (D-12). Nothing is written on a refusal.
+      if (where !== undefined) {
+        const subject = { id: next.node, type: NATIVE_NOTE_TYPE, props: {} }
+        const edges = [
+          ...bridge.getEdges(),
+          { id: next.edge, from: next.node, to: args.grewFrom, label: GREW_FROM_LABEL },
+        ]
+        const outcome = resolveWhere({ nodes: bridge.getNodes(), edges }, subject, where)
+        if (!outcome.ok) return { ok: false, error: whereRefusalText(outcome, next.node, tree.name) }
+        if (!Number.isFinite(outcome.x) || !Number.isFinite(outcome.y)) {
+          return { ok: false, error: `no finite spot for ${next.node} in ${tree.name}` }
+        }
+
+        // The createNode op above, with the resolved spot in place of the default.
+        const props = ops[0].props as NodeData['props']
+        props['position.x'] = { type: 'real', value: outcome.x }
+        props['position.y'] = { type: 'real', value: outcome.y }
+        if (outcome.follows) props['pinned'] = { type: 'bool', value: false }
+        message +=
+          'beyond' in where ? `, placed beyond ${where.beyond} from ${where.from}` : `, placed near ${where.near}`
+        follows = outcome.follows
+      }
+
+      const result = bridge.submitAs(actor, message, ops)
 
       // The edge was written against a predicted id. If the kernel issued a
       // different one the edge points at the wrong note, so say so rather than
@@ -313,6 +383,7 @@ export class NoteCommands {
           note: next.node,
           edge: result.edgeIds[0],
           seq: result.seq,
+          ...(follows === undefined ? {} : { follows }),
         },
       }
     } catch (err) {

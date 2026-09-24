@@ -80,6 +80,10 @@ export const PlaceArgs = z
 /**
  * create_note (D-04). `grewFrom` is required and has no default: a note an
  * agent creates is always grown from a note that already exists.
+ *
+ * `where` (02.5 SC2) is optional and is the same relation `place` takes; the
+ * host resolves it to a spot. Without it, the note goes to the right of
+ * `grewFrom` as before.
  */
 export const CreateNoteArgs = z
   .object({
@@ -87,6 +91,7 @@ export const CreateNoteArgs = z
     grewFrom: z.string().min(1).max(1024),
     title: z.string().min(1).max(200),
     text: z.string().max(1000000),
+    where: WhereArgs.optional(),
   })
   .strict()
 
@@ -233,7 +238,7 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = Object.freeze([
     name: 'create_note',
     title: 'Create a note grown from an existing note',
     description:
-      'Creates a note connected to grewFrom. Every new note must grow from an existing note; loose notes are refused.',
+      'Creates a note connected to grewFrom. Every new note must grow from an existing note; loose notes are refused. Pass where to choose the spot: near a note, or beyond one note as seen from another. A note placed near the note it grew from follows that note until a person moves it. Without where, the note goes to the right of grewFrom.',
     schema: CreateNoteArgs,
     annotations: {},
   },

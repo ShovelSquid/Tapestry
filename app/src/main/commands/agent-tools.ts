@@ -88,7 +88,7 @@ export function runAgentTool(
     case 'create_note':
       return commands.notes.createFrom(
         actor,
-        parsed.data as { tree: string; grewFrom: string; title: string; text: string },
+        parsed.data as { tree: string; grewFrom: string; title: string; text: string; where?: WherePlacement },
       )
 
     case 'update_note':
