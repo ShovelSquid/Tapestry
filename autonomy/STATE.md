@@ -18,7 +18,7 @@ replay tool and goldens are kept.
 | 3 force rules | done headlessly (`e1e30a5`): force and `set.<f>` rules under unary, pair and global scope with `select`, mass integrator, `pinned`, RULE-07 skips on the rule node, goldens `gravity` and `pair`, and `plugins/mathspace/presets/` with the plan's four presets plus the roadmap's `anger`, `gold`, `push`, each a `mathspace.preset.<id>` command; `presets.test.js` runs all seven on one engine build with no skip and the promised field change. The "in the app" clause joins the GUI checklist in Blocked |
 | 4 constraints | done headlessly (`60c8346`, `60cd37e`, `064966d`): `constraint.expr` + `compliance` by fixed XPBD passes over lifted symbolic gradients, goldens `rod` and `contact`, the `contact` preset, the `pendulum`/`rope-chain` comparison against ddsim (numbers under Learned). The "in the app" look joins the GUI checklist in Blocked |
 | 5 views | **done condition met headlessly** (`b27808a`): engine side (`61ef64f`), stage surface (`24f1dbb`, `4acdaab`), default views as presets `view-2d`/`view-3d`/`view-4d`, and one 4-space projected through `[x, y]` and `[z, w]` at once in `projection.test.js` and `presets.test.js`. Shapes and rule regions in the surface are optional polish (Next 2); the in-app look joins the GUI checklist in Blocked |
-| 6 metrics | engine side started (`02481a2`): diagonal `metric` on the Space note, geodesic integrator, golden `poincare`; open: plugin binding of `metric.expr` on space nodes and error text on the space, `identify`, `embed`, presets `poincare` and `sphere` |
+| 6 metrics | engine side (`02481a2`): diagonal `metric` on the Space note, geodesic integrator, golden `poincare`; plugin side (`566ff24`): `metric.expr` on a space node binds through `buildImage`, errors land on the space, preset `poincare`; open: preset `sphere`, `embed`, `identify` |
 | 7 fold ddsim | not started |
 
 ## In progress
@@ -28,39 +28,28 @@ viewer; it is theirs to edit.)
 
 ## Next
 
-1. **Phase 6 second slice: the metric through the plugin.** `image.js`
-   skips `SPACE_TYPE` nodes when gathering bindings (line ~362), so a
-   `metric.expr text "..."` prop on a `mathspace/space@1` node is never
-   compiled; and `runner.errorOps` writes `mathspace.error` only to ids
-   in `image.rules`, so the engine's BadMetric/VmError report on the
-   space id (a `RuleReport` whose `rule` is the space) is dropped. Do:
-   (a) in `buildImage`, collect `bindingsOf(space node)` for space nodes
-   (only `metric` is meaningful; `ms_compile` already picks `WorldDims`
-   for a non-Rule/View note and the space's own `pos` has the space dim,
-   so `self.pos` compiles) and add the space id to `image.rules` (rename
-   is not needed; the map is "nodes that carry mathspace.error");
-   (b) `image.test.js`/`runner.test.js` cases: a space with
-   `metric.expr "[1, 1]"` steps a moving note as before, a bad metric
-   (`"self.position.x"`) puts `step: skipped 1 visit (BadMetric)` on the
-   space node; (c) `presets/poincare.json`: a 2-space (needs the `$0`
-   ref, so the space is one commit and its notes the next) with the
-   golden's metric `4 / pow(1 - dot(self.position, self.position) /
-   10000, 2) * [1, 1]` and two notes with velocity, checked in
-   `presets.test.js` that both stay inside radius 100 and their radius
-   grows. Note the plugin rewrites `self.position` to `pos` before
-   `ms_compile` (runner, not `buildImage`); confirm that path runs for a
-   space node's binding too.
-2. Phase 6 third slice: `sphere` preset (chart (theta, phi), metric
-   `[1, pow(sin(self.position.x), 2)]`, a note circling near the equator
-   and one near a pole); `embed` (a bound dim-3 map on the Space note,
+1. **Phase 6 third slice: `sphere` preset.** `presets/sphere.json`: a
+   2-space with chart (theta, phi) and `metric.expr "[1, pow(sin(
+   self.position.x), 2)]"` (diff.hpp handles sin/cos/pow), one note near
+   the equator (theta 1.5, phi 0, velocity (0, 1/64)) and one near the
+   pole (theta 0.25, same velocity), plus a View that draws the sphere
+   from the side, `[100 * sin(self.position.x) * cos(self.position.y),
+   100 * cos(self.position.x)]`. All reals must be `k/2^32` (1.5, 0.25,
+   0.015625 are; pi/2 is not). `presets.test.js`: the id list gains
+   `sphere` (name order: ..., `push`, `sphere`, `spring-to-anchor`, ...),
+   the manifest gains `mathspace.preset.sphere`, and over 240 ticks the
+   equator note's phi grows while its theta stays in [1.5, pi - 1.5] and
+   the pole note's theta grows (a great circle tangent to a small circle
+   leaves it toward the equator). Then copy the poincare test's shape.
+2. Phase 6 fourth slice: `embed` (a bound dim-3 map on the Space note,
    evaluated like `project` by the surface, never by step) and a View
    over it; `identify` (wrap lanes at ±L: the smallest form is a bound
    `identify` dim-N field of half-widths, 0 meaning no wrap, applied to
-   `pos` after the constraint passes; an `MS_STEP_VERSION` bump). Then
-   phase 6's done condition per the plan (re-read it: "Unchanged:
-   metric.expr on the Space node, Christoffel symbols by symbolic
-   differentiation, geodesic step, identify, embed, and the Poincaré and
-   sphere presets").
+   `pos` after the constraint passes; an `MS_STEP_VERSION` bump and every
+   golden re-recorded). Then phase 6's done condition per the plan
+   (re-read it: "Unchanged: metric.expr on the Space node, Christoffel
+   symbols by symbolic differentiation, geodesic step, identify, embed,
+   and the Poincaré and sphere presets"), and README's status paragraph.
 3. Phase 5 optional polish, only if cheap: shapes by sampled level sets
    and rule regions faintly in the surface; three.js only if a 3D panel
    needs it. The surface refreshes only on `onTreeChanged` (fired for
@@ -81,6 +70,17 @@ viewer; it is theirs to edit.)
 
 ## Done
 
+- `566ff24` ms6 plugin side: `buildImage` collects a space node's
+  `metric.expr` as a binding (any other `.expr` on a space is a problem
+  on the space) and puts every space id in `image.rules`, so compile
+  problems and the engine's BadMetric/VmError reports on the space are
+  written to it as `mathspace.error`; spaces still have no before-image,
+  so `diff()` never commits their lanes. Runner tests: Euclidean metric
+  steps as before and clears a stale error, a dim-1 metric on a 2-space
+  gives `step: skipped 1 visit (BadMetric)`, a parse error maps its
+  offset back to the user's text; the Poincaré disk keeps a note inside
+  radius 100 over 240 ticks. `presets/poincare.json` (space then members
+  over two commits, an identity `Disk` view) with a presets test.
 - `02481a2` ms6 engine side: `METRIC_FIELD` on a Space note (bound, dim N,
   the diagonal g_kk in `self.pos`), `prepare_metric` (lift, diff per pos
   lane, compile under `WorldDims` on the space note) and
