@@ -153,6 +153,41 @@ export function stepMarker(markers: readonly MarkerInstance[], fromIndex: number
   return next
 }
 
+/**
+ * Attaches the `,`/`.` keyboard route (UI-SPEC "Marker meaning without the
+ * stage") to `target`: while it has focus, `,`/`.` step to the previous/
+ * next marker and announce that marker's own label via `onAnnounce` (the
+ * text a caller feeds into its own `aria-live="polite"` region -- this
+ * module owns none of the DOM around the stage `<canvas>`, only the
+ * behaviour). `onFocusChange`, if given, receives the new index so a
+ * caller can also move the accent ring / open the moment on `Enter`.
+ *
+ * Returns a cleanup function that removes the listener -- call it on
+ * unmount, the same contract `useEffect` expects.
+ *
+ * Not wired into `ThreadOverlay.tsx` by this plan (not in its file list);
+ * exported ready for the plan that owns the stage's focus/ARIA wiring.
+ */
+export function attachMarkerNav(
+  target: HTMLElement,
+  getMarkers: () => readonly MarkerInstance[],
+  onAnnounce: (label: string) => void,
+  onFocusChange?: (index: number) => void,
+): () => void {
+  let focusedIndex = -1
+  function handleKeyDown(event: KeyboardEvent): void {
+    if (event.key !== ',' && event.key !== '.') return
+    const markers = getMarkers()
+    if (markers.length === 0) return
+    focusedIndex = stepMarker(markers, focusedIndex, event.key === '.' ? 1 : -1)
+    event.preventDefault()
+    onFocusChange?.(focusedIndex)
+    onAnnounce(markerLabel(markers[focusedIndex]))
+  }
+  target.addEventListener('keydown', handleKeyDown)
+  return () => target.removeEventListener('keydown', handleKeyDown)
+}
+
 // ---------------------------------------------------------------------------
 // Screen-space sizing (UI-SPEC "Spacing")
 // ---------------------------------------------------------------------------
