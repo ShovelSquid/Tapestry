@@ -19,7 +19,7 @@ replay tool and goldens are kept.
 | 4 constraints | done headlessly (`60c8346`, `60cd37e`, `064966d`): `constraint.expr` + `compliance` by fixed XPBD passes over lifted symbolic gradients, goldens `rod` and `contact`, the `contact` preset, the `pendulum`/`rope-chain` comparison against ddsim (numbers under Learned). The "in the app" look joins the GUI checklist in Blocked |
 | 5 views | **done condition met headlessly** (`b27808a`): engine side (`61ef64f`), stage surface (`24f1dbb`, `4acdaab`), default views as presets `view-2d`/`view-3d`/`view-4d`, and one 4-space projected through `[x, y]` and `[z, w]` at once in `projection.test.js` and `presets.test.js`. Shapes and rule regions in the surface are optional polish (Next 2); the in-app look joins the GUI checklist in Blocked |
 | 6 metrics | **done condition met headlessly** (`9d47eaf`): engine side (`02481a2`, diagonal `metric`, geodesic integrator, golden `poincare`), plugin side (`566ff24`, `metric.expr` bound through `buildImage`), presets `poincare` and `sphere` (`c49dd84`), `identify` (`5b5b55e`) and `embed` (`9d47eaf`). The in-app look joins the GUI checklist in Blocked |
-| 7 fold ddsim | in progress: sliced (Next), 7a headers moved (`4a99d1c`), 7b brush body rule (`ff7c851`), 7c bridge (`3b6909a`), 7d emission (`4d1e6dc`) |
+| 7 fold ddsim | in progress: sliced (Next), 7a headers moved (`4a99d1c`), 7b brush body rule (`ff7c851`), 7c bridge (`3b6909a`), 7d emission (`4d1e6dc`), 7e Worker switch (`f74d0db`); 7f (delete ddsim) is next |
 
 ## In progress
 
@@ -33,25 +33,7 @@ deleted last so every earlier slice can be tested against it). The
 rope-chain deviation is accepted (Decisions), so `MS_STEP_VERSION` and
 the goldens do not change in 7b to 7e unless a slice says so.
 
-1. **7e Worker switch.** `sim-driver.ts`/`sim.worker.ts` load the
-   mathspace Wasm (`build-wasm.sh` already copies `mathspace.*` into
-   `surface/wasm/`) through `MsEngine` in `ms-abi.ts` (the ported
-   engine-core; `decodeSnapshot` there reads the notes snapshot, so
-   nothing is imported from plugins/mathspace). Per tick the worker does
-   what `replayInLockstep` in `ms-bridge.test.ts` does: apply the tick's
-   actions through `bridge.translate` (its DD_ERR code is the action's
-   result code), `engine.step()`, then apply `bridge.afterStep(engine.notes(),
-   tick)`. `decodeNodes` becomes a view over that snapshot's node-space
-   notes (ids above `NODE_SPACE_ID` whose low 24 bits are not
-   `BODY_INDEX`; fields `pos` dim 3, `weight`, `dir`, `velocity`, `tick`,
-   `brush`, all fx64 raw; `scaleBand` is 0). The bodies view reads the
-   body notes (`pos`, `velocity`, `target`). Move the nine `data-drawing/sim/tests/golden/
-   *.actions` to `plugins/data-drawing/surface/test/golden/` and
-   re-record their `.sha256` as mathspace hashes (`ms_hash` after the
-   same per-tick sequence); `wasm-golden.test.ts` and `ms-bridge.test.ts`
-   read them from there. Keep the pause/hash-ring/replay contract of
-   `SimDriver`. `npm test` and `npm run typecheck` green.
-2. **7f delete ddsim.** `data-drawing/sim/`, `include/ddsim/` (move
+1. **7f delete ddsim.** `data-drawing/sim/`, `include/ddsim/` (move
    `ByteReader` + `decode_header` into `mathspace/wire.hpp`,
    `sha256_bytes` + picosha2 into `src/mathspace/hash.cpp`,
    `DD_FX_FORMAT_ID` and the DD_OK/DD_ERR codes the ABI re-exports into
@@ -59,9 +41,17 @@ the goldens do not change in 7b to 7e unless a slice says so.
    `wasm/ddsim_wasm.cpp`, `tests/*.cpp` (ddsim's), `tests/golden/*.actions`
    (ddsim's, not `ms/`), `tools/ddsim_replay`, `tools/gen_fixtures`, their
    CMake targets; `rope_chain_test.cpp` keeps its mathspace numbers as
-   a plain regression. All three presets and the Wasm green, README
+   a plain regression. Also `data-drawing/sim/` takes the original
+   `tests/golden/*.actions` with it (7e copied them to
+   `plugins/data-drawing/surface/test/golden/`); `build-wasm.sh` then
+   builds only mathspace; `ms-bridge.test.ts` loses its ddsim half (the
+   five lockstep parity tests and the fifteen code-equal rejections
+   become plain expectations against the recorded codes, or are dropped
+   as covered by the goldens); `ddsim-glue.d.ts` goes; `ddsim-abi.ts`
+   stays (it is the surface's wire format) but its `DdsimModule` type and
+   `_dd_*` members go. All three presets and the Wasm green, README
    status paragraph, phase 7 done in this table, then `autonomy/DONE`.
-3. GUI confirmation of phases 1 to 6 (human, or a session that can
+2. GUI confirmation of phases 1 to 6 (human, or a session that can
    drive Electron): `npm install` at the root (or symlink node_modules,
    see Learned), `npm run build:native` in `app/` if the addon is
    missing, `npm run engine:wasm` and `npm run build` in
@@ -73,12 +63,19 @@ the goldens do not change in 7b to 7e unless a slice says so.
    Mathspace" shows two panels and only `zw` moves under Run. Without
    the app: `npm run dev` in `plugins/mathspace` serves the surface over
    a stub `window.tapestry` at localhost:5174.
-4. Optional polish, only if cheap: a `torus` preset (flat metric,
+3. Optional polish, only if cheap: a `torus` preset (flat metric,
    `identify.x`/`identify.y` 200); shapes by sampled level sets and rule
    regions in the surface; a `getNodes` poll while the surface is open.
 
 ## Done
 
+- `f74d0db` ms7e Worker switch: `ms-sim.ts` (engine + bridge behind
+  ddsim's instance shape, node table kept as NODE_STRIDE records, body
+  table from a filtered `decodeSnapshot`), `SimDriver` over `MsSim`,
+  worker and main-thread transport load `mathspace.mjs`, Vite plugin
+  generalised, the ten fixtures copied to `surface/test/golden/` with
+  mathspace `.sha256` (`MS_WRITE_FIXTURES=1 npm test` re-records). 113
+  plugin tests, typecheck and `npm run build` green.
 - `4d1e6dc` ms7d emission: `emit_segment`/`emit_node`/`curve_weight`
   ported into `MsBridge.afterStep(notes, tick)` (run after each
   `engine.step()`), `fxSqrt`/`isqrt128` in `ms-abi.ts`, `fxDiv` fixed to
@@ -120,6 +117,15 @@ the goldens do not change in 7b to 7e unless a slice says so.
 
 ## Decisions
 
+- Worker switch (`f74d0db`): the snapshot keeps ddsim's byte layouts
+  (`NODE_STRIDE` 88, `BODY_STRIDE` 56) rather than making `decodeNodes` a
+  view over notes: nothing that renders changes, and the per-tick cost is
+  O(new nodes) instead of a BigInt decode of every note. `MsSim.step` is
+  engine step + `afterStep`; the body table omits `ending` strokes so a
+  pen-up drops the body at once as ddsim's table did. The goldens were
+  COPIED, not moved: `data-drawing/sim`'s own tests still read the
+  originals until 7f deletes the directory. `version()` now reports
+  `MS_ABI_VERSION`.
 - Emission (`4d1e6dc`): one `afterStep(notes, tick)` on the bridge, not
   an `afterStep` list on each `Translation` as the slice sketched: the
   emission pass needs the post-step snapshot anyway, so the end-tick
@@ -190,12 +196,14 @@ the goldens do not change in 7b to 7e unless a slice says so.
 
 ## Learned
 
-- `build/wasm-release/ddsim.mjs` (the root copy, kinds 5 and 6 in its
-  walk) does NOT reproduce `data-drawing/sim/tests/golden/*.sha256`; the
-  data-drawing tests need `npm run sim:wasm` in `plugins/data-drawing`
-  (builds `data-drawing/sim` with emsdk, about a minute) to fill the
-  gitignored `surface/wasm/`. `plugins/data-drawing` has no node_modules
-  of its own; vitest and tsc resolve from the root symlink.
+- `plugins/data-drawing` tests need `npm run sim:wasm` there (emsdk,
+  about a minute) to fill the gitignored `surface/wasm/` with both
+  `ddsim.*` (until 7f) and `mathspace.*`; the root `build/wasm-release/
+  ddsim.mjs` is the diverged copy and does not reproduce ddsim's goldens.
+  `plugins/data-drawing` has no node_modules of its own; vitest and tsc
+  resolve from the root symlink. `npm run build` there emits the wasm
+  twice (`dist/<name>.wasm` and `dist/assets/<name>-*.wasm`); it did so
+  for ddsim too, so it is not a regression.
 - `div_q32` in fx64.hpp FLOORS, as its comment says (the sign-magnitude
   division subtracts one when the signs differ and the remainder is
   nonzero); an earlier note here said truncation and `fxDiv` copied the
@@ -204,18 +212,12 @@ the goldens do not change in 7b to 7e unless a slice says so.
 - Plugin tests run against `plugins/mathspace/wasm/` as it is on disk:
   an engine change without `npm run engine:wasm` shows up as baffling
   compile errors (an `UnknownRef` for a reference the C++ resolves).
-- Sphere geodesics numbers are in the `c49dd84` message. A quick probe is
-  a throwaway vitest file in `test/` calling `buildWorld` on a preset's
-  nodes with `$0` replaced and printing `parseSnapshot(engine.notes())`.
 - Vite dev ignores `build.outDir` in its watcher (`server.watch.ignored:
   ['!**/dist/**']` fixes it) and serves CommonJS untransformed; nothing
   bundled into the renderer may touch `Buffer` or `node:`. The
   browser-automation skill (`~/.claude/skills/browser-automation/
   browser.mjs <url> --script f.mjs --screenshot p.png`) loads the dev
   page headlessly (15 to 45 s per load) and can read the canvas.
-- ddsim comparison (ms4): single pendulum agrees to 3152 raw over 600
-  ticks; `rope-chain` deviates 1.44 units by tick 600 (accepted, see
-  Decisions).
 - New golden: `touch tests/golden/ms/<f>.actions <f>.sha256`, build (the
   glob), `MS_WRITE_FIXTURES=1 mathspace_tests -tc="*golden <f>*"` (fails
   once on the empty `.sha256`), `ms_replay --write-golden` fills it. Then
