@@ -39,14 +39,16 @@ std::string hashOf(const World& w) {
     return hex(d);
 }
 
-Field pos2(std::int32_t x, std::int32_t y) {
+Field vec2(std::string_view name, std::int32_t x, std::int32_t y) {
     Field f;
-    f.name = std::string(POS_FIELD);
+    f.name = std::string(name);
     f.dim = 2;
     f.value[0] = fx64::from_int(x);
     f.value[1] = fx64::from_int(y);
     return f;
 }
+
+Field pos2(std::int32_t x, std::int32_t y) { return vec2(POS_FIELD, x, y); }
 
 // Replays `name` in-process and checks every checkpoint hash against the
 // committed golden, plus a serialize/restore roundtrip at each one.
@@ -143,4 +145,32 @@ TEST_CASE("golden two-notes: replay equals the direct build and the committed ha
     CHECK(replayed.find(b) != nullptr);
 
     checkAgainstGolden("two-notes", f);
+}
+
+TEST_CASE("golden velocity: hand-written hex equals the encoders, pos integrates") {
+    const Fixture f = load("velocity");
+    CHECK(f.seed == 1);
+    const NoteId space{1};
+    const NoteId a{2};
+    const std::vector<std::vector<std::uint8_t>> log = {
+        encode_create_space(space, 2),
+        encode_create_note(a, space_of(space), NoteKind::Note),
+        encode_set_field(a, pos2(0, 0)),
+        encode_set_field(a, vec2(VELOCITY_FIELD, 1, 2)),
+    };
+    REQUIRE(f.actions.size() == log.size());
+    for (std::size_t i = 0; i < log.size(); ++i) {
+        CHECK(f.actions[i].tick == 0);
+        CHECK_MESSAGE(hex(f.actions[i].bytes) == hex(log[i]), "action " << i);
+    }
+    CHECK(f.checkpoints == std::vector<std::uint64_t>{0, 1, 10, 60});
+
+    World w(f.seed);
+    REQUIRE(replayFixture(f, w, [&](std::uint64_t tick, const World& at) {
+        const Field* pos = find_field(*at.find(a), POS_FIELD);
+        REQUIRE(pos != nullptr);
+        CHECK(pos->value[0] == fx64::from_int(static_cast<std::int32_t>(tick)));
+        CHECK(pos->value[1] == fx64::from_int(static_cast<std::int32_t>(2 * tick)));
+    }));
+    checkAgainstGolden("velocity", f);
 }

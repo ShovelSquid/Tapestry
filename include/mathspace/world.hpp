@@ -78,7 +78,7 @@ struct World {
     Error apply(const std::uint8_t* bytes, std::size_t len);
     Error apply(const std::vector<std::uint8_t>& bytes) { return apply(bytes.data(), bytes.size()); }
 
-    // Advances tick only. Rules and bound expressions come in later phases.
+    // One tick: the bootstrap integrate rule (step.cpp), then ++tick.
     void step();
 
     // Sorted, unique ids and well-formed fields; the tests' invariant check.
@@ -92,10 +92,13 @@ struct World {
 
 // The one field name the store knows; see the header comment.
 inline constexpr std::string_view POS_FIELD = "pos";
+// The one field name the bootstrap rule knows (step.cpp, version.hpp).
+inline constexpr std::string_view VELOCITY_FIELD = "velocity";
 
 // Bumped whenever the canonical walk (hash.cpp) changes shape. Pinned in
 // the walk itself so old bytes are rejected instead of misread.
-inline constexpr std::uint32_t FORMAT_VERSION = 1u;
+//   1: initial walk. 2: next_group dropped, MS_RULE_INTEGRATE_VERSION added.
+inline constexpr std::uint32_t FORMAT_VERSION = 2u;
 
 // The canonical walk (hash.cpp): serialize() is exactly the bytes that
 // hash() digests, restore() is their strict inverse. restore decodes into

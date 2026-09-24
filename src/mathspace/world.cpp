@@ -177,8 +177,6 @@ Error World::delete_field(NoteId note_id, std::string_view name) {
     return Error::Ok;
 }
 
-void World::step() { ++tick; }
-
 bool World::well_formed() const {
     for (std::size_t i = 0; i < notes.size(); ++i) {
         const Note& n = notes[i];

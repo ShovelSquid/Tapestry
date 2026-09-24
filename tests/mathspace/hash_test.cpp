@@ -59,8 +59,8 @@ World sample() {
 TEST_CASE("empty world serializes to the header alone and round-trips") {
     World w;
     const auto bytes = serialize(w);
-    // magic 4 | 2 pins 8 | seed 8 | tick 8 | note_count 4
-    CHECK(bytes.size() == 32);
+    // magic 4 | 3 pins 12 | seed 8 | tick 8 | note_count 4
+    CHECK(bytes.size() == 36);
     CHECK(bytes[0] == 'M');
     CHECK(bytes[3] == '1');
     World back(99);
