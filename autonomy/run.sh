@@ -15,17 +15,16 @@
 # commits, then the loop exits (and removes STOP) instead of starting the
 # next one. Ctrl-C also works but kills the session mid-task.
 #
-# Stops when autonomy/DONE exists (the phase is finished), when
-# autonomy/WAITING exists (a plan reached a human checkpoint: read it, do
-# what it asks, delete it, rerun), when MAX_SESSIONS is reached, or on
-# Ctrl-C. STALL_LIMIT sessions in a row with no new commit switches to a
+# Stops when autonomy/DONE exists (every plan of the phase is done), when
+# MAX_SESSIONS is reached, on autonomy/STOP, or on Ctrl-C. Human checkpoints
+# never stop it: sessions queue them in autonomy/REVIEW.md and keep going. STALL_LIMIT sessions in a row with no new commit switches to a
 # long backoff instead of stopping, so a transient failure does not burn
 # the night.
 #
 # Watch it live from another terminal:  autonomy/watch.py
 #
 # Usage:
-#   autonomy/run.sh                 # run until DONE or WAITING
+#   autonomy/run.sh                 # run until DONE
 #   MAX_SESSIONS=1 autonomy/run.sh  # one plan, then stop
 #   PUSH=0 autonomy/run.sh          # do not push after each session
 #
@@ -100,10 +99,9 @@ while :; do
         break
     fi
     if [ -f "$ROOT/autonomy/WAITING" ]; then
-        echo "run.sh: autonomy/WAITING present, a human checkpoint needs you:"
-        sed 's/^/    /' "$ROOT/autonomy/WAITING"
-        echo "run.sh: do what it asks, delete autonomy/WAITING, then rerun."
-        break
+        # Older sessions stopped here. Now the next session moves WAITING
+        # into autonomy/REVIEW.md and carries on, so only report it.
+        echo "run.sh: autonomy/WAITING present; the next session queues it in autonomy/REVIEW.md."
     fi
     if [ "$MAX_SESSIONS" -gt 0 ] && [ "$session" -ge "$MAX_SESSIONS" ]; then
         echo "run.sh: MAX_SESSIONS=$MAX_SESSIONS reached, stopping."
