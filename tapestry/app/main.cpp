@@ -27,6 +27,8 @@
 #include "render/Pages.hpp"
 #include "render/Strokes.hpp"
 
+#include "mathspace/action.hpp"
+
 // glad must precede nanovg_gl.h — see third_party/nanovg/nanovg_gl_impl.c.
 #include <glad/gl.h>
 
@@ -315,7 +317,7 @@ void destroyGraphics(Graphics& gfx) {
 // What the left button is currently doing. A press on a page starts a page
 // drag; a press on empty space starts a pan. Both share the click dead zone.
 struct DragState {
-    enum class Mode { None, Pan, Page, Resize, Zoom, Brush };
+    enum class Mode { None, Pan, Page, Resize, Zoom, Brush, SpaceNote };
 
     Mode mode = Mode::None;
     bool moved = false;
@@ -331,6 +333,12 @@ struct DragState {
     ResizeCorner resizeCorner = ResizeCorner::None;
     Rect initialPageRect;
     Uint64 strokeId = 0;
+
+    // SpaceNote mode only: the note being dragged and its page-local pos
+    // when the press landed, in world units. The SetField is issued once,
+    // on release; the renderer shows the dot displaced meanwhile.
+    mathspace::NoteId noteId;
+    Vec2 noteLocal {0.0, 0.0};
 };
 
 // Which text field, if any, is capturing the keyboard.
@@ -536,7 +544,7 @@ Rect menuPanelRect(OpenMenu menu) {
     int items = 3;
     if (menu == OpenMenu::Edit) {
         x = kEditMenuRect.x;
-        items = 2;
+        items = 4;
     } else if (menu == OpenMenu::View) {
         x = kViewMenuRect.x;
         items = 2;
@@ -554,7 +562,7 @@ int menuItemAt(OpenMenu menu, Vec2 point) {
         return -1;
     }
     const int item = static_cast<int>((point.y - panel.y - 4.0) / kMenuItemHeight);
-    const int count = menu == OpenMenu::File ? 3 : 2;
+    const int count = menu == OpenMenu::File ? 3 : menu == OpenMenu::Edit ? 4 : 2;
     return item >= 0 && item < count ? item : -1;
 }
 
@@ -590,6 +598,110 @@ void createNoteAt(Session& session, const Camera& camera, double sx, double sy) 
                      kNewNoteWidth, kNewNoteHeight};
     session.selectedId = session.world.addPage(
         PageKind::Note, "Untitled note", "", rect);
+}
+
+// A new Space page centred in the view, with its mathspace space created at
+// `dim` so the page is usable (clickable) immediately. The CreateSpace is
+// the first entry of the page's action log.
+void createSpaceInView(Session& session, const Camera& camera, std::uint8_t dim,
+                       double viewW, double viewH) {
+    const Vec2 at = camera.screenToWorld(viewW * 0.5, viewH * 0.5);
+    const Rect rect {at.x - kNewNoteWidth * 0.5, at.y - kNewNoteHeight * 0.5,
+                     kNewNoteWidth, kNewNoteHeight};
+    const std::string title = dim == 3 ? "Untitled 3D space" : "Untitled 2D space";
+    const Uint64 id = session.world.addPage(PageKind::Space, title, "", rect);
+    const mathspace::Error err = session.world.applySpaceAction(
+        id, mathspace::encode_create_space(dim));
+    if (err != mathspace::Error::Ok) {
+        showStatus(session, std::string("create space failed: ")
+                   + mathspace::error_name(err));
+    }
+    session.selectedId = id;
+}
+
+// The Space note of a page's world: the one note of kind Space. Its id is
+// the space id new notes are created in, and its pos field's dim is the
+// space's dimension (STATE.md decision). Null before CreateSpace applied.
+const mathspace::Note* spaceRootNote(const tapestry::SpaceState* space) {
+    if (space == nullptr) {
+        return nullptr;
+    }
+    for (const mathspace::Note& note : space->world.notes) {
+        if (note.kind == mathspace::NoteKind::Space) {
+            return &note;
+        }
+    }
+    return nullptr;
+}
+
+// A pos field at page-local `local` (world units) for a space of `dim`.
+// Lanes past y stay zero (z is not yet placeable from a 2D screen). World
+// units are rounded to q16, which is well under a pixel at any zoom.
+mathspace::Field posFieldAt(std::uint8_t dim, Vec2 local) {
+    mathspace::Field f;
+    f.name = std::string(mathspace::POS_FIELD);
+    f.dim = dim;
+    const auto q16 = [](double v) {
+        return mathspace::fx64::from_q16(
+            static_cast<std::int32_t>(std::lround(v * 65536.0)));
+    };
+    f.value[0] = q16(local.x);
+    if (dim >= 2) {
+        f.value[1] = q16(local.y);
+    }
+    return f;
+}
+
+// Creates a note at page-local `local` on the Space page `pageId`:
+// CreateNote then SetField pos, two log entries.
+void createSpaceNoteAt(Session& session, Uint64 pageId, Vec2 local) {
+    const mathspace::Note* root = spaceRootNote(session.world.space(pageId));
+    const mathspace::Field* rootPos = root ? mathspace::find_field(*root, mathspace::POS_FIELD)
+                                           : nullptr;
+    if (rootPos == nullptr) {
+        showStatus(session, "space has no CreateSpace yet");
+        return;
+    }
+    const std::uint8_t dim = rootPos->dim;
+    mathspace::NoteId id;
+    mathspace::Error err = session.world.applySpaceAction(pageId,
+        mathspace::encode_create_note(mathspace::space_of(root->id),
+                                      mathspace::NoteKind::Note), &id);
+    if (err == mathspace::Error::Ok) {
+        err = session.world.applySpaceAction(pageId,
+            mathspace::encode_set_field(id, posFieldAt(dim, local)));
+    }
+    if (err != mathspace::Error::Ok) {
+        showStatus(session, std::string("create note failed: ")
+                   + mathspace::error_name(err));
+    }
+}
+
+// Moves note `id` on Space page `pageId` to page-local `local`, keeping the
+// pos field's dim (a 3-space note keeps z = whatever it was: lanes past y
+// are rewritten from the existing value).
+void moveSpaceNoteTo(Session& session, Uint64 pageId, mathspace::NoteId id,
+                     Vec2 local) {
+    const tapestry::SpaceState* space = session.world.space(pageId);
+    if (space == nullptr) {
+        return;
+    }
+    const mathspace::Note* note = space->world.find(id);
+    const mathspace::Field* old = note ? mathspace::find_field(*note, mathspace::POS_FIELD)
+                                       : nullptr;
+    if (old == nullptr) {
+        return;
+    }
+    mathspace::Field f = posFieldAt(old->dim, local);
+    for (std::size_t lane = 2; lane < old->dim; ++lane) {
+        f.value[lane] = old->value[lane];
+    }
+    const mathspace::Error err = session.world.applySpaceAction(
+        pageId, mathspace::encode_set_field(id, f));
+    if (err != mathspace::Error::Ok) {
+        showStatus(session, std::string("move note failed: ")
+                   + mathspace::error_name(err));
+    }
 }
 
 // A left press landed on `page` at `worldPoint`. Routes to the minimize
@@ -834,6 +946,9 @@ void handleEvent(const SDL_Event& event,
                         if (item == 0) openSessionFromDialog(session, camera);
                         else if (item == 1) saveSessionNormally(session, camera);
                         else saveSessionAs(session, camera);
+                    } else if (menu == OpenMenu::Edit) {
+                        if (item == 2) createSpaceInView(session, camera, 2, viewW, viewH);
+                        else if (item == 3) createSpaceInView(session, camera, 3, viewW, viewH);
                     } else if (menu == OpenMenu::View) {
                         if (item == 0) camera.reset();
                         else if (!session.world.empty()) {
@@ -948,6 +1063,32 @@ void handleEvent(const SDL_Event& event,
                 }
                 const tapestry::PageTextRegion textRegion =
                     tapestry::pageTextRegionAt(*hit, worldPoint);
+                if (hit->kind == PageKind::Space
+                    && textRegion == tapestry::PageTextRegion::Body) {
+                    // Space body: a dot starts a note drag, a double-click
+                    // on blank body places a note, a single click on blank
+                    // body falls through to editing the labels.
+                    const Uint64 id = hit->id;
+                    const Vec2 origin = tapestry::spaceBodyOrigin(*hit);
+                    const Vec2 local {worldPoint.x - origin.x,
+                                      worldPoint.y - origin.y};
+                    const mathspace::NoteId note = tapestry::spaceNoteAt(
+                        *hit, session.world.space(id), worldPoint,
+                        4.0 / camera.zoom());
+                    if (note.assigned()) {
+                        drag.mode = DragState::Mode::SpaceNote;
+                        drag.pageId = id;
+                        drag.noteId = note;
+                        drag.noteLocal = local;
+                        session.world.bringToFront(id); // invalidates `hit`
+                        break;
+                    }
+                    if (event.button.clicks == 2) {
+                        createSpaceNoteAt(session, id, local);
+                        session.world.bringToFront(id);
+                        break;
+                    }
+                }
                 if (textRegion != tapestry::PageTextRegion::None
                     && vg != nullptr && fonts.ok()) {
                     const std::size_t caret = tapestry::pageTextIndexAt(
@@ -979,6 +1120,15 @@ void handleEvent(const SDL_Event& event,
             && drag.mode == DragState::Mode::Brush) {
             break;
         }
+        if (drag.mode == DragState::Mode::SpaceNote && drag.moved) {
+            const Vec2 worldPoint = camera.screenToWorld(
+                static_cast<double>(event.button.x),
+                static_cast<double>(event.button.y));
+            const Vec2 start = camera.screenToWorld(drag.startX, drag.startY);
+            moveSpaceNoteTo(session, drag.pageId, drag.noteId,
+                            {drag.noteLocal.x + worldPoint.x - start.x,
+                             drag.noteLocal.y + worldPoint.y - start.y});
+        }
         if (drag.mode == DragState::Mode::Zoom && !drag.moved) {
             const SDL_Keymod mods = SDL_GetModState();
             const double factor = (mods & KMOD_ALT) != 0
@@ -990,6 +1140,7 @@ void handleEvent(const SDL_Event& event,
         drag.pageId = 0;
         drag.resizeCorner = ResizeCorner::None;
         drag.strokeId = 0;
+        drag.noteId = mathspace::NoteId {};
         break;
 
     case SDL_MOUSEMOTION: {
@@ -1043,6 +1194,9 @@ void handleEvent(const SDL_Event& event,
                                                point.y - before.y);
                     }
                 }
+            } else if (drag.mode == DragState::Mode::SpaceNote) {
+                // Nothing to commit per frame; the renderer reads the
+                // offset from drag state and the release issues SetField.
             } else if (drag.mode == DragState::Mode::Brush) {
                 tapestry::Stroke* stroke = session.world.strokeById(drag.strokeId);
                 const Vec2 point = camera.screenToWorld(x, y);
@@ -1278,18 +1432,21 @@ void drawHeader(NVGcontext* vg, const tapestry::FontSet& fonts,
         nvgStrokeWidth(vg, 1.0f);
         nvgStroke(vg);
 
-        const char* labels[3] = {nullptr, nullptr, nullptr};
-        const char* shortcuts[3] = {nullptr, nullptr, nullptr};
+        const char* labels[4] = {nullptr, nullptr, nullptr, nullptr};
+        const char* shortcuts[4] = {nullptr, nullptr, nullptr, nullptr};
         int count = 2;
-        bool disabled = false;
+        int disabledBelow = 0; // items with index < this are drawn inert
         if (session.openMenu == OpenMenu::File) {
             labels[0] = "Open..."; labels[1] = "Save"; labels[2] = "Save As...";
             shortcuts[0] = "Cmd+O"; shortcuts[1] = "Cmd+S"; shortcuts[2] = "Cmd+Shift+S";
             count = 3;
         } else if (session.openMenu == OpenMenu::Edit) {
             labels[0] = "Undo"; labels[1] = "Redo";
+            labels[2] = "New 2D Space"; labels[3] = "New 3D Space";
             shortcuts[0] = "Cmd+Z"; shortcuts[1] = "Cmd+Shift+Z";
-            disabled = true;
+            shortcuts[2] = ""; shortcuts[3] = "";
+            count = 4;
+            disabledBelow = 2; // undo/redo are not implemented yet
         } else {
             labels[0] = "Reset View"; labels[1] = "Frame All";
             shortcuts[0] = "0"; shortcuts[1] = "F";
@@ -1299,6 +1456,7 @@ void drawHeader(NVGcontext* vg, const tapestry::FontSet& fonts,
         for (int i = 0; i < count; ++i) {
             const float y = static_cast<float>(panel.y + 4.0
                 + (static_cast<double>(i) + 0.5) * kMenuItemHeight);
+            const bool disabled = i < disabledBelow;
             nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
             nvgFillColor(vg, disabled ? nvgRGBA(145, 151, 168, 100)
                                      : nvgRGBA(225, 230, 241, 235));
@@ -1504,6 +1662,13 @@ int main(int argc, char** argv) {
 
             tapestry::PageUiState ui;
             ui.selectedId = session.selectedId;
+            if (drag.mode == DragState::Mode::SpaceNote && drag.moved) {
+                const Vec2 now = camera.screenToWorld(drag.lastX, drag.lastY);
+                const Vec2 start = camera.screenToWorld(drag.startX, drag.startY);
+                ui.dragNotePage = drag.pageId;
+                ui.dragNote = drag.noteId;
+                ui.dragNoteOffset = {now.x - start.x, now.y - start.y};
+            }
             ui.zoom = camera.zoom();
             ui.invertScroll = session.invertScroll;
             ui.editingZoom = edit.target == EditState::Target::Zoom;

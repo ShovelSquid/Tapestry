@@ -293,13 +293,16 @@ void drawPageCaret(NVGcontext* vg, const Page& page, const Camera& camera,
 // SpaceState and there is nothing to draw.
 void drawSpaceBody(NVGcontext* vg, const Page& page, const SpaceState* space,
                    const Camera& camera, const FontSet& fonts,
-                   float bodyX, float bodyY) {
+                   const PageUiState& ui) {
     if (space == nullptr) {
         return;
     }
     const double zoom = camera.zoom();
-    constexpr double kDotRadius = 4.0; // world units
-    const auto dotR = static_cast<float>(std::max(1.5, kDotRadius * zoom));
+    const Vec2 origin = spaceBodyOrigin(page);
+    const Vec2 originPx = camera.worldToScreen(origin.x, origin.y);
+    const auto bodyX = static_cast<float>(originPx.x);
+    const auto bodyY = static_cast<float>(originPx.y);
+    const auto dotR = static_cast<float>(std::max(1.5, kSpaceDotRadius * zoom));
     const double bodyPx = kBodySize * zoom;
     const bool labels = fonts.ok() && bodyPx >= kMinBodyPx;
     if (labels) {
@@ -332,9 +335,13 @@ void drawSpaceBody(NVGcontext* vg, const Page& page, const SpaceState* space,
         if (pos == nullptr) {
             continue; // a note without a position has nowhere to be drawn
         }
-        const double x = static_cast<double>(pos->value[0].raw) / kUnit;
-        const double y = pos->dim >= 2
+        double x = static_cast<double>(pos->value[0].raw) / kUnit;
+        double y = pos->dim >= 2
             ? static_cast<double>(pos->value[1].raw) / kUnit : 0.0;
+        if (ui.dragNotePage == page.id && ui.dragNote == note.id) {
+            x += ui.dragNoteOffset.x;
+            y += ui.dragNoteOffset.y;
+        }
         const auto sx = static_cast<float>(bodyX + x * zoom);
         const auto sy = static_cast<float>(bodyY + y * zoom);
 
@@ -443,8 +450,12 @@ void drawPage(NVGcontext* vg, const Page& page, const SpaceState* space,
     nvgIntersectScissor(vg, bodyX, bodyY, bodyW, bodyH);
     if (page.kind == PageKind::Settings) {
         drawSettingsBody(vg, page, camera, fonts, ui);
-    } else if (page.kind == PageKind::Space) {
-        drawSpaceBody(vg, page, space, camera, fonts, bodyX, bodyY);
+    } else if (page.kind == PageKind::Space
+               && !(ui.editingPageId == page.id
+                    && ui.editingRegion == PageTextRegion::Body)) {
+        // The body text is the note labels; while it is being edited the
+        // text itself is shown (with its caret), otherwise the dots are.
+        drawSpaceBody(vg, page, space, camera, fonts, ui);
     } else if (!page.body.empty()) {
         const double bodyPx = kBodySize * zoom;
         const double lineStepPx = bodyPx * kBodyLineHeight;
@@ -578,6 +589,40 @@ std::size_t pageTextIndexAt(NVGcontext* vg, const Page& page,
         cursor = rows[count - 1].next;
     }
     return page.body.size();
+}
+
+Vec2 spaceBodyOrigin(const Page& page) {
+    return {page.rect.x + kPadding,
+            page.rect.y + kPageTitleBarHeight + kPadding * 0.5};
+}
+
+mathspace::NoteId spaceNoteAt(const Page& page, const SpaceState* space,
+                              Vec2 worldPoint, double slackWorld) {
+    mathspace::NoteId hit;
+    if (space == nullptr || page.minimized) {
+        return hit;
+    }
+    const Vec2 origin = spaceBodyOrigin(page);
+    const double r = kSpaceDotRadius + slackWorld;
+    constexpr double kUnit = 4294967296.0;
+    for (const mathspace::Note& note : space->world.notes) { // id order
+        if (note.kind == mathspace::NoteKind::Space) {
+            continue;
+        }
+        const mathspace::Field* pos = mathspace::find_field(note, mathspace::POS_FIELD);
+        if (pos == nullptr) {
+            continue;
+        }
+        const double x = origin.x + static_cast<double>(pos->value[0].raw) / kUnit;
+        const double y = origin.y + (pos->dim >= 2
+            ? static_cast<double>(pos->value[1].raw) / kUnit : 0.0);
+        const double dx = worldPoint.x - x;
+        const double dy = worldPoint.y - y;
+        if (dx * dx + dy * dy <= r * r) {
+            hit = note.id; // later (higher) ids draw on top, so they win
+        }
+    }
+    return hit;
 }
 
 SettingsLayout settingsLayout(const Page& page) {
