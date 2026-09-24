@@ -2,16 +2,16 @@
 gsd_state_version: "1.0"
 current_phase: 01
 current_phase_name: Painting with the Pen
-status: executing
-stopped_at: Completed 01-07-PLAN.md
-last_updated: "2026-09-24T08:38:40.674Z"
-last_activity: 2026-09-22
-last_activity_desc: Phase 01 execution started
+status: verifying
+stopped_at: Completed 01-08-PLAN.md (Task 2 human verification deferred to autonomy/REVIEW.md item 1)
+last_updated: "2026-09-24T22:23:10.493Z"
+last_activity: 2026-09-24
+last_activity_desc: Completed 01-08 (human verification deferred)
 progress:
   total_phases: 3
   completed_phases: 0
   total_plans: 8
-  completed_plans: 7
+  completed_plans: 8
   percent: 0
 ---
 
@@ -26,12 +26,12 @@ See: .planning/PROJECT.md (updated 2026-09-22)
 
 ## Current Position
 
-Phase: 01 (Painting with the Pen) — EXECUTING
-Plan: 8 of 8
-Status: Ready to execute
-Last activity: 2026-09-22 — Phase 01 execution started
+Phase: 01 (Painting with the Pen) — all 8 plans executed; phase verification next
+Plan: 8 of 8 (01-08 complete; its Task 2 pen checks inside Tapestry deferred to autonomy/REVIEW.md item 1)
+Status: Ready for phase verification (human verification pending for the pen/feel truths)
+Last activity: 2026-09-24 — Completed 01-08 (replay, transport and latency plan; human verification deferred)
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [██████████] 100% of Phase 01 plans (8/8); 0 of 3 phases complete
 
 ## Performance Metrics
 
@@ -64,6 +64,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 01 P05 | 24 min | 3 tasks | 32 files |
 | Phase 01 P06 | 46 min | 3 tasks | 16 files |
 | Phase 01 P07 | 16 min | 3 tasks | 16 files |
+| Phase 01 P08 | 4 min (continuation; Task 1 earlier) | 2 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -108,6 +109,9 @@ Recent decisions affecting current work:
 - [Phase 01]: PenMeasure is off the stage (two capturing listeners would fight); MountedSurface.attachMeasure() re-attaches it for the pen re-measurement
 - [Phase 01]: The new three Renderer has no forceContextLoss: the WebGL 2 backend releases its context via WEBGL_lose_context on getContext(); dispose is idempotent (verified headless)
 - [Phase 01]: CANV-01, CANV-02, STRK-01, STRK-04 marked complete after 01-07; CANV-03 held by the shared-ID gate for 01-08
+- [Phase 01]: 01-08 Task 2 (pen checks inside Tapestry) approved-deferred under the autonomy protocol; queued as autonomy/REVIEW.md item 1; the human's sheet will be appended to 01-08-SUMMARY.md
+- [Phase 01]: sim-driver.ts is the one stepping/stamping/recording implementation shared by WorkerTransport and MainThreadTransport; a transport switch replays the log; replayFromZero reports DIFF, never reconciles
+- [Phase 01]: Only SIM-03 marked complete after 01-08; CANV-03, CANV-04, STRK-02 held until the human's pen sheet (feel, overlap order, mount in Tapestry)
 
 ### Pending Todos
 
@@ -130,6 +134,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-24T08:38:40.652Z
-Stopped at: Completed 01-07-PLAN.md
+Last session: 2026-09-24T22:23:10.473Z
+Stopped at: Completed 01-08-PLAN.md (Task 2 human verification deferred to autonomy/REVIEW.md item 1)
 Resume file: None

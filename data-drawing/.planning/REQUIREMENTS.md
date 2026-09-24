@@ -11,7 +11,7 @@ Requirements for the first milestone: deterministic core plus painting frontend.
 
 - [x] **SIM-01**: The sim's authoritative state is fixed-point integer only (Q32.32 on int64), advanced by a fixed timestep with strictly ordered updates and a seeded PRNG, with no wall clock, floats, threads, or unordered containers in the sim target; a CI check fails the build if any leak in.
 - [x] **SIM-02**: The sim can serialize, restore, and hash its state through one canonical byte walk, so two runs of the same actions produce the same SHA-256 hash and a restored state hashes identically to the original.
-- [ ] **SIM-03**: The same C++20 sim source builds to WebAssembly and runs live in a renderer Web Worker, reached only through a flat C ABI, so the painting surface sees state without ever mutating it.
+- [x] **SIM-03**: The same C++20 sim source builds to WebAssembly and runs live in a renderer Web Worker, reached only through a flat C ABI, so the painting surface sees state without ever mutating it.
 - [ ] **SIM-04**: One versioned, data-driven material rule (weight settling: mass-dependent drift on the plane with damping) makes the canvas visibly behave over time, and quiet nodes sleep so idle ticks replay cheaply.
 
 ### Strokes and Brushes
@@ -109,7 +109,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 |-------------|-------|--------|
 | SIM-01 | Phase 1 | Complete |
 | SIM-02 | Phase 1 | Complete |
-| SIM-03 | Phase 1 | Pending |
+| SIM-03 | Phase 1 | Complete |
 | SIM-04 | Phase 2 | Pending |
 | STRK-01 | Phase 1 | Complete |
 | STRK-02 | Phase 1 | Pending |
