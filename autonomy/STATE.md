@@ -136,62 +136,37 @@ viewer; it is theirs to edit.)
   inside; a `.tree` preset cannot name node ids, so the bumper's centre
   is a literal vector in the expression. Presets may hold several rule
   nodes (the phase 3 one-rule check was a convention, not a rule).
-- Constraints (`60c8346`). The engine holds bytecode only, so the
-  gradient comes from lifting the program back to an Ast (`lift.hpp`),
-  differentiating per `pos` lane and compiling against `RuleDims`, once
-  per rule per step (no cache to invalidate on a rebind; a profile can
-  ask for one). Only `self.pos` moves per visit: `dpos = w_self * dl *
-  g`, `dl = -C / ((w_self + w_other) |g|^2 + compliance)`, w = 1/mass, 0
-  when pinned or mass <= 0, w_other 0 without `other`; that split is
-  ddsim's `wa/(wa+wb)` exactly for a rod whose other end is pinned, and
-  for a free-free rod the two ordered visits each halve the error, so a
-  pass quarters it and four passes leave 2^-8 of the stretch (ddsim
-  meets a lone rod in one pass). A denominator below 2^-16 is a silent
-  visit skip (ddsim's len2 guard), a pinned self a silent skip (RULE-08),
-  notes without `velocity` are moved (the projection is a position write;
-  `pinned` is the one hold), the velocity derivation touches only what
-  the integrator moves. `MS_CONSTRAINT_ITERATIONS` (4) and
-  `MS_CONSTRAINT_EPS_RAW` live in `version.hpp` next to
-  `MS_STEP_VERSION` (there is no `step.hpp`), `CONSTRAINT_FIELD` and
-  `COMPLIANCE_FIELD` in `world.hpp`. `compliance` must be an unbound
-  scalar; bound or vector reads as 0.
-- Presets (`e1e30a5`) are self-consistent worlds: every note carries
-  every field its rule reads, so a fresh tree shows no RULE-07 skip;
-  positions are relative to the tree frame origin, `y` grows down the
-  screen; a preset needs both `velocity` lanes and `mass`.
-- RULE-07 runtime channel (`9b28407`): reasons are one byte, below 16 an
-  `expr::VmError` on a visit, 16+ a whole-rule `Skip` counted once with
-  the last reason; reports live on `World` outside `==`, the walk and the
-  snapshot; the runner sums counts since the last commit. Not detected:
-  two rules writing one field. `select` runs before `NoTargetField`.
-- Scope (`e0b6942`): pair visits ordered pairs, `self` receives, Newton's
-  third law is the user's symmetric formula; global visits the rule note
-  itself (a global set writes the rule's own field). `set.<f>`
-  (`919c06e`) runs after the integrator, before the bound-field pass;
-  last rule in id order wins silently; dims must match. Plugin side
-  (`204ced5`): rule numeric props are fields, never targets; rule bound
-  fields are never committed back; `mathspace.error` is `key: reason`
-  joined by `; `. `pinned` (`872831b`) is engine-side. Rule notes
-  (`22bc70c`): `scope` scalar 0/1/2 (absent unary); targets are the
-  non-Rule notes of the rule's space with `pos`; `mass` 1 when absent,
-  <= 0 drops the force; h = 1; every `step()` change bumps
-  `MS_STEP_VERSION`.
-- Phase 2 plugin/ABI: `diff.hpp` keeps a derivative at its value's dim,
-  `curve` is `Unsupported`, `node(nN).f` is a constant; the `.tree`
-  spells `self.position`, the plugin rewrites it to `pos` before
-  `ms_compile` and maps error offsets back, compiling in the runner not
-  `buildImage`; `ms_compile` failures pack `-(stage << 8 | code)`,
-  `ms_compile_error_name` gives `"parse:InexactNumber"`. Engine
-  decisions live in the headers (`world.hpp`, `vm.hpp`, `bytecode.hpp`,
-  `parser.hpp`, `fxmath.hpp`); the plan's `MS_RULE_INTEGRATE_VERSION` is
-  `MS_STEP_VERSION`.
-- Phase 1 plugin: a lane-addressed key (`f.x`) is a vector zero-padded
-  to the space dim, a bare name a scalar; the run loop rebuilds on a
-  foreign commit or refused submit, seed 1; the implicit space is id
-  `2^63` dim 2 and never a kernel op; an inexact `real` drops its field
-  into `problems` (see Blocked); real↔fx64 conversion is exact and in
-  JS; note ids are kernel ids; `MS_ABI_VERSION` is separate from the
-  walk's `FORMAT_VERSION`.
+- Constraints (`60c8346`): gradient by lifting bytecode to an Ast
+  (`lift.hpp`) and `diff.hpp`, per rule per step, no cache. Only
+  `self.pos` moves per visit with ddsim's `wa/(wa+wb)` split (exact for a
+  pinned-other rod; a free-free rod keeps 2^-8 of its stretch after the
+  4 passes). Denominator below 2^-16 and a pinned self are silent visit
+  skips; notes without `velocity` still move; `compliance` must be an
+  unbound scalar. Details in `step.cpp`, `version.hpp`, `world.hpp`.
+- Presets (`e1e30a5`) are self-consistent worlds (every note carries
+  every field its rule reads; `y` grows down the screen; both `velocity`
+  lanes and `mass` present).
+- RULE-07 runtime channel (`9b28407`): one-byte reasons, below 16 a
+  `VmError` per visit, 16+ a whole-rule `Skip`; reports live on `World`
+  outside `==`, the walk and the snapshot. Two rules writing one field
+  is not detected.
+- Scope (`e0b6942`): pair visits ordered pairs, `self` receives; global
+  visits the rule note itself. `set.<f>` (`919c06e`) runs after the
+  integrator, last rule in id order wins. Plugin side (`204ced5`): rule
+  numeric props are fields, rule bound fields are never committed back,
+  `mathspace.error` is `key: reason` joined by `; `. Rule notes
+  (`22bc70c`): `scope` scalar 0/1/2, `mass` 1 when absent, h = 1; every
+  `step()` change bumps `MS_STEP_VERSION`.
+- Phase 2 plugin/ABI: the `.tree` spells `self.position`, the plugin
+  rewrites it to `pos` before `ms_compile` (in the runner, not
+  `buildImage`) and maps error offsets back; `ms_compile` failures pack
+  `-(stage << 8 | code)`. Engine decisions live in the headers; the
+  plan's `MS_RULE_INTEGRATE_VERSION` is `MS_STEP_VERSION`.
+- Phase 1 plugin: lane-addressed key = vector zero-padded to the space
+  dim, bare name = scalar; rebuild on a foreign commit or refused submit,
+  seed 1; implicit space id `2^63` dim 2, never a kernel op; inexact
+  `real` drops its field into `problems`; `MS_ABI_VERSION` is separate
+  from the walk's `FORMAT_VERSION`.
 
 ## Learned
 
