@@ -2,18 +2,18 @@
  * Canvas -- the space the trees live in: one infinite 2D plane with
  * CSS-transform pan/zoom (D-05), holding one frame per open tree (D-15).
  *
- * Pan: drag empty space, or a frame's background.
- * Zoom: scroll wheel, scaling around the pointer position.
+ * Pan: drag empty space, or a frame's background (1:1, never eased).
+ * Zoom: Ctrl+wheel or pinch, gliding around the pointer position.
  *
- * Canvas owns what is global to the space -- the view transform, which note is
+ * Canvas owns what is global to the space -- the camera, which note is
  * hovered, selected or being connected -- and TreeFrame owns what belongs to
  * one tree. Every piece of per-note state is keyed by `nodeKey` rather than by
  * node id, because ids are only unique inside a tree: two worlds both have an
  * `n1`, and a bare id would make one note's hover highlight another's.
  *
- * Coordinate helpers:
- *   screenToWorld(sx, sy) -- convert screen px to world-space
- *   worldToScreen(wx, wy) -- convert world-space to screen px
+ * Pan, zoom and roll live in ../layout/camera. Input moves a target camera
+ * held by a CameraRig; one animation loop glides the drawn camera after it,
+ * and the screen and every hit test use the drawn camera (the `view` state).
  * Frame-local coordinates are world coordinates minus the frame's origin.
  */
 
@@ -39,7 +39,20 @@ import {
   type PositionedRect,
 } from '../layout/frames'
 import { displayPositions, type DisplaySpot } from '../layout/placement'
-import { clampZoom, isZoomPinchDelta, normalizeWheelDelta, panDelta, zoomFactor } from '../layout/wheel'
+import { isZoomPinchDelta, normalizeWheelDelta, panDelta, zoomFactor } from '../layout/wheel'
+import {
+  CameraRig,
+  FLY_TAU_MS,
+  IDENTITY_CAMERA,
+  ZOOM_TAU_MS,
+  cameraTransformCss,
+  centerOn,
+  panBy,
+  screenDeltaToWorld,
+  screenToWorld,
+  zoomAbout,
+  type Camera,
+} from '../layout/camera'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -59,16 +72,10 @@ export interface EdgeInfo {
   props: Record<string, { type: string; value: string | number | boolean }>
 }
 
-interface ViewTransform {
-  panX: number
-  panY: number
-  zoom: number
-}
-
 /**
  * What the space can be asked to do from outside it.
  *
- * Canvas owns the view transform, so panning is its to perform: App knows
+ * Canvas owns the camera, so panning is its to perform: App knows
  * which tree it just added, not where that tree's frame ended up.
  */
 export interface CanvasHandle {
@@ -129,38 +136,6 @@ interface CanvasProps {
   /** The selected frame, which is the space's focal point and undo target. */
   selectedTreeId: string | null
   onSelectTree: (treeId: string | null) => void
-}
-
-// ---------------------------------------------------------------------------
-// Coordinate helpers (exported for reuse)
-// ---------------------------------------------------------------------------
-
-export function screenToWorld(
-  screenX: number,
-  screenY: number,
-  panX: number,
-  panY: number,
-  zoom: number,
-  viewportRect: DOMRect,
-): { x: number; y: number } {
-  return {
-    x: (screenX - viewportRect.left - panX) / zoom,
-    y: (screenY - viewportRect.top - panY) / zoom,
-  }
-}
-
-export function worldToScreen(
-  worldX: number,
-  worldY: number,
-  panX: number,
-  panY: number,
-  zoom: number,
-  viewportRect: DOMRect,
-): { x: number; y: number } {
-  return {
-    x: worldX * zoom + panX + viewportRect.left,
-    y: worldY * zoom + panY + viewportRect.top,
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -232,11 +207,48 @@ function Canvas({
   onSelectTree,
 }: CanvasProps, ref: React.ForwardedRef<CanvasHandle>): React.ReactElement {
   const viewportRef = useRef<HTMLDivElement>(null)
-  const [view, setView] = useState<ViewTransform>({ panX: 0, panY: 0, zoom: 1 })
+  // The drawn camera: what the screen shows and what hit tests invert.
+  const [view, setView] = useState<Camera>(IDENTITY_CAMERA)
+  // The target camera and the ease toward it. Created once; every camera
+  // write goes through it.
+  const [rig] = useState(() => new CameraRig(IDENTITY_CAMERA))
+  const rafRef = useRef(0)
+  const lastFrameRef = useRef(0)
 
-  // Panning state
+  /** Show the drawn camera now, for direct moves that need no animation. */
+  const showDrawn = useCallback(() => {
+    setView({ ...rig.drawn })
+  }, [rig])
+
+  /**
+   * Start the animation loop if it is not running. Each frame advances the
+   * drawn camera by the real elapsed time; the loop stops as soon as the
+   * camera has arrived, so an idle canvas schedules no frames.
+   */
+  const kick = useCallback(() => {
+    if (rafRef.current !== 0) return
+    lastFrameRef.current = performance.now()
+    const frame = (now: number) => {
+      const dt = Math.max(0, now - lastFrameRef.current)
+      lastFrameRef.current = now
+      const more = rig.tick(now, dt)
+      setView({ ...rig.drawn })
+      rafRef.current = more ? requestAnimationFrame(frame) : 0
+    }
+    rafRef.current = requestAnimationFrame(frame)
+  }, [rig])
+
+  useEffect(
+    () => () => {
+      cancelAnimationFrame(rafRef.current)
+      rafRef.current = 0
+    },
+    [],
+  )
+
+  // Panning state: the last pointer position a background pan moved to.
   const isPanningRef = useRef(false)
-  const panStartRef = useRef({ x: 0, y: 0, panX: 0, panY: 0 })
+  const lastPanPointRef = useRef({ x: 0, y: 0 })
 
   // Connection-creation state. Refs, not ids: a connection names two notes,
   // and the tree is half of each name.
@@ -337,23 +349,25 @@ function Canvas({
   frameRectsRef.current = frameRects
 
   /**
-   * Center a frame in the viewport, keeping the current zoom.
-   *
-   * worldToScreen is `world * zoom + pan`, so centering the frame's midpoint
-   * means solving `mid * zoom + pan = viewport / 2` for pan.
+   * Fly to a frame: glide the camera so the frame's midpoint sits at the
+   * viewport's centre, keeping the current zoom and roll.
    */
-  const panToFrame = useCallback((treeId: string) => {
-    const viewport = viewportRef.current
-    const rect = frameRectsRef.current.get(treeId)
-    if (!viewport || !rect) return
+  const panToFrame = useCallback(
+    (treeId: string) => {
+      const viewport = viewportRef.current
+      const rect = frameRectsRef.current.get(treeId)
+      if (!viewport || !rect) return
 
-    const { clientWidth, clientHeight } = viewport
-    setView((prev) => ({
-      ...prev,
-      panX: clientWidth / 2 - (rect.x + rect.width / 2) * prev.zoom,
-      panY: clientHeight / 2 - (rect.y + rect.height / 2) * prev.zoom,
-    }))
-  }, [])
+      const { clientWidth, clientHeight } = viewport
+      rig.easeTo(
+        (c) =>
+          centerOn(c, rect.x + rect.width / 2, rect.y + rect.height / 2, clientWidth, clientHeight),
+        FLY_TAU_MS,
+      )
+      kick()
+    },
+    [rig, kick],
+  )
 
   useImperativeHandle(ref, () => ({ panToFrame }), [panToFrame])
 
@@ -375,9 +389,10 @@ function Canvas({
     (clientX: number, clientY: number): { x: number; y: number } | null => {
       if (!viewportRef.current) return null
       const rect = viewportRef.current.getBoundingClientRect()
-      return screenToWorld(clientX, clientY, view.panX, view.panY, view.zoom, rect)
+      // The drawn camera, so a click lands where the content appears.
+      return screenToWorld(view, clientX - rect.left, clientY - rect.top)
     },
-    [view.panX, view.panY, view.zoom],
+    [view],
   )
 
   /** Every frame's world rect, in the shape push-apart works on. */
@@ -484,17 +499,15 @@ function Canvas({
       if (e.button !== 0) return
       if (!isBackground(e.target as HTMLElement, viewportRef.current)) return
 
+      // A grab stops any glide where it is drawn; the pan then follows the
+      // hand from there.
+      rig.hold()
       isPanningRef.current = true
-      panStartRef.current = {
-        x: e.clientX,
-        y: e.clientY,
-        panX: view.panX,
-        panY: view.panY,
-      }
+      lastPanPointRef.current = { x: e.clientX, y: e.clientY }
       ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
       e.preventDefault()
     },
-    [view.panX, view.panY],
+    [rig],
   )
 
   const handlePointerMove = useCallback(
@@ -502,14 +515,18 @@ function Canvas({
       // A frame drag moves the whole tree with its notes and connections, so
       // it is applied to the frame origin rather than to any note.
       if (draggingTreeId) {
-        const dx = (e.clientX - frameDragRef.current.startX) / view.zoom
-        const dy = (e.clientY - frameDragRef.current.startY) / view.zoom
+        const d = screenDeltaToWorld(
+          e.clientX - frameDragRef.current.startX,
+          e.clientY - frameDragRef.current.startY,
+          view.zoom,
+          view.roll,
+        )
         // A few pixels of travel separates a drag from a click that selects.
-        if (Math.abs(dx) > 2 || Math.abs(dy) > 2) frameDragRef.current.moved = true
+        if (Math.abs(d.x) > 2 || Math.abs(d.y) > 2) frameDragRef.current.moved = true
         onFrameMove(
           draggingTreeId,
-          frameDragRef.current.originX + dx,
-          frameDragRef.current.originY + dy,
+          frameDragRef.current.originX + d.x,
+          frameDragRef.current.originY + d.y,
         )
         return
       }
@@ -520,15 +537,13 @@ function Canvas({
       }
 
       if (!isPanningRef.current) return
-      const dx = e.clientX - panStartRef.current.x
-      const dy = e.clientY - panStartRef.current.y
-      setView((prev) => ({
-        ...prev,
-        panX: panStartRef.current.panX + dx,
-        panY: panStartRef.current.panY + dy,
-      }))
+      const dx = e.clientX - lastPanPointRef.current.x
+      const dy = e.clientY - lastPanPointRef.current.y
+      lastPanPointRef.current = { x: e.clientX, y: e.clientY }
+      rig.direct((c) => panBy(c, dx, dy))
+      showDrawn()
     },
-    [connectingFrom, pointerWorld, draggingTreeId, onFrameMove, view.zoom],
+    [connectingFrom, pointerWorld, draggingTreeId, onFrameMove, view.zoom, view.roll, rig, showDrawn],
   )
 
   // Not memoised: the drop needs this render's frame rects, and a stale
@@ -582,36 +597,28 @@ function Canvas({
 
       if (e.ctrlKey) {
         // Pinch-to-zoom on trackpad (browser sets ctrlKey for pinch gestures)
+        // or Ctrl+wheel. The anchor is computed against the target camera, so
+        // a burst of notches stays under the cursor, and the zoom glides.
         const rect = viewport.getBoundingClientRect()
         const pointerX = e.clientX - rect.left
         const pointerY = e.clientY - rect.top
         const normalizedDeltaY = normalizeWheelDelta(e.deltaY, e.deltaMode)
+        const factor = zoomFactor(normalizedDeltaY, isZoomPinchDelta(normalizedDeltaY))
 
-        setView((prev) => {
-          const newZoom = clampZoom(
-            prev.zoom * zoomFactor(normalizedDeltaY, isZoomPinchDelta(normalizedDeltaY)),
-            MIN_ZOOM,
-            MAX_ZOOM
-          )
-          const ratio = newZoom / prev.zoom
-          return {
-            panX: pointerX - ratio * (pointerX - prev.panX),
-            panY: pointerY - ratio * (pointerY - prev.panY),
-            zoom: newZoom,
-          }
-        })
+        rig.easeTo((c) => zoomAbout(c, factor, pointerX, pointerY, MIN_ZOOM, MAX_ZOOM), ZOOM_TAU_MS)
+        kick()
       } else {
-        setView((prev) => ({
-          ...prev,
-          panX: prev.panX - panDelta(e.deltaX, e.deltaMode),
-          panY: prev.panY - panDelta(e.deltaY, e.deltaMode),
-        }))
+        // Two-finger pan is direct manipulation: 1:1, never eased.
+        rig.direct((c) =>
+          panBy(c, -panDelta(e.deltaX, e.deltaMode), -panDelta(e.deltaY, e.deltaMode)),
+        )
+        showDrawn()
       }
     }
 
     viewport.addEventListener('wheel', handleWheel, { passive: false })
     return () => viewport.removeEventListener('wheel', handleWheel)
-  }, [])
+  }, [rig, kick, showDrawn])
 
   // -----------------------------------------------------------------------
   // Click handlers
@@ -717,7 +724,7 @@ function Canvas({
   // -----------------------------------------------------------------------
 
   const containerStyle: React.CSSProperties = {
-    transform: `translate(${view.panX}px, ${view.panY}px) scale(${view.zoom})`,
+    transform: cameraTransformCss(view),
     transformOrigin: '0 0',
     position: 'absolute',
     top: 0,
