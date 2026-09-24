@@ -16,7 +16,7 @@ actions, replay tool, and goldens built before the redirect are kept.
 | Phase | Status |
 | --- | --- |
 | 1 engine over the kernel | built and tested headlessly (`836a4da`); only the human GUI confirmation is open, see Blocked |
-| 2 expressions | engine side done: fxmath (`3ca1482`), ast+parser (`1725143`), bytecode (`30fc1a6`), vm (`3b25475`), action 37 + step eval + golden `plot` (`1abc9d4`). Open: the plugin side (inspector shows a bound value), then `diff.hpp` |
+| 2 expressions | engine side done: fxmath (`3ca1482`), ast+parser (`1725143`), bytecode (`30fc1a6`), vm (`3b25475`), action 37 + step eval + golden `plot` (`1abc9d4`); `ms_compile` in the C ABI and `Engine.compile` (`a159268`, `c44393d`). Open: `image.js` turning `<f>.expr` props into BindField, then `diff.hpp` |
 | 3 force rules | not started |
 | 4 constraints | not started |
 | 5 views | not started |
@@ -40,34 +40,37 @@ viewer; it is theirs to edit.)
    `.tree`. If a session cannot drive the GUI, skip this: the headless
    check in `plugins/mathspace/test/tree.test.js` already covers the
    file-level condition. Either way, do not block phase 2 on it.
-2. **Phase 2, next slice: the plugin side.** (a) `ms_compile` in
-   `include/mathspace/mathspace_c.h` + `src/mathspace/ms_c.cpp`:
-   `int ms_compile(handle, uint64 note_id, const char* text, size_t len,
-   uint8_t* out, size_t cap)` using ddsim's cap protocol like
-   `ms_serialize` (cap 0 returns the needed length), compiling with
-   `expr::parse` then `expr::compile(ast, expr::WorldDims{world, note})`;
-   errors return a negative code carrying the stage and offset, or write
-   an error string; decide, keep it small; export it in
-   `wasm/mathspace_wasm.cpp` and `scripts/build-wasm.sh`'s exported
-   function list. (b) `plugins/mathspace/image.js`: a kernel prop
-   `<f>.expr text "<source>"` becomes a `BindField` action (kind 37, `u64
-   note | u8 len | name | u32 code_len | code`) after the note's
-   `SetField`s, calling `ms_compile` through `engine.js`; compile failures
-   go to `buildImage(...).problems` (and, phase 3, onto the node as
-   `mathspace.error`). Bound fields are bound *after* every note exists,
-   so a second pass over the image is needed for `node(nN)` refs. (c)
-   `snapshot`/`diff` already carry a bound field's lanes, so the
-   inspector shows `<f>.x real ...` after a step once (b) lands; check
-   with a vitest in `plugins/mathspace/test/` that binds `y.expr` =
-   `sin(self.x)` style text and sees the value in the diff. Then phase 2's
-   done condition is met except the human GUI look; say so in STATE and
-   README.
+2. **Phase 2, next slice: `<f>.expr` props in `image.js`.** (a) is
+   done: `Engine.compile(noteId, text)` returns `{code}` or `{error:
+   'parse:InexactNumber', where}`, and `image.js` exports
+   `encodeBindField(note, name, code)`. (b) `buildImage` cannot compile
+   (it has no engine and refs need every note present), so: `buildImage`
+   collects `<f>.expr text "<source>"` props into a new `bindings` list
+   (`{id, name, text}`; the prop's base name must pass `validFieldName`,
+   else `problems`), and `runner.js`'s rebuild, after applying
+   `actions`, runs a second pass that calls `engine.compile` for each
+   binding in id then name order and applies `encodeBindField`; a
+   compile failure goes to `problems` with `reason` = the error string and
+   offset. Check how `runner.js` applies the image today (`rebuild`, the
+   snapshot before await) and keep the second pass synchronous. (c)
+   `snapshot`/`diff` already carry a bound field's lanes, so a vitest in
+   `test/runner.test.js` (or a new `expr.test.js`) with a node holding
+   `x real 1` and `y.expr text "self.x * 2"` should see `y` in the diff
+   after one step. Then phase 2's done condition is met except the human
+   GUI look; say so in STATE and README.
 3. `diff.hpp` (symbolic d/d(self.f.lane) on the Ast, then compile the
    derivative) is needed by phase 4's XPBD gradients; it can be the last
    phase 2 slice or the first phase 4 slice.
 
 ## Done
 
+- `c44393d` ms2 plugin compile: `Engine.compile` in `engine.js`,
+  `encodeBindField` in `image.js`, vitests bind through Wasm and read the
+  value from the snapshot.
+- `a159268` ms2 `ms_compile(w, note, text, len, out, cap, where)` in the
+  C ABI with `ms_serialize`'s cap protocol, `ms_compile_error_name`,
+  `MS_ERR_BAD_BYTECODE` (the C enum had drifted from `Error`), Wasm
+  export list + `UTF8ToString`, doctests in `c_abi_test.cpp`.
 - `1abc9d4` ms2 action 37: `bind_field`, `Error::BadBytecode`, bytecode
   validated in `set_field`/`well_formed`, bound evaluation in `step()`,
   `MS_STEP_VERSION` 2 (was `MS_RULE_INTEGRATE_VERSION` 1), goldens
@@ -105,6 +108,13 @@ viewer; it is theirs to edit.)
 
 ## Decisions
 
+- `ms_compile` errors (2026-09-24, `a159268`): a negative return packs
+  `-(stage << 8 | code)`, stage 0 an `ms_error` (no such note, null
+  argument), 1 a `ParseError` with the byte offset in `*where`, 2 a
+  `CompileError` with the Ast index; `ms_compile_error_name` maps that to
+  a static `"parse:InexactNumber"` string so the plugin never keeps its
+  own enum tables. Compiling is const on the world. `UTF8ToString` was
+  added to the Wasm runtime exports for the name lookup.
 - Action 37 and step evaluation (2026-09-24, `1abc9d4`): `SetField`'s
   record already carried `bound` and bytecode, so `BindField` is the
   convenient form and both paths validate in `set_field` (a bound field
