@@ -14,7 +14,8 @@
 
 import { lstatSync, mkdirSync, readdirSync } from 'fs'
 import { join } from 'path'
-import type { Actor } from './actor'
+import { WORKSPACE_WATCHER_ACTOR, type Actor } from './actor'
+import { checkLock, lockPolicyForTree } from './locks'
 import type { CommandResult } from './notes'
 import { TAPESTRY_TMP_MARKER } from '../mirror/atomic-write'
 import { listGitFiles, sha256Hex } from '../mirror/fs'
@@ -203,6 +204,18 @@ export class WorkspaceFileCommands {
     this.workspaces = workspaces
   }
 
+  /**
+   * The refusal for `actor` changing the text of the file at `rel`, or null
+   * (02.7 D-09). A path the tree has not recorded has no note and no lock.
+   */
+  private textLock(actor: Actor, ws: OpenWorkspace, rel: string): string | null {
+    const note = this.workspaces.noteForPath(ws.tree, rel)
+    if (!note) return null
+    const createdBy = ws.tree.bridge.getHistoryIndex().nodes[note.id]?.createdBy ?? WORKSPACE_WATCHER_ACTOR
+    const refusal = checkLock(note.id, note.props, createdBy, actor, 'text', lockPolicyForTree('workspace'))
+    return refusal ? `${rel}: ${refusal}` : null
+  }
+
   listFiles(args: { workspace?: string; path?: string; limit?: number }): CommandResult<ListFilesValue> {
     try {
       const resolved = resolveWorkspaceTarget(
@@ -302,12 +315,15 @@ export class WorkspaceFileCommands {
 
   writeFile(actor: Actor, args: { workspace?: string; path: string; text: string }): CommandResult<WriteFileValue> {
     try {
-      // 1. Where, and whether the text can be a file.
+      // 1. Where, whether the file's text is locked against the actor, and
+      // whether the text can be a file.
       const resolved = resolveWorkspaceTarget(this.workspaces, args, 'write')
       if (!resolved.ok) return resolved
       const target = resolved.value
       const ws = target.workspace
       const name = ws.tree.name
+      const locked = this.textLock(actor, ws, target.rel)
+      if (locked) return { ok: false, error: locked }
       const invalid = validateWorkspaceText(args.text)
       if (invalid) return { ok: false, error: invalid }
 
@@ -403,6 +419,11 @@ export class WorkspaceFileCommands {
       const ws = target.workspace
       const name = ws.tree.name
       if (!target.exists) return { ok: false, error: `${args.path} does not exist in ${name}` }
+
+      // 1b. The lock, on the note as the tree records it (D-09), before any
+      // disk read or observe commit.
+      const locked = this.textLock(actor, ws, target.rel)
+      if (locked) return { ok: false, error: locked }
 
       // 2. What the disk says now (no commit yet).
       const disk = readPathState(ws.realRoot, target.rel)

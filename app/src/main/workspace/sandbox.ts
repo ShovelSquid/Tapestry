@@ -11,7 +11,7 @@
  * that refuses any symbolic link along the way, then git's ignore rules.
  */
 
-import { lstatSync } from 'fs'
+import { lstatSync, readdirSync } from 'fs'
 import { isAbsolute, join, relative } from 'path'
 import type { CommandResult } from '../commands/notes'
 import type { OpenTree } from '../trees/registry'
@@ -35,7 +35,10 @@ export interface WorkspaceLookup {
 
 export interface WorkspaceTarget {
   workspace: OpenWorkspace
-  /** Workspace-relative, `/`-separated, as the caller spelled it. */
+  /**
+   * Workspace-relative, `/`-separated. Existing segments carry their on-disk
+   * spelling; segments that do not exist yet keep the caller's.
+   */
   rel: string
   /** The absolute path under the real root. */
   abs: string
@@ -67,6 +70,23 @@ function pickWorkspace(
   if (matches.length === 0) return refuse(`${ref} is not an open workspace`)
   if (matches.length > 1) return refuse(`Workspace name ${ref} is ambiguous; use the tree id`)
   return { ok: true, value: matches[0] }
+}
+
+/**
+ * The on-disk spelling of `given`, an entry lstat found in `parent`: the
+ * exact name when the folder holds it, else the single entry equal to it
+ * ignoring case. Null when two entries match (ambiguous).
+ */
+function canonicalName(parent: string, given: string): string | null {
+  const names = readdirSync(parent)
+  if (names.includes(given)) return given
+  const lower = given.toLowerCase()
+  const matches = names.filter((entry) => entry.toLowerCase() === lower)
+  if (matches.length === 1) return matches[0]
+  if (matches.length > 1) return null
+  // lstat found it but no listed name matches (for example a Unicode
+  // normalization difference); keep the caller's spelling.
+  return given
 }
 
 export function resolveWorkspaceTarget(
@@ -152,16 +172,30 @@ export function resolveWorkspaceTarget(
       return refuse(`${raw} is a Tapestry temporary file`)
     }
 
-    // 7. Walk from the real root; never through a link.
+    // 7. Walk from the real root; never through a link. On a case-insensitive
+    // volume an existing segment takes its on-disk spelling, so a path spelled
+    // in another case names the same file and the same note.
     const name = workspace.tree.name
     let current = workspace.realRoot
     let exists = true
     for (let i = 0; i < segments.length; i += 1) {
-      current = join(current, segments[i])
-      const prefix = segments.slice(0, i + 1).join('/')
+      const parent = current
+      current = join(parent, segments[i])
       let stats
       try {
         stats = lstatSync(current)
+        const canonical = canonicalName(parent, segments[i])
+        if (canonical === null) {
+          return refuse(`${raw} matches more than one name in ${inside(workspace.realRoot, parent) || name}`)
+        }
+        if (canonical !== segments[i]) {
+          segments[i] = canonical
+          current = join(parent, canonical)
+          if (canonical.toLowerCase() === '.git') {
+            return refuse(`${raw} is inside .git; file tools never read or write git's own files`)
+          }
+          if (canonical.includes(TAPESTRY_TMP_MARKER)) return refuse(`${raw} is a Tapestry temporary file`)
+        }
       } catch (err) {
         if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err
         if (mode === 'folder') return refuse(`${raw} is not a folder in ${name}`)
@@ -169,6 +203,7 @@ export function resolveWorkspaceTarget(
         exists = false
         break
       }
+      const prefix = segments.slice(0, i + 1).join('/')
       if (stats.isSymbolicLink()) {
         return refuse(`${prefix} is a symbolic link; file tools never follow links`)
       }

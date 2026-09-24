@@ -41,7 +41,7 @@ import type { OpenTree, TreeRegistry } from '../trees/registry'
 import type { Actor } from './actor'
 import type { CommandHooks, CommandResult } from './notes'
 import { prepareWriteFor } from './notes'
-import { checkLock } from './locks'
+import { checkLock, lockPolicyForTree } from './locks'
 import type { NodeData, OpObject } from '../kernel-bridge'
 import {
   displayPositions,
@@ -374,7 +374,7 @@ export class SpatialCommands {
       // the commit that created the note, read from the history index.
       const entry = tree.bridge.getHistoryIndex().nodes[noteId]
       if (!entry) return { ok: false, error: notLive }
-      const locked = checkLock(noteId, note.props, entry.createdBy, actor, 'layout')
+      const locked = checkLock(noteId, note.props, entry.createdBy, actor, 'layout', lockPolicyForTree(tree.kind))
       if (locked) return { ok: false, error: locked }
 
       // (5b) A person's takeover is never turned back into following (D-17).

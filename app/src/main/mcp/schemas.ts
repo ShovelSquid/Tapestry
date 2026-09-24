@@ -333,7 +333,7 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = Object.freeze([
     name: 'edit_file',
     title: 'Replace an exact string in a workspace file',
     description:
-      "Replaces `old_string` with `new_string` in a text file in a workspace folder open in Tapestry. The file is saved to disk at once and the workspace's tree records the change as yours. `old_string` must match exactly, including whitespace and line endings, and must occur once unless `replace_all` is true. Paths follow the same rules as read_file. A refusal writes nothing.",
+      "Replaces `old_string` with `new_string` in a text file in a workspace folder open in Tapestry. The file is saved to disk at once and the workspace's tree records the change as yours. `old_string` must match exactly, including whitespace and line endings, and must occur once unless `replace_all` is true. Paths follow the same rules as read_file. A refusal writes nothing. Refused, and nothing is written, when the file's text is locked against you; the error names the lock's owner.",
     schema: EditFileArgs,
     annotations: { destructiveHint: false },
   },
@@ -341,7 +341,7 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = Object.freeze([
     name: 'write_file',
     title: 'Create or replace a text file in a workspace',
     description:
-      "Creates a text file (and any missing folders) in a workspace folder open in Tapestry, or replaces a text file's whole text. The file is saved to disk at once and the workspace's tree records the change as yours. Paths follow the same rules as read_file. It is refused, with nothing written, for paths outside the workspace, symbolic links, .git, paths ignored by git and non-text files. Writing the text a file already has changes nothing.",
+      "Creates a text file (and any missing folders) in a workspace folder open in Tapestry, or replaces a text file's whole text. The file is saved to disk at once and the workspace's tree records the change as yours. Paths follow the same rules as read_file. It is refused, with nothing written, for paths outside the workspace, symbolic links, .git, paths ignored by git and non-text files. Writing the text a file already has changes nothing. Refused, and nothing is written, when the file's text is locked against you; the error names the lock's owner.",
     schema: WriteFileArgs,
     annotations: { destructiveHint: true },
   },
