@@ -23,7 +23,7 @@
  * Non-text files (binary, too large, symlinks) show only name, type and size.
  */
 
-import React, { useCallback, useContext, useEffect, useRef, useState } from 'react'
+import React, { memo, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import type { NodeInfo } from './Canvas'
 import ProvenanceBadge, { actorSpokenText } from './ProvenanceBadge'
 import { AskClaudeButton, useContextMenu } from './ContextMenu'
@@ -132,7 +132,7 @@ const buttonStyle: React.CSSProperties = {
   cursor: 'pointer',
 }
 
-export default function WorkspaceFileCard({
+function WorkspaceFileCardView({
   treeId,
   node,
   isSelected,
@@ -635,4 +635,65 @@ export default function WorkspaceFileCard({
       <ProvenanceFooter provenance={provenance} />
     </div>
   )
+}
+
+// ---------------------------------------------------------------------------
+// Memoisation (02.7-06 scale): a refresh re-renders only the cards whose file,
+// position, selection or provenance changed
+// ---------------------------------------------------------------------------
+
+function prop(node: NodeInfo, key: string): string | number | boolean | undefined {
+  return node.props[key]?.value
+}
+
+/** The data a card draws from. Handlers are left out: they are forwarded. */
+export function sameCardData(a: WorkspaceFileCardProps, b: WorkspaceFileCardProps): boolean {
+  if (a.treeId !== b.treeId || a.isSelected !== b.isSelected || a.zoom !== b.zoom) return false
+  if (a.openNonce !== b.openNonce) return false
+  if (a.provenance?.createdSeq !== b.provenance?.createdSeq) return false
+  if (a.provenance?.changedSeq !== b.provenance?.changedSeq) return false
+  const n = a.node
+  const m = b.node
+  if (n === m) return true
+  if (n.id !== m.id || n.type !== m.type) return false
+  for (const key of [
+    'file.sha256',
+    'file.path',
+    'file.bytes',
+    'file.unreadable',
+    'position.x',
+    'position.y',
+    'width',
+  ]) {
+    if (prop(n, key) !== prop(m, key)) return false
+  }
+  return true
+}
+
+const MemoWorkspaceFileCard = memo(WorkspaceFileCardView, sameCardData)
+
+/**
+ * The card as TreeFrame renders it. The frame recreates every handler on each
+ * render; they behave the same, so the memoised card ignores them. The
+ * handlers it gets are stable forwarders that read the latest props through a
+ * ref, updated on every render of this wrapper, so a card whose own render was
+ * skipped never acts through an older closure (or on another note).
+ */
+export default function WorkspaceFileCard(props: WorkspaceFileCardProps): React.ReactElement {
+  const latest = useRef(props)
+  latest.current = props
+  const forwarded = useMemo(
+    () => ({
+      onBorderSelect: () => latest.current.onBorderSelect(),
+      onHover: (hovered: boolean) => latest.current.onHover(hovered),
+      onPositionChange: (nodeId: string, x: number, y: number) =>
+        latest.current.onPositionChange(nodeId, x, y),
+      onRegisterDims: (id: string, width: number, height: number) =>
+        latest.current.onRegisterDims(id, width, height),
+      onDragMove: (nodeId: string, x: number, y: number) => latest.current.onDragMove?.(nodeId, x, y),
+      onDragEnd: (nodeId: string) => latest.current.onDragEnd?.(nodeId),
+    }),
+    [],
+  )
+  return <MemoWorkspaceFileCard {...props} {...forwarded} />
 }
