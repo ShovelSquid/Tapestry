@@ -30,55 +30,50 @@ viewer; it is theirs to edit.)
 
 ## Next
 
-1. **Bootstrap integrate rule.** New `src/mathspace/step.cpp` (add it to
-   the `mathspace` library in `CMakeLists.txt`, move `World::step` out of
-   `world.cpp`): for each note in id order that has both `pos` and
-   `velocity` fields of equal dim, `pos += velocity` lane by lane with
-   `fx64` wrapping add. Note the store's position field is `POS_FIELD`
-   (`pos`), not `position`; `image.js` maps the app's `position.x` keys
-   onto it. Pin `MS_RULE_INTEGRATE_VERSION = 1` in `version.hpp` and
-   write it into the hash walk after `DD_FX_FORMAT_ID` (bump
-   `FORMAT_VERSION` to 2; re-record `empty` and `two-notes`). Golden
-   `tests/golden/ms/velocity.actions` + `.sha256`: one 2-space, one note
-   with pos (0,0) and velocity (1,2), checkpoints at 0, 1, 10, 60; add
-   it to the two-process list in `CMakeLists.txt` (grep
-   `ms_golden_two_process`). Tests in `tests/mathspace/step_test.cpp`:
-   moves, dim mismatch is skipped, a note without velocity is untouched,
-   a Space note with velocity moves too (nothing forbids it).
-2. **Snapshot bytes.** `World::notes_bytes()` refreshed by `apply` and
-   `step`: per note in id order `u64 id | u8 field_count | per field in
-   name order: u8 name_len | name | u8 dim | dim x i64`. Test: bytes match
-   a hand-built expectation; stable across serialize/restore.
-4. **C ABI.** `include/mathspace/mathspace_c.h`, `src/mathspace/ms_c.cpp`:
+1. **Snapshot bytes.** Add to `World` (world.hpp) a lazy snapshot: a
+   `mutable bool notes_dirty` set by every mutator and by `step`, and
+   `const std::vector<std::uint8_t>& notes_bytes() const` that rebuilds
+   into a `mutable` member when dirty. Lazy, so mutators pay nothing and
+   `operator==` stays about state (exclude both members from it and from
+   the hash walk). Record per note in id order: `u64 id | u8 field_count
+   | per field in name order: u8 name_len | name | u8 dim | dim x i64
+   (raw fx64)`. No space id, kind, bound flag or bytecode: this is what
+   the plugin diffs against the kernel after a step. Writer in a new
+   `src/mathspace/snapshot.cpp` using `wire::put_*`. Tests in
+   `tests/mathspace/snapshot_test.cpp`: bytes equal a hand-built
+   expectation for a two-note world; equal before and after
+   serialize/restore; change after `step` when a note has velocity;
+   unchanged after a rejected apply; `well_formed`/goldens untouched.
+2. **C ABI.** `include/mathspace/mathspace_c.h`, `src/mathspace/ms_c.cpp`:
    `ms_version, ms_create(seed), ms_destroy, ms_apply(ptr,len), ms_step,
    ms_tick, ms_hash(out32), ms_serialize(out_ptr,out_len), ms_restore,
    ms_notes_ptr, ms_notes_len`. Same error-code style as `ddsim_c.h`.
    Tests through the ABI only, like `tools/ddsim_replay` does.
-5. **Wasm target.** `wasm/mathspace_wasm.cpp` and a `mathspace_wasm`
+3. **Wasm target.** `wasm/mathspace_wasm.cpp` and a `mathspace_wasm`
    executable in the `EMSCRIPTEN` block of `CMakeLists.txt`, exporting
    the `ms_*` symbols plus malloc/free, output `mathspace.mjs`. Building
    needs Emscripten 6.0.10 at `$EMSDK`; if it is not installed, install
    it under `~/emsdk` per `plugins/data-drawing/surface/scripts/build-wasm.sh`
    (network required) and record the outcome under Learned.
-6. **Plugin skeleton.** `plugins/mathspace/`: `tapestry.plugin.json`
+4. **Plugin skeleton.** `plugins/mathspace/`: `tapestry.plugin.json`
    (api "1", commands `mathspace.run`, `mathspace.pause`,
    `mathspace.step`), `package.json` (workspace member, vitest),
    `scripts/build-wasm.sh` mirroring data-drawing's but building the root
    project's `wasm-release` preset and copying `mathspace.mjs/.wasm`
    into `plugins/mathspace/wasm/` (gitignored), `engine.js` loading it.
-7. **`image.js`.** Kernel `NodeData` → engine actions: exact real↔raw
+5. **`image.js`.** Kernel `NodeData` → engine actions: exact real↔raw
    int64 conversion (reject reals that are not `k / 2^32` with `|k| <
    2^53`), key conventions (`f.x f.y f.z f.w`, `f.0..` above dim 4,
    `space ref`, implicit space per tree frame), and `diff(before,
    after)` → `set` ops. Vitest tests for all three.
-8. **Run loop and commits.** In `index.js`: on `mathspace.run`, build the
+6. **Run loop and commits.** In `index.js`: on `mathspace.run`, build the
    image from `getNodes()`, step at 60 Hz with `setInterval`, every 60
    ticks or on pause read the snapshot, diff, `kernel.submit('plugin',
    'mathspace', 'advance', [...sets, {op:'advance', ticks:k}])`. Before
    each commit compare `status().lastGoodSeq` with the seq of our last
    commit; if others committed, rebuild the image first. Checkpoint
    fixture `plugins/mathspace/test/fixtures/velocity.json`.
-9. **Phase 1 done check.** Build the app (`npm install` at the root,
+7. **Phase 1 done check.** Build the app (`npm install` at the root,
    `npm run build:native` in `app/`, then the app's dev script; see
    `app/package.json`), create a note, set `velocity.x real 1` via the
    inspector or a `set` commit, Run, Pause, confirm the `.tree` has the
@@ -91,6 +86,9 @@ its oracle tests.
 
 ## Done
 
+- `a247eab` ms1 bootstrap integrate rule in `step.cpp`,
+  `MS_RULE_INTEGRATE_VERSION` in the walk (FORMAT_VERSION 2), golden
+  `velocity`.
 - `0903619` ms1 kernel ids: `NoteId` plain u64, create actions carry the
   id, `next_group` gone from World and the walk, goldens re-recorded.
 - `3cd79d9` ms1 step 1: build scaffolding (`mathspace` lib, tests, ids).
@@ -119,6 +117,13 @@ its oracle tests.
   something moves; phase 3 deletes it.
 
 ## Learned
+
+- `tests/golden/ms/*.actions` are globbed by `CMakeLists.txt`, so a new
+  fixture gets its two-process test at configure time with no edit.
+  Write fixture hex with a few lines of Python from the grammar in
+  `action.hpp` rather than by hand (a by-hand attempt was off by a byte).
+- Re-recording goldens: `build/native-debug/ms_replay <f>.actions
+  --write-golden <f>.sha256`, then Release and UBSan must agree.
 
 - Full Debug configure+build+ctest of the root tree is ~10 s; Release
   the same. Run both every slice, it is cheap.
