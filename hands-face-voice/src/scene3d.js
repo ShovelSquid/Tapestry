@@ -31,16 +31,20 @@ const POSE_COLOR = 0x34d399;
 // before normalizedTransform/SCENE_SCALE): frame-to-frame movement smaller
 // than this is treated as detector noise and fully suppressed.
 const JITTER_TOLERANCE = 0.008;
-// EMA ease-per-frame weight (0-1, higher = snappier) applied to movement
-// between JITTER_TOLERANCE and SNAP_THRESHOLD. All three are un-tuned
-// starting defaults for this live diagnostic playground, not researched
-// values.
-const SMOOTHING_FACTOR = 0.35;
-// Movement past this distance (same units as JITTER_TOLERANCE) is treated as
-// real, fast, intentional motion rather than jitter to ease through — the
-// point snaps straight to its new position instead of trailing behind via
-// EMA, so a quick hand motion doesn't look laggy.
-const SNAP_THRESHOLD = 0.05;
+// EMA ease-per-frame weight (0-1, higher = snappier) used right at
+// JITTER_TOLERANCE, for slow residual motion just above the dead zone.
+const MIN_SMOOTHING_FACTOR = 0.35;
+// EMA weight the gradient below rises toward as movement gets faster. Capped
+// below 1 on purpose — a hard 100% snap at a fixed threshold felt abrupt, so
+// fast motion stays highly responsive without literally teleporting.
+const MAX_SMOOTHING_FACTOR = 0.85;
+// Distance (same units as JITTER_TOLERANCE) at which the gradient between
+// MIN_SMOOTHING_FACTOR and MAX_SMOOTHING_FACTOR saturates. Movement between
+// JITTER_TOLERANCE and this distance blends smoothly between the two via a
+// smoothstep curve, rather than jumping at a fixed cutoff. All four
+// constants are un-tuned starting defaults for this live diagnostic
+// playground, not researched values.
+const FAST_MOVE_DISTANCE = 0.05;
 
 const FACE_TESSELLATION_INDICES = [
   ...new Set(FaceLandmarker.FACE_LANDMARKS_TESSELATION.flatMap((c) => [c.start, c.end])),
@@ -117,15 +121,16 @@ export function createScene3D(container) {
     if (distance < JITTER_TOLERANCE) {
       return prev;
     }
-    if (distance > SNAP_THRESHOLD) {
-      prev.x = raw.x;
-      prev.y = raw.y;
-      prev.z = raw.z;
-      return prev;
-    }
-    prev.x += dx * SMOOTHING_FACTOR;
-    prev.y += dy * SMOOTHING_FACTOR;
-    prev.z += dz * SMOOTHING_FACTOR;
+    // Smoothstep gradient from MIN_SMOOTHING_FACTOR to MAX_SMOOTHING_FACTOR
+    // as distance goes from JITTER_TOLERANCE to FAST_MOVE_DISTANCE, instead
+    // of a step function — smoothstep's flat tangents at t=0/1 mean the
+    // factor eases into and out of the gradient with no kink at either end.
+    const t = Math.min(1, Math.max(0, (distance - JITTER_TOLERANCE) / (FAST_MOVE_DISTANCE - JITTER_TOLERANCE)));
+    const eased = t * t * (3 - 2 * t);
+    const factor = MIN_SMOOTHING_FACTOR + (MAX_SMOOTHING_FACTOR - MIN_SMOOTHING_FACTOR) * eased;
+    prev.x += dx * factor;
+    prev.y += dy * factor;
+    prev.z += dz * factor;
     return prev;
   }
 
