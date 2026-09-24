@@ -43,10 +43,22 @@ Tapestry's thread type (Kaelen, 2026-09-15; see `Tapestry Tales/Connections/Conc
 - Gravity is suppressed while the user is moving the view and scaled by frame time, so it never fights the hand and does not pull twice as hard at 120 Hz (spike 011)
 - The date scrubber carries the sessions themselves, not just a position: it is the only view where hours of gaps and sessions are visible at once (spike 011)
 
+### hands-face-voice-input
+Camera- and microphone-driven input to Tapestry — hand tracking (pointing, pinching, grabbing, dragging nodes, pan/zoom gestures), face/gaze tracking (gaze as cursor or focus hint, head movement for camera nudges) and voice input (dictation, spoken commands). Kaelen redirected the first spikes away from real-time on-device recognition and toward recording synced video/audio sessions, extracting hand and face landmarks from them offline with no fps pressure, and building a reviewable labeled dataset — with an eye toward training a model on the facial and hand tracking inputs, before any real-time gesture/gaze system is attempted (2026-09-24).
+
+**Requirements:**
+- Recorded video/audio sessions are the starting point, not real-time recognition; offline landmark extraction and labeling come before any live gesture/gaze system is attempted (Kaelen, 2026-09-24)
+- Recordings and any derived landmark/label data stay local to the device — no upload to a cloud service — even though this research pipeline (unlike the eventual production feature) persists raw frames, not just derived intents (Kaelen, 2026-09-24; extends the workstream's original offline/privacy stance in `hands-face-voice/README.md`)
+- Whether this becomes a Tapestry plugin on the public SDK or a separate project like `data-drawing/`, and whether recognition eventually runs in the Electron renderer or natively, stay open until the offline analysis spikes show what the integration actually needs
+
 ## Spikes
 
 | # | Idea | Name | Type | Validates | Verdict | Tags |
 |---|------|------|------|-----------|---------|------|
+| 012 | hands-face-voice-input | synced-video-audio-capture | standard | Given webcam + mic access in Electron, when a capture session records video and audio together, then the recording is saved locally as inspectable, timestamped files that can be replayed and scrubbed later, with no frames leaving the device | PENDING | electron, capture, video, audio |
+| 013 | hands-face-voice-input | offline-hand-face-landmark-extraction | standard | Given a saved recording, when it's run frame-by-frame through hand + face landmark extraction (MediaPipe Tasks Vision, offline, no real-time fps constraint), then per-frame landmark trajectories are produced and can be visualized alongside the source video | PENDING | mediapipe, landmarks, offline-analysis |
+| 014 | hands-face-voice-input | gesture-review-labeling-tool | standard | Given a recording with extracted landmarks, when Kaelen scrubs through it in a review UI with landmarks overlaid, then specific moments can be marked and labeled (pinch, point, grab, gaze shift, etc.), producing a structured labeled dataset | PENDING | ui, labeling, dataset |
+| 015 | hands-face-voice-input | gesture-classifier-poc | standard | Given a labeled dataset from spike 014, when a small classifier is trained on hand/face landmark sequences, then it distinguishes the labeled gesture classes on held-out clips at better-than-chance accuracy | PENDING | ml, classifier, model-training |
 | 001 | thread-rendering | thread-stream-load | standard | Given a WebGL thread in Electron, when it gains 60 dots/s plus a glyph per keystroke fast-forwarded to 1 h (216k dots) and 8 h, then it holds 60 fps with bounded memory, fading and distance collapse | ✓ VALIDATED (procedural ribbon: 60 fps, 0 dropped, 0.9 MB at 8 h continuous; explicit points ✗ 10–20 fps at 8 h) | webgl, electron, performance |
 | 002a | thread-rendering | glyphs-sdf | comparison | Given letters along the thread, when drawn with an SDF glyph atlas (troika-three-text) along the z-axis and from the side, then text is crisp at all zooms | ✗ INVALIDATED (sharpest letters, but 4–5.5 fps and 850 MB at 78 k letters; one Text per keystroke doesn't scale) | webgl, text, sdf |
 | 002b | thread-rendering | glyphs-canvas-atlas | comparison | Same as 002a with a canvas texture atlas and instanced quads (no text library) | ✓ WINNER (60 fps, 0 dropped, 42–50 MB at 78 k letters; legible 8–24 px, soft when magnified ≥48 px) | webgl, text, instancing |
