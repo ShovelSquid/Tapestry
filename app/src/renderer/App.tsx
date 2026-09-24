@@ -300,6 +300,24 @@ export default function App(): React.ReactElement {
     setPendingPanTreeId(added.treeId)
   }, [refreshAll])
 
+  /** Add a workspace folder as a tree (02.7 D-01); mirrors handleAddVault. */
+  const handleAddWorkspace = useCallback(async () => {
+    const picked = await window.tapestry.dialog.showOpenWorkspaceFolder()
+    if (picked.canceled || !picked.folderPath) return
+
+    const added = await window.tapestry.workspace.add(picked.folderPath)
+    if (!added.ok || !added.treeId) {
+      setNotice(
+        `Could not add ${fileNameOf(picked.folderPath)} as a workspace -- ` +
+          `${added.error ?? 'unknown error'} Nothing in the folder was changed.`,
+      )
+      return
+    }
+
+    await refreshAll()
+    setPendingPanTreeId(added.treeId)
+  }, [refreshAll])
+
   /**
    * Pan to a newly added frame once the space knows about it.
    *
@@ -528,6 +546,15 @@ export default function App(): React.ReactElement {
 
   const handleDeleteNote = useCallback(
     async (ref: NodeRef) => {
+      // A workspace note is what a file says (02.7 D-03): removing it from the
+      // canvas would record a file as gone while it is still on disk.
+      const target = trees
+        .find((tree) => tree.id === ref.treeId)
+        ?.nodes.find((node) => node.id === ref.nodeId)
+      if (target?.type.startsWith('tapestry.workspace/')) {
+        setNotice('Workspace files are deleted in their folder, not on the canvas. Nothing was changed.')
+        return
+      }
       try {
         await submitChange(ref.treeId, 'Delete note', [{ op: 'deleteNode', id: ref.nodeId }])
 
@@ -542,7 +569,7 @@ export default function App(): React.ReactElement {
         reportSaveError('Failed to delete note', err)
       }
     },
-    [submitChange, refreshTree, reportSaveError],
+    [trees, submitChange, refreshTree, reportSaveError],
   )
 
   // -----------------------------------------------------------------------
@@ -687,6 +714,7 @@ export default function App(): React.ReactElement {
           onSaveUserName={handleSaveUserName}
           onAgentsRefresh={refreshAgents}
           onAddVault={handleAddVault}
+          onAddWorkspace={handleAddWorkspace}
           onOpenWorld={handleOpenWorld}
           onNewWorld={handleNewWorld}
         />

@@ -1,0 +1,14 @@
+{
+  "name": "workspace-files",
+  "version": "1",
+  "displayName": "Workspace file views",
+  "main": "index.js",
+  "api": "1",
+  "contributions": {
+    "nodeTypes": [
+      "tapestry.workspace/text@1",
+      "tapestry.workspace/file@1",
+      "tapestry.workspace/folder@1"
+    ]
+  }
+}

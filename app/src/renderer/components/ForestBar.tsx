@@ -28,6 +28,8 @@ interface ForestBarProps {
   onAgentsRefresh: () => void
   /** Add tree menu: mirror an Obsidian vault as its own tree (D-10, D-13). */
   onAddVault: () => void
+  /** Add a workspace folder as a tree (02.7). */
+  onAddWorkspace: () => void
   /** Add tree menu: put an existing world into the space. */
   onOpenWorld: () => void
   /** Add tree menu: create a world and put it into the space. */
@@ -56,6 +58,7 @@ export default function ForestBar({
   onSaveUserName,
   onAgentsRefresh,
   onAddVault,
+  onAddWorkspace,
   onOpenWorld,
   onNewWorld,
 }: ForestBarProps): React.ReactElement {
@@ -77,6 +80,7 @@ export default function ForestBar({
    */
   const addTreeItems: Array<{ label: string; run: () => void }> = [
     { label: 'Add Obsidian Vault...', run: onAddVault },
+    { label: 'Add Workspace Folder...', run: onAddWorkspace },
     { label: 'Open Tapestry World...', run: onOpenWorld },
     { label: 'New Tapestry World...', run: onNewWorld },
   ]

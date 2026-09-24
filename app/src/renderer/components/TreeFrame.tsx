@@ -16,6 +16,7 @@ import React, { useEffect } from 'react'
 import { useAnnounce } from './LiveAnnouncer'
 import NoteCard from './NoteCard'
 import VaultNoteCard from './VaultNoteCard'
+import WorkspaceFileCard, { WorkspaceFolderLabel } from './WorkspaceFileCard'
 import FallbackNodeView from './FallbackNodeView'
 import ConnectionLine from './ConnectionLine'
 import ThreadCenterNode from './ThreadCenterNode'
@@ -50,6 +51,8 @@ function isThreadCenter(node: NodeInfo): boolean {
 const NODE_VIEW_COMPONENTS = {
   NoteCard,
   VaultNoteCard,
+  WorkspaceFileCard,
+  WorkspaceFolderLabel,
 } as const
 
 type NodeViewComponentName = keyof typeof NODE_VIEW_COMPONENTS
@@ -460,6 +463,39 @@ export default function TreeFrame({
         {tree.nodes.filter((n) => !isThreadCenter(n)).map((node) => {
           const key = keyFor(node.id)
           const view = mappedNodeView(pluginNodeViews[node.type])
+
+          if (view === 'WorkspaceFileCard') {
+            return (
+              <WorkspaceFileCard
+                key={node.id}
+                treeId={tree.id}
+                node={node}
+                isSelected={selectedKey === key}
+                zoom={zoom}
+                provenance={tree.history?.nodes[node.id]}
+                onBorderSelect={() => handlers.onBorderSelect(refFor(node.id))}
+                onHover={(hovered) => handlers.onHover(refFor(node.id), hovered)}
+                onPositionChange={(nodeId, x, y) =>
+                  handlers.onPositionChange(refFor(nodeId), x, y)
+                }
+                onRegisterDims={(nodeId, w, h) => handlers.onRegisterDims(refFor(nodeId), w, h)}
+                onDragMove={(nodeId, x, y) => handlers.onDragMove(refFor(nodeId), x, y)}
+                onDragEnd={(nodeId) => handlers.onDragEnd(refFor(nodeId))}
+              />
+            )
+          }
+
+          if (view === 'WorkspaceFolderLabel') {
+            return (
+              <WorkspaceFolderLabel
+                key={node.id}
+                node={node}
+                zoom={zoom}
+                onHover={(hovered) => handlers.onHover(refFor(node.id), hovered)}
+                onRegisterDims={(nodeId, w, h) => handlers.onRegisterDims(refFor(nodeId), w, h)}
+              />
+            )
+          }
 
           if (view === 'VaultNoteCard') {
             return (
