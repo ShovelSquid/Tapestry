@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 2
+open_count: 1
 waived_count: 0
-fixed_count: 0
+fixed_count: 1
 total_count: 2
-last_updated: 2026-09-24T06:44:12.002Z
+last_updated: 2026-09-24T07:17:11.877Z
 ---
 
 # Broken Windows Ledger
@@ -15,7 +15,7 @@ last_updated: 2026-09-24T06:44:12.002Z
 
 | id | phase | kind | file | line | description | status | reason | recorded_at | resolved_at |
 |----|-------|------|------|------|-------------|--------|--------|-------------|-------------|
-| 1 | 01 | stub | data-drawing/sim/src/sim.cpp |  | dd_step() advances the tick and runs no rules; stroke kinds return DD_ERR_UNKNOWN_KIND (resolved by 01-05) | open |  | 2026-09-23T00:44:45.100Z |  |
+| 1 | 01 | stub | data-drawing/sim/src/sim.cpp |  | dd_step() advances the tick and runs no rules; stroke kinds return DD_ERR_UNKNOWN_KIND (resolved by 01-05) | fixed |  | 2026-09-23T00:44:45.100Z | 2026-09-24T07:17:11.877Z |
 | 2 | 01 | deviation | plugins/example-plugin/surface/surface.js |  | 01-04 deviation 4: direct new Worker(tapestry-plugin://...) refused cross-origin; spawned via same-origin blob trampoline (ea6bc9e); sim-host.ts must adopt the same in 01-06/01-08 | open |  | 2026-09-24T06:44:12.002Z |  |
 
 ````json
@@ -27,10 +27,10 @@ last_updated: 2026-09-24T06:44:12.002Z
     "file": "data-drawing/sim/src/sim.cpp",
     "line": null,
     "description": "dd_step() advances the tick and runs no rules; stroke kinds return DD_ERR_UNKNOWN_KIND (resolved by 01-05)",
-    "status": "open",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-09-23T00:44:45.100Z",
-    "resolved_at": null
+    "resolved_at": "2026-09-24T07:17:11.877Z"
   },
   {
     "id": 2,

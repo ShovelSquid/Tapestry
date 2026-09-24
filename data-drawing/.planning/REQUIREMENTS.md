@@ -10,7 +10,7 @@ Requirements for the first milestone: deterministic core plus painting frontend.
 ### Simulation Core
 
 - [x] **SIM-01**: The sim's authoritative state is fixed-point integer only (Q32.32 on int64), advanced by a fixed timestep with strictly ordered updates and a seeded PRNG, with no wall clock, floats, threads, or unordered containers in the sim target; a CI check fails the build if any leak in.
-- [ ] **SIM-02**: The sim can serialize, restore, and hash its state through one canonical byte walk, so two runs of the same actions produce the same SHA-256 hash and a restored state hashes identically to the original.
+- [x] **SIM-02**: The sim can serialize, restore, and hash its state through one canonical byte walk, so two runs of the same actions produce the same SHA-256 hash and a restored state hashes identically to the original.
 - [ ] **SIM-03**: The same C++20 sim source builds to WebAssembly and runs live in a renderer Web Worker, reached only through a flat C ABI, so the painting surface sees state without ever mutating it.
 - [ ] **SIM-04**: One versioned, data-driven material rule (weight settling: mass-dependent drift on the plane with damping) makes the canvas visibly behave over time, and quiet nodes sleep so idle ticks replay cheaply.
 
@@ -18,7 +18,7 @@ Requirements for the first milestone: deterministic core plus painting frontend.
 
 - [ ] **STRK-01**: A stroke action records raw pen samples (position on the plane, pressure, tilt) quantized once to integers and stamped with the sim tick and sample index at record time; no smoothed or predicted positions are ever recorded.
 - [ ] **STRK-02**: The brush is a spring-damper body integrated inside the sim from the recorded samples, with stiffness and damping derived from the brush's mass, so heavy brushes lag and carry momentum and the feel replays exactly.
-- [ ] **STRK-03**: Nodes are emitted along the brush body's path at the brush's spacing, with ids derived from the stroke ordinal and emission index (branch-tag bits reserved), never from a counter.
+- [x] **STRK-03**: Nodes are emitted along the brush body's path at the brush's spacing, with ids derived from the stroke ordinal and emission index (branch-tag bits reserved), never from a counter.
 - [ ] **STRK-04**: Brushes are versioned and immutable: a brush version holds a free-text description, mass, radius, spacing, and pressure curve; editing creates a new version and old strokes keep theirs; three or four presets ship differing in description and mass.
 - [ ] **STRK-05**: A pulled-string dead zone and finish-line-on-pen-up are brush-version parameters, so light brushes feel direct and a stroke completes to the pen's final position.
 - [ ] **STRK-06**: Tilt and twist are captured and recorded when the pen reports them; no sim rule depends on them in v1.
@@ -108,12 +108,12 @@ Which phases cover which requirements. Updated during roadmap creation.
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | SIM-01 | Phase 1 | Complete |
-| SIM-02 | Phase 1 | Pending |
+| SIM-02 | Phase 1 | Complete |
 | SIM-03 | Phase 1 | Pending |
 | SIM-04 | Phase 2 | Pending |
 | STRK-01 | Phase 1 | Pending |
 | STRK-02 | Phase 1 | Pending |
-| STRK-03 | Phase 1 | Pending |
+| STRK-03 | Phase 1 | Complete |
 | STRK-04 | Phase 1 | Pending |
 | STRK-05 | Phase 2 | Pending |
 | STRK-06 | Phase 1 | Pending |

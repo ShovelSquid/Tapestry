@@ -37,7 +37,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   4. Three or four brush presets differing in description and mass can be picked; editing a brush creates a new version, and a stroke made with the old version keeps it and replays to the same nodes.
   5. Replaying the session's recorded action list from tick zero in the Worker reproduces the node field and hash shown live; in the native build, replaying the same synthetic stroke log twice, across Debug and Release, across two processes, and after a serialize/restore round trip yields the same SHA-256 state hash at every checkpoint; the build fails if `float`, `double`, `<cmath>`, `<random>`, or `unordered_` appear in the sim target; nodes are emitted at the brush's spacing with ids derived from stroke ordinal and emission index, so replaying with one stroke inserted leaves every other stroke's node ids unchanged.
 
-**Plans:** 4/8 plans executed
+**Plans:** 5/8 plans executed
 **UI hint**: yes
 
 Plans:
@@ -53,7 +53,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 01-05-PLAN.md — Sim behaviour: stroke actions with tilt/twist, spring-damper brush body from mass, emission at spacing with (ordinal, index) ids, versioned presets, synthetic-stroke goldens, insert/tpf/version tests, Wasm parity
+- [x] 01-05-PLAN.md — Sim behaviour: stroke actions with tilt/twist, spring-damper brush body from mass, emission at spacing with (ordinal, index) ids, versioned presets, synthetic-stroke goldens, insert/tpf/version tests, Wasm parity
 - [ ] 01-06-PLAN.md — Surface mounted in Tapestry, pen measured on this Mac, then the deterministic fence (native pointer listener, capture, coalesced, predicted preview-only, quantize once) with the measured constants
 
 **Wave 4** *(blocked on Wave 3 completion)*
@@ -130,6 +130,6 @@ Phases execute in numeric order: 1 → 2 → 3
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Painting with the Pen | 4/8 | In Progress|  |
+| 1. Painting with the Pen | 5/8 | In Progress|  |
 | 2. Readable Journal | 0/TBD | Not started | - |
 | 3. Timeline and Marks | 0/TBD | Not started | - |

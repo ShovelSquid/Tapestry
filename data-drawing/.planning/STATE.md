@@ -3,15 +3,15 @@ gsd_state_version: "1.0"
 current_phase: 01
 current_phase_name: Painting with the Pen
 status: executing
-stopped_at: Completed 01-04-PLAN.md
-last_updated: "2026-09-24T06:44:11.829Z"
+stopped_at: Completed 01-05-PLAN.md
+last_updated: "2026-09-24T07:17:11.590Z"
 last_activity: 2026-09-22
 last_activity_desc: Phase 01 execution started
 progress:
   total_phases: 3
   completed_phases: 0
   total_plans: 8
-  completed_plans: 4
+  completed_plans: 5
   percent: 0
 ---
 
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-09-22)
 ## Current Position
 
 Phase: 01 (Painting with the Pen) — EXECUTING
-Plan: 5 of 8
+Plan: 6 of 8
 Status: Ready to execute
 Last activity: 2026-09-22 — Phase 01 execution started
 
@@ -61,6 +61,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 01 P02 | 30 min | 3 tasks | 8 files |
 | Phase 01 P03 | 14 min | 3 tasks | 13 files |
 | Phase 01 P04 | 28h 53m | 3 tasks | 8 files |
+| Phase 01 P05 | 24 min | 3 tasks | 32 files |
 
 ## Accumulated Context
 
@@ -90,6 +91,12 @@ Recent decisions affecting current work:
 - [Phase 01]: sim.cpp unchanged for strict restore: the 157-offset byte sweep proves 01-01 read_canonical is already reject-or-exact (0 silent corrections)
 - [Phase 01]: SIM-01 marked complete after 01-03; SIM-02 left to the shared-ID gate (01-05 also declares it)
 - [Phase 01]: Blob trampoline for scheme-hosted module Workers (Kaelen, 01-04 checkpoint): Chromium refuses new Worker('tapestry-plugin://...') from the renderer document because Worker scripts must be same-origin with the document and CORS cannot relax it; the spike worker is spawned through a same-origin blob: module whose sole statement statically imports the absolute worker URL, so the scheme stays the origin of the worker module graph and the .wasm. Chosen over RESEARCH fallback A1 (serve from renderer origin) and over halting. sim-host.ts must adopt the same pattern in 01-06/01-08. — Plugin-side only; no SDK contract or host change; verified worker=ok wasm=ok in dev and built loads.
+- [Phase 01]: StrokeEnd integrates the end tick's pending samples through integrate_tick before the stroke leaves the active list (01-07 stamps end_tick = current tick; nothing recorded is dropped; same rule, same tick, no new state)
+- [Phase 01]: Ordinal reuse is derived from hashed state (active list + lower_bound over the ordinal's node-id range), no seen_stroke_ids walk entry: a zero u32 count still adds 4 bytes, so the plan's claim that the earlier goldens would survive was false; goldens byte-identical
+- [Phase 01]: curve_weight lives in rules/emit.hpp (reachable via brush.hpp) because brush.hpp -> brush_body.hpp -> emit.hpp -> brush.hpp would be an include cycle
+- [Phase 01]: The mass-1 preset (k_t = c_t = 1) is dead-beat at one sample per tick: light lag 0 raw, heavy (mass 64) 7398907896 raw after 60 samples; heavy > light and heavy > 0 are the tested truths
+- [Phase 01]: read_canonical's node pre-check compared node_count * 88 (snapshot stride) but a walk node record is 84 bytes: every state with nodes was refused by restore; latent since 01-01, fixed with DD_NODE_WALK_BYTES
+- [Phase 01]: STRK-03 and SIM-02 marked complete after 01-05; STRK-01/STRK-06 gated by 01-06, STRK-04/CANV-01 by 01-07, STRK-02 by 01-08
 
 ### Pending Todos
 
@@ -112,6 +119,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-24T06:44:11.812Z
-Stopped at: Completed 01-04-PLAN.md
+Last session: 2026-09-24T07:17:11.571Z
+Stopped at: Completed 01-05-PLAN.md
 Resume file: None
