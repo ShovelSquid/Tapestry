@@ -321,12 +321,56 @@ TEST_CASE("a pinned note keeps its pos and velocity whatever the forces (RULE-08
     CHECK(w.well_formed());
 }
 
+TEST_CASE("a rule's bound set.<f> assigns f on each selected target after the integrator") {
+    World w(1);
+    REQUIRE(w.create_space(S, 2) == Error::Ok);
+    REQUIRE(w.create_note(A, space_of(S), NoteKind::Note) == Error::Ok);
+    REQUIRE(w.create_note(B, space_of(S), NoteKind::Note) == Error::Ok);
+    REQUIRE(w.create_note(R, space_of(S), NoteKind::Rule) == Error::Ok);
+    REQUIRE(w.create_note(R2, space_of(S), NoteKind::Rule) == Error::Ok);
+    REQUIRE(w.set_field(A, vec("pos", 2, 1, 0)) == Error::Ok);
+    REQUIRE(w.set_field(A, vec("velocity", 2, 1, 0)) == Error::Ok);
+    REQUIRE(w.set_field(A, vec("heat", 1, 0)) == Error::Ok);
+    REQUIRE(w.set_field(A, vec("tag", 2, 0, 0)) == Error::Ok);
+    REQUIRE(w.set_field(B, vec("pos", 2, 5, 0)) == Error::Ok);
+    REQUIRE(w.set_field(B, vec("heat", 2, 0, 0)) == Error::Ok); // wrong dim: never written
+    // Two set fields on one rule, in name order; the target's pos is this tick's.
+    REQUIRE(w.bind_field(R, "set.heat", rule_code(w, R, "self.pos.x * 10")) == Error::Ok);
+    REQUIRE(w.bind_field(R, "set.tag", rule_code(w, R, "[self.heat, 1]")) == Error::Ok);
+    REQUIRE(w.bind_field(R, "set.nope", rule_code(w, R, "7")) == Error::Ok); // no target has it
+    w.step();
+    CHECK(field(w, A, "pos") == vec("pos", 2, 2, 0));
+    CHECK(field(w, A, "heat") == vec("heat", 1, 20));
+    CHECK(field(w, A, "tag") == vec("tag", 2, 20, 1)); // set.heat ran first (name order)
+    CHECK(field(w, B, "heat") == vec("heat", 2, 0, 0));
+    CHECK(find_field(*w.find(A), "nope") == nullptr);
+    CHECK(find_field(*w.find(B), "nope") == nullptr);
+    // A later rule in id order wins; select gates it; a pinned target is skipped.
+    REQUIRE(w.bind_field(R2, "set.heat", rule_code(w, R2, "0 - 1")) == Error::Ok);
+    REQUIRE(w.bind_field(R2, "select", rule_code(w, R2, "self.pos.x > 100")) == Error::Ok);
+    w.step();
+    CHECK(field(w, A, "heat") == vec("heat", 1, 30)); // not selected: rule R's value
+    REQUIRE(w.bind_field(R2, "select", {}) == Error::Ok);
+    w.step();
+    CHECK(field(w, A, "heat") == vec("heat", 1, -1));
+    REQUIRE(w.set_field(A, vec("pinned", 1, 1)) == Error::Ok);
+    w.step();
+    CHECK(field(w, A, "heat") == vec("heat", 1, -1));
+    CHECK(field(w, A, "tag") == vec("tag", 2, 40, 1)); // tick 3's value, no write while pinned
+    // A set rule under a non-unary scope is skipped whole.
+    REQUIRE(w.set_field(A, vec("pinned", 1, 0)) == Error::Ok);
+    REQUIRE(w.set_field(R2, vec("scope", 1, 2)) == Error::Ok);
+    w.step();
+    CHECK(field(w, A, "heat") == vec("heat", 1, 50));
+    CHECK(w.well_formed());
+}
+
 TEST_CASE("the step version is pinned in the walk") {
-    CHECK(MS_STEP_VERSION == 5u);
+    CHECK(MS_STEP_VERSION == 6u);
     const World w;
     const auto bytes = serialize(w);
     // magic 4 | FORMAT_VERSION 4 | DD_FX_FORMAT_ID 4 | rule version 4
-    CHECK(bytes[12] == 5);
+    CHECK(bytes[12] == 6);
     CHECK(bytes[13] == 0);
     CHECK(bytes[14] == 0);
     CHECK(bytes[15] == 0);

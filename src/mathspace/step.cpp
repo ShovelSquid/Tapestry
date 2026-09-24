@@ -28,6 +28,17 @@
 // neither its velocity nor its pos changes. Space notes are not
 // excluded (nothing forbids a space from drifting).
 //
+// Then the set rules: for each unary Rule note in id order, each of its
+// bound fields named `set.<f>` in name order (SET_PREFIX, world.hpp) is
+// evaluated against each target the rule's `select` accepts, and the
+// lanes are written into the target's own field `f` when the target
+// already holds it at the program's dim. A missing or reshaped `f`, an
+// evaluation error, or a pinned target (RULE-08 covers every write) is a
+// per-target skip; the rule never creates fields. Two rules setting one
+// field is RULE-07's error, but this tick has no runtime-error channel
+// yet, so the later rule in id order wins. A target's `pos` here is this
+// tick's integrated one.
+//
 // Then every bound field of every non-Rule note (phase 2) is evaluated:
 // notes in id order, fields in name order, each against the world as it
 // is at that moment, so a field can see this tick's integrated `pos` and
@@ -71,13 +82,50 @@ bool is_pinned(const Note& n) {
     return p != nullptr && p->dim == 1 && p->value[0].raw != 0;
 }
 
+// Decodes `f`'s program whatever its dim.
+bool decode_program(const Field& f, expr::Program& program) {
+    std::uint32_t where = 0;
+    return expr::decode(f.bytecode.data(), f.bytecode.size(), program, where) == expr::CompileError::Ok;
+}
+
+
+// Calls fn(index, target) for each target of a unary rule that its
+// `select` accepts; false when the rule is not unary, its space has no
+// dim, or its `select` is bound but not scalar (the rule is skipped).
+template <class Fn>
+bool for_each_target(const World& w, const Note& rule, Fn&& fn) {
+    const std::vector<Note>& notes = w.notes;
+    if (rule.kind != NoteKind::Rule || !is_unary(rule) || w.space_dim(rule.space) == 0) {
+        return false;
+    }
+    const Field* sel = find_field(rule, SELECT_FIELD);
+    expr::Program select;
+    if (sel != nullptr && sel->bound && !program_of(*sel, 1, select)) {
+        return false;
+    }
+    for (std::size_t i = 0; i < notes.size(); ++i) {
+        const Note& target = notes[i];
+        if (target.kind == NoteKind::Rule || target.space != rule.space || find_field(target, POS_FIELD) == nullptr) {
+            continue;
+        }
+        if (!select.ops.empty()) {
+            expr::Lanes out{};
+            if (expr::eval(select, w, target, nullptr, out) != expr::VmError::Ok || out[0].raw == 0) {
+                continue;
+            }
+        }
+        fn(i, target);
+    }
+    return true;
+}
+
 } // namespace
 
 void World::step() {
     // Force accumulation, indexed like `notes` so no field is created.
     std::vector<expr::Lanes> force(notes.size());
     for (const Note& rule : notes) {
-        if (rule.kind != NoteKind::Rule || !is_unary(rule)) {
+        if (rule.kind != NoteKind::Rule) {
             continue;
         }
         const Field* f = find_field(rule, FORCE_FIELD);
@@ -89,29 +137,15 @@ void World::step() {
         if (dim == 0 || !program_of(*f, dim, program)) {
             continue;
         }
-        const Field* sel = find_field(rule, SELECT_FIELD);
-        expr::Program select;
-        if (sel != nullptr && sel->bound && !program_of(*sel, 1, select)) {
-            continue;
-        }
-        for (std::size_t i = 0; i < notes.size(); ++i) {
-            const Note& target = notes[i];
-            if (target.kind == NoteKind::Rule || target.space != rule.space || find_field(target, POS_FIELD) == nullptr) {
-                continue;
-            }
+        for_each_target(*this, rule, [&](std::size_t i, const Note& target) {
             expr::Lanes out{};
-            if (!select.ops.empty()) {
-                if (expr::eval(select, *this, target, nullptr, out) != expr::VmError::Ok || out[0].raw == 0) {
-                    continue;
-                }
-            }
             if (expr::eval(program, *this, target, nullptr, out) != expr::VmError::Ok) {
-                continue;
+                return;
             }
             for (std::uint8_t lane = 0; lane < dim; ++lane) {
                 force[i][lane] += out[lane];
             }
-        }
+        });
     }
     for (std::size_t i = 0; i < notes.size(); ++i) {
         Note& n = notes[i];
@@ -131,6 +165,38 @@ void World::step() {
         }
         for (std::uint8_t lane = 0; lane < pos->dim; ++lane) {
             pos->value[lane] += vel->value[lane];
+        }
+    }
+    for (std::size_t r = 0; r < notes.size(); ++r) {
+        const Note& rule = notes[r];
+        if (rule.kind != NoteKind::Rule) {
+            continue;
+        }
+        for (const Field& f : rule.fields) {
+            if (!f.bound || !f.name.starts_with(SET_PREFIX)) {
+                continue;
+            }
+            const std::string_view target_name = std::string_view(f.name).substr(SET_PREFIX.size());
+            expr::Program program;
+            if (!decode_program(f, program)) {
+                continue;
+            }
+            for_each_target(*this, rule, [&](std::size_t i, const Note& target) {
+                if (is_pinned(target)) {
+                    return;
+                }
+                Field* dst = find_field(notes[i], target_name);
+                if (dst == nullptr || dst->dim != program.dim) {
+                    return;
+                }
+                expr::Lanes out{};
+                if (expr::eval(program, *this, target, nullptr, out) != expr::VmError::Ok) {
+                    return;
+                }
+                for (std::uint8_t lane = 0; lane < dst->dim; ++lane) {
+                    dst->value[lane] = out[lane];
+                }
+            });
         }
     }
     for (Note& n : notes) {

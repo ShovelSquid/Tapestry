@@ -23,6 +23,9 @@ const char* version();
 //      an evaluation error skips the target, absent selects all.
 //   5: the integrator skips a note whose scalar `pinned` is nonzero
 //      (RULE-08): neither its velocity nor its pos changes.
-inline constexpr std::uint32_t MS_STEP_VERSION = 5u;
+//   6: after the integrator, a rule's bound `set.<f>` fields (name order,
+//      rules in id order) assign `f` on each selected, unpinned target
+//      that already holds `f` at the program's dim.
+inline constexpr std::uint32_t MS_STEP_VERSION = 6u;
 
 } // namespace mathspace

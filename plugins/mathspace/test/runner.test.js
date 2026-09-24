@@ -321,6 +321,24 @@ describe('Runner with rule nodes', () => {
     runner.dispose()
   })
 
+  it('a set.<f> rule assigns a field the body already has; a missing field is a skip', async () => {
+    const kernel = fakeKernel([
+      { id: 'n2', type: 'tapestry.notes/note@1', props: at(3, 0, { 'velocity.x': { type: 'real', value: 1 }, 'velocity.y': { type: 'real', value: 0 }, heat: { type: 'real', value: 0 } }) },
+      { id: 'n3', type: 'tapestry.notes/note@1', props: at(7, 0) }, // no heat: the rule never creates it
+      { id: 'n4', type: RULE, props: at(50, 50, { 'set.heat.expr': text('self.position.x * 2') }) },
+    ])
+    const { runner } = makeRunner()
+    await runner.stepOnce(kernel)
+    expect(runner.image.problems).toEqual([])
+    // heat is set from this tick's integrated x (3 + 1 = 4).
+    expect(kernel.state.commits[0].ops).toEqual([
+      { op: 'setProperty', target: 'n2', key: 'heat', type: 'real', value: 8 },
+      { op: 'setProperty', target: 'n2', key: 'position.x', type: 'real', value: 4 },
+      { op: 'advance', ticks: 1 },
+    ])
+    runner.dispose()
+  })
+
   it('a pinned note is held still under velocity and force (RULE-08)', async () => {
     const kernel = fakeKernel([
       { id: 'n2', type: 'tapestry.notes/note@1', props: at(0, 0, { 'velocity.x': { type: 'real', value: 1 }, 'velocity.y': { type: 'real', value: 0 }, pinned: { type: 'bool', value: true } }) },

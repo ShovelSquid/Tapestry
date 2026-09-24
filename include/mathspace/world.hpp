@@ -129,6 +129,10 @@ inline constexpr std::string_view PINNED_FIELD = "pinned";
 inline constexpr std::string_view FORCE_FIELD = "force";
 inline constexpr std::string_view SELECT_FIELD = "select";
 inline constexpr std::string_view SCOPE_FIELD = "scope";
+// A bound `set.<f>` on a Rule note assigns `f` on each target (step.cpp):
+// the field name after the prefix is the target's field, kept dotted on
+// the rule because field names allow dots.
+inline constexpr std::string_view SET_PREFIX = "set.";
 
 // Bumped whenever the canonical walk (hash.cpp) changes shape. Pinned in
 // the walk itself so old bytes are rejected instead of misread.
