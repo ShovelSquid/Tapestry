@@ -16,17 +16,24 @@ Phase 01: Painting with the Pen. 8 plans in 5 waves; waves 1-4 (01-01 to
   `checkpoint:human-verify`: feel, replay, latency, backend and 20-open
   lifetime checks with the pen inside the running Tapestry app.
 
-The next session should: confirm Task 1's automated verify still passes in
-this worktree, do Task 2's `what-built` preparation (sim:wasm, surface build,
-all suites green, `npm --prefix app run dev` in the background), then write
-WAITING with Task 2's how-to-verify steps and resume-signal.
+Task 1's verify re-passed here on 2026-09-24 and Task 2's preparation is
+done; the session is WAITING on the human (see Checkpoint).
 
 After 01-08 is approved, finishing Phase 01 is its verification. Phase 2
 (Readable Journal) has no plans and must not be started unattended.
 
 ## Checkpoint
 
-(none recorded yet; 01-08 Task 2 is the next one)
+Phase 01, plan 01-08, Task 2 (checkpoint:human-verify, blocking): feel,
+replay, latency, backend and 20-open lifetime checks with the pen inside
+Tapestry. WAITING written 2026-09-24 13:00 with the plan's how-to-verify
+steps. On RESPONSE: resume 01-08 at Task 2 through the GSD execute workflow
+with the RESPONSE text verbatim; the SUMMARY must include the human's sheet
+verbatim, the cycles line and the transport latency comparison. Task 1's
+dev-page observations (`?cycles=20`, `?transport=main`, Verify replay) were
+not recorded in a SUMMARY by the Task 1 executor; the human's steps 8-10
+cover the same ground inside Tapestry. If the app is not running when the
+human answers, nothing needs rebuilding: all outputs are current.
 
 ## In progress
 
@@ -35,6 +42,10 @@ After 01-08 is approved, finishing Phase 01 is its verification. Phase 2
 ## Log
 
 (one line per session: date, wave or plan, commits, result)
+
+- 2026-09-24 12:56 — wave 5 / 01-08: re-ran Task 1 verify (native 75x3,
+  plugin 90, app 443, gates clean), rebuilt Wasm and surface, started app
+  dev in background, wrote WAITING for Task 2. Commit: this STATE only.
 
 ## Learned
 
@@ -60,3 +71,8 @@ After 01-08 is approved, finishing Phase 01 is its verification. Phase 2
 ## Blocked
 
 (questions a human would have been asked, with the option taken)
+
+- 2026-09-24: did Task 2's preparation directly instead of through
+  `gsd-execute-phase 01 --wave 5`: Task 1 is committed and Task 2 is the
+  checkpoint itself, so the orchestrator would only have reached the same
+  gate. No code changed.
