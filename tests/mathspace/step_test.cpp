@@ -365,12 +365,63 @@ TEST_CASE("a rule's bound set.<f> assigns f on each selected target after the in
     CHECK(w.well_formed());
 }
 
+TEST_CASE("a pair rule visits every ordered pair with other bound; global visits the rule once") {
+    World w(1);
+    REQUIRE(w.create_space(S, 2) == Error::Ok);
+    REQUIRE(w.create_note(A, space_of(S), NoteKind::Note) == Error::Ok);
+    REQUIRE(w.create_note(B, space_of(S), NoteKind::Note) == Error::Ok);
+    REQUIRE(w.create_note(R, space_of(S), NoteKind::Rule) == Error::Ok);
+    REQUIRE(w.create_note(R2, space_of(S), NoteKind::Rule) == Error::Ok);
+    REQUIRE(w.set_field(A, vec("pos", 2, 0, 0)) == Error::Ok);
+    REQUIRE(w.set_field(A, vec("velocity", 2, 0, 0)) == Error::Ok);
+    REQUIRE(w.set_field(A, vec("near", 1, 1000)) == Error::Ok);
+    REQUIRE(w.set_field(B, vec("pos", 2, 10, 0)) == Error::Ok);
+    REQUIRE(w.set_field(B, vec("velocity", 2, 0, 0)) == Error::Ok);
+    REQUIRE(w.set_field(B, vec("near", 1, 1000)) == Error::Ok);
+    REQUIRE(w.set_field(R, vec("scope", 1, 1)) == Error::Ok);
+    // A spring toward the other end: symmetric, so both ends move.
+    REQUIRE(w.bind_field(R, "force", rule_code(w, R, "other.pos - self.pos")) == Error::Ok);
+    // A pair set reads what the previous visit wrote: a running min over others.
+    REQUIRE(w.bind_field(R, "set.near", rule_code(w, R, "min(self.near, abs(self.pos.x - other.pos.x))")) == Error::Ok);
+    w.step();
+    CHECK(field(w, A, "velocity") == vec("velocity", 2, 10, 0));
+    CHECK(field(w, A, "pos") == vec("pos", 2, 10, 0));
+    CHECK(field(w, B, "velocity") == vec("velocity", 2, -10, 0));
+    CHECK(field(w, B, "pos") == vec("pos", 2, 0, 0));
+    CHECK(field(w, A, "near") == vec("near", 1, 10)); // from this tick's integrated pos
+    CHECK(field(w, B, "near") == vec("near", 1, 10));
+    // select sees `other` too: gate the spring on the other end's x.
+    REQUIRE(w.bind_field(R, "select", rule_code(w, R, "other.pos.x > 5")) == Error::Ok);
+    w.step();
+    CHECK(field(w, A, "velocity") == vec("velocity", 2, 10, 0)); // other is B at x 0: not selected
+    CHECK(field(w, B, "velocity") == vec("velocity", 2, 0, 0));  // other is A at x 10: force -10
+    CHECK(field(w, A, "pos") == vec("pos", 2, 20, 0));
+    CHECK(field(w, B, "pos") == vec("pos", 2, 0, 0));
+    // A unary rule that reads `other` is a per-visit skip; a global rule
+    // visits the rule note itself: its force goes nowhere useful, its set
+    // writes its own field. Scope 3 is no scope.
+    REQUIRE(w.set_field(R, vec("scope", 1, 0)) == Error::Ok);
+    REQUIRE(w.set_field(R2, vec("scope", 1, 2)) == Error::Ok);
+    REQUIRE(w.set_field(R2, vec("count", 1, 0)) == Error::Ok);
+    REQUIRE(w.bind_field(R2, "set.count", rule_code(w, R2, "world.tick + 1")) == Error::Ok);
+    REQUIRE(w.bind_field(R2, "force", rule_code(w, R2, "[1, 1]")) == Error::Ok);
+    w.step();
+    CHECK(field(w, A, "velocity") == vec("velocity", 2, 10, 0));
+    CHECK(field(w, B, "velocity") == vec("velocity", 2, 0, 0));
+    CHECK(field(w, R2, "count") == vec("count", 1, 3));
+    CHECK(find_field(*w.find(R2), "velocity") == nullptr);
+    REQUIRE(w.set_field(R2, vec("scope", 1, 3)) == Error::Ok);
+    w.step();
+    CHECK(field(w, R2, "count") == vec("count", 1, 3));
+    CHECK(w.well_formed());
+}
+
 TEST_CASE("the step version is pinned in the walk") {
-    CHECK(MS_STEP_VERSION == 6u);
+    CHECK(MS_STEP_VERSION == 7u);
     const World w;
     const auto bytes = serialize(w);
     // magic 4 | FORMAT_VERSION 4 | DD_FX_FORMAT_ID 4 | rule version 4
-    CHECK(bytes[12] == 6);
+    CHECK(bytes[12] == 7);
     CHECK(bytes[13] == 0);
     CHECK(bytes[14] == 0);
     CHECK(bytes[15] == 0);

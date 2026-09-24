@@ -26,6 +26,9 @@ const char* version();
 //   6: after the integrator, a rule's bound `set.<f>` fields (name order,
 //      rules in id order) assign `f` on each selected, unpinned target
 //      that already holds `f` at the program's dim.
-inline constexpr std::uint32_t MS_STEP_VERSION = 6u;
+//   7: pair and global scope. A pair rule visits every ordered pair of
+//      distinct targets with `other` bound (select included), writing
+//      `self`; a global rule visits the rule note once. Unary unchanged.
+inline constexpr std::uint32_t MS_STEP_VERSION = 7u;
 
 } // namespace mathspace

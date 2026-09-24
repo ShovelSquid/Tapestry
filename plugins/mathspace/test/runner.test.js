@@ -339,6 +339,25 @@ describe('Runner with rule nodes', () => {
     runner.dispose()
   })
 
+  it('a pair rule binds other: a spring swaps two bodies at rest', async () => {
+    const kernel = fakeKernel([
+      { id: 'n2', type: 'tapestry.notes/note@1', props: at(0, 0, { 'velocity.x': { type: 'real', value: 0 }, 'velocity.y': { type: 'real', value: 0 } }) },
+      { id: 'n3', type: 'tapestry.notes/note@1', props: at(10, 0, { 'velocity.x': { type: 'real', value: 0 }, 'velocity.y': { type: 'real', value: 0 } }) },
+      { id: 'n4', type: RULE, props: at(50, 50, { scope: text('pair'), 'force.expr': text('other.position - self.position') }) },
+    ])
+    const { runner } = makeRunner()
+    await runner.stepOnce(kernel)
+    expect(runner.image.problems).toEqual([])
+    expect(kernel.state.commits[0].ops).toEqual([
+      { op: 'setProperty', target: 'n2', key: 'position.x', type: 'real', value: 10 },
+      { op: 'setProperty', target: 'n2', key: 'velocity.x', type: 'real', value: 10 },
+      { op: 'setProperty', target: 'n3', key: 'position.x', type: 'real', value: 0 },
+      { op: 'setProperty', target: 'n3', key: 'velocity.x', type: 'real', value: -10 },
+      { op: 'advance', ticks: 1 },
+    ])
+    runner.dispose()
+  })
+
   it('a pinned note is held still under velocity and force (RULE-08)', async () => {
     const kernel = fakeKernel([
       { id: 'n2', type: 'tapestry.notes/note@1', props: at(0, 0, { 'velocity.x': { type: 'real', value: 1 }, 'velocity.y': { type: 'real', value: 0 }, pinned: { type: 'bool', value: true } }) },

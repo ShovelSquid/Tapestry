@@ -5,17 +5,20 @@
 // whose programs run against each *target* note as `self`, never against
 // the rule note itself; the rule's own lanes stay as they were set and
 // the generic bound-field pass below skips Rule notes for that reason.
-// This tick knows one law: a bound `force` on a rule of unary scope
-// (`scope` absent or 0; pair and global are later phases and are skipped
-// here). Its targets are the non-Rule notes of the rule's space, in id
-// order, that a bound scalar `select` accepts (nonzero; an absent
-// `select` accepts every one, a bound non-scalar one skips the rule).
-// The force program must yield the space dim (else the rule is
-// skipped), and a per-note evaluation failure of either program (a
-// `self.mass` the note does not have, a field at another dim) skips that
-// note only. Forces sum into a per-tick accumulator that is not a field:
-// nothing is stored, hashed or snapshotted, so a rule never creates
-// fields on the notes it acts on.
+// A bound `force` on a rule is evaluated once per visit of the rule's
+// scope (for_each_target below: unary per target, pair per ordered pair
+// of targets with `other` bound, global once on the rule itself) and
+// summed into the accumulator of the visit's `self`; a bound scalar
+// `select` gates each visit. The force program must yield the space dim
+// (else the rule is skipped), and a per-visit evaluation failure of
+// either program (a `self.mass` the note does not have, a field at
+// another dim, `other` in a unary rule) skips that visit only. Forces sum
+// into a per-tick accumulator that is not a field: nothing is stored,
+// hashed or snapshotted, so a rule never creates fields on the notes it
+// acts on. Pair scope is O(n^2) evaluations, twice the unordered pairs:
+// the design's gravity example is a force on `self` in terms of `other`,
+// so the pair is visited both ways and Newton's third law is the user's
+// symmetric formula, not a rule of the engine.
 //
 // Then the integrator, notes in id order: a note with `pos` and
 // `velocity` at the same dim takes `velocity += force / mass` (mass is
@@ -28,11 +31,13 @@
 // neither its velocity nor its pos changes. Space notes are not
 // excluded (nothing forbids a space from drifting).
 //
-// Then the set rules: for each unary Rule note in id order, each of its
-// bound fields named `set.<f>` in name order (SET_PREFIX, world.hpp) is
-// evaluated against each target the rule's `select` accepts, and the
-// lanes are written into the target's own field `f` when the target
-// already holds it at the program's dim. A missing or reshaped `f`, an
+// Then the set rules: for each Rule note in id order, each of its bound
+// fields named `set.<f>` in name order (SET_PREFIX, world.hpp) is
+// evaluated on each visit of the rule's scope, and the lanes are written
+// into `self`'s own field `f` when it already holds it at the program's
+// dim (a pair set visits `self` once per `other`, each visit reading
+// what the last one wrote, so a running min or sum over others is one
+// expression; a global set writes the rule's own field). A missing or reshaped `f`, an
 // evaluation error, or a pinned target (RULE-08 covers every write) is a
 // per-target skip; the rule never creates fields. Two rules setting one
 // field is RULE-07's error, but this tick has no runtime-error channel
@@ -65,9 +70,23 @@ bool program_of(const Field& f, std::uint8_t dim, expr::Program& program) {
            program.dim == dim;
 }
 
-bool is_unary(const Note& rule) {
+// The rule's `scope` as step() reads it: absent is unary; a bound, vector
+// or out-of-range scalar is no scope at all and the rule is skipped.
+enum class Scope : std::uint8_t { Unary = 0, Pair = 1, Global = 2, None };
+
+Scope scope_of(const Note& rule) {
     const Field* scope = find_field(rule, SCOPE_FIELD);
-    return scope == nullptr || (scope->dim == 1 && scope->value[0].raw == 0);
+    if (scope == nullptr) {
+        return Scope::Unary;
+    }
+    if (scope->dim != 1 || scope->bound) {
+        return Scope::None;
+    }
+    const std::int64_t raw = scope->value[0].raw;
+    if (raw == 0) return Scope::Unary;
+    if (raw == fx64::from_int(1).raw) return Scope::Pair;
+    if (raw == fx64::from_int(2).raw) return Scope::Global;
+    return Scope::None;
 }
 
 // `mass` of a note for the integrator: 1 unless a scalar field says otherwise.
@@ -89,13 +108,22 @@ bool decode_program(const Field& f, expr::Program& program) {
 }
 
 
-// Calls fn(index, target) for each target of a unary rule that its
-// `select` accepts; false when the rule is not unary, its space has no
-// dim, or its `select` is bound but not scalar (the rule is skipped).
+// Calls fn(index, self, other) for each evaluation a rule's scope asks
+// for, where `self` is the note that receives the rule's writes: unary
+// visits each target once with `other` null; pair visits every ordered
+// pair (self, other) of distinct targets, self in id order and other in
+// id order within it, so a symmetric law acts on both ends and an
+// asymmetric one is a law on `self`; global visits the rule note itself
+// once with `other` null. A target is a non-Rule note of the rule's
+// space that has `pos`. A bound scalar `select` is evaluated per visit
+// with the same `self` and `other` and gates it (nonzero passes; an
+// error skips the visit). Returns false when the rule is skipped whole:
+// no scope, a space without a dim, or a bound non-scalar `select`.
 template <class Fn>
 bool for_each_target(const World& w, const Note& rule, Fn&& fn) {
     const std::vector<Note>& notes = w.notes;
-    if (rule.kind != NoteKind::Rule || !is_unary(rule) || w.space_dim(rule.space) == 0) {
+    const Scope scope = scope_of(rule);
+    if (rule.kind != NoteKind::Rule || scope == Scope::None || w.space_dim(rule.space) == 0) {
         return false;
     }
     const Field* sel = find_field(rule, SELECT_FIELD);
@@ -103,18 +131,43 @@ bool for_each_target(const World& w, const Note& rule, Fn&& fn) {
     if (sel != nullptr && sel->bound && !program_of(*sel, 1, select)) {
         return false;
     }
+    auto selected = [&](const Note& self, const Note* other) {
+        if (select.ops.empty()) {
+            return true;
+        }
+        expr::Lanes out{};
+        return expr::eval(select, w, self, other, out) == expr::VmError::Ok && out[0].raw != 0;
+    };
+    auto is_target = [&](const Note& n) {
+        return n.kind != NoteKind::Rule && n.space == rule.space && find_field(n, POS_FIELD) != nullptr;
+    };
+    if (scope == Scope::Global) {
+        const std::size_t i = w.note_lower_bound(rule.id);
+        if (selected(rule, nullptr)) {
+            fn(i, rule, nullptr);
+        }
+        return true;
+    }
     for (std::size_t i = 0; i < notes.size(); ++i) {
-        const Note& target = notes[i];
-        if (target.kind == NoteKind::Rule || target.space != rule.space || find_field(target, POS_FIELD) == nullptr) {
+        const Note& self = notes[i];
+        if (!is_target(self)) {
             continue;
         }
-        if (!select.ops.empty()) {
-            expr::Lanes out{};
-            if (expr::eval(select, w, target, nullptr, out) != expr::VmError::Ok || out[0].raw == 0) {
+        if (scope == Scope::Unary) {
+            if (selected(self, nullptr)) {
+                fn(i, self, nullptr);
+            }
+            continue;
+        }
+        for (std::size_t j = 0; j < notes.size(); ++j) {
+            const Note& other = notes[j];
+            if (j == i || !is_target(other)) {
                 continue;
             }
+            if (selected(self, &other)) {
+                fn(i, self, &other);
+            }
         }
-        fn(i, target);
     }
     return true;
 }
@@ -137,9 +190,9 @@ void World::step() {
         if (dim == 0 || !program_of(*f, dim, program)) {
             continue;
         }
-        for_each_target(*this, rule, [&](std::size_t i, const Note& target) {
+        for_each_target(*this, rule, [&](std::size_t i, const Note& self, const Note* other) {
             expr::Lanes out{};
-            if (expr::eval(program, *this, target, nullptr, out) != expr::VmError::Ok) {
+            if (expr::eval(program, *this, self, other, out) != expr::VmError::Ok) {
                 return;
             }
             for (std::uint8_t lane = 0; lane < dim; ++lane) {
@@ -181,8 +234,8 @@ void World::step() {
             if (!decode_program(f, program)) {
                 continue;
             }
-            for_each_target(*this, rule, [&](std::size_t i, const Note& target) {
-                if (is_pinned(target)) {
+            for_each_target(*this, rule, [&](std::size_t i, const Note& self, const Note* other) {
+                if (is_pinned(self)) {
                     return;
                 }
                 Field* dst = find_field(notes[i], target_name);
@@ -190,7 +243,7 @@ void World::step() {
                     return;
                 }
                 expr::Lanes out{};
-                if (expr::eval(program, *this, target, nullptr, out) != expr::VmError::Ok) {
+                if (expr::eval(program, *this, self, other, out) != expr::VmError::Ok) {
                     return;
                 }
                 for (std::uint8_t lane = 0; lane < dst->dim; ++lane) {
