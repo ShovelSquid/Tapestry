@@ -44,7 +44,8 @@ enum dd_error {
     DD_ERR_STROKE_STATE = 7,
     DD_ERR_SAMPLE_ORDER = 8,
     DD_ERR_LIMIT = 9,
-    DD_ERR_RESTORE = 10
+    DD_ERR_RESTORE = 10,
+    DD_ERR_SAMPLE_RANGE = 11
 };
 
 enum dd_layout {

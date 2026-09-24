@@ -287,12 +287,18 @@ TEST_CASE("sim: DefineBrush with wrong id, empty description, or zero mass is re
     CHECK(sim.apply(a.data(), static_cast<std::uint32_t>(a.size())) == DD_ERR_BRUSH_ID);
 }
 
-TEST_CASE("sim: apply of an unknown kind returns DD_ERR_UNKNOWN_KIND") {
+TEST_CASE("sim: apply of an unknown kind returns DD_ERR_UNKNOWN_KIND and an empty stroke payload is DD_ERR_BAD_LENGTH") {
     Sim sim(42);
     const std::string before = hashHex(sim);
-    for (const std::uint8_t kind : {std::uint8_t{0}, std::uint8_t{2}, std::uint8_t{3}, std::uint8_t{4}, std::uint8_t{5}, std::uint8_t{255}}) {
+    for (const std::uint8_t kind : {std::uint8_t{0}, std::uint8_t{5}, std::uint8_t{255}}) {
         const std::vector<std::uint8_t> a = ddsim_test::encodeEmptyAction(kind);
         CHECK_MESSAGE(sim.apply(a.data(), static_cast<std::uint32_t>(a.size())) == DD_ERR_UNKNOWN_KIND, "kind " << int(kind));
+    }
+    // Kinds 2, 3, 4 are the stroke actions (01-05): a well-formed header with
+    // no payload is a length error, not an unknown kind.
+    for (const std::uint8_t kind : {std::uint8_t{2}, std::uint8_t{3}, std::uint8_t{4}}) {
+        const std::vector<std::uint8_t> a = ddsim_test::encodeEmptyAction(kind);
+        CHECK_MESSAGE(sim.apply(a.data(), static_cast<std::uint32_t>(a.size())) == DD_ERR_BAD_LENGTH, "kind " << int(kind));
     }
     CHECK(hashHex(sim) == before);
 }

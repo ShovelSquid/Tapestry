@@ -6,8 +6,10 @@
 // DD_PRESSURE_MAX is a PROVISIONAL width: Phase 2 freezes it with the grammar.
 //
 // The structs hold exactly the fields the walk lists (hash.cpp), in the same
-// order. Active strokes and nodes are always empty in this plan; the fields
-// exist now so 01-05 fills them without changing the walk.
+// order. A Sample is the 24-byte wire record of a pen sample (action.hpp),
+// kept in the same field order as the wire so the decoder, the walk and the
+// rules read one layout. Tilt and twist are recorded from the first fixture
+// on; no rule reads them in this milestone.
 #pragma once
 
 #include "ddsim/fx64.hpp"
@@ -37,6 +39,33 @@ inline constexpr std::uint32_t DD_CURVE_KNOTS = 17u;
 inline constexpr const char* DD_EMSDK_VERSION = "6.0.10";
 inline constexpr char DD_STATE_MAGIC[4] = {'D', 'D', 'S', '1'};
 
+// Sample wire record (24 bytes, little-endian, action.hpp):
+//   u32 tick@0 | u16 index@4 | u16 pressure@6 | i32 u@8 | i32 v@12 (Q16.16
+//   plane units) | i8 tilt_x@16 | i8 tilt_y@17 (degrees, -90..90)
+//   | u16 twist@18 (degrees, 0..359) | u8 flags@20 | u8 pad[3]@21 (all 0)
+inline constexpr std::uint32_t DD_SAMPLE_BYTES = 24u;
+inline constexpr std::uint32_t DD_STROKE_BEGIN_BYTES = 56u;
+inline constexpr std::uint32_t DD_STROKE_END_BYTES = 12u;
+inline constexpr std::uint8_t DD_SAMPLE_FLAG_TILT = 1u;      // bit0: tilt_x / tilt_y are real
+inline constexpr std::uint8_t DD_SAMPLE_FLAG_TWIST = 2u;     // bit1: twist is real
+inline constexpr std::uint8_t DD_SAMPLE_FLAG_SOURCE = 4u;    // bit2: 0 = pen sensor, 1 = mouse / no sensor
+inline constexpr std::uint8_t DD_SAMPLE_FLAGS_MASK = 7u;     // every other bit must be 0
+inline constexpr std::int8_t DD_TILT_MAX = 90;
+inline constexpr std::uint16_t DD_TWIST_MAX = 359u;
+
+struct Sample {
+    std::uint32_t tick = 0;
+    std::uint16_t index = 0;
+    std::uint16_t pressure = 0;
+    std::int32_t u = 0;
+    std::int32_t v = 0;
+    std::int8_t tilt_x = 0;
+    std::int8_t tilt_y = 0;
+    std::uint16_t twist = 0;
+    std::uint8_t flags = 0;
+    std::uint8_t pad[3] = {0, 0, 0};
+};
+
 struct BrushVersion {
     std::uint32_t id = 0;
     std::string description;
@@ -61,6 +90,12 @@ struct BrushBody {
     fx64 x, y, vx, vy;
 };
 
+// One active stroke. `pending` holds the samples applied for the current
+// tick and not yet consumed by step(); it is part of the canonical walk
+// because a checkpoint is taken after a tick's applies and before its step.
+// `has_target` turns on with the first sample ever received (the body is
+// placed on it); `last_pressure` is the pressure the body keeps emitting
+// with on ticks that carry no sample.
 struct ActiveStroke {
     StrokeId id;
     std::uint32_t brush_id = 0;
@@ -74,6 +109,9 @@ struct ActiveStroke {
     std::uint16_t last_sample_index = 0;
     fx64 target_u, target_v;
     fx64 dir_x, dir_y;
+    std::uint8_t has_target = 0;
+    std::uint16_t last_pressure = 0;
+    std::vector<Sample> pending;
 };
 
 struct State {

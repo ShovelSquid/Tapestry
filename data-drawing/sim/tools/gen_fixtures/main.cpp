@@ -3,6 +3,7 @@
 // DDSIM_WRITE_GOLDEN=1 from the native-release build and then committed.
 //
 // Usage: ddsim_gen_fixtures <output-dir>
+#include "action_writer.hpp"
 #include "golden_support.hpp"
 
 #include <cstdint>
