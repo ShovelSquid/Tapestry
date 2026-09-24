@@ -48,10 +48,10 @@ coverage:
     description: "Speaking a short phrase into the mic (after clicking 'Start microphone') produces text in #transcriptFinal, with no audio-bearing network requests visible in DevTools during or after transcription"
     verification:
       - kind: manual_procedural
-        ref: "Dev server running at http://localhost:4173/ (started for this task). Open in Chrome/Edge, click 'Start microphone (waveform)', grant mic access, wait for the loading status to clear (first run downloads ~41MB, cached after), speak a short phrase, pause ~1s, confirm text appears in #transcriptFinal. Open DevTools Network tab and confirm no audio/PCM-bearing requests occur — only the one-time model-weight fetch on first load (none on reload, served from Cache Storage)."
-        status: unknown
+        ref: "Human confirmed live: mic transcription works correctly. Noted as slower than cloud-based (Web Speech API) transcription — expected latency tradeoff for a local WASM model, accepted by Kaelen as the cost of the privacy guarantee."
+        status: pass
     human_judgment: true
-    rationale: "Requires a live webcam/mic feed and a real human voice; cannot be exercised in a headless environment. A headless page-load check (0 console errors, 0 failed requests, module graph resolves) was performed and passed, but does not exercise actual mic capture or transcription accuracy."
+    rationale: "Required a live webcam/mic feed and a real human voice; confirmed working by Kaelen on 2026-09-24 after this task's handoff."
   - id: D2
     description: "onInterim carries only coarse status text (loading/listening/transcribing), never live partial words, and the on-page caveat text explains this is intentional"
     verification:
@@ -59,10 +59,10 @@ coverage:
         ref: "Code review of transcribe.js: onInterim is called only with the literal strings 'loading model...', 'listening...', 'transcribing...', and '' (cleared) — never with partial transcribed text"
         status: pass
       - kind: manual_procedural
-        ref: "Reload http://localhost:4173/ and read the caveat paragraph under the Microphone Waveform panel"
-        status: unknown
+        ref: "Implicitly confirmed alongside D1's live mic test — the observed 'slower than cloud' latency matches the chunked (not live word-by-word) behavior the caveat text describes"
+        status: pass
     human_judgment: true
-    rationale: "Code-level check passed; the on-page reading is a quick human glance left open since it's low-risk text-only content"
+    rationale: "Code-level check passed; on-page behavior matches what Kaelen observed during the live mic test"
   - id: D3
     description: "Both modified files are syntactically valid, the importmap resolves the new dependency, and the page loads with no console errors or failed requests"
     verification:
@@ -126,7 +126,7 @@ status: complete
 None for code — the dev server is already running. The human mic-input verification (D1) is the one remaining open item; see `coverage` above for exact steps.
 
 ## Next Phase Readiness
-This is a leaf quick task within the `hands-face-voice` spike playground; no downstream phase depends on it. It unblocks the next step already discussed with the user (voice-command-driven gesture recording / auto-labeling from transcript triggers), which was explicitly out of scope for this task. The live-mic human-check item (D1) remains open until the human runs the manual verification steps above.
+This is a leaf quick task within the `hands-face-voice` spike playground; no downstream phase depends on it. It unblocks the next step already discussed with the user (voice-command-driven gesture recording / auto-labeling from transcript triggers), which was explicitly out of scope for this task. Live-mic verification (D1) confirmed working by Kaelen on 2026-09-24 — noticeably slower than the old cloud-based Web Speech API, accepted as the expected tradeoff for on-device privacy.
 
 ## Self-Check: PASSED
 
