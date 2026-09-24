@@ -8,12 +8,14 @@
 // This tick knows one law: a bound `force` on a rule of unary scope
 // (`scope` absent or 0; pair and global are later phases and are skipped
 // here). Its targets are the non-Rule notes of the rule's space, in id
-// order; the rule's program must yield the space dim (else the rule is
-// skipped), and a per-note evaluation failure (a `self.mass` the note
-// does not have, a field at another dim) skips that note only. Forces
-// sum into a per-tick accumulator that is not a field: nothing is
-// stored, hashed or snapshotted, so a rule never creates fields on the
-// notes it acts on.
+// order, that a bound scalar `select` accepts (nonzero; an absent
+// `select` accepts every one, a bound non-scalar one skips the rule).
+// The force program must yield the space dim (else the rule is
+// skipped), and a per-note evaluation failure of either program (a
+// `self.mass` the note does not have, a field at another dim) skips that
+// note only. Forces sum into a per-tick accumulator that is not a field:
+// nothing is stored, hashed or snapshotted, so a rule never creates
+// fields on the notes it acts on.
 //
 // Then the integrator, notes in id order: a note with `pos` and
 // `velocity` at the same dim takes `velocity += force / mass` (mass is
@@ -78,12 +80,22 @@ void World::step() {
         if (dim == 0 || !program_of(*f, dim, program)) {
             continue;
         }
+        const Field* sel = find_field(rule, SELECT_FIELD);
+        expr::Program select;
+        if (sel != nullptr && sel->bound && !program_of(*sel, 1, select)) {
+            continue;
+        }
         for (std::size_t i = 0; i < notes.size(); ++i) {
             const Note& target = notes[i];
             if (target.kind == NoteKind::Rule || target.space != rule.space || find_field(target, POS_FIELD) == nullptr) {
                 continue;
             }
             expr::Lanes out{};
+            if (!select.ops.empty()) {
+                if (expr::eval(select, *this, target, nullptr, out) != expr::VmError::Ok || out[0].raw == 0) {
+                    continue;
+                }
+            }
             if (expr::eval(program, *this, target, nullptr, out) != expr::VmError::Ok) {
                 continue;
             }

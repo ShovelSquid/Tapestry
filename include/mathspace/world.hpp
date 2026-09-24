@@ -120,9 +120,11 @@ inline constexpr std::string_view POS_FIELD = "pos";
 // version.hpp). They are conventions of step(), not of the store.
 inline constexpr std::string_view VELOCITY_FIELD = "velocity";
 inline constexpr std::string_view MASS_FIELD = "mass";
-// On a Rule note: `force` is the bound contribution, `scope` a scalar
+// On a Rule note: `force` is the bound contribution, `select` the bound
+// scalar predicate over a target (absent selects all), `scope` a scalar
 // 0 unary (the default when absent), 1 pair, 2 global.
 inline constexpr std::string_view FORCE_FIELD = "force";
+inline constexpr std::string_view SELECT_FIELD = "select";
 inline constexpr std::string_view SCOPE_FIELD = "scope";
 
 // Bumped whenever the canonical walk (hash.cpp) changes shape. Pinned in

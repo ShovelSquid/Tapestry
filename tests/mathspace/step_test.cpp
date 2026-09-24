@@ -236,6 +236,40 @@ TEST_CASE("force needs velocity and a positive mass; a per-note failure skips th
     CHECK(w.well_formed());
 }
 
+TEST_CASE("a bound select gates each target; an error or zero is a skip") {
+    World w(1);
+    REQUIRE(w.create_space(S, 2) == Error::Ok);
+    REQUIRE(w.create_note(A, space_of(S), NoteKind::Note) == Error::Ok);
+    REQUIRE(w.create_note(B, space_of(S), NoteKind::Note) == Error::Ok);
+    REQUIRE(w.create_note(R, space_of(S), NoteKind::Rule) == Error::Ok);
+    REQUIRE(w.set_field(A, vec("pos", 2, 0, 0)) == Error::Ok);
+    REQUIRE(w.set_field(A, vec("velocity", 2, 0, 0)) == Error::Ok);
+    REQUIRE(w.set_field(A, vec("hot", 1, 1)) == Error::Ok);
+    REQUIRE(w.set_field(B, vec("pos", 2, 0, 0)) == Error::Ok);
+    REQUIRE(w.set_field(B, vec("velocity", 2, 0, 0)) == Error::Ok);
+    REQUIRE(w.bind_field(R, "force", rule_code(w, R, "[1, 0]")) == Error::Ok);
+    REQUIRE(w.bind_field(R, "select", rule_code(w, R, "self.hot > 0")) == Error::Ok);
+    w.step();
+    CHECK(field(w, A, "pos") == vec("pos", 2, 1, 0));
+    CHECK(field(w, B, "pos") == vec("pos", 2, 0, 0)); // no `hot`: not selected
+    REQUIRE(w.set_field(A, vec("hot", 1, 0)) == Error::Ok);
+    REQUIRE(w.set_field(B, vec("hot", 1, 5)) == Error::Ok);
+    w.step();
+    CHECK(field(w, A, "pos") == vec("pos", 2, 2, 0)); // velocity stays 1, no new force
+    CHECK(field(w, B, "pos") == vec("pos", 2, 1, 0));
+    // An unbound `select` (a plain scalar on the rule) selects everything.
+    REQUIRE(w.bind_field(R, "select", {}) == Error::Ok);
+    w.step();
+    CHECK(field(w, A, "velocity") == vec("velocity", 2, 2, 0));
+    CHECK(field(w, B, "velocity") == vec("velocity", 2, 2, 0));
+    // A vector-valued select skips the rule whole.
+    REQUIRE(w.bind_field(R, "select", rule_code(w, R, "[1, 1]")) == Error::Ok);
+    w.step();
+    CHECK(field(w, A, "velocity") == vec("velocity", 2, 2, 0));
+    CHECK(field(w, B, "velocity") == vec("velocity", 2, 2, 0));
+    CHECK(w.well_formed());
+}
+
 TEST_CASE("RuleDims resolves pos from the space and other fields from the first note that has them") {
     World w(1);
     REQUIRE(w.create_space(S, 3) == Error::Ok);
@@ -263,11 +297,11 @@ TEST_CASE("RuleDims resolves pos from the space and other fields from the first 
 }
 
 TEST_CASE("the step version is pinned in the walk") {
-    CHECK(MS_STEP_VERSION == 3u);
+    CHECK(MS_STEP_VERSION == 4u);
     const World w;
     const auto bytes = serialize(w);
     // magic 4 | FORMAT_VERSION 4 | DD_FX_FORMAT_ID 4 | rule version 4
-    CHECK(bytes[12] == 3);
+    CHECK(bytes[12] == 4);
     CHECK(bytes[13] == 0);
     CHECK(bytes[14] == 0);
     CHECK(bytes[15] == 0);

@@ -19,6 +19,8 @@ const char* version();
 //      bound `force`) accumulate per target note in rule id order, then
 //      `velocity += force / mass; pos += velocity` (mass defaults to 1),
 //      then the bound fields of non-Rule notes as in 2.
-inline constexpr std::uint32_t MS_STEP_VERSION = 3u;
+//   4: a rule's bound scalar `select` gates each target: nonzero selects,
+//      an evaluation error skips the target, absent selects all.
+inline constexpr std::uint32_t MS_STEP_VERSION = 4u;
 
 } // namespace mathspace
