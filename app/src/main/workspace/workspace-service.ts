@@ -36,11 +36,11 @@ import { TAPESTRY_TMP_MARKER } from '../mirror/atomic-write'
 import type { OpenTree, TreeEntry, TreeRegistry, UnavailableTree } from '../trees/registry'
 import { resolveWorkspaceTarget, type OpenWorkspace, type WorkspaceLookup, type WorkspaceTarget } from './sandbox'
 import type { CommandResult } from '../commands/notes'
+import { validateWorkspaceText } from '../commands/file-tools'
 import {
   FILE_PATH,
   isIgnoredWorkspacePath,
   MAX_WORKSPACE_FILES,
-  MAX_WORKSPACE_WRITE_BYTES,
   WORKSPACE_FILE_TYPE,
   WORKSPACE_FOLDER_TYPE,
   WORKSPACE_SHAPE,
@@ -60,27 +60,8 @@ interface RootInfo {
   git: boolean | null
 }
 
-/** FORMAT.md "Limits": a line is at most 1 MiB. */
-const MAX_LINE_BYTES = 1024 * 1024
-
-/**
- * Whether `text` can become a file's bytes and a note's text unchanged.
- * Returns the refusal, or null. Shared by agent edits and window saves.
- */
-export function validateWorkspaceText(text: string): string | null {
-  if (text.includes('\0')) return 'text must not contain NUL'
-  if (Buffer.from(text, 'utf-8').toString('utf-8') !== text) {
-    return 'text must be valid Unicode (it contains an unpaired surrogate)'
-  }
-  const bytes = Buffer.byteLength(text, 'utf-8')
-  if (bytes > MAX_WORKSPACE_WRITE_BYTES) return `text must be at most ${MAX_WORKSPACE_WRITE_BYTES} bytes`
-  if (bytes > MAX_LINE_BYTES) {
-    for (const line of text.split('\n')) {
-      if (Buffer.byteLength(line, 'utf-8') > MAX_LINE_BYTES) return 'text has a line longer than 1 MiB'
-    }
-  }
-  return null
-}
+/** The mode a file created by an agent is written with, before the umask. */
+const NEW_FILE_MODE = 0o644
 
 /** How many times a catch-up rebuilds its model when a write lands meanwhile. */
 const MAX_CATCH_UP_ATTEMPTS = 5
@@ -353,8 +334,12 @@ export class WorkspaceService implements WorkspaceLookup {
     this.requireHealthy(tree)
     prepareWriteFor(tree, actor, this.hooks)
 
-    writeFileAtomicSync(target.abs, text)
+    // A new file is 0644 under the process umask; an existing one keeps its
+    // mode bits (writeFileAtomicSync reads them when no mode is passed).
+    writeFileAtomicSync(target.abs, text, target.exists ? undefined : { mode: NEW_FILE_MODE & ~process.umask() })
 
+    // The recorded text plus any missing ancestor folder notes go into one
+    // commit (planPathChange emits the folders first); no ops, no commit.
     const sha256 = sha256Hex(text)
     const recorded = this.recordText(actor, tree, target.rel, text, sha256, message)
     return { ...recorded, sha256 }

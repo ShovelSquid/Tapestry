@@ -177,7 +177,7 @@ describe('MCP shim over stdio', () => {
     }
   })
 
-  it('advertises exactly the twelve tools, with no actor argument anywhere', async () => {
+  it('advertises exactly the fourteen tools, with no actor argument anywhere', async () => {
     const listed = await request(2, 'tools/list', {})
     expect(listed.error).toBeUndefined()
 
@@ -194,6 +194,7 @@ describe('MCP shim over stdio', () => {
       'create_note',
       'delete_note',
       'edit_file',
+      'list_files',
       'list_trees',
       'look',
       'place',
@@ -202,6 +203,7 @@ describe('MCP shim over stdio', () => {
       'rename_note',
       'search_notes',
       'update_note',
+      'write_file',
     ])
 
     const byName = new Map(tools.map((t) => [t.name, t]))

@@ -72,7 +72,7 @@ function pickWorkspace(
 export function resolveWorkspaceTarget(
   lookup: WorkspaceLookup,
   args: { workspace?: string; path: string },
-  mode: 'read' | 'write',
+  mode: 'read' | 'write' | 'folder',
 ): CommandResult<WorkspaceTarget> {
   try {
     // 1. Something must be open.
@@ -87,9 +87,10 @@ export function resolveWorkspaceTarget(
       workspace = picked.value
     }
 
-    // 3. The characters of the path.
+    // 3. The characters of the path. A folder may be the root itself ('' or '.').
     const raw = args.path
-    if (typeof raw !== 'string' || raw.length === 0 || raw.includes('\0') || raw.includes('\\')) {
+    const emptyOk = mode === 'folder' && raw === ''
+    if (typeof raw !== 'string' || (raw.length === 0 && !emptyOk) || raw.includes('\0') || raw.includes('\\')) {
       return refuse('path must name a file inside the workspace, with / between folders')
     }
 
@@ -131,7 +132,13 @@ export function resolveWorkspaceTarget(
     }
 
     // 6. Segments.
-    const segments = rel.split('/').filter((segment) => segment !== '.')
+    const segments = rel === '' ? [] : rel.split('/').filter((segment) => segment !== '.')
+    if (mode === 'folder' && segments.length === 0) {
+      return {
+        ok: true,
+        value: { workspace, rel: '', abs: workspace.realRoot, exists: true },
+      }
+    }
     if (segments.length === 0 || segments.some((segment) => segment.length === 0)) {
       return refuse('path must name a file inside the workspace, not the workspace itself')
     }
@@ -157,6 +164,7 @@ export function resolveWorkspaceTarget(
         stats = lstatSync(current)
       } catch (err) {
         if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err
+        if (mode === 'folder') return refuse(`${raw} is not a folder in ${name}`)
         if (mode === 'read') return refuse(`${raw} does not exist in ${name}`)
         exists = false
         break
@@ -166,11 +174,16 @@ export function resolveWorkspaceTarget(
       }
       const last = i === segments.length - 1
       if (!last && !stats.isDirectory()) return refuse(`${prefix} is not a folder`)
-      if (last && stats.isDirectory()) return refuse(`${raw} is a folder, not a file`)
+      if (last && mode === 'folder' && !stats.isDirectory()) return refuse(`${raw} is not a folder in ${name}`)
+      if (last && mode !== 'folder' && stats.isDirectory()) return refuse(`${raw} is a folder, not a file`)
     }
 
     // 8. Only files the window shows (or would show).
     const cleanRel = segments.join('/')
+    if (mode === 'folder') {
+      // A folder prefix only narrows a listing, and ignored files are never listed.
+      return { ok: true, value: { workspace, rel: cleanRel, abs: join(workspace.realRoot, ...segments), exists } }
+    }
     const ignored = workspace.git
       ? isGitIgnored(workspace.realRoot, cleanRel)
       : isIgnoredWorkspacePath(cleanRel)

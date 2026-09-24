@@ -116,6 +116,15 @@ export function runAgentTool(
         parsed.data as { from: ConnectionEndpoint; to: ConnectionEndpoint; label?: string },
       )
 
+    case 'list_files':
+      if (!commands.files) return { ok: false, error: NO_WORKSPACE_MESSAGE }
+      return commands.files.listFiles(parsed.data as { workspace?: string; path?: string; limit?: number })
+
+    case 'write_file':
+      // The actor is the socket's, never read from the arguments.
+      if (!commands.files) return { ok: false, error: NO_WORKSPACE_MESSAGE }
+      return commands.files.writeFile(actor, parsed.data as { workspace?: string; path: string; text: string })
+
     case 'read_file':
       if (!commands.files) return { ok: false, error: NO_WORKSPACE_MESSAGE }
       return commands.files.readFile(

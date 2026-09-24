@@ -67,12 +67,12 @@ describe('workspace file tools over the MCP shim', () => {
     ws?.cleanup()
   })
 
-  it('lists read_file and edit_file with no actor argument', async () => {
+  it('lists the file tools with no actor argument', async () => {
     const listed = await shim.request('tools/list', {})
     const tools: Array<{ name: string; inputSchema?: { properties?: Record<string, unknown> } }> =
       listed.result.tools
     const byName = new Map(tools.map((t) => [t.name, t]))
-    for (const name of ['read_file', 'edit_file']) {
+    for (const name of ['list_files', 'read_file', 'write_file', 'edit_file']) {
       const tool = byName.get(name)
       expect(tool, name).toBeDefined()
       expect(Object.keys(tool!.inputSchema?.properties ?? {})).not.toContain('actor')
@@ -124,5 +124,45 @@ describe('workspace file tools over the MCP shim', () => {
     )
     expect(readFileSync(secret).equals(before)).toBe(true)
     expect(statSync(tree.path).size).toBe(size)
+  }, 30000)
+
+  it('creates a file and its folder with write_file, recorded in one commit as agent.claude', async () => {
+    const abs = join(ws.root, 'src', 'new', 'made.ts')
+    const text = 'export const made = true\n'
+    const called = await shim.request('tools/call', {
+      name: 'write_file',
+      arguments: { path: 'src/new/made.ts', text },
+    })
+    expect(called.result?.isError, JSON.stringify(called.result)).not.toBe(true)
+    const value = JSON.parse(called.result.content[0].text)
+    expect(value.created).toBe(true)
+    expect(value.path).toBe('src/new/made.ts')
+
+    expect(readFileSync(abs, 'utf-8')).toBe(text)
+    const status = execFileSync('git', ['-C', ws.root, 'status', '--porcelain'], { encoding: 'utf-8' })
+    expect(status.split('\n')).toContain('?? src/new/')
+
+    const nodes = tree.bridge.getNodes()
+    const folder = nodes.find((n) => n.props['file.path']?.value === 'src/new')
+    const file = nodes.find((n) => n.props['file.path']?.value === 'src/new/made.ts')
+    expect(folder?.type).toBe('tapestry.workspace/folder@1')
+    expect(file?.type).toBe('tapestry.workspace/text@1')
+    expect(file?.id).toBe(value.note)
+
+    // Both notes were created by the same, last commit.
+    const journal = readFileSync(tree.path, 'utf-8')
+    const lastCommit = journal.slice(journal.lastIndexOf('@commit '))
+    expect(lastCommit).toContain('actor plugin agent.claude')
+    expect(lastCommit).toContain('create src/new/made.ts')
+    expect(lastCommit).toContain(folder!.id)
+    expect(lastCommit).toContain(file!.id)
+
+    const listed = await shim.request('tools/call', { name: 'list_files', arguments: { path: 'src' } })
+    expect(listed.result?.isError, JSON.stringify(listed.result)).not.toBe(true)
+    const listing = JSON.parse(listed.result.content[0].text)
+    expect(listing.folder).toBe('src')
+    const made = listing.files.find((f: { path: string }) => f.path === 'src/new/made.ts')
+    expect(made).toEqual({ path: 'src/new/made.ts', bytes: Buffer.byteLength(text), kind: 'text', note: value.note })
+    expect(listing.files.every((f: { path: string }) => f.path.startsWith('src/'))).toBe(true)
   }, 30000)
 })

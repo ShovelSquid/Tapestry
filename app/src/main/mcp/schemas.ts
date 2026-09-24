@@ -209,6 +209,22 @@ export const EditFileArgs = z
   })
   .strict()
 
+export const ListFilesArgs = z
+  .object({
+    workspace: WorkspaceRef.optional(),
+    path: z.string().min(0).max(4096).optional(),
+    limit: z.number().int().min(1).max(5000).optional(),
+  })
+  .strict()
+
+export const WriteFileArgs = z
+  .object({
+    workspace: WorkspaceRef.optional(),
+    path: WorkspacePath,
+    text: z.string().max(4194304),
+  })
+  .strict()
+
 // ---------------------------------------------------------------------------
 // Tool table
 // ---------------------------------------------------------------------------
@@ -298,6 +314,14 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = Object.freeze([
     annotations: {},
   },
   {
+    name: 'list_files',
+    title: 'List the files in a workspace',
+    description:
+      "Lists the files a workspace folder open in Tapestry shows in its window (git's view of the folder), optionally only those under one folder `path`. Each file comes with its size in bytes, whether it is text, and the note that shows it. It never lists .git or files ignored by git. `limit` caps the list (default 1000); `truncated` says whether more files exist.",
+    schema: ListFilesArgs,
+    annotations: { readOnlyHint: true },
+  },
+  {
     name: 'read_file',
     title: 'Read a file in a workspace',
     description:
@@ -312,5 +336,13 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = Object.freeze([
       "Replaces `old_string` with `new_string` in a text file in a workspace folder open in Tapestry. The file is saved to disk at once and the workspace's tree records the change as yours. `old_string` must match exactly, including whitespace and line endings, and must occur once unless `replace_all` is true. Paths follow the same rules as read_file. A refusal writes nothing.",
     schema: EditFileArgs,
     annotations: { destructiveHint: false },
+  },
+  {
+    name: 'write_file',
+    title: 'Create or replace a text file in a workspace',
+    description:
+      "Creates a text file (and any missing folders) in a workspace folder open in Tapestry, or replaces a text file's whole text. The file is saved to disk at once and the workspace's tree records the change as yours. Paths follow the same rules as read_file. It is refused, with nothing written, for paths outside the workspace, symbolic links, .git, paths ignored by git and non-text files. Writing the text a file already has changes nothing.",
+    schema: WriteFileArgs,
+    annotations: { destructiveHint: true },
   },
 ])
