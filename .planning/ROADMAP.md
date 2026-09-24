@@ -345,12 +345,12 @@ Plans:
   6. Note positions are untouched: `position.x/y` stay node properties and D-27's thread frame is not moved — that migration is a later phase after 2.3 (#4)
   7. No code writes the Tapestry-tree or forest-tree record shape, or migrates `settings.json`, until Kaelen has approved the exact type strings, keys and labels and the migration at a blocking checkpoint (#17, #18)
 
-**Plans:** 6 plans
+**Plans:** 1/6 plans executed
 
 Plans:
 **Wave 1**
 
-- [ ] 02.6-01-PLAN.md — Groundwork that writes no record: settings passthrough (tracer), pure drop-batch and Ctrl+Z routing helpers, registry seams (D-08, D-10, D-11)
+- [x] 02.6-01-PLAN.md — Groundwork that writes no record: settings passthrough (tracer), pure drop-batch and Ctrl+Z routing helpers, registry seams (D-08, D-10, D-11)
 
 **Wave 2** *(blocked on Wave 1)*
 

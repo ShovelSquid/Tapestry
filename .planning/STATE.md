@@ -4,16 +4,16 @@ milestone: v1.0
 current_phase: "02.6"
 current_phase_name: Placement Edges & Forest Tree
 status: executing
-stopped_at: Phase 2.6 planned (6 plans, 6 waves); main merged 2026-09-24
-last_updated: "2026-09-24T19:41:29.599Z"
+stopped_at: Completed 02.6-01-PLAN.md
+last_updated: "2026-09-24T19:49:25.465Z"
 last_activity: 2026-09-24
 last_activity_desc: Phase 02.6 execution started
-state_head: 1f92eab3b3e6936369c00afc606def262eb47521
+state_head: f28010bb7e6fb79d3d634118cc8fae24c2b3df80
 progress:
   total_phases: 13
   completed_phases: 0
   total_plans: 51
-  completed_plans: 27
+  completed_plans: 28
 ---
 
 # Project State
@@ -28,8 +28,8 @@ See: .planning/PROJECT.md (updated 2026-09-08)
 ## Current Position
 
 Phase: 02.6 (Placement Edges & Forest Tree) — EXECUTING
-Plan: 1 of 6
-Status: Executing Phase 02.6
+Plan: 2 of 6
+Status: Ready to execute
 Main line (phase-2-implementation-v1) at merge: 02.2 executing (8 of 16), 02.4 complete, 02.5 5/5
 Last activity: 2026-09-24 — Phase 02.6 execution started
 
@@ -74,6 +74,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 02.2 P07 | 35 min | 1 tasks | 26 files |
 | Phase 02.4 P01 | 14 min | 2 tasks | 4 files |
 | Phase 02.4 P02 | 8 min | 2 tasks | 5 files |
+| Phase 02.6 P01 | 6 min | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -132,6 +133,7 @@ Recent decisions affecting current work:
 - [Phase 02.4]: 02.4-01: malformed lock values fail closed; only exact 'open' unlocks; blank owner shown as (unknown); allow list read in Plan 02
 - [Phase 02.4]: 02.4-02: lock.<aspect>.allow is read for explicit and derived locks; only a text value counts, whitespace-split, exact match
 - [Phase 02.4]: 02.4-02: agent tool text states the lock rule and that refusals name the owner, without publishing lock.* key names
+- [Phase 02.6]: 02.6-01: settings writes are a passthrough (unknown keys, raw trees, version never lowered); FRAME_UNDO_REACH defaults to 'run' pending Plan 02 checkpoint; registry reserved paths compared resolved + real (folder-real for unborn files)
 
 ### Pending Todos
 
@@ -186,6 +188,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-24T19:00:00.000Z
-Stopped at: Phase 2.6 planned; main merged
-Resume file: .planning/phases/02.6-placement-edges-forest-tree/02.6-01-PLAN.md
+Last session: 2026-09-24T19:49:25.384Z
+Stopped at: Completed 02.6-01-PLAN.md
+Resume file: None
