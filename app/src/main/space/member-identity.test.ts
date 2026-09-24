@@ -478,8 +478,11 @@ describe('SpaceService.relocateMember', () => {
     expect(commitCount(after)).toBe(commitCount(before) + 1)
     const commit = lastCommit(after)
     expect(commit).toContain('actor human user.kaelen')
-    expect(commit).toContain(`path.hint text "${resolve(newTree)}"`)
-    expect(commit).toContain(`vault.root.hint text "${resolve(newRoot)}"`)
+    // Long text values are written as a TEXT block under the set line.
+    expect(commit).toMatch(/^set n\d+ path\.hint text /m)
+    expect(commit).toMatch(/^set n\d+ vault\.root\.hint text /m)
+    expect(commit).toContain(`${resolve(newTree)}\n`)
+    expect(commit).toContain(`${resolve(newRoot)}\n`)
 
     // Relocating to where it already is writes nothing.
     expect(run.service.relocateMember(vault.id, newTree, newRoot, KAELEN)).toEqual({

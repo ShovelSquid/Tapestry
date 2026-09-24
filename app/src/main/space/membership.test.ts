@@ -318,8 +318,15 @@ describe('vault members', () => {
     let registry!: TreeRegistry
     const second = relaunch(r.settings, r.paths, {
       restoreVault: async (req) => {
-        calls.push(req)
-        registry.tryOpen(req.treePath, { kind: 'vault', vaultRoot: req.vaultRoot, name: req.name })
+        calls.push({ treePath: req.treePath, vaultRoot: req.vaultRoot, name: req.name })
+        // The recorded digest travels with the request (Plan 04 Task 2).
+        expect(req.expect?.id).toBe(before.id)
+        registry.tryOpen(req.treePath, {
+          kind: 'vault',
+          vaultRoot: req.vaultRoot,
+          name: req.name,
+          ...(req.expect ? { expect: req.expect } : {}),
+        })
       },
     })
     registry = second.registry

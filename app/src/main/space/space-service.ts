@@ -23,19 +23,29 @@ import { existsSync } from 'fs'
 import { SYSTEM_ACTOR, type Actor } from '../commands/actor'
 import { isSafeTreePath } from '../settings'
 import type { SettingsStore } from '../settings'
-import type { OpenTree, TreeEntry, TreeRegistry, TreeSummary } from '../trees/registry'
+import {
+  TreeIdentityClash,
+  type ExpectedTree,
+  type OpenTree,
+  type TreeEntry,
+  type TreeRegistry,
+  type TreeSummary,
+} from '../trees/registry'
 import type { ForestMember, ForestStore, MemberSeed } from './forest-store'
 import type { TapestryHome } from './home-tree'
 import {
   SPACE_NOT_OPEN,
   classifySpace,
+  differentWorldReason,
   importFromSettings,
   reopenFromPointer,
+  reservedFileRefusal,
   type SpacePaths,
   type SpaceProblem,
 } from './migrate'
 import {
   addTreeMessage,
+  forgetDuplicateMessage,
   moveFrameMessage,
   recordIdentityMessage,
   removeTreeMessage,
@@ -57,8 +67,17 @@ const FRAME_GAP = 64
 export interface SpaceServiceHooks {
   /** Called for each restored member path, so main can approve it for IPC. */
   approvePath?(path: string): void
-  /** Restore a vault member; without it, vault members stay in the forest unopened. */
-  restoreVault?(req: { treePath: string; vaultRoot: string; name: string }): Promise<void>
+  /**
+   * Restore a vault member; without it, vault members stay in the forest
+   * unopened. `expect` is the member's recorded digest and the approved
+   * reason, for the hook to pass to `registry.tryOpen` (D-03, Pitfall 5).
+   */
+  restoreVault?(req: {
+    treePath: string
+    vaultRoot: string
+    name: string
+    expect?: ExpectedTree
+  }): Promise<void>
 }
 
 export interface SpaceServiceOptions {
@@ -142,19 +161,43 @@ export class SpaceService {
 
     this.home = opened.home
     this.forest = opened.forest
+    // Tapestry's own files are never members (RESEARCH Pitfall 4). Reserved
+    // before restoring, so a hand-edited forest naming itself is refused too.
+    this.registry.setReserved({
+      paths: [opened.forest.path, opened.home.path],
+      ids: [opened.forest.digest(), opened.home.digest()],
+      refusal: reservedFileRefusal,
+    })
     const restored = await this.restoreMembers(opened.forest)
     return { problem: null, restored }
   }
 
-  /** Open every member through the registry, in stand-in order. */
+  /**
+   * Open every member through the registry, in stand-in order.
+   *
+   * Restore is fold-safe: a fold can rewrite or delete a stand-in the loop
+   * has not reached yet, so each stand-in's facts are read again just before
+   * it is opened. One whose world is already open (through a stand-in folded
+   * into it) is skipped, so a world never appears twice.
+   */
   private async restoreMembers(forest: ForestStore): Promise<number> {
     let restored = 0
-    for (const member of forest.members()) {
+    for (const nodeId of forest.members().map((m) => m.nodeId)) {
+      const member = forest.members().find((m) => m.nodeId === nodeId)
+      if (!member) continue
+      if (member.digest !== undefined && this.registry.get(member.digest)) continue
+
       const hint = member.pathHint
       if (!isSafeTreePath(hint)) {
         console.error(`[SpaceService] skipped member ${member.nodeId}: unusable path hint`)
         continue
       }
+      // A stand-in with a digest opens only as that world; a different world
+      // at its path is listed unavailable and nothing is written (Pitfall 5).
+      const expect: ExpectedTree | undefined =
+        member.digest !== undefined
+          ? { id: member.digest, reason: differentWorldReason(hint) }
+          : undefined
 
       if (member.kind === 'vault') {
         // Kept in the forest either way; restored only when main supplies the
@@ -163,10 +206,24 @@ export class SpaceService {
         const vaultRoot = member.vaultRootHint ?? dirname(hint)
         this.approve(hint)
         try {
-          await this.hooks.restoreVault({ treePath: hint, vaultRoot, name: basename(vaultRoot) })
+          await this.hooks.restoreVault({
+            treePath: hint,
+            vaultRoot,
+            name: basename(vaultRoot),
+            ...(expect ? { expect } : {}),
+          })
           restored += 1
         } catch (err) {
-          console.error(`[SpaceService] could not restore vault ${hint}:`, err)
+          if (err instanceof TreeIdentityClash && member.digest === undefined) {
+            this.foldQuietly(member, err)
+          } else {
+            console.error(`[SpaceService] could not restore vault ${hint}:`, err)
+          }
+          continue
+        }
+        const tree = this.registry.list().find((t) => samePath(t.path, hint))
+        if (tree && (member.digest === undefined || member.digest === tree.id)) {
+          this.settleIdentityQuietly(member.nodeId, tree)
         }
         continue
       }
@@ -174,10 +231,14 @@ export class SpaceService {
       this.approve(hint)
       let entry: TreeEntry
       try {
-        entry = this.registry.tryOpen(hint, { kind: 'native' })
+        entry = this.registry.tryOpen(hint, { kind: 'native', ...(expect ? { expect } : {}) })
         restored += 1
       } catch (err) {
-        console.error(`[SpaceService] could not restore ${hint}:`, err)
+        if (err instanceof TreeIdentityClash && member.digest === undefined) {
+          this.foldQuietly(member, err)
+        } else {
+          console.error(`[SpaceService] could not restore ${hint}:`, err)
+        }
         continue
       }
       if (isOpen(entry)) this.settleIdentityQuietly(member.nodeId, entry)
@@ -191,6 +252,15 @@ export class SpaceService {
       this.settleIdentity(nodeId, tree)
     } catch (err) {
       console.error(`[SpaceService] could not record the identity of ${tree.path}:`, err)
+    }
+  }
+
+  /** Fold a duplicate found at launch without letting a failure stop the launch. */
+  private foldQuietly(standIn: ForestMember, clash: TreeIdentityClash): void {
+    try {
+      this.foldDuplicate(standIn, clash)
+    } catch (err) {
+      console.error(`[SpaceService] could not fold ${standIn.pathHint}:`, err)
     }
   }
 
@@ -303,6 +373,22 @@ export class SpaceService {
       return isOpen(entry) ? this.settleIdentity(recorded.nodeId, entry) : { committed: false }
     }
 
+    // The person opened a member's world from a new path: its old hint is
+    // stale. Reuse the stand-in, frame and all, and update the hint in one
+    // commit signed by the person (CONTEXT discretion). This is the only
+    // way a moved file is found again; there is no filesystem search. A
+    // copy of an open world never gets here: the registry refuses it first.
+    if (recorded && isOpen(entry) && recorded.digest === entry.id) {
+      forest.writeMemberFacts(
+        [{ nodeId: recorded.nodeId, ...hintsOf(entry) }],
+        [],
+        actor,
+        addTreeMessage(entry.name),
+      )
+      this.dropStaleRecord(recorded.pathHint, entry.path)
+      return { committed: true }
+    }
+
     const seed: MemberSeed = {
       kind: entry.kind,
       pathHint: entry.path,
@@ -343,11 +429,90 @@ export class SpaceService {
     return { committed: true }
   }
 
-  /** Write the digest of `tree` to stand-in `nodeId` if it has none yet. */
+  /**
+   * Try an unavailable member again (UI-SPEC "Reopen tree"). On success its
+   * identity is recorded as on any first open. If its world turns out to be
+   * open through another member already, the digest-less stand-in is folded
+   * away and the clash is rethrown, so the handler still reports it.
+   */
+  reopenMember(treeId: string): TreeEntry | null {
+    const entry = this.registry.entry(treeId)
+    const standIn = entry && this.forest ? this.memberFor(entry) : undefined
+
+    let reopened: TreeEntry | null
+    try {
+      reopened = this.registry.reopen(treeId)
+    } catch (err) {
+      if (err instanceof TreeIdentityClash && standIn && standIn.digest === undefined) {
+        this.foldDuplicate(standIn, err)
+      }
+      throw err
+    }
+    if (reopened && isOpen(reopened) && standIn) this.settleIdentity(standIn.nodeId, reopened)
+    return reopened
+  }
+
+  /**
+   * Record that a member now lives elsewhere (2.2's `vault:locate`): one
+   * commit signed by the person, updating the path hint and, for a vault,
+   * the vault root hint. A member already recorded there writes nothing.
+   */
+  relocateMember(
+    treeId: string,
+    treePath: string,
+    vaultRoot: string | undefined,
+    actor: Actor,
+  ): { committed: boolean } {
+    const forest = this.requireReady()
+    const entry = this.registry.entry(treeId)
+    const standIn = entry ? this.memberFor(entry, forest.members()) : undefined
+    if (!entry || !standIn) throw new Error(`Unknown tree ${treeId}`)
+
+    const pathHint = resolve(treePath)
+    const vaultRootHint = vaultRoot !== undefined ? resolve(vaultRoot) : undefined
+    const change = {
+      nodeId: standIn.nodeId,
+      ...(pathHint !== standIn.pathHint ? { pathHint } : {}),
+      ...(vaultRootHint !== undefined && vaultRootHint !== standIn.vaultRootHint
+        ? { vaultRootHint }
+        : {}),
+    }
+    if (change.pathHint === undefined && change.vaultRootHint === undefined) {
+      return { committed: false }
+    }
+    forest.writeMemberFacts([change], [], actor, addTreeMessage(entry.name))
+    return { committed: true }
+  }
+
+  /**
+   * Write the digest of `tree` to stand-in `nodeId` if it has none yet,
+   * signed by the system.
+   *
+   * If another stand-in already carries that digest, the two are one world
+   * (RESEARCH Pitfall 10). Its tree cannot be open, since `tree` is: so the
+   * established stand-in takes the path that opened, keeping its own frame,
+   * and the digest-less one is deleted, in one system commit naming both.
+   * Its frame stays in history. This happens only because the person once
+   * added the path that opened; there is never a filesystem search.
+   */
   private settleIdentity(nodeId: string, tree: OpenTree): { committed: boolean } {
     const forest = this.requireReady()
-    const standIn = forest.members().find((m) => m.nodeId === nodeId)
+    const members = forest.members()
+    const standIn = members.find((m) => m.nodeId === nodeId)
     if (!standIn || standIn.digest !== undefined) return { committed: false }
+
+    const established = members.find((m) => m.nodeId !== nodeId && m.digest === tree.id)
+    if (established) {
+      forest.writeMemberFacts(
+        [{ nodeId: established.nodeId, ...hintsOf(tree) }],
+        [standIn.nodeId],
+        SYSTEM_ACTOR,
+        forgetDuplicateMessage(memberName(standIn), standIn.pathHint, memberName(established)),
+      )
+      this.dropStaleRecord(established.pathHint, tree.path)
+      return { committed: true }
+    }
+
     forest.writeMemberFacts(
       [{ nodeId, digest: tree.id }],
       [],
@@ -355,6 +520,31 @@ export class SpaceService {
       recordIdentityMessage(tree.name),
     )
     return { committed: true }
+  }
+
+  /**
+   * A digest-less stand-in whose file opened as a world already open through
+   * another member: delete it in one system commit naming both (Pitfall 10).
+   */
+  private foldDuplicate(standIn: ForestMember, clash: TreeIdentityClash): void {
+    const forest = this.requireReady()
+    if (!forest.members().some((m) => m.nodeId === standIn.nodeId)) return
+    forest.writeMemberFacts(
+      [],
+      [standIn.nodeId],
+      SYSTEM_ACTOR,
+      forgetDuplicateMessage(memberName(standIn), standIn.pathHint, clash.openName),
+    )
+  }
+
+  /**
+   * Take the registry's in-memory `path:` record for a stale hint out of the
+   * space, so a member found at a new path is not shown twice.
+   */
+  private dropStaleRecord(staleHint: string, currentPath: string): void {
+    if (samePath(staleHint, currentPath)) return
+    const stale = this.registry.unavailableList().find((t) => samePath(t.path, staleHint))
+    if (stale) this.registry.close(stale.id)
   }
 
   /**
@@ -382,6 +572,7 @@ export class SpaceService {
 
   /** Release the forest and the Tapestry tree. Never rewinds either. */
   close(): void {
+    if (this.forest) this.registry.setReserved(null)
     this.forest?.close()
     this.home?.close()
     this.forest = null
@@ -405,6 +596,22 @@ function isOpen(entry: TreeEntry): entry is OpenTree {
 
 function samePath(a: string, b: string): boolean {
   return resolve(a) === resolve(b)
+}
+
+/** The facts a stand-in keeps about where an entry lives. */
+function hintsOf(entry: TreeEntry): { pathHint: string; vaultRootHint?: string } {
+  return {
+    pathHint: entry.path,
+    ...(entry.kind === 'vault' && entry.vaultRoot !== undefined
+      ? { vaultRootHint: entry.vaultRoot }
+      : {}),
+  }
+}
+
+/** A stand-in's readable name, as the registry would name its tree. */
+function memberName(member: ForestMember): string {
+  if (member.kind === 'vault') return basename(member.vaultRootHint ?? dirname(member.pathHint))
+  return basename(member.pathHint).replace(/\.tree$/i, '')
 }
 
 /** Right of the rightmost placed frame, at its height; (0, 0) in an empty forest. */

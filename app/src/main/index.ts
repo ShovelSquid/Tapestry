@@ -650,7 +650,9 @@ app.whenReady().then(async () => {
     if (typeof treeId !== 'string') return { ok: false, error: 'Unknown tree' }
 
     try {
-      const tree = registry.reopen(treeId)
+      // Through the space, so a first successful open records the member's
+      // identity, and a duplicate it reveals is folded (2.6 D-03).
+      const tree = space ? space.reopenMember(treeId) : registry.reopen(treeId)
       if (!tree) return { ok: false, error: `Unknown tree ${treeId}` }
       notifyTreesChanged()
       return { ok: true, treeId: tree.id }
