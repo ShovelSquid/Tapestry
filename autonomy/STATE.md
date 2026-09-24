@@ -17,7 +17,7 @@ replay tool and goldens are kept.
 | 2 expressions | done headlessly (`c5d134e`, `d6e9c0b`): golden `plot` hashes across processes and builds, `<f>.expr text` props bind through the runner so the bound value is committed as a kernel prop after a step (the inspector reads props, so it shows it; a human look is still open like phase 1's), and `diff.hpp` exists for phase 4 |
 | 3 force rules | done headlessly (`e1e30a5`): force and `set.<f>` rules under unary, pair and global scope with `select`, mass integrator, `pinned`, RULE-07 skips on the rule node, goldens `gravity` and `pair`, and `plugins/mathspace/presets/` with the plan's four presets plus the roadmap's `anger`, `gold`, `push`, each a `mathspace.preset.<id>` command; `presets.test.js` runs all seven on one engine build with no skip and the promised field change. The "in the app" clause joins the GUI checklist in Blocked |
 | 4 constraints | done headlessly (`60c8346`, `60cd37e`, `064966d`): `constraint.expr` + `compliance` by fixed XPBD passes over lifted symbolic gradients, goldens `rod` and `contact`, the `contact` preset, the `pendulum`/`rope-chain` comparison against ddsim (numbers under Learned). The "in the app" look joins the GUI checklist in Blocked |
-| 5 views | not started |
+| 5 views | engine side done (`61ef64f`): View notes, `project.expr`, `ms_project`, `Engine.project`; the surface and the default-view presets are open |
 | 6 metrics | not started |
 | 7 fold ddsim | not started |
 
@@ -28,28 +28,29 @@ viewer; it is theirs to edit.)
 
 ## Next
 
-1. **Phase 5 first slice: `mathspace/view@1` nodes with `project.expr`,
-   engine side.** Read `mathspace_design.md` lines 191-215 and the plan's
-   phase 5. Smallest step: a View is a Note of kind `View` (add
-   `NoteKind::View` to `note.hpp` if the enum lacks it; check the walk
-   and `ms_c.cpp` for kind handling) in a space, with a bound field
-   `project` whose program takes `self.pos`-shaped input and yields dim 2.
-   The engine does not evaluate `project` in `step()` (rendering never
-   enters the hash; a View's bound field must be skipped by the bound-
-   field pass like a Rule's). Add a C ABI call `ms_project(world, view
-   id, note id, out[2])` that evaluates the view's program with `self` =
-   the note (so `project.expr` is written in terms of `self.pos`) and
-   returns the two lanes without touching state; `MS_ABI_VERSION` 3;
-   doctest + `c_abi_test` case; the plugin's `image.js` maps
-   `mathspace/view@1` nodes to kind View and binds `project.expr` like a
-   rule's; `Engine.project(viewId, noteId)` in `engine.js`; one runner
-   test. No surface yet.
-2. Phase 5 second slice: `plugins/mathspace/surface/` stage surface (copy
-   `plugins/data-drawing/surface/`, placement `stage`), reading the
-   engine snapshot from a module Worker and drawing notes at
-   `project(pos)` with three.js; then default views as presets (identity
-   2D, perspective and three orthographic 3D, axis-pair picker for N > 3).
-   Done when one 4D space is viewable through two View nodes at once.
+1. **Phase 5 second slice: the stage surface, first cut.** Read
+   `plugins/data-drawing/surface/` (its manifest entry, `index.html`,
+   worker and message shape), `sdk/src/index.ts` for what a surface may
+   receive (no kernel access in API 1: the main-process side of the
+   plugin must post the data), and the plan's phase 5. Smallest step:
+   `plugins/mathspace/surface/` registered as a `stage` surface in
+   `tapestry.plugin.json`; the plugin's `index.js` posts, after every
+   runner commit (and once on open), a message `{views: [{id, error?}],
+   points: [{id, byView: {viewId: [x, y] as reals or null}}]}` computed
+   in the main process with `Engine.project` over every View node and
+   every Note-kind note of the same space (ids from `image`; add a
+   `views` list to `buildImage`'s result, or derive it from `rules` plus
+   the node type); the surface draws each view as a panel of dots with
+   plain canvas 2D (three.js and the module Worker can wait until shapes
+   need a level set). A vitest for the message builder (pure function,
+   no Electron). Check how data-drawing's surface gets its data across
+   the process boundary before designing the message.
+2. Phase 5 third slice: default views as presets (identity 2D,
+   perspective and three orthographic 3D, an axis-pair picker for N > 3)
+   as `presets/view-*.json`, plus shapes by sampled level sets and rule
+   regions faintly in the surface (then three.js if a 3D panel needs
+   it). Done condition to meet: one 4D space viewable through two View
+   nodes at once; write that as a preset + runner test.
 3. **GUI confirmation of phases 1 to 4 (human, or a session that can
    drive Electron).** `npm install` at the root (or symlink node_modules,
    see Learned), `npm run build:native` in `app/` if
@@ -67,6 +68,17 @@ viewer; it is theirs to edit.)
 
 ## Done
 
+- `61ef64f` ms5 views, engine side: `NoteKind::View` was already in
+  `note.hpp`; `PROJECT_FIELD`/`PROJECT_DIM` in `world.hpp`; step() skips
+  Views in the bound-field pass and targets Note-kind notes only
+  (`MS_STEP_VERSION` 9, all goldens re-recorded); `RuleDims` guesses
+  dims from Note-kind notes only and is used by `ms_compile` for Views;
+  `ms_project` (`MS_ABI_VERSION` 3, `MS_STAGE_EVAL` 3 named
+  `eval:<VmError>` by `ms_compile_error_name`); `image.js` maps
+  `mathspace/view@1` (in the manifest's nodeTypes) and puts views in
+  `rules` so diff() never writes them and their problems reach
+  `mathspace.error`; `Engine.project`; doctests, a c_abi case, an image
+  test and a runner test with a 3D space and a perspective view.
 - `064966d` ms4 contact: `presets/contact.json` (gravity, bumper and
   floor rules plus a ball; the bumper rule sits at its shape's centre),
   golden `contact` (120 ticks, never inside either shape), the preset
@@ -109,6 +121,15 @@ viewer; it is theirs to edit.)
 
 ## Decisions
 
+- Views (`61ef64f`): a View is compiled and evaluated like a rule (self
+  is a note of its space) but never in step(); it is not a rule target
+  even with `pos` (a camera under gravity would be a surprise), though
+  the integrator still moves it if it carries `velocity` (a moving
+  camera is the user's choice, not the rules'). `project` must be dim 2;
+  a note outside the view's space is `world:NoSuchSpace`. `ms_project`
+  packs failures like `ms_compile` so one name table serves both.
+  Plugin side, views share the rule map (`image.rules`) rather than a
+  new set: same skip in diff(), same error channel.
 - Contact (`064966d`) needs no engine change: `max(0, shape(pos))` as a
   unary `constraint` is zero with a flat gradient outside the shape,
   which the solver skips silently, and pushes out along `grad(shape)`
