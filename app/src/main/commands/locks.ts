@@ -7,9 +7,14 @@
  * owner, or when the agent is on the lock's allow list (D-09). Only agent
  * actors are checked. People and non-agent plugins pass.
  *
- * Two aspects exist in this slice:
+ * Three aspects exist in this slice:
  * - `text`: the note's body and its title (D-03; there is no title lock).
  * - `delete`: removing the note from the world (D-02).
+ * - `layout`: the note's placement on the canvas, stored as the properties
+ *   `lock.layout` and `lock.layout.allow` (quick 260924-0ii). Its defaults
+ *   are text's: a note no agent created is locked to its creator, and an
+ *   agent's note is open to agents. No command checks it yet; Phase 2.5
+ *   `place` is its first caller.
  *
  * A lock is either explicit or a default:
  * - **Explicit** (D-08): a `lock.<aspect>` property whose `text` value is the
@@ -36,8 +41,17 @@ import type { NodeData } from '../kernel-bridge'
 // Aspects and policy constants
 // ---------------------------------------------------------------------------
 
-/** What a lock protects. `layout` and `rank` are deferred. */
-export type LockAspect = 'text' | 'delete'
+/** What a lock protects. `rank` is the only deferred aspect. */
+export type LockAspect = 'text' | 'delete' | 'layout'
+
+/*
+ * Default-policy constants (quick 260924-0ii, Q-03). Layout has no constant
+ * of its own because text has none: a note no agent created is always locked
+ * to its creator for text and layout. NON_AGENT_NOTES_DELETE_LOCKED applies
+ * to delete only, and AGENT_NOTES_OPEN_TO_AGENTS applies to every aspect.
+ * Giving layout a toggle later means adding one constant and one LockPolicy
+ * field.
+ */
 
 /**
  * Whether deleting a note that no agent created starts locked (02.4 D-05).
@@ -171,6 +185,8 @@ export function resolveLock(
     return policy.agentNotesOpenToAgents ? { locked: false } : lockedToCreator
   }
 
+  // Text and layout share the unconditional locked-to-creator default;
+  // only delete has a policy switch.
   if (aspect === 'delete' && !policy.nonAgentNotesDeleteLocked) return { locked: false }
   return lockedToCreator
 }
