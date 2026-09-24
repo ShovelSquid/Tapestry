@@ -26,6 +26,10 @@
  */
 
 const FX_ONE = 4294967296 // 2^32, Q32.32
+// UTF-8 without Node's Buffer: this file is bundled into the stage surface.
+const UTF8 = new TextEncoder()
+const utf8 = (s) => UTF8.encode(s)
+const fromUtf8 = (bytes) => new TextDecoder().decode(bytes)
 const MAX_MAGNITUDE = 2 ** 53
 const MAX_DIM = 8
 const MAX_FIELD_NAME = 31
@@ -97,7 +101,7 @@ const u64ToNodeId = (u) => `n${u}`
 
 /** note.hpp's valid_field_name: 1 to 31 bytes, no byte below 0x20. */
 function validFieldName(name) {
-  const bytes = Buffer.byteLength(name, 'utf8')
+  const bytes = utf8(name).length
   if (bytes < 1 || bytes > MAX_FIELD_NAME) return false
   for (const c of name) if (c.codePointAt(0) < 0x20) return false
   return true
@@ -132,7 +136,11 @@ function laneKey(field, lane, dim) {
 
 /** Byte order on UTF-8, the order the store keeps fields in. */
 function compareNames(a, b) {
-  return Buffer.compare(Buffer.from(a, 'utf8'), Buffer.from(b, 'utf8'))
+  const x = utf8(a)
+  const y = utf8(b)
+  const n = Math.min(x.length, y.length)
+  for (let i = 0; i < n; i++) if (x[i] !== y[i]) return x[i] < y[i] ? -1 : 1
+  return x.length === y.length ? 0 : x.length < y.length ? -1 : 1
 }
 
 // ---------------------------------------------------------------------------
@@ -146,7 +154,7 @@ class ByteWriter {
   u32(v) { this.u16(v & 0xffff); this.u16(v >>> 16) }
   u64(v) { let x = BigInt.asUintN(64, BigInt(v)); for (let i = 0; i < 8; i++) { this.u8(Number(x & 0xffn)); x >>= 8n } }
   i64(v) { this.u64(v) }
-  str(s) { const b = Buffer.from(s, 'utf8'); this.u8(b.length); for (const c of b) this.u8(c) }
+  str(s) { const b = utf8(s); this.u8(b.length); for (const c of b) this.u8(c) }
   done() { return Uint8Array.from(this.bytes) }
 }
 
@@ -277,7 +285,7 @@ function engineSource(text) {
   let last = 0
   for (const m of text.matchAll(re)) {
     out += text.slice(last, m.index) + m[1] + '.pos'
-    cuts.push([Buffer.byteLength(out, 'utf8'), 'position'.length - 'pos'.length])
+    cuts.push([utf8(out).length, 'position'.length - 'pos'.length])
     last = m.index + m[0].length
   }
   out += text.slice(last)
@@ -450,7 +458,7 @@ function parseSnapshot(bytes) {
     const fields = new Map()
     for (let i = 0; i < count; i++) {
       const len = bytes[p++]
-      const name = Buffer.from(bytes.subarray(p, p + len)).toString('utf8'); p += len
+      const name = fromUtf8(bytes.subarray(p, p + len)); p += len
       const dim = bytes[p++]
       const lanes = []
       for (let l = 0; l < dim; l++) { lanes.push(view.getBigInt64(p, true)); p += 8 }

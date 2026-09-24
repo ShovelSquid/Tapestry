@@ -6,7 +6,7 @@
   "main": "index.js",
   "scripts": {
     "engine:wasm": "bash scripts/build-wasm.sh",
-    "dev": "vite --config surface/vite.config.ts",
+    "dev": "vite build --config surface/vite.config.ts && vite --config surface/vite.config.ts",
     "build": "vite build --config surface/vite.config.ts",
     "test": "vitest run --config vitest.config.mjs"
   },

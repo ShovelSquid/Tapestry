@@ -5,11 +5,12 @@ import { defineConfig, type Plugin, type Rollup } from 'vite'
 
 /**
  * The stage surface is a self-contained Vite project, the shape of
- * data-drawing's: `index.html` + dev-host.ts is the plugin's own dev loop
- * (a stub `window.tapestry` with a fixture world, no app build needed), and
- * `vite build` in library mode emits dist/surface.js plus mathspace.wasm as
- * a file with an import.meta.url-relative reference, which the host imports
- * over `tapestry-plugin://mathspace/surface/dist/surface.js`.
+ * data-drawing's: `vite build` in library mode emits dist/surface.js plus
+ * mathspace.wasm as a file with an import.meta.url-relative reference,
+ * which the host imports over `tapestry-plugin://mathspace/surface/dist/
+ * surface.js`; `index.html` + dev-host.ts is the plugin's own dev loop (a
+ * stub `window.tapestry` with a fixture world, no app build needed) and
+ * mounts that same dist/surface.js.
  *
  * The plugin's own CommonJS files (image.js, world.js, projection.js,
  * engine-core.js) are bundled in: Vite only runs its CommonJS transform on
@@ -68,5 +69,9 @@ export default defineConfig({
   server: {
     port: 5174,
     strictPort: true,
+    // The dev page mounts dist/surface.js, and Vite's watcher skips the
+    // build outDir by default; watch it so a rebuild invalidates the served
+    // copy instead of leaving the last transform in the module cache.
+    watch: { ignored: ['!**/dist/**'] },
   },
 })
