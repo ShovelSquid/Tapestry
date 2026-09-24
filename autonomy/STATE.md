@@ -16,7 +16,7 @@ replay tool and goldens are kept.
 | 1 engine over the kernel | built and tested headlessly (`836a4da`); only the human GUI confirmation is open, see Blocked |
 | 2 expressions | done headlessly (`c5d134e`, `d6e9c0b`): golden `plot` hashes across processes and builds, `<f>.expr text` props bind through the runner so the bound value is committed as a kernel prop after a step (the inspector reads props, so it shows it; a human look is still open like phase 1's), and `diff.hpp` exists for phase 4 |
 | 3 force rules | done headlessly (`e1e30a5`): force and `set.<f>` rules under unary, pair and global scope with `select`, mass integrator, `pinned`, RULE-07 skips on the rule node, goldens `gravity` and `pair`, and `plugins/mathspace/presets/` with the plan's four presets plus the roadmap's `anger`, `gold`, `push`, each a `mathspace.preset.<id>` command; `presets.test.js` runs all seven on one engine build with no skip and the promised field change. The "in the app" clause joins the GUI checklist in Blocked |
-| 4 constraints | first slice done (`60c8346`): `constraint.expr` + `compliance` solved by fixed XPBD passes over lifted symbolic gradients, golden `rod`, runner test; open: the `rope-chain` comparison against ddsim, the contact preset and golden `contact` |
+| 4 constraints | rod (`60c8346`) and the ddsim comparison (`60cd37e`) done; open: the contact preset and golden `contact`, then the phase is done headlessly |
 | 5 views | not started |
 | 6 metrics | not started |
 | 7 fold ddsim | not started |
@@ -28,27 +28,7 @@ viewer; it is theirs to edit.)
 
 ## Next
 
-1. **Phase 4 second slice: the comparison test against ddsim's
-   `rope-chain` golden.** Read `tests/golden/rope-chain.actions` and the
-   ddsim replay path (`tools/dd_replay` or the ddsim tests; find how a
-   ddsim `State` is built from that fixture and stepped) and
-   `include/ddsim/rules/constraints.hpp`. Write a doctest in a new
-   `tests/mathspace/rope_chain_test.cpp` that builds the same chain as
-   mathspace notes (one Note per particle with `pos`, `velocity`, `mass`,
-   `pinned` for a static particle) plus one pair rod rule with a `select`
-   that picks chain neighbours (e.g. a per-note scalar `link` holding the
-   neighbour's id and `select` = `other.id == self.link`... the grammar
-   has no `id`; instead give each note `k` = its chain index and select
-   `abs(other.k - self.k) == 1`, rest = the fixture's rest length; if the
-   fixture has several lengths, one rule per length) and a unary gravity
-   force `[0, DD_GRAVITY_Y_PER_TICK * self.mass]`, steps both engines the
-   fixture's tick count, and compares each particle's position within a
-   stated tolerance (not the hash: ddsim corrects both ends in one visit,
-   mathspace one end per visit, so a free-free rod's residual after four
-   passes is 2^-8 of the stretch, see Decisions). Record the tolerance
-   and the worst deviation under Learned; that number is what justifies
-   phase 7.
-2. Phase 4 third slice: Point-vs-Shape contact as a preset,
+1. **Phase 4 third slice: Point-vs-Shape contact as a preset,
    `C = max(0, shape(pos))`. Decide how a Shape note exposes `shape(pos)`
    (design: a scalar expression over `pos`; simplest is a unary rule whose
    `constraint` is `max(0, r - norm(self.pos - node(nS).pos))` for a
@@ -60,7 +40,7 @@ viewer; it is theirs to edit.)
    via `golden_test.cpp` under `MS_WRITE_FIXTURES=1`, six `.sha256`,
    Debug/Release/UBSan. Then phase 4's done condition is met: say so in
    Phases and README.
-3. **GUI confirmation of phases 1 to 4 (human, or a session that can
+2. **GUI confirmation of phases 1 to 4 (human, or a session that can
    drive Electron).** `npm install` at the root (or symlink node_modules,
    see Learned), `npm run build:native` in `app/` if
    `app/native/build/Release/tapestry_addon.node` is missing, `npm run
@@ -77,6 +57,12 @@ viewer; it is theirs to edit.)
 
 ## Done
 
+- `60cd37e` ms4 comparison: `tests/mathspace/rope_chain_test.cpp` replays
+  ddsim's `pendulum` and `rope-chain` goldens through `ddsim::Sim`
+  (hashes checked) and as mathspace notes with a pair rod rule
+  (`select abs(other.k - self.k) == 1`) and a gravity rule reading its
+  own `g` field; per-checkpoint position tolerances, worst deviation
+  printed.
 - `60c8346` ms4 rod: `expr/lift.hpp` (bytecode back to an Ast, round-trip
   tested over every op shape), `constraint` + `compliance` on a Rule note
   solved after the integrator by `MS_CONSTRAINT_ITERATIONS` XPBD passes
@@ -85,12 +71,9 @@ viewer; it is theirs to edit.)
   re-recorded), golden `rod` (pendulum, 60 ticks), doctests for the pinned
   anchor, compliance, free rod, unary manifold and whole-rule skips, one
   runner test with `constraint.expr` and `compliance` (no plugin change).
-- `e1e30a5` ms3 presets: `presets/<id>.json` (rule node + bodies in
-  `.tree` spelling), `presets.js` lists them in name order into
-  `mathspace.preset.<id>` commands that submit one `createNode` commit;
-  seven presets; `presets.test.js` runs each for 1 and 60 ticks on the
-  real engine and checks the roadmap promises.
-- Earlier ms3, one line each: `9b28407` RULE-07 runtime skips
+- Phase 3 (ms3), one line each: `e1e30a5` presets (`presets/<id>.json`,
+  `presets.js`, `mathspace.preset.<id>` commands, `presets.test.js`);
+  `9b28407` RULE-07 runtime skips
   (`World::reports`, `ms_errors_ptr/len`, `Engine.errors()`, runner sums
   skips into `mathspace.error`; `MS_ABI_VERSION` 2); `e0b6942` pair and
   global scope, golden `pair` (`MS_STEP_VERSION` 7); `919c06e` `set.<f>`
@@ -104,16 +87,11 @@ viewer; it is theirs to edit.)
   `a159268` `ms_compile` C ABI; `1abc9d4` action 37 BindField + golden
   `plot` (version 2); `3b25475` vm; `30fc1a6` bytecode; `1725143`
   ast+parser; `3ca1482` fxmath (`tools/gen_fxmath/gen.py` oracle).
-- Phase 1 (ms1), oldest last: `836a4da` real-tree check + lane padding;
-  `b223a54` README status; `a111181` run loop `runner.js`; `07f35f4`
-  `image.js` + checkpoint fixture; `feab148` plugin skeleton + vitest
-  goldens; `f7013b3` wasm target; `8587ec9` C ABI; `dc75224` lazy notes
-  snapshot; `a247eab` bootstrap integrate rule + golden `velocity`;
-  `0903619` kernel ids; `3cd79d9` build scaffolding; `1d6f2f1` driver
-  bash 3.2 guard; store/world/hash walk/actions 32..36/replay
-  tool/goldens `empty` and `two-notes` up to `943b9bb`; SDL Space page
-  `bdf03eb`..`8774401` reverted in the redirect; `215602c` merge of
-  `phase-2-implementation-v1`.
+- Phase 1 (ms1): `836a4da` real-tree check; `a111181` `runner.js`;
+  `07f35f4` `image.js`; `feab148` plugin skeleton; `f7013b3` wasm;
+  `8587ec9` C ABI; `a247eab` golden `velocity`; store/walk/actions/
+  replay tool/goldens up to `943b9bb`; `215602c` merge of
+  `phase-2-implementation-v1` (SDL Space page reverted).
 
 ## Decisions
 
@@ -137,50 +115,26 @@ viewer; it is theirs to edit.)
   `COMPLIANCE_FIELD` in `world.hpp`. `compliance` must be an unbound
   scalar; bound or vector reads as 0.
 - Presets (`e1e30a5`) are self-consistent worlds: every note carries
-  every field its rule reads (`Sam` has `chips 0`, so the pair rule's
-  `select other.chips > 0` gates cleanly), so a fresh tree shows no
-  RULE-07 skip; the user's existing notes lacking those fields will show
-  a skip count on the rule, by design. Positions are file-given and
-  relative to the tree frame origin; `y` grows down the screen, so
-  `gravity-field` pushes `+y`. Notes get `title` and empty `body` like
-  the app's own. A preset needs both `velocity` lanes to move, `mass`
-  for forces. The manifest lists the preset commands (the host does
-  not require it; it is documentation).
-- RULE-07 runtime channel (`9b28407`). Reasons are one byte: below 16
-  an `expr::VmError` on a visit, 16+ a whole-rule `Skip` (`NoScope`,
-  `NoSpace`, `BadSelect`, `WrongDim`, `NoTargetField`); a whole-rule
-  skip counts once, the reason kept is the last in step order. A pinned
-  target of a set rule is not a skip (RULE-08). Reports live on `World`
-  outside `==`, the walk and the snapshot; `ms_world` re-encodes them
-  after each `ms_step`, clears on `ms_restore`. The runner sums counts
-  over the ticks since the last commit and rewrites the property on
-  every commit while the rule keeps failing. Not detected: two rules
-  writing one field, a bound field on a plain note that fails. `select`
-  runs before the `NoTargetField` check, so a gated visit is silent.
-- Pair and global scope (`e0b6942`). Pair visits ordered pairs, `self`
-  receives, Newton's third law is the user's symmetric formula; `select`
-  is evaluated per visit with both bound; a pair `set.<f>` visits `self`
-  once per `other`, each reading what the last wrote. Global visits the
-  rule note itself as `self`; a global set writes the rule's own field,
-  visible to `node(nN).f` only. `scope` bound, vector or outside 0..2
-  skips the rule whole.
-- `set.<f>` (`919c06e`) runs after the integrator and before the bound-
-  field pass (a body's own bound field wins); set fields on one rule run
-  in name order; two rules setting one field: last in id order wins
-  silently. The program's dim must equal the target field's dim.
-- Plugin side of rules (`204ced5`): a rule node's numeric props enter as
-  fields (never a target); unknown `scope` text keeps it out of the
-  image; its bound fields are never committed back (`diff()` skips rule
-  ids); `mathspace.error` is its problems as `key: reason` in key order
-  joined by `; `, diffed against the kernel's text and unset when gone.
-- `pinned` (`872831b`) is engine-side, not a plugin-side write filter;
-  the plugin sends `pinned` 1 only when the app's bool is true.
-- Rule notes in the engine (`22bc70c`, `f90b3c7`): the law is the rule's
-  bound fields evaluated with `self` = each target; `scope` is a scalar
-  field (0/1/2, absent = unary); targets are the non-Rule notes of the
-  rule's space with `pos`; force is a per-tick accumulator; `mass`
-  scalar, 1 when absent, <= 0 drops the force; h = 1. Every change to
-  `step()` bumps `MS_STEP_VERSION`; re-recording goldens is one command.
+  every field its rule reads, so a fresh tree shows no RULE-07 skip;
+  positions are relative to the tree frame origin, `y` grows down the
+  screen; a preset needs both `velocity` lanes and `mass`.
+- RULE-07 runtime channel (`9b28407`): reasons are one byte, below 16 an
+  `expr::VmError` on a visit, 16+ a whole-rule `Skip` counted once with
+  the last reason; reports live on `World` outside `==`, the walk and the
+  snapshot; the runner sums counts since the last commit. Not detected:
+  two rules writing one field. `select` runs before `NoTargetField`.
+- Scope (`e0b6942`): pair visits ordered pairs, `self` receives, Newton's
+  third law is the user's symmetric formula; global visits the rule note
+  itself (a global set writes the rule's own field). `set.<f>`
+  (`919c06e`) runs after the integrator, before the bound-field pass;
+  last rule in id order wins silently; dims must match. Plugin side
+  (`204ced5`): rule numeric props are fields, never targets; rule bound
+  fields are never committed back; `mathspace.error` is `key: reason`
+  joined by `; `. `pinned` (`872831b`) is engine-side. Rule notes
+  (`22bc70c`): `scope` scalar 0/1/2 (absent unary); targets are the
+  non-Rule notes of the rule's space with `pos`; `mass` 1 when absent,
+  <= 0 drops the force; h = 1; every `step()` change bumps
+  `MS_STEP_VERSION`.
 - Phase 2 plugin/ABI: `diff.hpp` keeps a derivative at its value's dim,
   `curve` is `Unsupported`, `node(nN).f` is a constant; the `.tree`
   spells `self.position`, the plugin rewrites it to `pos` before
@@ -200,6 +154,16 @@ viewer; it is theirs to edit.)
 
 ## Learned
 
+- ddsim comparison numbers (ms4): the single pendulum agrees to 4 raw at
+  tick 1 and at most 3152 raw (2^-20.4 units) over 600 ticks, so the
+  lifted-gradient XPBD is ddsim's rod solver up to fx64 rounding. The
+  double pendulum (`rope-chain`, rods of 2) deviates 6811 raw at tick 1,
+  0.45 at 60, 0.97 at 300, 1.44 at 600: a chaotic system amplifying the
+  free-free rod's 2^-8 residual (mathspace corrects one end per ordered
+  visit, ddsim both ends per constraint). Phase 7 must either accept
+  that data-drawing's ropes do not replay bit-for-bit under mathspace or
+  let a pair constraint visit write `other` too (a semantic change to
+  "a rule writes self"; not taken at ms4).
 - doctest's `CHECK(a && b)` is a compile error ("Expression Too
   Complex"): bind the conjunction to a `bool` first. A golden with a new
   name needs `touch tests/golden/ms/<f>.actions <f>.sha256` before the
@@ -208,11 +172,7 @@ viewer; it is theirs to edit.)
   `.actions`; `ms_replay --write-golden` fills it. Rebuilding the Wasm
   (`source ~/emsdk/emsdk_env.sh; npm run engine:wasm`) is needed after any
   golden re-record or the plugin's `engine.test.js` fails on old hashes.
-- Goldens with bytecode (`plot`, `gravity`, `pair`) are generated by
-  `golden_test.cpp` and rewritten under `MS_WRITE_FIXTURES=1` (a new one
-  needs an empty `.actions` and `.sha256` touched first, then the
-  rewrite, then the six `.sha256` via `ms_replay --write-golden`).
-  macOS has no `timeout`. The grammar has no `and`: multiply predicates.
+- macOS has no `timeout`. The grammar has no `and`: multiply predicates.
 - doctest: `MESSAGE` ignores `std::hex`; wrap a `const char*` first
   token of `CHECK_MESSAGE` in `std::string`; a helper named `apply`
   collides with `std::apply` via ADL.
@@ -232,11 +192,9 @@ viewer; it is theirs to edit.)
 - The ESM test shims (`test/image-cjs.js`, `test/engine-cjs.js`) list
   the exports by name: a new export from `image.js` is `undefined` in
   the tests until it is added there (it cost a puzzled minute).
-- `tests/golden/ms/*.actions` are globbed at configure time
-  (CONFIGURE_DEPENDS), so a new fixture needs `cmake --build` before
-  ctest lists its two-process test. Re-record: `build/native-debug/
-  ms_replay <f>.actions --write-golden <f>.sha256` for the five files,
-  then Release and UBSan must agree (each preset ~10-20 s).
+- Re-record every golden after a `MS_STEP_VERSION` bump:
+  `build/native-debug/ms_replay <f>.actions --write-golden <f>.sha256`
+  for the seven files, then Release and UBSan must agree.
 - A bound `Field` compares unequal to a plain one with the same lanes
   (`bound`/`bytecode` are in `operator==`): compare lanes in tests.
   `World::notes` is a vector, so a `RuleDims`/`WorldDims` built before
