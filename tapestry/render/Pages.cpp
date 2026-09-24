@@ -38,6 +38,7 @@ NVGcolor accentFor(PageKind kind) {
     case PageKind::Conversation: return nvgRGBA(110, 150, 235, 255);
     case PageKind::File:         return nvgRGBA(126, 204, 158, 255);
     case PageKind::Settings:     return nvgRGBA(168, 142, 235, 255);
+    case PageKind::Space:        return nvgRGBA(235, 184, 110, 255);
     case PageKind::Note:         break;
     }
     return nvgRGBA(232, 196, 120, 255);

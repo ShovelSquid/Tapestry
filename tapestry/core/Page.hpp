@@ -17,6 +17,10 @@ enum class PageKind : std::uint8_t {
     Conversation,
     File,
     Settings,
+    // Owns a mathspace World (core/Space.hpp); its body lines label the
+    // notes. Appended last so the kinds already in saved files keep their
+    // numbers.
+    Space,
 };
 
 // Page header layout, in world units. Lives here rather than in the renderer
