@@ -17,7 +17,12 @@ the end of every session so its first item can be started cold.
 
 ## In progress
 
-Nothing. Tree is clean.
+Nothing of mine. **`autonomy/watch.py` is untracked and not ours**: an
+operator wrote it at 11:02 on 2026-09-24 while a session was running,
+and it is their live log viewer (two copies were running). Do not
+`git clean -fd` it away and do not commit it for them; if it shows up in
+`git status`, ignore it. If it has been committed by the operator, delete
+this paragraph.
 
 ## Next
 
