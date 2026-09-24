@@ -16,7 +16,7 @@ actions, replay tool, and goldens built before the redirect are kept.
 | Phase | Status |
 | --- | --- |
 | 1 engine over the kernel | built and tested headlessly (`836a4da`); only the human GUI confirmation is open, see Blocked |
-| 2 expressions | done condition met headlessly (`c5d134e`): golden `plot` hashes across processes and builds, and `<f>.expr text` props bind through the runner so the bound value is committed as a kernel prop after a step (the inspector reads props, so it shows it; a human look is still open like phase 1's). Remaining from the plan's file list: `diff.hpp` |
+| 2 expressions | done headlessly (`c5d134e`, `d6e9c0b`): golden `plot` hashes across processes and builds, `<f>.expr text` props bind through the runner so the bound value is committed as a kernel prop after a step (the inspector reads props, so it shows it; a human look is still open like phase 1's), and `diff.hpp` exists for phase 4 |
 | 3 force rules | not started |
 | 4 constraints | not started |
 | 5 views | not started |
@@ -40,28 +40,37 @@ viewer; it is theirs to edit.)
    `.tree`. If a session cannot drive the GUI, skip this: the headless
    check in `plugins/mathspace/test/tree.test.js` already covers the
    file-level condition. Either way, do not block phase 2 on it.
-2. **`include/mathspace/expr/diff.hpp` + `src/mathspace/expr/diff.cpp`
-   + `tests/mathspace/expr_diff_test.cpp`.** Symbolic
-   `Ast differentiate(const Ast&, std::string_view field, uint8_t lane,
-   DiffError&)` for d/d(self.field.lane): numbers, non-self refs,
-   comparisons and `space.dim`/`world.tick` give 0; `self.field` gives
-   the unit vector at `lane` (dim from the ref's use: the Ast has no dims,
-   so emit `[0, .., 1, .., 0]` only when the ref is followed by
-   `.component`, else a scalar 1/0 and let the compiler's shape check
-   catch vector fields; record the choice); linear rules for `+ - neg
-   vector component if`, product/quotient rules, chain rules for `sqrt
-   sin cos exp log pow atan2 abs min max clamp dot norm`; `curve` is
-   `DiffError::Unsupported`. Test by compiling f and f' and comparing f'
-   to a finite difference of f in the VM at a few points (tolerance a few
-   ulps times the step), plus node-count bounds (`MAX_NODES` must hold
-   for the derivative too). Phase 4's XPBD gradients consume it. Also
-   add the human GUI look for phase 2 to item 1's checklist: set
-   `y.expr text "self.position.x * 2"` on a note, Step, see `y real ...`.
-3. Phase 3 (force rules) per `mathspace_plan.md`; the bootstrap
-   `pos += velocity` rule is replaced there.
+2. **Phase 3, first slice: rule notes in the engine.** Read the plan's
+   phase 3 section and the rules part of `mathspace_design.md`, then
+   decide and record under Decisions: how a `NoteKind::Rule` note holds
+   `scope` (unary / pair / global), `select`, `force` and `set.<f>` as
+   bound fields whose bytecode is evaluated against each *target* note
+   (`self`) or pair (`self`, `other`) in the rule's space, not against
+   the rule note. The compile-time `DimResolver` for a rule expression
+   must not depend on one target note: resolve `self.pos`/`other.pos`
+   from the space dim and any other field from the first note in id
+   order that has it (or make dims part of the rule's declaration);
+   `vm.cpp` already errors per note on `DimChanged`, so a wrong guess is
+   a per-note skip, not a crash. Then implement the smallest engine
+   piece: a unary force rule (`scope unary`, `force.expr` of dim = space
+   dim) accumulating into a `force` field in rule id order, the
+   integrator reading `mass` (default 1) with `velocity += force / mass;
+   pos += velocity` replacing the bootstrap rule, `MS_STEP_VERSION` 3,
+   goldens `velocity`/`plot`/`two-notes` re-recorded, a new golden
+   `gravity`. Keep `world.hpp`'s walk in id/name order and the action
+   grammar additive (a rule's scope can be a `SetField` of a scalar
+   `scope` on the rule note, so no new action is needed; decide).
+   Plugin side (`image.js` recognising `mathspace/rule@1` nodes, presets,
+   `mathspace.error` on the node) is the slice after.
+3. Add the human GUI look for phase 2 to item 1's checklist: set
+   `y.expr text "self.position.x * 2"` on a note, Step, see `y real ...`
+   in the inspector.
 
 ## Done
 
+- `d6e9c0b` ms2 `diff.hpp`/`diff.cpp`/`expr_diff_test.cpp`: symbolic
+  d/d(self.field.lane), shape-preserving, task-stack build, every rule
+  checked against a finite difference in the VM.
 - `c5d134e` ms2 `<f>.expr` props: `buildImage(...).bindings`,
   `Runner.rebuild` second pass compiles and binds them, `engineSource`
   rewrites `.position` to `.pos` in expression text with offsets mapped
@@ -110,6 +119,16 @@ viewer; it is theirs to edit.)
 
 ## Decisions
 
+- `diff.hpp` (2026-09-24, `d6e9c0b`): the derivative of a dim-d value
+  is a dim-d value, so the rules reuse the compiler's broadcast shapes
+  unchanged and a `DimResolver` (the same `WorldDims`) supplies ref dims
+  for shaped zeros and the unit vector. `abs min max clamp` differentiate
+  as the branch fx64 takes (ties go the way `ddsim::min/max/clamp` go);
+  `curve` is `Unsupported`; `node(nN).f` is a constant even when nN is
+  self. The output is a tree (copies, never shared subtrees) because the
+  compiler's visit bound assumes one, so `MAX_NODES` is the only bound
+  and a ~45-term product chain overflows it. The build is an explicit
+  task stack, not recursion, so a 600-term sum differentiates.
 - Expression text spelling (2026-09-24, `c5d134e`): the `.tree` says
   `self.position` (the app's key, and the design doc's example) while
   the engine grammar sees the store's `pos`; the plugin rewrites the one

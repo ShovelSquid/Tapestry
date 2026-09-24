@@ -88,9 +88,9 @@ Electron app under the Run command. Plan phase 2 (expressions) is built
 the same way: `include/mathspace/expr` (parser, bytecode, VM over
 `include/ddsim/fxmath.hpp`), action 37 `BindField`, `ms_compile` in the C
 ABI, and `<f>.expr text` props that the plugin compiles and binds so the
-bound value is committed after a step; golden `plot` covers it. Its
-`diff.hpp` (symbolic derivatives for phase 4) is next. Phases 3 to 7 are
-not started.
+bound value is committed after a step; golden `plot` covers it, and
+`expr/diff.hpp` holds the symbolic derivatives phase 4's solver will use.
+Phases 3 to 7 are not started.
 
 ## Build
 
