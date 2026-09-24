@@ -220,7 +220,7 @@ Plans:
   5. No `thread-center` / `thread-arm` occurrences remain in tracked source under `app/`, `plugins/` or `sdk/`; 2.1's feature works as `knot` / `knot-tie` (D-26)
   6. Each thread stores its own readable frame — `origin.x/y/z`, `direction.x/y/z` and `roll` — and both the live and side views derive their camera from it rather than a hardcoded axis (D-27)
 
-**Plans**: 7/9 plans executed in 8 waves
+**Plans**: 8/9 plans executed in 8 waves
 
 Plans:
 **Wave 1**
@@ -250,7 +250,7 @@ Plans:
 
 **Wave 7** *(blocked on Wave 6)*
 
-- [ ] 02.3-08-PLAN.md — Agents in threads: MCP thread tools, the per-letter D-22 rule, strands, underlays, drag-apart (D-20..D-24)
+- [x] 02.3-08-PLAN.md — Agents in threads: MCP thread tools, the per-letter D-22 rule, strands, underlays, drag-apart (D-20..D-24)
 
 **Wave 8** *(blocked on Wave 7)*
 
