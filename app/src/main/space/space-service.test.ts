@@ -14,14 +14,22 @@
  */
 
 import { afterEach, describe, expect, it } from 'vitest'
-import { existsSync, readFileSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs'
 import { join, resolve } from 'node:path'
 import { makeTempDir } from '../../../test/helpers/temp-tree'
 import { humanActor } from '../commands/actor'
 import { KernelBridge } from '../kernel-bridge'
 import { SettingsStore } from '../settings'
 import { TreeRegistry } from '../trees/registry'
-import type { SpacePaths } from './migrate'
+import { SPACE_NOT_OPEN, type SpacePaths } from './migrate'
 import { SpaceService } from './space-service'
 import { HOME_FOREST_TYPE, HOME_ROOT_TYPE, MEMBER_TYPE, SPACE_TYPE } from './shapes'
 
@@ -412,5 +420,173 @@ describe('SpaceService isolation', () => {
     expect(result).toEqual({ committed: true })
     expect(frameOf(r.service, gone)).toEqual({ x: 50, y: 60 })
     expect(readFileSync(r.paths.forest, 'utf-8')).not.toContain('path:')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Launches that must write nothing (D-14 cases E, G, H)
+// ---------------------------------------------------------------------------
+
+describe('launches that cannot open the space (D-14 cases E, G, H)', () => {
+  /** Bytes and `@commit` count of a file, to prove a launch wrote nothing. */
+  function snapshot(path: string): { bytes: Buffer; commits: number } {
+    const bytes = readFileSync(path)
+    return { bytes, commits: commitCount(bytes.toString('utf-8')) }
+  }
+
+  function expectUnchanged(path: string, before: { bytes: Buffer; commits: number }): void {
+    const after = snapshot(path)
+    expect(after.commits).toBe(before.commits)
+    expect(after.bytes.equals(before.bytes)).toBe(true)
+  }
+
+  /** The space stayed closed: nothing opened, and a drop is refused with 4.9. */
+  function expectClosed(service: SpaceService, registry: TreeRegistry): void {
+    expect(service.ready).toBe(false)
+    expect(registry.summary()).toEqual([])
+    expect(service.list()).toEqual([])
+    expect(() =>
+      service.moveFrames([{ treeId: 'sha256:' + '0'.repeat(64), x: 1, y: 1 }], humanActor('kaelen')),
+    ).toThrow(SPACE_NOT_OPEN)
+  }
+
+  /** No lock is left behind: a fresh bridge can open the file. */
+  function expectReleased(path: string): void {
+    const probe = new KernelBridge()
+    try {
+      expect(() => probe.open(path)).not.toThrow()
+    } finally {
+      probe.close()
+    }
+  }
+
+  /** The `@tree` header block, which is what a world's digest covers. */
+  function headerOf(path: string): string {
+    const text = readFileSync(path, 'utf-8')
+    return text.slice(0, text.indexOf('\n@end '))
+  }
+
+  /** Wait for the wall clock to enter the next second (at most one second). */
+  async function nextSecond(): Promise<void> {
+    const start = Math.floor(Date.now() / 1000)
+    while (Math.floor(Date.now() / 1000) === start) {
+      await new Promise((done) => setTimeout(done, 20))
+    }
+  }
+
+  /** Case A, then everything closed again, as a quit would leave it. */
+  async function importedThenQuit(): Promise<ReturnType<typeof importRig>> {
+    const r = importRig()
+    const { problem } = await r.service.start()
+    expect(problem).toBeNull()
+    r.service.close()
+    r.registry.closeAll()
+    return r
+  }
+
+  it('case E: a pointer at a missing Tapestry tree creates nothing, changes no settings byte and opens no member', async () => {
+    const worlds = makeTempDir('space-e')
+    dirs.push(worlds)
+    const { raw } = v1Fixture(worlds)
+    const spaceDir = join(worlds, 'space')
+    mkdirSync(spaceDir)
+    const missingHome = join(spaceDir, 'Tapestry.tree')
+    const r = rig({ ...raw, version: 2, tapestry: { path: missingHome } }, { spaceDir })
+    const settingsBefore = readFileSync(r.settings.path)
+
+    const { problem, restored } = await r.service.start()
+
+    expect(problem).toEqual(expect.objectContaining({ kind: 'home-missing', path: missingHome }))
+    expect(restored).toBe(0)
+    expect(readdirSync(spaceDir)).toEqual([])
+    expect(readFileSync(r.settings.path).equals(settingsBefore)).toBe(true)
+    expectClosed(r.service, r.registry)
+  })
+
+  it('case G: a Tapestry tree held by another window returns home-locked and writes nothing', async () => {
+    const r = await importedThenQuit()
+    const homeBefore = snapshot(r.paths.home)
+    const forestBefore = snapshot(r.paths.forest)
+    const settingsBefore = readFileSync(r.settings.path)
+
+    // A second bridge stands in for the other Tapestry window.
+    const holder = new KernelBridge()
+    try {
+      holder.open(r.paths.home)
+      const second = relaunch(r.settings, r.paths)
+
+      const { problem, restored } = await second.service.start()
+
+      expect(problem?.kind).toBe('home-locked')
+      expect(restored).toBe(0)
+      expectClosed(second.service, second.registry)
+    } finally {
+      holder.close()
+    }
+
+    expectUnchanged(r.paths.home, homeBefore)
+    expectUnchanged(r.paths.forest, forestBefore)
+    expect(readFileSync(r.settings.path).equals(settingsBefore)).toBe(true)
+    expectReleased(r.paths.forest)
+  })
+
+  it('case G: a forest held by another window returns forest-locked, writes nothing and releases the Tapestry tree', async () => {
+    const r = await importedThenQuit()
+    const homeBefore = snapshot(r.paths.home)
+    const forestBefore = snapshot(r.paths.forest)
+    const settingsBefore = readFileSync(r.settings.path)
+
+    const holder = new KernelBridge()
+    try {
+      holder.open(r.paths.forest)
+      const second = relaunch(r.settings, r.paths)
+
+      const { problem, restored } = await second.service.start()
+
+      expect(problem?.kind).toBe('forest-locked')
+      expect(restored).toBe(0)
+      expectClosed(second.service, second.registry)
+      // The Tapestry tree this launch opened first was closed again.
+      expectReleased(r.paths.home)
+    } finally {
+      holder.close()
+    }
+
+    expectUnchanged(r.paths.home, homeBefore)
+    expectUnchanged(r.paths.forest, forestBefore)
+    expect(readFileSync(r.settings.path).equals(settingsBefore)).toBe(true)
+  })
+
+  it('case H: a different forest at the referenced path returns forest-mismatch and is left byte-for-byte alone', async () => {
+    const r = await importedThenQuit()
+
+    // Another space's forest, created in its own temp folder and closed, in a
+    // later second than the first.
+    await nextSecond()
+    const other = await importedThenQuit()
+    // Its premise: a different world. A header is the world name and its
+    // creation second, so two forests made in one second would be the same.
+    expect(headerOf(other.paths.forest)).not.toBe(headerOf(r.paths.forest))
+    copyFileSync(other.paths.forest, r.paths.forest)
+
+    const homeBefore = snapshot(r.paths.home)
+    const replacementBefore = snapshot(r.paths.forest)
+    const settingsBefore = readFileSync(r.settings.path)
+
+    const second = relaunch(r.settings, r.paths)
+    const { problem, restored } = await second.service.start()
+
+    expect(problem).toEqual(
+      expect.objectContaining({ kind: 'forest-mismatch', path: resolve(r.paths.forest) }),
+    )
+    expect(restored).toBe(0)
+    expectClosed(second.service, second.registry)
+
+    expectUnchanged(r.paths.home, homeBefore)
+    expectUnchanged(r.paths.forest, replacementBefore)
+    expect(readFileSync(r.settings.path).equals(settingsBefore)).toBe(true)
+    // Both files this launch opened were closed again.
+    expectReleased(r.paths.home)
+    expectReleased(r.paths.forest)
   })
 })
