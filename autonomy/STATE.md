@@ -15,7 +15,7 @@ actions, replay tool, and goldens built before the redirect are kept.
 
 | Phase | Status |
 | --- | --- |
-| 1 engine over the kernel | in progress (store/hash/actions/replay/ids/snapshot done; ABI, wasm, plugin remain) |
+| 1 engine over the kernel | in progress (store/hash/actions/replay/ids/snapshot/ABI done; wasm, plugin remain) |
 | 2 expressions | not started |
 | 3 force rules | not started |
 | 4 constraints | not started |
@@ -30,42 +30,37 @@ viewer; it is theirs to edit.)
 
 ## Next
 
-1. **C ABI.** `include/mathspace/mathspace_c.h`, `src/mathspace/ms_c.cpp`:
-   `ms_version, ms_create(seed), ms_destroy, ms_apply(ptr,len), ms_step,
-   ms_tick, ms_hash(out32), ms_serialize(out_ptr,out_len), ms_restore,
-   ms_notes_ptr, ms_notes_len`. Same error-code style as `ddsim_c.h`
-   (read it first; mirror its handle/buffer ownership). `ms_notes_ptr/len`
-   return `World::notes_bytes()` (`dc75224`), valid until the next
-   mutating call. `ms_serialize` can own one buffer per handle, freed on
-   the next serialize or destroy. Tests in `tests/mathspace/c_abi_test.cpp`
-   through the ABI only: create/apply/step/hash equals the same sequence
-   on a `World`; error codes map one-to-one to `Error`; notes ptr/len
-   agree with `notes_bytes()`.
-2. **Wasm target.** `wasm/mathspace_wasm.cpp` and a `mathspace_wasm`
-   executable in the `EMSCRIPTEN` block of `CMakeLists.txt`, exporting
-   the `ms_*` symbols plus malloc/free, output `mathspace.mjs`. Building
-   needs Emscripten 6.0.10 at `$EMSDK`; if it is not installed, install
-   it under `~/emsdk` per `plugins/data-drawing/surface/scripts/build-wasm.sh`
-   (network required) and record the outcome under Learned.
-3. **Plugin skeleton.** `plugins/mathspace/`: `tapestry.plugin.json`
+1. **Wasm target.** `wasm/mathspace_wasm.cpp` (a one-line include of
+   `mathspace_c.h`, like `wasm/ddsim_wasm.cpp`) and a `mathspace_wasm`
+   executable in the `EMSCRIPTEN` block of `CMakeLists.txt` (line ~208),
+   copying `ddsim_wasm`'s link options with `EXPORT_NAME=createMathspace`,
+   the eleven `_ms_*` symbols from `mathspace_c.h` plus `_malloc,_free`,
+   output `mathspace.mjs`. emsdk is installed at `~/emsdk` (`$EMSDK` is
+   unset in the driver's shell): `source ~/emsdk/emsdk_env.sh`, check
+   `emcc --version` is 6.0.10, then `cmake --preset wasm-release` and build.
+   Verify with a small Node script (like `tools/wasm-hash-check.mjs`) that
+   creates a world, applies the `velocity` fixture's actions, steps, and
+   prints a hash equal to the native golden. Record the outcome under
+   Learned.
+2. **Plugin skeleton.** `plugins/mathspace/`: `tapestry.plugin.json`
    (api "1", commands `mathspace.run`, `mathspace.pause`,
    `mathspace.step`), `package.json` (workspace member, vitest),
    `scripts/build-wasm.sh` mirroring data-drawing's but building the root
    project's `wasm-release` preset and copying `mathspace.mjs/.wasm`
    into `plugins/mathspace/wasm/` (gitignored), `engine.js` loading it.
-4. **`image.js`.** Kernel `NodeData` → engine actions: exact real↔raw
+3. **`image.js`.** Kernel `NodeData` → engine actions: exact real↔raw
    int64 conversion (reject reals that are not `k / 2^32` with `|k| <
    2^53`), key conventions (`f.x f.y f.z f.w`, `f.0..` above dim 4,
    `space ref`, implicit space per tree frame), and `diff(before,
    after)` → `set` ops. Vitest tests for all three.
-5. **Run loop and commits.** In `index.js`: on `mathspace.run`, build the
+4. **Run loop and commits.** In `index.js`: on `mathspace.run`, build the
    image from `getNodes()`, step at 60 Hz with `setInterval`, every 60
    ticks or on pause read the snapshot, diff, `kernel.submit('plugin',
    'mathspace', 'advance', [...sets, {op:'advance', ticks:k}])`. Before
    each commit compare `status().lastGoodSeq` with the seq of our last
    commit; if others committed, rebuild the image first. Checkpoint
    fixture `plugins/mathspace/test/fixtures/velocity.json`.
-6. **Phase 1 done check.** Build the app (`npm install` at the root,
+5. **Phase 1 done check.** Build the app (`npm install` at the root,
    `npm run build:native` in `app/`, then the app's dev script; see
    `app/package.json`), create a note, set `velocity.x real 1` via the
    inspector or a `set` commit, Run, Pause, confirm the `.tree` has the
@@ -78,6 +73,8 @@ its oracle tests.
 
 ## Done
 
+- `8587ec9` ms1 C ABI: `include/mathspace/mathspace_c.h`,
+  `src/mathspace/ms_c.cpp`, `tests/mathspace/c_abi_test.cpp`.
 - `dc75224` ms1 lazy notes snapshot: `World::notes_bytes()` in
   `snapshot.cpp`, `notes_dirty`/`notes_cache` set by mutators, step and
   restore; tests in `snapshot_test.cpp`.
@@ -108,11 +105,20 @@ its oracle tests.
   track deleted ids, because "never reused" is the kernel's promise, not
   something the image can or should enforce. `World::apply` lost its
   `created` out-param for the same reason.
+- `ms_serialize` uses ddsim's cap protocol (cap 0 returns the needed
+  length, short cap returns 0) rather than a handle-owned buffer, so the
+  plugin loader can be data-drawing's with the prefix changed. `ms_error`
+  values equal `mathspace::Error` by value, `static_assert`ed in
+  `ms_c.cpp`; `ms_version()` returns `MS_ABI_VERSION` (1), separate from
+  the walk's `FORMAT_VERSION`. (2026-09-24, session `8587ec9`.)
 - Phase 1 ships one hardcoded bootstrap rule (`position += velocity`) so
   something moves; phase 3 deletes it.
 
 ## Learned
 
+- In a doctest file with `using namespace mathspace`, a free helper
+  named `apply` collides with `std::apply` (ADL on `std::vector` args)
+  and gives a baffling `tuple_size` error. Name helpers `applyTo`.
 - `tests/golden/ms/*.actions` are globbed by `CMakeLists.txt`, so a new
   fixture gets its two-process test at configure time with no edit.
   Write fixture hex with a few lines of Python from the grammar in
