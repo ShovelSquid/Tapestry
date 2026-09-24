@@ -4,6 +4,7 @@
 import {
   HandLandmarker,
   FaceLandmarker,
+  PoseLandmarker,
   FilesetResolver,
   DrawingUtils,
 } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.17";
@@ -12,6 +13,8 @@ const HAND_MODEL =
   "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task";
 const FACE_MODEL =
   "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task";
+const POSE_MODEL =
+  "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task";
 
 export async function startHandsAndFace({ video, canvas, metricsEl, onLandmarks, onError }) {
   const ctx = canvas.getContext("2d");
@@ -41,6 +44,12 @@ export async function startHandsAndFace({ video, canvas, metricsEl, onLandmarks,
     numFaces: 1,
   });
 
+  const poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
+    baseOptions: { modelAssetPath: POSE_MODEL, delegate: "GPU" },
+    runningMode: "VIDEO",
+    numPoses: 1,
+  });
+
   let lastFrameTime = performance.now();
   let running = true;
 
@@ -52,6 +61,7 @@ export async function startHandsAndFace({ video, canvas, metricsEl, onLandmarks,
 
     const handResult = handLandmarker.detectForVideo(video, now);
     const faceResult = faceLandmarker.detectForVideo(video, now);
+    const poseResult = poseLandmarker.detectForVideo(video, now);
 
     ctx.save();
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -76,15 +86,25 @@ export async function startHandsAndFace({ video, canvas, metricsEl, onLandmarks,
         { color: "#a78bfa", lineWidth: 1 }
       );
     }
+
+    for (const landmarks of poseResult.landmarks ?? []) {
+      drawingUtils.drawConnectors(landmarks, PoseLandmarker.POSE_CONNECTIONS, {
+        color: "#34d399",
+        lineWidth: 2,
+      });
+      drawingUtils.drawLandmarks(landmarks, { color: "#34d399", radius: 2 });
+    }
     ctx.restore();
 
     metricsEl.textContent = `hands: ${handResult.landmarks?.length ?? 0}    faces: ${
       faceResult.faceLandmarks?.length ?? 0
-    }    fps: ${fps}`;
+    }    poses: ${poseResult.landmarks?.length ?? 0}    fps: ${fps}`;
 
     onLandmarks?.({
       handsWorld: handResult.worldLandmarks ?? [],
+      handsNormalized: handResult.landmarks ?? [],
       faceLandmarksList: faceResult.faceLandmarks ?? [],
+      poseLandmarksList: poseResult.landmarks ?? [],
     });
 
     requestAnimationFrame(frame);
@@ -98,6 +118,7 @@ export async function startHandsAndFace({ video, canvas, metricsEl, onLandmarks,
       stream.getTracks().forEach((t) => t.stop());
       handLandmarker.close();
       faceLandmarker.close();
+      poseLandmarker.close();
     },
   };
 }
