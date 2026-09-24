@@ -3,15 +3,15 @@ gsd_state_version: "1.0"
 current_phase: 01
 current_phase_name: Painting with the Pen
 status: executing
-stopped_at: Completed 01-06-PLAN.md
-last_updated: "2026-09-24T08:09:52.450Z"
+stopped_at: Completed 01-07-PLAN.md
+last_updated: "2026-09-24T08:38:40.674Z"
 last_activity: 2026-09-22
 last_activity_desc: Phase 01 execution started
 progress:
   total_phases: 3
   completed_phases: 0
   total_plans: 8
-  completed_plans: 6
+  completed_plans: 7
   percent: 0
 ---
 
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-09-22)
 ## Current Position
 
 Phase: 01 (Painting with the Pen) — EXECUTING
-Plan: 7 of 8
+Plan: 8 of 8
 Status: Ready to execute
 Last activity: 2026-09-22 — Phase 01 execution started
 
@@ -63,6 +63,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 01 P04 | 28h 53m | 3 tasks | 8 files |
 | Phase 01 P05 | 24 min | 3 tasks | 32 files |
 | Phase 01 P06 | 46 min | 3 tasks | 16 files |
+| Phase 01 P07 | 16 min | 3 tasks | 16 files |
 
 ## Accumulated Context
 
@@ -101,6 +102,12 @@ Recent decisions affecting current work:
 - [Phase 01]: Mouse measurement accepted for PEN_FACTS (Kaelen, 01-06 checkpoint): the Mac is driven over an Apollo/Moonlight stream with no tablet attached, so the 2026-09-24 JSON is a mouse measurement recorded verbatim; pen fields are provisional, W3C expectations tagged [ASSUMED], pen re-measurement is an open item in WINDOWS.md
 - [Phase 01]: DEFAULT_SETTINGS.allowMouse derives from PEN_FACTS.measuredWith: pen-only by design, mouse accepted by default only while the measurement was made with a mouse so 01-07/01-08 can paint over the stream; every mouse stroke carries pressureSource 1 and FLAG_SOURCE
 - [Phase 01]: STRK-06 marked complete after 01-06 (tilt/twist captured with presence flags at the fence, recorded by the 01-05 grammar); CANV-02 and STRK-01 held for 01-07 by the shared-ID gate
+- [Phase 01]: PRESETS are the exact Q32.32 raw of DD_PRESETS, not floats: 1.1 * 2^32 rounds to 4724464026 (C++ 4724464025) and 0.35 to 1503238554 (C++ 1503238553), so the plan's 'floats round back' claim was false; floats exist for display and edits only
+- [Phase 01]: forceWebGL comes from the dev page's ?webgl=1 only: SurfaceHost API 1 has no settings field; 01-08 records the backend inside Tapestry
+- [Phase 01]: The Worker commits stroke stamping state only on DD_OK (stampSamples is pure), so one rejected batch cannot cascade into DD_ERR_SAMPLE_ORDER
+- [Phase 01]: PenMeasure is off the stage (two capturing listeners would fight); MountedSurface.attachMeasure() re-attaches it for the pen re-measurement
+- [Phase 01]: The new three Renderer has no forceContextLoss: the WebGL 2 backend releases its context via WEBGL_lose_context on getContext(); dispose is idempotent (verified headless)
+- [Phase 01]: CANV-01, CANV-02, STRK-01, STRK-04 marked complete after 01-07; CANV-03 held by the shared-ID gate for 01-08
 
 ### Pending Todos
 
@@ -123,6 +130,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-24T08:09:52.433Z
-Stopped at: Completed 01-06-PLAN.md
+Last session: 2026-09-24T08:38:40.652Z
+Stopped at: Completed 01-07-PLAN.md
 Resume file: None

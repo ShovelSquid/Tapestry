@@ -37,7 +37,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   4. Three or four brush presets differing in description and mass can be picked; editing a brush creates a new version, and a stroke made with the old version keeps it and replays to the same nodes.
   5. Replaying the session's recorded action list from tick zero in the Worker reproduces the node field and hash shown live; in the native build, replaying the same synthetic stroke log twice, across Debug and Release, across two processes, and after a serialize/restore round trip yields the same SHA-256 state hash at every checkpoint; the build fails if `float`, `double`, `<cmath>`, `<random>`, or `unordered_` appear in the sim target; nodes are emitted at the brush's spacing with ids derived from stroke ordinal and emission index, so replaying with one stroke inserted leaves every other stroke's node ids unchanged.
 
-**Plans:** 6/8 plans executed
+**Plans:** 7/8 plans executed
 **UI hint**: yes
 
 Plans:
@@ -58,7 +58,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 01-07-PLAN.md — Legitimacy checkpoint then three.js stage (node field coloured by description hash, pen/body/spring overlay), brush picker with versioning, TS encoder proven against C++ goldens, live painting in the dev page
+- [x] 01-07-PLAN.md — Legitimacy checkpoint then three.js stage (node field coloured by description hash, pen/body/spring overlay), brush picker with versioning, TS encoder proven against C++ goldens, live painting in the dev page
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
@@ -130,6 +130,6 @@ Phases execute in numeric order: 1 → 2 → 3
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Painting with the Pen | 6/8 | In Progress|  |
+| 1. Painting with the Pen | 7/8 | In Progress|  |
 | 2. Readable Journal | 0/TBD | Not started | - |
 | 3. Timeline and Marks | 0/TBD | Not started | - |
