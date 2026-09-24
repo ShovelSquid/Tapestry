@@ -346,7 +346,7 @@ Plans:
   7. A per-chat "Allow shell" switch, off by default and labelled not sandboxed, enables Claude Code's shell and built-in file tools in the workspace; edits made that way are recorded as observed changes
   8. The panel talks to a `ChatEngine` interface, so a later API-key engine (Anthropic SDK over the same sandboxed tools) plugs in without changing the panel
 
-**Plans**: 4/7 plans executed
+**Plans**: 5/7 plans executed
 
 Plans:
 **Wave 1**
@@ -367,7 +367,7 @@ Plans:
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 02.7-05-PLAN.md — Full agent file tools (list_files, write_file, open_file), the D-08 refusal matrix, file locks (D-09), and guards that keep workspace trees from diverging
+- [x] 02.7-05-PLAN.md — Full agent file tools (list_files, write_file, open_file), the D-08 refusal matrix, file locks (D-09), and guards that keep workspace trees from diverging
 
 **Wave 6** *(blocked on Wave 5 completion)*
 

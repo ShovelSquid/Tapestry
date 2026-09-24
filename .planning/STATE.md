@@ -4,16 +4,16 @@ milestone: v1.0
 current_phase: "02.7"
 current_phase_name: File Windows & Workspace Sandbox
 status: executing
-stopped_at: Completed 02.7-04-PLAN.md
-last_updated: "2026-09-24T22:30:38.124Z"
+stopped_at: Completed 02.7-05-PLAN.md
+last_updated: "2026-09-24T22:50:39.684Z"
 last_activity: 2026-09-24
-last_activity_desc: 02.7-04 Allow shell switch complete (hands-on check deferred); next 02.7-05 (wave 5)
-state_head: 46037015fb1744cc318a8b8c9ee59c2e3006aa37
+last_activity_desc: 02.7-05 full file tools, refusal matrix, file locks and guards complete (hands-on check deferred); next 02.7-06 (wave 6)
+state_head: 8add94d77c11af974032cbbf34cb4c9df60dd097
 progress:
   total_phases: 13
   completed_phases: 0
   total_plans: 52
-  completed_plans: 31
+  completed_plans: 32
 ---
 
 # Project State
@@ -28,10 +28,10 @@ See: .planning/PROJECT.md (updated 2026-09-08)
 ## Current Position
 
 Phase: 02.7 (File Windows & Workspace Sandbox) — EXECUTING
-Plan: 02.7-04 of 7 complete (per-chat Allow shell (not sandboxed) switch, D-15: off by default, for New chat and after every relaunch, confirmed; shell-on turns caught up as plugin workspace.watcher observed changes; its hands-on check is deferred); next is 02.7-05 (wave 5)
-Status: Ready to execute 02.7-05
+Plan: 02.7-05 of 7 complete (full agent file tools list_files/write_file/open_file, the D-08 refusal matrix with byte fingerprints, canonical-case paths, D-09 file locks via WORKSPACE_LOCK_POLICY, note-tool refusals and main-side guards on workspace trees; its hands-on check is deferred); next is 02.7-06 (wave 6)
+Status: Ready to execute 02.7-06
 Phase 02.4 (Lock Model): COMPLETE — verified 25/25, 2026-09-16; rebased onto the main line 2026-09-23
-Last activity: 2026-09-24 - Completed 02.7-04 (D-15 Allow shell switch: SHELL_TOOLS argv variant, per-session consent reset on relaunch, end-of-turn catch-up as workspace.watcher); 28 files / 534 tests
+Last activity: 2026-09-24 - Completed 02.7-05 (list_files, write_file, open_file; sandbox matrix; file locks; workspace submit/replay guards); 32 files / 652 tests
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -78,6 +78,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 02.7 P02 | 29 min | 4 tasks | 29 files |
 | Phase 02.7 P03 | 20 min | 3 tasks | 15 files |
 | Phase 02.7 P04 | 10 min | 2 tasks | 13 files |
+| Phase 02.7 P05 | 16 min | 3 tasks | 23 files |
 
 ## Accumulated Context
 
@@ -146,6 +147,8 @@ Recent decisions affecting current work:
 - [Phase 02.7]: 02.7-04: Shell-on tool set is exactly Bash,Read,Edit,Write,Glob,Grep (one --tools element); --allowedTools mcp__tapestry plus the same; no --restricted
 - [Phase 02.7]: 02.7-04: The Allow shell switch resets to off on every relaunch and for New chat; chats.json keeps shell {on, changedAt} only to say it was reset
 - [Phase 02.7]: 02.7-04: A shell-on turn's done is held until WorkspaceService.catchUp records its file changes as plugin workspace.watcher; shell-off turns never trigger it
+- [Phase 02.7]: 02.7-05: workspace file notes are open to every agent unless an explicit lock.<aspect> says otherwise (WORKSPACE_LOCK_POLICY); native/vault keep 2.4 defaults
+- [Phase 02.7]: 02.7-05: main refuses createNode/deleteNode/file.* submits and undo/redo on workspace trees; note tools refuse workspace trees
 
 ### Pending Todos
 
@@ -195,6 +198,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-24T22:30:38.063Z
-Stopped at: Completed 02.7-04-PLAN.md
+Last session: 2026-09-24T22:50:39.624Z
+Stopped at: Completed 02.7-05-PLAN.md
 Resume file: None
