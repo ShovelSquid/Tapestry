@@ -14,6 +14,7 @@
 #include "ddsim/brush.hpp"
 #include "ddsim/ddsim_c.h"
 #include "ddsim/ids.hpp"
+#include "ddsim/rules/brush_body.hpp"
 #include "ddsim/state.hpp"
 
 #include <algorithm>
@@ -222,7 +223,15 @@ int Sim::apply(const std::uint8_t* action, std::uint32_t len) {
         if (std::uint64_t{e.end_tick} != state_.tick) {
             return DD_ERR_TICK_MISMATCH;
         }
-        // The stroke leaves the active list; its nodes stay.
+        // Samples recorded on the end tick (a pen-up arrives with its last
+        // coalesced samples in the same frame) are integrated now, exactly
+        // as step() would have — the same rule, the same tick — so nothing
+        // recorded is dropped. Then the stroke leaves the active list; its
+        // nodes stay.
+        if (!it->pending.empty()) {
+            const BrushVersion& brush = state_.brushes[it->brush_id - 1];
+            integrate_tick(*it, brush, derive_params(brush), static_cast<std::uint32_t>(state_.tick), state_);
+        }
         state_.strokes.erase(it);
         refresh_snapshots();
         return DD_OK;
@@ -233,10 +242,13 @@ int Sim::apply(const std::uint8_t* action, std::uint32_t len) {
 }
 
 void Sim::step() {
-    // The tick's samples are consumed here (the body and emission rules
-    // replace this plain consumption in the next task).
+    // Rules run per active stroke in ordinal order (the list is kept sorted
+    // by stroke id): the body integrates this tick's samples and emission
+    // inserts nodes at their ascending-id positions. Then the tick advances.
+    const std::uint32_t tick = static_cast<std::uint32_t>(state_.tick);
     for (ActiveStroke& st : state_.strokes) {
-        st.pending.clear();
+        const BrushVersion& brush = state_.brushes[st.brush_id - 1];
+        integrate_tick(st, brush, derive_params(brush), tick, state_);
     }
     state_.tick += 1;
     refresh_snapshots();
