@@ -33,7 +33,7 @@ complete, untouched file from one that was cut short or altered — see
 
 ## Reading example.tree
 
-This is `example.tree` in full: a world named `example` with six commits. It
+This is `example.tree` in full: a world named `example` with ten commits. It
 was written by the Tapestry kernel under a fixed clock and is frozen in the
 repository byte for byte; the `readability` test suite regenerates it and
 fails if a single byte differs.
@@ -107,6 +107,71 @@ tick 3
 actor human kaelen
 set n2 anger int 4
 @end sha256:8083c729577231f07251d7e8f5d036e13107a020e48be395d15e8eace5ced9a4
+@commit 7 628
+parent sha256:8083c729577231f07251d7e8f5d036e13107a020e48be395d15e8eace5ced9a4
+branch main
+recorded 2026-09-08T21:22:07Z
+tick 3
+actor human kaelen
+message "Create thread"
+create-node n3 tapestry.threads/thread@1
+set n3 body text ""
+set n3 position.x real 40
+set n3 position.y real 40
+set n3 thread.direction.x real 0
+set n3 thread.direction.y real 0
+set n3 thread.direction.z real -1
+set n3 thread.format int 1
+set n3 thread.origin.x real 40
+set n3 thread.origin.y real 40
+set n3 thread.origin.z real 0
+set n3 thread.roll real 0
+set n3 thread.slowdown text "10:30 30:10 60:1"
+set n3 thread.timeout real 150
+set n3 title text ""
+@end sha256:2c04293fd9e0f90db40b68a660b991c086bff7c0f3d9dd190782b7af2ad67df9
+@commit 8 346
+parent sha256:2c04293fd9e0f90db40b68a660b991c086bff7c0f3d9dd190782b7af2ad67df9
+branch main
+recorded 2026-09-08T21:23:07Z
+tick 3
+actor human kaelen
+message "Thread batch"
+set n3 thread.log text <<TEXT
+thread 1 v0
+at 2026-09-08T21:23:07.000Z
++0.000 in 1
++0.000 ins 1 "H"
++0.182 ins 2 "i"
++0.950 paste ins 3 " Sam!"
++2.300 undo del 3 8 " Sam!"
+TEXT
+@end sha256:497f14f2a3eff64283ac6acbc91b74777fd70ea0b3038b3794807400b763aa66
+@commit 9 324
+parent sha256:497f14f2a3eff64283ac6acbc91b74777fd70ea0b3038b3794807400b763aa66
+branch main
+recorded 2026-09-08T21:24:07Z
+tick 3
+actor human kaelen
+message "Thread batch"
+set n3 thread.log text <<TEXT
+thread 1 v4
+at 2026-09-08T21:24:07.000Z
++0.000 ins 3 " there"
++0.500 del 3 9 " there"
++1.000 ins 3 " Sam"
++154.000 out
+TEXT
+@end sha256:4f67084f64e35b47d93460cbabea29989283039827b3f23359c44ddc8ca17447
+@commit 10 201
+parent sha256:4f67084f64e35b47d93460cbabea29989283039827b3f23359c44ddc8ca17447
+branch main
+recorded 2026-09-08T21:25:07Z
+tick 3
+actor human kaelen
+message "Thread checkpoint"
+set n3 body text "Hi Sam"
+@end sha256:ba8206acd35e3b95654ebe371683fe91583f77dbe17e43ae3a25c182119c8ce3
 ```
 
 What each record says:
@@ -171,6 +236,46 @@ it.
 (it is optional), and `set n2 anger int 4`: Sam is angrier now. The
 `recorded` stamp is a minute after commit 5's, as every commit here is a
 minute after the one before.
+
+**Commit 7 — a thread is created.** `create-node n3 tapestry.threads/thread@1`:
+a node of a type the kernel has never seen, exactly like commit 2's person.
+Every property it is given is an ordinary `set` line, in key order: an empty
+`body` and `title` (the document has no text yet), a `position.x`/`position.y`
+for its place on the 2D canvas, a `thread.origin.*`/`thread.direction.*`/
+`thread.roll` frame it will later be drawn along, and `thread.timeout`/
+`thread.slowdown`/`thread.format` settings. Nothing here needs a new value
+type or a new verb: a thread's whole shape, before it has been written in
+even once, is fourteen `set` lines of the same six types every other node
+uses.
+
+**Commits 8 and 9 — what was typed.** `set n3 thread.log text <<TEXT …` is a
+block value, like commit 1's note body, except the text inside it is not
+prose — it is a small grammar of its own, one line per keystroke-level
+change, each with the millisecond offset it happened at. [`threads.md`
+](threads.md) is the full reference for that grammar; briefly, commit 8 opens
+a session (`in 1`), types `H` and `i`, pastes `" Sam!"`, then undoes that same
+paste (`undo del 3 8 " Sam!"` — the deleted text is quoted exactly, so
+nothing about what disappeared has to be guessed at). Commit 9 continues the
+same session — there is no second `in` line, because the session never
+closed — types `" there"`, deletes it, types `" Sam"`, and finally times out
+(`out`). Notice the offsets inside these blocks (`+0.000` through `+154.000`)
+are a different clock than the `recorded` line on the commit that carries
+them: `recorded` says when the batch was written down, one minute after the
+one before it, exactly like every other commit in this file; the offsets say
+how many milliseconds had passed **inside the batch itself** since its own
+`at` line. Reading the two together is the same skill [Three kinds of
+time](#three-kinds-of-time) already asks for — `recorded`, `tick` and now a
+third, inner clock that belongs only to what is inside one block.
+
+**Commit 10 — the checkpoint.** `set n3 body text "Hi Sam"` — a thread also
+keeps its current document as an ordinary, ungrammared `text` property,
+exactly the way a note's body is stored, so a reader (or a copy of Tapestry
+with the threads plugin disabled) can always read what the thread currently
+says without parsing `thread.log` at all. Replaying commits 8 and 9's `ins`
+and `del` lines onto an empty document produces the same six words this
+checkpoint already holds, byte for byte — the cross-layer test in
+`app/src/shared/threads/fixture.test.ts` proves exactly that, reading this
+file itself rather than a copy of it.
 
 **Branch ancestry** is the `branch` line together with the `parent` lines:
 every commit is on `main`, and each `parent` is the `@end` digest of the
@@ -257,6 +362,71 @@ writes them after the operation lines, and the reader accepts them anywhere
 after the fixed header lines. They are for plugins and future versions of
 Tapestry to leave readable notes that this version does not need to
 understand.
+
+## Plugin data with its own readable grammar
+
+A plugin's data does not get its own verb or its own value type. It composes
+what it needs from the seven verbs and six value types above, the same as
+every other property on every other node — and when what it needs is
+structured enough to deserve its own small grammar, that grammar lives
+*inside* one `text` value, not in a new kind of line. `example.tree`'s
+commits 7-10 are exactly that: a `tapestry.threads/thread@1` node (a "time
+thread" — a document whose entire typing history is recorded, not only its
+current text) recording every keystroke, deleted letters included, without
+the kernel ever learning what a "keystroke" is.
+
+Reading through them: commit 7 is `create-node n3 tapestry.threads/thread@1`
+followed by fourteen ordinary `set n3 …` lines — a `body` and `title`
+(empty; nothing has been typed yet), a `position.x`/`position.y` for the
+canvas, and the thread's own settings and drawing frame
+(`thread.origin.*`, `thread.direction.*`, `thread.roll`, `thread.timeout`,
+`thread.slowdown`, `thread.format`). Every one of them is a plain `real`,
+`int` or `text` value; nothing about a thread's *shape* required a kernel
+change.
+
+Commits 8 and 9 are where the interesting part lives:
+
+```text
+set n3 thread.log text <<TEXT
+thread 1 v0
+at 2026-09-08T21:23:07.000Z
++0.000 in 1
++0.000 ins 1 "H"
++0.182 ins 2 "i"
++0.950 paste ins 3 " Sam!"
++2.300 undo del 3 8 " Sam!"
+TEXT
+```
+
+`thread.log`'s *value* is `text`, exactly like `body`; what makes it useful
+is the small grammar written inside it — a header naming the grammar's
+version and how many steps came before it, then one line per typed insert,
+delete, paste, undo, format, link and session boundary, each stamped with
+the millisecond it happened at. [`threads.md`](threads.md) documents
+that grammar completely: every verb, the escape rules, and the two facts a
+reader needs most — that a line's *author* is the enclosing commit's
+`actor`, never a field inside the block, and that replay order is commit
+order then line order, which is not the same as sorting every line by its
+own recorded time (a rebase can put a person's earlier-timed steps in a
+commit that comes after another author's).
+
+Commit 10's `set n3 body text "Hi Sam"` is the other half of the pattern: a
+periodic, *ungrammared* checkpoint of the document's current text, in the
+same `body` key an ordinary note uses. A reader — or a copy of Tapestry with
+the plugin that understands `thread.log` disabled — can always read a
+thread's current words from this one line, with no parsing required at all.
+
+**Why not an `x-` extension line.** The section above states extension lines
+are "for plugins and future versions of Tapestry to leave readable notes
+that this version does not need to understand." A thread's keystroke history
+is the opposite of that: it is content a plugin's own version needs to
+understand completely and replay exactly, not a note a future reader can
+take or leave. Composing it from `set`/`text` — a verb and a type every
+version of the kernel already knows — means an old Tapestry that has never
+heard of threads still stores, transmits and round-trips `thread.log`
+perfectly; only the *meaning* of what is inside the block is unknown to it,
+which is exactly the same bargain `example.people/person@2` already made
+with the kernel back in commit 2.
 
 ### Keys and tokens
 

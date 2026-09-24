@@ -66,3 +66,68 @@ tick 3
 actor human kaelen
 set n2 anger int 4
 @end sha256:8083c729577231f07251d7e8f5d036e13107a020e48be395d15e8eace5ced9a4
+@commit 7 628
+parent sha256:8083c729577231f07251d7e8f5d036e13107a020e48be395d15e8eace5ced9a4
+branch main
+recorded 2026-09-08T21:22:07Z
+tick 3
+actor human kaelen
+message "Create thread"
+create-node n3 tapestry.threads/thread@1
+set n3 body text ""
+set n3 position.x real 40
+set n3 position.y real 40
+set n3 thread.direction.x real 0
+set n3 thread.direction.y real 0
+set n3 thread.direction.z real -1
+set n3 thread.format int 1
+set n3 thread.origin.x real 40
+set n3 thread.origin.y real 40
+set n3 thread.origin.z real 0
+set n3 thread.roll real 0
+set n3 thread.slowdown text "10:30 30:10 60:1"
+set n3 thread.timeout real 150
+set n3 title text ""
+@end sha256:2c04293fd9e0f90db40b68a660b991c086bff7c0f3d9dd190782b7af2ad67df9
+@commit 8 346
+parent sha256:2c04293fd9e0f90db40b68a660b991c086bff7c0f3d9dd190782b7af2ad67df9
+branch main
+recorded 2026-09-08T21:23:07Z
+tick 3
+actor human kaelen
+message "Thread batch"
+set n3 thread.log text <<TEXT
+thread 1 v0
+at 2026-09-08T21:23:07.000Z
++0.000 in 1
++0.000 ins 1 "H"
++0.182 ins 2 "i"
++0.950 paste ins 3 " Sam!"
++2.300 undo del 3 8 " Sam!"
+TEXT
+@end sha256:497f14f2a3eff64283ac6acbc91b74777fd70ea0b3038b3794807400b763aa66
+@commit 9 324
+parent sha256:497f14f2a3eff64283ac6acbc91b74777fd70ea0b3038b3794807400b763aa66
+branch main
+recorded 2026-09-08T21:24:07Z
+tick 3
+actor human kaelen
+message "Thread batch"
+set n3 thread.log text <<TEXT
+thread 1 v4
+at 2026-09-08T21:24:07.000Z
++0.000 ins 3 " there"
++0.500 del 3 9 " there"
++1.000 ins 3 " Sam"
++154.000 out
+TEXT
+@end sha256:4f67084f64e35b47d93460cbabea29989283039827b3f23359c44ddc8ca17447
+@commit 10 201
+parent sha256:4f67084f64e35b47d93460cbabea29989283039827b3f23359c44ddc8ca17447
+branch main
+recorded 2026-09-08T21:25:07Z
+tick 3
+actor human kaelen
+message "Thread checkpoint"
+set n3 body text "Hi Sam"
+@end sha256:ba8206acd35e3b95654ebe371683fe91583f77dbe17e43ae3a25c182119c8ce3
