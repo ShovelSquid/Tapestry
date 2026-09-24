@@ -21,7 +21,10 @@
       "mathspace.preset.gravity-field",
       "mathspace.preset.nbody",
       "mathspace.preset.push",
-      "mathspace.preset.spring-to-anchor"
+      "mathspace.preset.spring-to-anchor",
+      "mathspace.preset.view-2d",
+      "mathspace.preset.view-3d",
+      "mathspace.preset.view-4d"
     ],
     "surfaces": [
       "mathspace.stage"

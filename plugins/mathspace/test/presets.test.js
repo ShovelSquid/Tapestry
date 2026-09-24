@@ -11,9 +11,12 @@ import { loadModule } from './engine-cjs.js'
 
 const require = createRequire(import.meta.url)
 const { Runner } = require('../runner.js')
+const { buildWorld } = require('../world.js')
+const { projectAll } = require('../projection.js')
 const { loadPresets, presetOps, presetCommands, COMMAND_PREFIX } = require('../presets.js')
 
 const RULE = 'mathspace/rule@1'
+const VIEW = 'mathspace/view@1'
 
 /** A kernel that numbers created nodes from n2 and records commits. */
 function fakeKernel() {
@@ -59,6 +62,8 @@ async function runPreset(preset, ticks) {
   const command = presetCommands([preset])[0]
   const result = await command.handler({ kernel })
   expect(result.nodeIds).toHaveLength(preset.nodes.length)
+  expect(result.nodeIds).toEqual(kernel.state.nodes.map((n) => n.id))
+  const presetCommits = kernel.state.commits.length
   const before = structuredClone(kernel.state.nodes)
   const runner = makeRunner()
   if (ticks === 1) {
@@ -70,22 +75,39 @@ async function runPreset(preset, ticks) {
   }
   const problems = runner.image.problems
   runner.dispose()
-  const ops = kernel.state.commits.slice(1).flatMap((c) => c.ops)
+  const ops = kernel.state.commits.slice(presetCommits).flatMap((c) => c.ops)
   const after = kernel.state.nodes
   const prop = (nodes, title, key) => nodes.find((n) => n.props.title.value === title).props[key]?.value
-  return { before, after, ops, problems, prop }
+  return { before, after, ops, problems, prop, presetCommits }
+}
+
+/** Project `nodes` (a kernel's, after a preset) through every view they hold. */
+async function projectNodes(nodes) {
+  const mod = await loadModule()
+  const { engine, image } = buildWorld(nodes, mod)
+  try {
+    expect(image.problems).toEqual([])
+    const out = projectAll(engine, image)
+    const title = (id) => nodes.find((n) => n.id === id).props.title.value
+    return {
+      errors: out.views.filter((v) => v.error).map((v) => `${title(v.id)}: ${v.error}`),
+      points: Object.fromEntries(out.points.map((p) => [title(p.id), Object.fromEntries(Object.entries(p.byView).map(([v, xy]) => [title(v), xy]))])),
+    }
+  } finally {
+    engine.destroy()
+  }
 }
 
 const presets = loadPresets()
 const byId = Object.fromEntries(presets.map((p) => [p.id, p]))
 
 describe('presets', () => {
-  it('ships the plan\'s presets and the three roadmap examples, one command each, listed in the manifest', () => {
-    expect(presets.map((p) => p.id)).toEqual(['anger', 'contact', 'drag', 'gold', 'gravity-field', 'nbody', 'push', 'spring-to-anchor'])
+  it('ships the plan\'s presets, the three roadmap examples and the default views, one command each, listed in the manifest', () => {
+    expect(presets.map((p) => p.id)).toEqual(['anger', 'contact', 'drag', 'gold', 'gravity-field', 'nbody', 'push', 'spring-to-anchor', 'view-2d', 'view-3d', 'view-4d'])
     const manifest = require('../tapestry.plugin.json')
     for (const p of presets) {
       expect(manifest.contributions.commands).toContain(COMMAND_PREFIX + p.id)
-      expect(p.nodes.filter((n) => n.type === RULE).length).toBeGreaterThanOrEqual(1)
+      expect(p.nodes.filter((n) => n.type === RULE || n.type === VIEW).length).toBeGreaterThanOrEqual(1)
       expect(p.description).not.toBe('')
       for (const op of presetOps(p)) expect(op).toMatchObject({ op: 'createNode', type: expect.any(String) })
     }
@@ -93,6 +115,26 @@ describe('presets', () => {
 
   it('rejects a directory with a broken preset by name', () => {
     expect(() => loadPresets(new URL('./fixtures', import.meta.url).pathname)).toThrow(/preset .*\.json: /)
+  })
+
+  it('rejects a local ref that points outside the preset, at itself, or at a node with local refs', async () => {
+    const { mkdtempSync, writeFileSync } = await import('node:fs')
+    const { tmpdir } = await import('node:os')
+    const { join } = await import('node:path')
+    const dir = mkdtempSync(join(tmpdir(), 'ms-presets-'))
+    const write = (nodes) => writeFileSync(join(dir, 'bad.json'), JSON.stringify({ name: 'Bad', nodes }))
+    const space = { type: 'mathspace/space@1', props: { dim: { type: 'int', value: 3 } } }
+    const member = (value) => ({ type: 'tapestry.notes/note@1', props: { space: { type: 'ref', value } } })
+    write([space, member('$2')])
+    expect(() => loadPresets(dir)).toThrow(/node 1 prop space refers to node \$2/)
+    write([space, member('$1')])
+    expect(() => loadPresets(dir)).toThrow(/refers to node \$1/)
+    write([space, member('$x')])
+    expect(() => loadPresets(dir)).toThrow(/refers to node \$x/)
+    write([space, member('$0'), member('$1')])
+    expect(() => loadPresets(dir)).toThrow(/node 2 prop space refers to node 1, which has local refs/)
+    write([space, member('$0')])
+    expect(loadPresets(dir)).toHaveLength(1)
   })
 
   for (const preset of presets) {
@@ -146,6 +188,56 @@ describe('presets', () => {
     const ey = early.prop(early.after, 'Ball', 'position.y')
     expect(Math.hypot(ex, ey - 100)).toBeGreaterThanOrEqual(59.9)
     expect(ey).toBeLessThan(100)
+  })
+
+  it('view presets: the space comes one commit before its members, and $0 is the space\'s id', async () => {
+    const two = await runPreset(byId['view-2d'], 1)
+    expect(two.presetCommits).toBe(1)
+    const four = await runPreset(byId['view-4d'], 1)
+    expect(four.presetCommits).toBe(2)
+    const space = four.before.find((n) => n.type === 'mathspace/space@1')
+    for (const n of four.before) {
+      if (n === space) continue
+      expect(n.props.space).toEqual({ type: 'ref', value: space.id })
+    }
+  })
+
+  it('view-2d: the identity view puts every note where the page draws it', async () => {
+    const { before, after } = await runPreset(byId['view-2d'], 60)
+    const seen = await projectNodes(after)
+    expect(seen.errors).toEqual([])
+    for (const n of after.filter((n) => n.type === 'tapestry.notes/note@1')) {
+      expect(seen.points[n.props.title.value]['Page view']).toEqual([n.props['position.x'].value, n.props['position.y'].value])
+    }
+    expect(after.find((n) => n.props.title.value === 'Drifting').props['position.x'].value)
+      .toBe(before.find((n) => n.props.title.value === 'Drifting').props['position.x'].value + 60)
+  })
+
+  it('view-3d: one 3-space through a perspective and three orthographic views at once', async () => {
+    const { before, after, prop } = await runPreset(byId['view-3d'], 60)
+    expect(prop(after, 'Receding', 'position.z')).toBe(prop(before, 'Receding', 'position.z') + 120)
+    const seen = await projectNodes(after)
+    expect(seen.errors).toEqual([])
+    const { Perspective, ...ortho } = seen.points.Corner
+    expect(ortho).toEqual({ 'Top (xy)': [120, 80], 'Front (xz)': [120, -100], 'Side (yz)': [80, -100] })
+    expect(Perspective[0]).toBe(160)
+    expect(Perspective[1]).toBeCloseTo(80 * 400 / 300, 6) // fixed-point division, not a double
+    // Receding: the perspective image shrinks toward the axis, the top view stays.
+    const start = await projectNodes(before)
+    expect(start.points.Receding.Perspective).toEqual([-80, 40])
+    expect(Math.abs(seen.points.Receding.Perspective[0])).toBeLessThan(80)
+    expect(seen.points.Receding['Top (xy)']).toEqual([-80, 40])
+  })
+
+  it('view-4d: one 4-space viewable through two View nodes at once (phase 5 done condition)', async () => {
+    const { before, after, prop } = await runPreset(byId['view-4d'], 60)
+    expect(prop(after, 'Rising in w', 'position.w')).toBe(prop(before, 'Rising in w', 'position.w') + 60)
+    const seen = await projectNodes(after)
+    expect(seen.errors).toEqual([])
+    expect(Object.keys(seen.points)).toEqual(['Origin', 'Diagonal', 'Rising in w'])
+    expect(seen.points.Diagonal).toEqual({ xy: [100, 60], zw: [-40, 80] })
+    expect(seen.points['Rising in w']).toEqual({ xy: [-60, 20], zw: [50, 60] })
+    expect(seen.points.Origin).toEqual({ xy: [0, 0], zw: [0, 0] })
   })
 
   it('gravity-field, drag, spring-to-anchor, nbody: bodies move as described', async () => {

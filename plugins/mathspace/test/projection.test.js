@@ -64,6 +64,30 @@ describe('projectAll', () => {
     }
   })
 
+  it('shows one 4D space through two axis-pair views at once, every note in both', async () => {
+    const mod = await loadModule()
+    const at4 = (x, y, z, w) => ({ space: ref('n1'), 'position.x': real(x), 'position.y': real(y), 'position.z': real(z), 'position.w': real(w) })
+    const nodes = [
+      { id: 'n1', type: 'mathspace/space@1', props: { dim: { type: 'int', value: 4 } } },
+      { id: 'n2', type: NOTE, props: at4(1, 2, 3, 4) },
+      { id: 'n3', type: NOTE, props: at4(-5, 0.5, 0, 7) },
+      { id: 'n4', type: VIEW, props: { space: ref('n1'), 'project.expr': text('[self.position.x, self.position.y]') } },
+      { id: 'n5', type: VIEW, props: { space: ref('n1'), 'project.expr': text('[self.position.z, self.position.w]') } },
+    ]
+    const { engine, image } = buildWorld(nodes, mod)
+    try {
+      expect(image.problems).toEqual([])
+      const out = projectAll(engine, image)
+      expect(out.views).toEqual([{ id: 'n4' }, { id: 'n5' }])
+      expect(out.points).toEqual([
+        { id: 'n2', byView: { n4: [1, 2], n5: [3, 4] } },
+        { id: 'n3', byView: { n4: [-5, 0.5], n5: [0, 7] } },
+      ])
+    } finally {
+      engine.destroy()
+    }
+  })
+
   it('is empty when there is nothing to project', async () => {
     const mod = await loadModule()
     const { engine, image } = buildWorld([], mod)

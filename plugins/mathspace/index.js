@@ -10,7 +10,7 @@
  *   mathspace.pause  stop stepping and commit what has moved
  *   mathspace.step   one tick, then commit
  *   mathspace.preset.<id>
- *                    create the nodes of presets/<id>.json in one commit
+ *                    create the nodes of presets/<id>.json (two commits when the preset has its own Space)
  *
  * The stage surface (surface/, built to surface/dist/surface.js by
  * `npm run build`) draws every View node's projection of its space; it
