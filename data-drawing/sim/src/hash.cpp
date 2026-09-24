@@ -42,6 +42,9 @@
 namespace ddsim {
 namespace {
 
+// u64 id | 8 x i64 | u32 tick | u32 brush | u32 scale_band
+constexpr std::size_t DD_NODE_WALK_BYTES = 8u + 8u * 8u + 3u * 4u;
+
 void put_u8(std::vector<std::uint8_t>& out, std::uint8_t v) { out.push_back(v); }
 
 void put_u16(std::vector<std::uint8_t>& out, std::uint16_t v) {
@@ -281,9 +284,10 @@ int read_canonical(const std::uint8_t* bytes, std::uint32_t len, State& out) {
     if (!r.read_u32(node_count) || node_count > DD_MAX_NODES) {
         return DD_ERR_RESTORE;
     }
-    // Every node record is at least 88 bytes; refuse a count the buffer
-    // cannot possibly hold before reserving for it.
-    if (static_cast<std::size_t>(node_count) * 88u > r.remaining()) {
+    // Every node record in the walk is exactly DD_NODE_WALK_BYTES (84: the
+    // snapshot stride of 88 carries a reserved word the walk does not);
+    // refuse a count the buffer cannot possibly hold before reserving.
+    if (static_cast<std::size_t>(node_count) * DD_NODE_WALK_BYTES > r.remaining()) {
         return DD_ERR_RESTORE;
     }
     s.nodes.reserve(node_count);

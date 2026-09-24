@@ -258,6 +258,20 @@ bool replayFixtureAbi(const Fixture& f, dd_sim* sim, Callback&& onCheckpoint) {
         [&]() { dd_step(sim); }, [&](std::uint64_t tick) { onCheckpoint(tick, sim); });
 }
 
+// Replay an in-test log: for t = 0..last, apply every action stamped t (in
+// log order), then step. Returns false if any apply is rejected.
+inline bool replayLog(const std::vector<StampedAction>& log, ddsim::Sim& sim, std::uint32_t last) {
+    for (std::uint32_t t = 0; t <= last; ++t) {
+        for (const StampedAction& a : log) {
+            if (a.tick == t && sim.apply(a.bytes.data(), static_cast<std::uint32_t>(a.bytes.size())) != DD_OK) {
+                return false;
+            }
+        }
+        sim.step();
+    }
+    return true;
+}
+
 inline std::string goldenPath(const std::string& name, const std::string& ext) {
     return std::string(DDSIM_GOLDEN_DIR) + "/" + name + "." + ext;
 }

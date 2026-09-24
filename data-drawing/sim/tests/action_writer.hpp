@@ -203,4 +203,55 @@ inline ddsim::Sample synthetic_sample(std::uint32_t t) {
     return s;
 }
 
+// ---------------------------------------------------------------------------
+// Stroke logs: the actions of one stroke, stamped, in time order. Used by
+// gen_fixtures to write fixtures and by the suites to build logs in-test, so
+// a stroke described the same way produces the same bytes in both.
+// ---------------------------------------------------------------------------
+struct StampedAction {
+    std::uint32_t tick = 0;
+    std::vector<std::uint8_t> bytes;
+};
+
+// Appends StrokeBegin at first_tick, then `count` samples from curve(t),
+// t = 0..count-1, grouped `per_tick` per tick with indices 0..per_tick-1
+// (one StrokeSamples action per tick), skipping every tick listed in
+// `gaps` (the pen paused: those ticks carry no samples and the curve
+// continues on the next tick), then StrokeEnd on the tick after the last
+// sample tick when with_end. Returns that end tick.
+inline std::uint32_t stroke_actions(std::vector<StampedAction>& out, std::uint64_t stroke_id, std::uint32_t brush_id,
+                                    std::uint32_t first_tick, std::uint32_t count, std::uint32_t per_tick,
+                                    const std::vector<std::uint32_t>& gaps,
+                                    ddsim::Sample (*curve)(std::uint32_t) = synthetic_sample,
+                                    const PlaneSpec& plane = PlaneSpec{}, bool with_end = true) {
+    out.push_back({first_tick, write_stroke_begin(stroke_id, brush_id, first_tick, 0, plane)});
+    std::uint32_t tick = first_tick;
+    std::uint32_t t = 0;
+    while (t < count) {
+        bool gap = false;
+        for (const std::uint32_t g : gaps) {
+            if (g == tick) {
+                gap = true;
+            }
+        }
+        if (gap) {
+            ++tick;
+            continue;
+        }
+        std::vector<ddsim::Sample> samples;
+        for (std::uint32_t i = 0; i < per_tick && t < count; ++i, ++t) {
+            ddsim::Sample s = curve(t);
+            s.tick = tick;
+            s.index = static_cast<std::uint16_t>(i);
+            samples.push_back(s);
+        }
+        out.push_back({tick, write_stroke_samples(stroke_id, samples)});
+        ++tick;
+    }
+    if (with_end) {
+        out.push_back({tick, write_stroke_end(stroke_id, tick)});
+    }
+    return tick;
+}
+
 } // namespace ddsim_test
