@@ -35,8 +35,7 @@ are recorded in app/src/main/space/shapes.ts and 02.6-02-SUMMARY.
 
 ## In progress
 
-2026-09-24 15:28 session: running wave 3 (02.6-03) via gsd-execute-phase.
-If this line survives, check git log for 02.6-03 commits and resume.
+(nothing)
 
 ## Log
 
@@ -58,6 +57,10 @@ If this line survives, check git log for 02.6-03 commits and resume.
   docs. 25 files / 555 tests green, typecheck clean, ~11 min. Next: wave 3
   (02.6-03, app launches into the forest). Plan 03 owns tests for cases
   E/G/H; Plan 06 owns recovery for cases B/C (return not-set-up until then).
+- 2026-09-24 15:28 wave 3 (02.6-03): executor ran both tasks: 82df051 feat,
+  719ba90 test, f77abcd 749fff4 docs. 25 files / 559 tests green, typecheck
+  clean, ~9 min. No gates; end-of-phase data check queued as REVIEW item 2.
+  Next: wave 4 (02.6-04, membership and identity by header digest).
 
 ## Learned
 
@@ -71,6 +74,7 @@ If this line survives, check git log for 02.6-03 commits and resume.
   passing, typecheck clean. After quick 260924-glr (`e66b3a8`): 22 files,
   486 tests. After 02.6-01 (`1d1c606`): 24 files, 530 tests.
   After 02.6-02 (`879dcf3`): 25 files, 555 tests.
+  After 02.6-03 (`749fff4`): 25 files, 559 tests.
 - Execute-phase here: dispatch-isolation says orchestrator-worktree but
   worktree.base-check degrades (HEAD != stale origin/HEAD), so executors
   run sequentially on this tree. One executor per plan, ~8 min for 01.
