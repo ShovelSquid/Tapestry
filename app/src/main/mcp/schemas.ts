@@ -37,6 +37,46 @@ export interface ToolDefinition {
 // Argument schemas
 // ---------------------------------------------------------------------------
 
+// Placement arguments (02.5 D-09, D-10, D-11)
+//
+// Where a note goes, named by ids only: near one note, or beyond one note as
+// seen from another. The host works out the exact spot; an agent never sends
+// or receives a coordinate (D-14). The space form and the orientation form
+// belong to later phases (D-11, Decision Register #12), so they fail both
+// members below, as does a lone `beyond` or a mix of the two shapes.
+// create_note reuses WhereArgs (Plan 05), so it stays above CreateNoteArgs.
+
+/** Near one note. */
+const NearArgs = z
+  .object({
+    near: z.string().min(1).max(1024),
+  })
+  .strict()
+
+/** Beyond one note, as seen from another. */
+const BeyondArgs = z
+  .object({
+    beyond: z.string().min(1).max(1024),
+    from: z.string().min(1).max(1024),
+  })
+  .strict()
+
+/** A placement: `{ near }` or `{ beyond, from }`, ids only. */
+export const WhereArgs = z.union([NearArgs, BeyondArgs])
+
+/**
+ * place: moves a note relative to other notes in the same tree. Refused when
+ * the note's `layout` aspect is locked against the calling agent (02.4, 02.5
+ * D-15). See commands/locks.ts.
+ */
+export const PlaceArgs = z
+  .object({
+    tree: z.string().min(1).max(200),
+    note: z.string().min(1).max(1024),
+    where: WhereArgs,
+  })
+  .strict()
+
 /**
  * create_note (D-04). `grewFrom` is required and has no default: a note an
  * agent creates is always grown from a note that already exists.
@@ -180,6 +220,14 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = Object.freeze([
       'Lists the notes around a note in the same tree, nearest first, as relations: near, beyond, overlapping, contains or contained-by. Pass toward to keep only the notes that lie toward another note. It never returns coordinates. Relations use each note\'s saved size, or a default size when none is saved, so a card whose text made it taller than that can overlap on screen while look reports it clear.',
     schema: LookArgs,
     annotations: { readOnlyHint: true },
+  },
+  {
+    name: 'place',
+    title: 'Move a note next to another note',
+    description:
+      'Moves a note near another note, or beyond one note as seen from another; the host works out the exact spot. Placing a note near the note it grew from makes it follow that note until a person moves it; every other placement stays where it is put. A note whose layout is locked is refused, the refusal names who holds the lock, and nothing is written. Placement uses saved note sizes, or a default when none is saved, so a card whose text made it taller can overlap on screen.',
+    schema: PlaceArgs,
+    annotations: {},
   },
   {
     name: 'create_note',

@@ -19,8 +19,18 @@ import type { OpObject } from '../kernel-bridge'
 import { agentActor, humanActor } from './actor'
 import { NoteCommands } from './notes'
 import { ConnectionCommands } from './connections'
-import { LOOK_DEFAULT_LIMIT, SpatialCommands, type LookResult } from './spatial'
+import {
+  LOOK_DEFAULT_LIMIT,
+  SpatialCommands,
+  heldByPerson,
+  placeMessage,
+  placeOps,
+  type LookResult,
+  type PlaceResult,
+} from './spatial'
 import { runAgentTool, type AgentCommands } from './agent-tools'
+import { PlaceArgs } from '../mcp/schemas'
+import { displayPositions, type WherePlacement } from '../../renderer/layout/placement'
 
 const KAELEN = humanActor('kaelen')
 const CLAUDE = agentActor('claude')
@@ -500,5 +510,248 @@ describe('look through runAgentTool', () => {
     })
     expect(result.ok).toBe(true)
     expect(result.ok && (result.value as LookResult).neighbours).toHaveLength(1)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// place (Plan 04): the success path
+// ---------------------------------------------------------------------------
+
+/** Seed notes made by `actor` in one commit. Agent-made notes start open under 2.4's layout default. */
+function seedAs(actor: typeof CLAUDE, seeds: NoteSeed[], into: OpenTree = tree): string[] {
+  return into.bridge.submitAs(actor, 'Seed notes', seeds.map(createOp)).nodeIds
+}
+
+function treeText(): string {
+  return readFileSync(treePath, 'utf8')
+}
+
+/** The last `@commit` block in the file, up to the end of the file. */
+function lastCommitBlock(): string {
+  const text = treeText()
+  return text.slice(text.lastIndexOf('@commit '))
+}
+
+type PlaceCall = { tree: string; note: string; where: WherePlacement }
+
+function placeOk(args: PlaceCall, actor = CLAUDE, commands = spatial): PlaceResult {
+  const result = commands.place(actor, args)
+  if (!result.ok) throw new Error(`place refused: ${result.error}`)
+  return result.value
+}
+
+function propOf(note: string, key: string) {
+  return tree.bridge.getNode(note)?.props[key]
+}
+
+describe('place success', () => {
+  it('near its own grew-from parent follows, in one commit that states the intent (D-01, D-04)', () => {
+    seed([{ x: 0, y: 0 }])
+    seedAs(CLAUDE, [{ x: 2000, y: 2000 }])
+    grow('n2', 'n1')
+
+    const value = placeOk({ tree: 'spatial', note: 'n2', where: { near: 'n1' } })
+    expect(value).toEqual({ tree: tree.id, note: 'n2', seq: expect.any(Number), follows: true })
+
+    const block = lastCommitBlock()
+    expect(block).toContain('actor plugin agent.claude')
+    expect(block).toContain('Place note n2 near n1')
+    expect(block).toMatch(/^set n2 position\.x real 360$/m)
+    expect(block).toMatch(/^set n2 position\.y real 0$/m)
+    expect(block).toMatch(/^set n2 pinned bool false$/m)
+  })
+
+  it('near another note is fixed and writes no pinned line', () => {
+    seed([{ x: 0, y: 0 }, { x: 0, y: 1000 }])
+    seedAs(CLAUDE, [{ x: 2000, y: 2000 }])
+    grow('n3', 'n1')
+
+    const value = placeOk({ tree: 'spatial', note: 'n3', where: { near: 'n2' } })
+    expect(value.follows).toBe(false)
+    const block = lastCommitBlock()
+    expect(block).toContain('Place note n3 near n2')
+    expect(block).toMatch(/^set n3 position\.x real 360$/m)
+    expect(block).toMatch(/^set n3 position\.y real 1000$/m)
+    expect(block).not.toContain('pinned')
+  })
+
+  it('beyond one note from another is fixed and lands 80 right of the beyond-note on a horizontal line', () => {
+    seed([{ x: 0, y: 0 }, { x: -800, y: 0 }])
+    seedAs(CLAUDE, [{ x: 2000, y: 2000 }])
+
+    const value = placeOk({ tree: 'spatial', note: 'n3', where: { beyond: 'n1', from: 'n2' } })
+    expect(value.follows).toBe(false)
+    expect(propOf('n3', 'position.x')?.value).toBe(360)
+    expect(propOf('n3', 'position.y')?.value).toBe(0)
+    expect(lastCommitBlock()).toContain('Place note n3 beyond n1 from n2')
+  })
+
+  it('moving a following note to a fixed spot unsets pinned; a note with no pinned gets no unset (D-17)', () => {
+    seed([{ x: 0, y: 0 }, { x: 0, y: 1000 }])
+    seedAs(CLAUDE, [{ x: 2000, y: 2000, pinned: false }, { x: 3000, y: 3000 }])
+    grow('n3', 'n1')
+
+    placeOk({ tree: 'spatial', note: 'n3', where: { near: 'n2' } })
+    expect(lastCommitBlock()).toMatch(/^unset n3 pinned$/m)
+    expect(propOf('n3', 'pinned')).toBeUndefined()
+
+    placeOk({ tree: 'spatial', note: 'n4', where: { beyond: 'n2', from: 'n1' } })
+    const block = lastCommitBlock()
+    expect(block).not.toContain('unset')
+    expect(block).not.toContain('pinned')
+  })
+
+  it('fixing a note with pinned true writes only the two position lines and leaves pinned true (D-17, D-03)', () => {
+    seed([{ x: 0, y: 0 }, { x: 0, y: 1000 }])
+    seedAs(CLAUDE, [{ x: 2000, y: 2000, pinned: true }])
+    grow('n3', 'n1')
+
+    placeOk({ tree: 'spatial', note: 'n3', where: { near: 'n2' } })
+    const block = lastCommitBlock()
+    const opLines = block.split('\n').filter((line) => /^(set|unset) /.test(line))
+    expect(opLines).toEqual(['set n3 position.x real 360', 'set n3 position.y real 1000'])
+    expect(propOf('n3', 'pinned')).toEqual({ type: 'bool', value: true })
+  })
+
+  it('returns exactly tree, note, seq and follows, and seq is its only number (D-14)', () => {
+    seed([{ x: 12.5, y: 37.25 }])
+    seedAs(CLAUDE, [{ x: 2000, y: 2000 }])
+
+    const value = placeOk({ tree: 'spatial', note: 'n2', where: { near: 'n1' } })
+    expect(Object.keys(value).sort()).toEqual(['follows', 'note', 'seq', 'tree'])
+    expect(numbersIn(value).map((found) => found.path)).toEqual([['seq']])
+  })
+
+  it('keeps the stored position and pinned across close and reopen, and draws the follower there (D-06)', () => {
+    seed([{ x: 0, y: 0 }, { x: 0, y: 200, height: 400 }])
+    seedAs(CLAUDE, [{ x: 2000, y: 2000 }])
+    grow('n3', 'n1')
+
+    placeOk({ tree: 'spatial', note: 'n3', where: { near: 'n1' } })
+    const written = tree.bridge.getNode('n3')!
+    const keys = ['position.x', 'position.y', 'pinned']
+
+    registry.closeAll()
+    tree = registry.open(treePath)
+    const reopened = tree.bridge.getNode('n3')!
+    for (const key of keys) expect(reopened.props[key]).toEqual(written.props[key])
+    expect(reopened.props['pinned']).toEqual({ type: 'bool', value: false })
+
+    const drawn = displayPositions(tree.bridge.getNodes(), tree.bridge.getEdges(), new Map()).get('n3')
+    expect(drawn).toMatchObject({
+      x: reopened.props['position.x'].value,
+      y: reopened.props['position.y'].value,
+      following: true,
+    })
+  })
+})
+
+describe('placeOps, placeMessage and heldByPerson', () => {
+  const bare = { id: 'n2', type: NOTE_TYPE, props: {} }
+  const withPinned = (value: boolean | string | number, type = 'bool') => ({
+    id: 'n2',
+    type: NOTE_TYPE,
+    props: { pinned: { type, value } },
+  })
+
+  it('writes the two positions, and pinned false only when the note will follow', () => {
+    expect(placeOps(bare, { x: 1, y: 2, follows: true })).toEqual([
+      { op: 'setProperty', target: 'n2', key: 'position.x', type: 'real', value: 1 },
+      { op: 'setProperty', target: 'n2', key: 'position.y', type: 'real', value: 2 },
+      { op: 'setProperty', target: 'n2', key: 'pinned', type: 'bool', value: false },
+    ])
+    expect(placeOps(bare, { x: 1, y: 2, follows: false })).toHaveLength(2)
+  })
+
+  it('unsets pinned for a fixed placement only when it is exactly the bool false', () => {
+    expect(placeOps(withPinned(false), { x: 1, y: 2, follows: false })[2]).toEqual({
+      op: 'unsetProperty',
+      target: 'n2',
+      key: 'pinned',
+    })
+    expect(placeOps(withPinned('false', 'text'), { x: 1, y: 2, follows: false })).toHaveLength(2)
+  })
+
+  it('never writes or unsets pinned on a note with pinned true, whatever follows says', () => {
+    for (const follows of [true, false]) {
+      const ops = placeOps(withPinned(true), { x: 1, y: 2, follows })
+      expect(ops.map((op) => op.key)).toEqual(['position.x', 'position.y'])
+    }
+  })
+
+  it('only ever emits setProperty of position.x, position.y or pinned, or unsetProperty of pinned (D-08)', () => {
+    const notes = [bare, withPinned(false), withPinned(true), withPinned('x', 'text')]
+    for (const note of notes) {
+      for (const follows of [true, false]) {
+        for (const op of placeOps(note, { x: 5, y: 6, follows })) {
+          if (op.op === 'setProperty') {
+            expect(['position.x', 'position.y', 'pinned']).toContain(op.key)
+          } else {
+            expect(op).toEqual({ op: 'unsetProperty', target: 'n2', key: 'pinned' })
+          }
+        }
+      }
+    }
+  })
+
+  it('heldByPerson is false only for no pinned or the bool false', () => {
+    expect(heldByPerson(bare)).toBe(false)
+    expect(heldByPerson(withPinned(false))).toBe(false)
+    expect(heldByPerson(withPinned(true))).toBe(true)
+    expect(heldByPerson(withPinned('false', 'text'))).toBe(true)
+    expect(heldByPerson(withPinned(0, 'int'))).toBe(true)
+  })
+
+  it('names the intent in the message (D-04)', () => {
+    expect(placeMessage('n2', { near: 'n1' })).toBe('Place note n2 near n1')
+    expect(placeMessage('n2', { beyond: 'n1', from: 'n3' })).toBe('Place note n2 beyond n1 from n3')
+  })
+})
+
+describe('PlaceArgs (D-11)', () => {
+  const ok = (where: unknown) => PlaceArgs.safeParse({ tree: 'spatial', note: 'n2', where }).success
+
+  it('accepts near and beyond-from', () => {
+    expect(ok({ near: 'n1' })).toBe(true)
+    expect(ok({ beyond: 'n1', from: 'n3' })).toBe(true)
+  })
+
+  it('refuses the space form, the orientation form, a lone beyond, mixed forms and extra keys', () => {
+    expect(ok({ on: 'space-1' })).toBe(false)
+    expect(ok({ near: 'n1', facing: 'north' })).toBe(false)
+    expect(ok({ beyond: 'n1' })).toBe(false)
+    expect(ok({ near: 'n1', beyond: 'n3' })).toBe(false)
+    expect(ok({ near: 'n1', beyond: 'n3', from: 'n4' })).toBe(false)
+    expect(ok({ near: 'n1', extra: true })).toBe(false)
+    expect(ok({ near: '' })).toBe(false)
+    expect(ok('n1')).toBe(false)
+  })
+
+  it('refuses an actor key at either level', () => {
+    expect(
+      PlaceArgs.safeParse({ tree: 'spatial', note: 'n2', where: { near: 'n1' }, actor: 'human' }).success,
+    ).toBe(false)
+    expect(ok({ near: 'n1', actor: 'human' })).toBe(false)
+  })
+})
+
+describe('place through runAgentTool', () => {
+  it('passes the socket actor, never one from the arguments', () => {
+    seed([{ x: 0, y: 0 }])
+    seedAs(CLAUDE, [{ x: 2000, y: 2000 }])
+    grow('n2', 'n1')
+    const commands: AgentCommands = {
+      notes: new NoteCommands(registry),
+      connections: new ConnectionCommands(registry),
+      spatial,
+    }
+
+    const result = runAgentTool(commands, CLAUDE, 'place', {
+      tree: 'spatial',
+      note: 'n2',
+      where: { near: 'n1' },
+    })
+    expect(result.ok).toBe(true)
+    expect(lastCommitBlock()).toContain('actor plugin agent.claude')
   })
 })

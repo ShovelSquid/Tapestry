@@ -19,11 +19,12 @@ import type { Actor } from './actor'
 import type { ConnectionCommands, ConnectionEndpoint } from './connections'
 import type { CommandResult, NoteCommands } from './notes'
 import type { SpatialCommands } from './spatial'
+import type { WherePlacement } from '../../renderer/layout/placement'
 import { TOOL_DEFINITIONS } from '../mcp/schemas'
 
 /**
  * The command layer an agent reaches: notes, the connections between them,
- * and the spatial verbs that read (and later set) where notes sit.
+ * and the spatial verbs that read and set where notes sit.
  */
 export interface AgentCommands {
   notes: NoteCommands
@@ -79,6 +80,10 @@ export function runAgentTool(
       return commands.spatial.look(
         parsed.data as { tree: string; from: string; toward?: string; limit?: number },
       )
+
+    case 'place':
+      // The actor is the socket's, never read from the arguments.
+      return commands.spatial.place(actor, parsed.data as { tree: string; note: string; where: WherePlacement })
 
     case 'create_note':
       return commands.notes.createFrom(

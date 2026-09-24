@@ -13,6 +13,8 @@
  *  - the node and its `grew-from` edge land in ONE commit
  *  - no tool advertises an actor argument, and an extra `actor` key is refused
  *  - `look` reports the notes around a note as relations, never coordinates (D-14)
+ *  - `place` moves an agent's note and makes it follow its parent, and refuses
+ *    a person's note because its layout is locked to them (02.5 D-15)
  *  - stdout carries protocol frames only
  */
 
@@ -175,7 +177,7 @@ describe('MCP shim over stdio', () => {
     }
   })
 
-  it('advertises exactly the nine tools, with no actor argument anywhere', async () => {
+  it('advertises exactly the ten tools, with no actor argument anywhere', async () => {
     const listed = await request(2, 'tools/list', {})
     expect(listed.error).toBeUndefined()
 
@@ -193,6 +195,7 @@ describe('MCP shim over stdio', () => {
       'delete_note',
       'list_trees',
       'look',
+      'place',
       'read_note',
       'rename_note',
       'search_notes',
@@ -270,6 +273,34 @@ describe('MCP shim over stdio', () => {
       { note: 'n1', space: only.id, relation: 'near', order: 1, guess: false },
     ])
     expect(text).not.toContain('position')
+  }, 30000)
+
+  it('places the grown note near the note it grew from, so it follows', async () => {
+    const called = await request(7, 'tools/call', {
+      name: 'place',
+      arguments: { tree: 'agents', note: 'n2', where: { near: 'n1' } },
+    })
+
+    expect(called.error).toBeUndefined()
+    expect(called.result?.isError).not.toBe(true)
+
+    const treeText = readFileSync(treePath, 'utf-8')
+    expect(treeText).toContain('Place note n2 near n1')
+    expect(treeText).toMatch(/^set n2 pinned bool false$/m)
+  }, 30000)
+
+  it("refuses to move the person's note, naming user.kaelen, and writes nothing", async () => {
+    const sizeBefore = statSync(treePath).size
+
+    const called = await request(8, 'tools/call', {
+      name: 'place',
+      arguments: { tree: 'agents', note: 'n1', where: { near: 'n2' } },
+    })
+
+    const refused = called.error !== undefined || called.result?.isError === true
+    expect(refused).toBe(true)
+    expect(JSON.stringify(called.error ?? called.result)).toContain('user.kaelen')
+    expect(statSync(treePath).size).toBe(sizeBefore)
   }, 30000)
 
   it('refuses an extra actor key and writes nothing', async () => {
