@@ -158,6 +158,32 @@ Done on `ws/ui` in b720a75.
 Answer `item 6: approved` (with or without mark names) or the issues in `autonomy/RESPONSE`.
 If no: `git revert b720a75 2bea1d6` on ws/ui, and untick wave 3 in the plan.
 
+### 7. Wave 4 (connections and knots): merge into mergin, and a look (Plan - Line Lab v2, Part 2)
+
+- **What changed:** connections are blue ink lines (`look/connection.ts`, `ConnectionLine`) at the notes'
+  static weight. They sag a little like sketch 4 (8% of the length, 40 px at most) and wave with their ends
+  held still (0.8 × the selection wave, off with the selection-wave motion setting). The live line while
+  dragging from the blue dot ends in a small blue dot. The line that lands flashes `--tap-connect-flash`
+  (#00FF7F) for about 270 ms, then fades to blue over 900 ms. Knots are small notes with the same paper and
+  pencil outline, taken over by blue on hover and edit. The error copy "Failed to create edge" now says
+  "connection". Other "thread" copy in the app names time threads, which D-26 keeps.
+- **A bug fixed on the way:** the connections SVG was `100%` of an unsized parent, a 0 × 0 SVG, which Chrome
+  doesn't draw even with overflow visible. It's 1 px now. Before this change the grey lines may not have shown
+  at all on this branch. Worth a look on mergin too.
+- **My calls (taste):** the sag amount, the wave strength, and the flash timing. The live line still starts at
+  the source note's centre and runs over the note, as before. Sketch 4 starts it at the selected text, but a
+  connection from a text range isn't in the record shape (edges join notes), so I left it.
+- Checks: 6 new tests (shape, pinned ends, flash window, markup). Full suite 1194 green, typecheck and build
+  clean. Save and reopen in the app with motion off gives identical connection paths (`same: true`; see
+  `autonomy/checks/line-lab-v2/README.md`). Screenshots:
+  `autonomy/checks/line-lab-v2/wave4-side-by-side-2026-09-25.png` (sketch 4, drag, land, rest).
+- **To check in the dev app:** select a note, drag from its blue dot onto another note, watch the green flash,
+  reload, and see the line is the same. Hover a note that has a knot.
+- **Merge `ws/ui` wave 4 into `ws/mergin`** (sessions can't merge there).
+
+Answer `item 7: approved` or the issues in `autonomy/RESPONSE`.
+If no: `git revert 529442f` on ws/ui (and the wip before it), and untick wave 4 in the plan.
+
 ## Closed
 
 (none)

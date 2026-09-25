@@ -23,12 +23,12 @@ checklist:
 
 ## In progress
 
-Wave 4 (connections and knots) under way. Done in the wip commit: `look/connection.ts`
-(sagging open ink shape), `ConnectionLine` as blue waving `InkLine` (`pinEnds`) with a
-drag dot and a `connection-landed` green flash, Canvas `landed` state → TreeFrame
-`landedAt`, `KnotNode` drawn with `NoteInk`, "Failed to create connection" copy.
-Tests green. Left: screenshot (connection + knot + live drag), save/reopen check,
-side-by-side with sketch 4 (`~/Tree/tapestry ui4.jpg`), tick boxes, REVIEW #7.
+(empty) Wave 4 is done (REVIEW #7). Next session: **Part 2, Wave 5 (zoom collapse)**.
+Start with `git merge ws/mergin`. Hook: `layout/nesting.ts` swaps its `OUTLINE_BELOW_PX`
+rule for a call into a new `look/collapse.ts` (note → circle below 110 px → dot below
+28 px on screen, crossfade `LOOK.detail.formCrossfadeMs`, circle/dot fixed size and 1 px on
+screen; nested notes too). Thresholds read-only (gate 2). Double-click a circle/dot zooms
+in, as the stage 1 outline did. Screenshot scripts: `autonomy/checks/line-lab-v2/wave4-*.js`.
 
 ## Blocked
 
@@ -45,6 +45,12 @@ side-by-side with sketch 4 (`~/Tree/tapestry ui4.jpg`), tick boxes, REVIEW #7.
   fly along Δv from the corners facing it. Queued in REVIEW #2.
 
 ## Learned
+
+- An `<svg>` with a 0 × 0 box draws nothing even with `overflow: visible`; overlay SVGs
+  inside unsized parents need `width: 1, height: 1`. An `<InkLine>` drawn inside an
+  existing SVG takes `inSvg` (a `<g>`), since a nested `<svg>` lands at the wrong origin.
+- Note card heights can differ between two app launches (measure timing), so compare
+  connection paths relative to their first point, or deselect and settle first.
 
 - Renderer tests are typechecked by `tsconfig.web.json` (rootDir `src`), so a test
   that needs the real kernel (`test/helpers/temp-tree`) belongs in `src/main/`
@@ -97,3 +103,6 @@ side-by-side with sketch 4 (`~/Tree/tapestry ui4.jpg`), tick boxes, REVIEW #7.
 - 2026-09-25 13:55: Line Lab v2 Part 2 Wave 3 done and ticked (FormatBar, format pill,
   NoteSettings flip face, kernel round-trip test; 15 tests, 1189 green; side-by-side
   with sketch 3). Commits 2bea1d6, b720a75. REVIEW #6 queued (gate 1 open).
+- 2026-09-25 16:13: Line Lab v2 Part 2 Wave 4 done and ticked (ink connections, landed
+  flash, knot restyle, connection SVG sizing fix; 6 tests, 1194 green; save/reopen same;
+  side-by-side with sketch 4). Commits 529442f (+ wip). REVIEW #7 queued.
