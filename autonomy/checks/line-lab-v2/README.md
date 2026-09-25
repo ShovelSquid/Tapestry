@@ -22,9 +22,18 @@ start 2, steady 0, gentle curve 0, sharp turn 2 toward (-0.7, 0.7).
 
 `electron autonomy/checks/line-lab-v2/app-shot.cjs <out.png>` (from the repo
 root, after `npm --prefix app run build:js`) launches the built app with
-`TAPESTRY_USER_DATA_DIR` and `TAPESTRY_SPACE_DIR` pointed at a fresh temp
-folder, so it never opens real data. `SHOT_SCRIPT` runs JS in the renderer
+`TAPESTRY_USER_DATA_DIR` and `TAPESTRY_SPACE_DIR` pointed at a fresh scratch
+folder under `~/Library/Caches/tapestry-shots/` (main only accepts `.tree`
+paths under home), removed on exit, so it never opens real data. It points
+main's app path at `app/` so the plugins load. `SHOT_SCRIPT` runs JS in the renderer
 before the capture (wave 0 used it to click "Save my name").
 
 - `app-wave0-2026-09-25.png`: wave 0 after the token pass. Pixel-identical
   to the same state built from 379c07f (the commit before wave 0).
+
+- Wave 2: `SHOT_SCRIPT="$(cat wave2-setup.js)" SHOT_AFTER_RELOAD="$(cat wave2-pose.js)"`
+  makes a scratch tree with three notes (through `window.tapestry`), reloads,
+  selects one and hovers another. `wave2-pose-mid.js` with `SHOT_SETTLE_MS=150`
+  catches a selection mid-grow and the red dot hovered.
+  `app-wave2-2026-09-25.png`, `app-wave2-midgrow-2026-09-25.png`, and
+  `wave2-side-by-side-2026-09-25.png` (sketches 0-2 above, the app below).
