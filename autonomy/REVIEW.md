@@ -174,3 +174,32 @@ the issue in autonomy/RESPONSE.
 (`02.6-VERIFICATION.md`, from code review `02.6-REVIEW.md`): CR-01 overwrites a `settings.json` that
 doesn't parse, so a check on a copy with a bad file would pass without showing the loss. The driver
 plans and runs gap closure next; this item's steps stay the same afterwards.
+
+### 6. Phase 02.6, plan 02.6-09 — new wording for WR-04 and WR-03 (queued by the 17:08 session, 2026-09-24)
+
+**What was built (de0fc1f, 7a0da94, cf0e0d7):** a note that grows its frame into a neighbour no longer
+sets Ctrl+Z to undo frame moves (WR-04, undo half). An automatic frame fit is drawn only after main
+says it recorded it (WR-05). Close tree waits for main and shows a refusal or failure (WR-03).
+Gap plans 07 (CR-01, 7c5517e 27620e9) and 08 (CR-02/WR-01, 4924ace a3fc55d) landed in the same
+session; their checks are folded into item 5. 30 files / 655 tests, typecheck clean.
+
+**Two wording questions, neither decided by the machine:**
+1. A growth push is still committed as `move frame "<name>" and push <N> aside`
+   (`moveFrameMessage`, `app/src/main/space/shapes.ts`), where `<name>` is the first *pushed*
+   neighbour, not the frame that grew, and it is signed by the person. It was left unchanged.
+   Pick one: (a) `push <N> frames aside for "<grown frame>"` (the review's suggestion);
+   (b) `move frame "<grown frame>" and push <N> aside`; (c) keep as is.
+2. New banner text added by plan 09: `Close tree failed: <error>` and `Close tree failed: unknown error`,
+   modelled on the existing `Undo failed:` / `Redo failed:` banners. Approve or give wording.
+
+**Hands-on checks (add to item 5's session, same copied-data setup):**
+- WR-04: grow a note's frame into another frame, Ctrl+Z: the note goes back, the pushed frame stays.
+  Then drag a frame and Ctrl+Z: both frames go back.
+- WR-05: open two trees whose frames overlap at launch, reload the window: no frame jumps.
+- WR-03: close a tree from the Tree options menu and from an unavailable frame's buttons: each leaves
+  the space with no error.
+- CR-01 (plan 07): put a trailing comma in the copy's `settings.json` and launch: setup-failed, message
+  ends "Nothing in settings.json was changed.", file byte-identical (`shasum` before/after).
+
+**If the answer is no:** each commit reverts on its own (`git revert cf0e0d7`, `git revert 7a0da94 a4e052f`,
+`git revert de0fc1f`). Answer in autonomy/RESPONSE.
