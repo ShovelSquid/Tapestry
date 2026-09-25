@@ -345,7 +345,7 @@ Plans:
   6. Note positions are untouched: `position.x/y` stay node properties and D-27's thread frame is not moved — that migration is a later phase after 2.3 (#4)
   7. No code writes the Tapestry-tree or forest-tree record shape, or migrates `settings.json`, until Kaelen has approved the exact type strings, keys and labels and the migration at a blocking checkpoint (#17, #18)
 
-**Plans:** 8/10 plans executed (4 gap-closure plans added 2026-09-24)
+**Plans:** 9/10 plans executed (4 gap-closure plans added 2026-09-24)
 
 Plans:
 **Wave 1**
@@ -376,7 +376,7 @@ Plans:
 
 - [x] 02.6-07-PLAN.md — Gap 1 / CR-01 (SC-1): settings.json read as missing | unreadable | ok; no writer overwrites an unreadable file; cases A, B and C return setup-failed before creating anything
 - [x] 02.6-08-PLAN.md — Gaps 2+3 / CR-02, WR-01 (SC-4, SC-5): `adopt()` ends the path's `path:` record; `removeMember` never deletes a shared stand-in; unavailable members keyed by recorded digest, so one path cannot hide another member
-- [ ] 02.6-09-PLAN.md — Renderer warnings WR-03, WR-04, WR-05: close refusals shown, growth pushes do not arm frame undo, fits shown only when committed
+- [x] 02.6-09-PLAN.md — Renderer warnings WR-03, WR-04, WR-05: close refusals shown, growth pushes do not arm frame undo, fits shown only when committed
 
 **Gap closure, Wave 2** *(blocked on 02.6-08: shares space-service.ts and membership.test.ts)*
 
