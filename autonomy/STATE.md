@@ -23,12 +23,11 @@ checklist:
 
 ## In progress
 
-(empty) Wave 5 is done (REVIEW #8). Next session: **Part 2, Wave 6 (motion flourishes)**.
-Start with `git merge ws/mergin`. Particles on drag velocity changes (Line Lab's `trackMotion`/
-`spawnParticles`, see line-lab.src.html; `LOOK.detail.particleKick`/`particleCooldownMs`), rifling and
-text bob at low strength (gate 4), paper-swell buttons with a pencil edge, and a motion settings panel
-(one slider + off switch per `MOTION_EFFECTS` entry, stored by `saveMotionSettings`). Done when all off
-leaves a still app. Screenshot scripts: `autonomy/checks/line-lab-v2/wave5-*.js` show the zoom pattern.
+(empty) Wave 6 is done (REVIEW #9). Next session: **Part 2, Wave 7 (entering a note)**. Start with
+`git merge ws/mergin`. The hook: the camera's "Zoom into note" (`zoomToFrameRect`) gains an optional
+shared-element callback. Double-click lerps the camera in while the title and each part fly from their
+collapsed spots (look/CollapsedNote.tsx) to their full-view spots, with no text cross-fade, at 60 fps (use the
+Electron bench in `autonomy/checks/line-lab-v2/ink-bench` for fps). Pose scripts: `wave5-pose.js` (zoom), `wave6-pose.js`.
 
 ## Blocked
 
@@ -45,6 +44,11 @@ leaves a still app. Screenshot scripts: `autonomy/checks/line-lab-v2/wave5-*.js`
   fly along Δv from the corners facing it. Queued in REVIEW #2.
 
 ## Learned
+
+- A missing `}` in App.css doesn't fail the build: CSS nesting silently swallows every later rule. If new
+  CSS "doesn't apply", count `document.styleSheets[0].cssRules` in the app and read the last few.
+- The screenshot window is hidden, so timers clamp to 1 s. `app-shot.cjs` now turns off background throttling;
+  pass `SHOT_TIMEOUT_MS` for long poses.
 
 - Synthetic Ctrl+wheel events on the canvas zoom the app (see `wave5-pose.js`); read the zoom as the tree
   frame's rect width over its offsetWidth. The canvas floors at 10% (`MIN_ZOOM`); wheeling on past the
@@ -113,3 +117,6 @@ leaves a still app. Screenshot scripts: `autonomy/checks/line-lab-v2/wave5-*.js`
 - 2026-09-25 17:05: Line Lab v2 Part 2 Wave 5 done and ticked (look/collapse.ts, CollapsedNote, nesting hook,
   crossfade; 13 tests, 1207 green; zoom sweep monotonic with crossfade; double-click zooms in; side-by-side
   with Line Lab). Commits 595cfdf, f71416e. REVIEW #8 queued (gate 2 open).
+- 2026-09-25 17:40: Line Lab v2 Part 2 Wave 6 done and ticked (particles, rifling and text bob, button swell,
+  Motion panel; restored the App.css brace wave 0 dropped; 23 tests, 1230 green; with all off, 0 frames).
+  Commits 4df67b5, 87f5348. REVIEW #9 queued (gate 4 open).

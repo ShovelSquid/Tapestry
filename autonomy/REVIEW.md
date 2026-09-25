@@ -216,6 +216,45 @@ Done on `ws/ui` in 595cfdf (code) and f71416e (checks).
 Answer `item 8: approved` or the issues in `autonomy/RESPONSE`.
 If no: `git revert f71416e 595cfdf` on ws/ui, and untick wave 5 in the plan.
 
+### 9. Line Lab v2 wave 6: motion flourishes (gate 4 open), and a CSS fix to look at
+
+- **Move particles** (`look/particles.ts`, `look/MoveParticles.tsx`): Line Lab's tracker ported as pure code.
+  A dragged note throws up to 3 pencil specks from the two corners facing each velocity change, with the 120 ms
+  cooldown. They're drawn in the card's own px at a fixed screen size, and the loop runs only while the note is
+  dragged and until the last speck fades.
+- **⚠ Gate 4, rifling and text bob** (`look/rifle.ts`): notes within 140 screen px of a moving cursor drift away
+  from it (at most 4 px × strength) and settle once it stops. The text of the note under the cursor shifts at
+  most 1.2 px × strength. Both are on at strength 0.3 (the spec's "low"), which in the app measured a 0.6 px
+  nudge and a 0.2 px text shift. The effects use CSS `translate`, so they never touch a position or the `.tree`.
+  A note being dragged, resized or **edited** is left still, so a writer's text never moves under them. The
+  question for you: should writers get these two off by default? To turn them off by default, change
+  `defaultMotionSettings` in `look/motion.ts`.
+- **Button swell** (CSS at the end of `App.css`): the chrome buttons (forest bar, dialog buttons, icon, chat
+  and agent-menu buttons) swell 5% with a 0.8° tilt and a small overshoot, and take a pencil edge: bordered
+  buttons get a pencil border, borderless ones a 1 px pencil inset ring. **My call (taste):** the edge is a
+  plain CSS line, not an ink line. An ink outline on every button seemed too heavy for this wave. The
+  "grow and centre when you enter their space" part of rifling is not built; the bob already scales the card.
+- **Motion panel** (`look/MotionPanel.tsx`), shown in the forest bar as "Motion": its glyph is a wave as tall as
+  the average motion strength, flat when everything is off, and it wiggles on hover. The panel has a switch and
+  a 0–100 slider per effect (11 of them) and an "All off / All on" button. Settings are per person in
+  localStorage and apply live: a waving selection stops as soon as its switch goes off.
+- **Fix to check:** wave 0's token pass (70f1436) dropped the closing `}` of
+  `.tapestry-ask-claude-button:focus-visible`. Every rule after it in `App.css` was nested and dead from wave 0
+  until now: the 02.3 thread scrubber and nav focus rings, `.tap-thread-past-stage`, the author underlay, and
+  the `prefers-reduced-motion` block. Wave 6 restores the brace, so those rules apply again as 02.3 wrote them.
+  Check that the time-threads side view looks as it did before wave 0.
+- Checks: 23 new tests (particles, rifle, panel and settings). The full suite (1230 tests), typecheck and
+  build are clean. In the app (`wave6-pose.js`), with motion on the drag threw 3 specks, and the nudge and text
+  shift settled back. After "All off" there were 0 specks, no nudge, and **0 animation frames** over the whole
+  drag and cursor sequence. Screenshot: `autonomy/checks/line-lab-v2/app-wave6-2026-09-25.png`. No sketch
+  covers wave 6, so there's no side-by-side.
+- **To check in the dev app:** drag a note hard and turn it sharply, then drop it. Wave the cursor past notes,
+  hover the forest-bar buttons, open Motion, press "All off" and do it all again.
+- **Merge `ws/ui` wave 6 into `ws/mergin`.** It touches `NoteCard.tsx`, `ForestBar.tsx`, `App.css` and `look/`.
+
+Answer `item 9: approved` (and for gate 4, `rifling on` or `rifling off for writers`), or the issues, in `autonomy/RESPONSE`.
+If no: `git revert 87f5348 4df67b5` on ws/ui (keep the `}` fix), and untick wave 6 in the plan.
+
 ## Closed
 
 (none)
