@@ -53,6 +53,10 @@ describe('connection ink (wave 4)', () => {
   it('renders blue ink; the live line ends in a dot; a new line flashes', () => {
     const rest = renderToStaticMarkup(createElement(ConnectionLine, { x1: 0, y1: 0, x2: 100, y2: 50, seedKey: 'e1' }))
     expect(rest).toContain('var(--tap-select)')
+    // Drawn straight into the connections SVG: a nested <svg> there would sit
+    // at the wrong origin.
+    expect(rest).toContain('<g class="ink-line connection-ink">')
+    expect(rest).not.toContain('<svg')
     expect(rest).not.toContain('connection-drag-dot')
     expect(rest).not.toContain('connection-landed')
 

@@ -655,8 +655,10 @@ export default function TreeFrame({
             position: 'absolute',
             top: 0,
             left: 0,
-            width: '100%',
-            height: '100%',
+            // 1 px, not 100%: the parent has no size, and a 0 × 0 SVG draws nothing
+            // even with overflow visible.
+            width: 1,
+            height: 1,
             overflow: 'visible',
             pointerEvents: 'none',
           }}

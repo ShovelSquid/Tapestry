@@ -73,6 +73,7 @@ export default function ConnectionLine({
         wave={isTemporary ? 0 : CONNECTION_WAVE}
         waveScale={connectionWaveScale(shape)}
         pinEnds
+        inSvg
         className={flash ? 'connection-ink connection-landed' : 'connection-ink'}
       />
       {isTemporary && <circle className="connection-drag-dot" cx={x2} cy={y2} r={DRAG_DOT_R} />}

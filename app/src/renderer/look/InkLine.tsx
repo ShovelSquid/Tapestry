@@ -55,6 +55,8 @@ export interface InkLineProps {
   readonly takeover?: InkTakeover
   /** Hold an open line's ends still while it waves (connections). */
   readonly pinEnds?: boolean
+  /** Render as a `<g>` for a line drawn inside an existing SVG (connections). */
+  readonly inSvg?: boolean
   readonly className?: string
 }
 
@@ -90,7 +92,7 @@ export function inkLinePaths(
 }
 
 function InkLineImpl(props: InkLineProps): React.ReactElement {
-  const { shape, tone = 'pencil', weight, seed = 0, wave = 0, waveScale = 1, takeover, pinEnds = false, className } = props
+  const { shape, tone = 'pencil', weight, seed = 0, wave = 0, waveScale = 1, takeover, pinEnds = false, inSvg = false, className } = props
   const on = takeover?.on ?? false
   const fromT = takeover?.fromT ?? 0
   const activeTone = takeover?.tone ?? 'select'
@@ -149,10 +151,17 @@ function InkLineImpl(props: InkLineProps): React.ReactElement {
     return unsubscribe
   }, [shape, weight, seed, wave, waveScale, pinEnds, on, fromT])
 
-  return (
-    <svg className={className ? `ink-line ${className}` : 'ink-line'} style={SVG_STYLE} aria-hidden="true">
+  const cls = className ? `ink-line ${className}` : 'ink-line'
+  const paths = (
+    <>
       <path ref={baseRef} d={initial.base} fill={TONE[tone]} />
       <path ref={activeRef} d={initial.active} fill={TONE[activeTone]} />
+    </>
+  )
+  if (inSvg) return <g className={cls}>{paths}</g>
+  return (
+    <svg className={cls} style={SVG_STYLE} aria-hidden="true">
+      {paths}
     </svg>
   )
 }

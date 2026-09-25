@@ -28,7 +28,7 @@ app.on('browser-window-created', (_e, win) => {
       try {
         const out = await win.webContents.executeJavaScript(src.split('__SCRATCH__').join(scratch))
         if (out !== undefined) console.log('[shot] script:', out)
-        return true
+        return out === undefined ? true : out
       } catch (err) { console.error('[shot] script', err); return false }
     }
     if (process.env.SHOT_SCRIPT) {
@@ -38,7 +38,14 @@ app.on('browser-window-created', (_e, win) => {
       const ok = await run(process.env.SHOT_SCRIPT)
       if (ok && process.env.SHOT_AFTER_RELOAD) {
         await reloaded
-        await run(process.env.SHOT_AFTER_RELOAD)
+        // A pose that reloads again (to check a saved state reopens the
+        // same) says so with "reload":true, and runs once more after it.
+        const again = new Promise((r) => win.webContents.once('did-finish-load', r))
+        const out = await run(process.env.SHOT_AFTER_RELOAD)
+        if (typeof out === 'string' && out.includes('"reload":true')) {
+          await again
+          await run(process.env.SHOT_AFTER_RELOAD)
+        }
       }
       await wait(Number(process.env.SHOT_SETTLE_MS || 1500))
     }

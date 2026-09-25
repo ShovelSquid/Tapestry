@@ -44,3 +44,12 @@ before the capture (wave 0 used it to click "Save my name").
   `window.__POSE__='settings';` to select "Settings" and flip it instead.
   `app-wave3-pill-2026-09-25.png`, `app-wave3-settings-2026-09-25.png`, and
   `wave3-side-by-side-2026-09-25.png` (sketch 3, the pill, the settings face).
+
+- Wave 4: `SHOT_SCRIPT="$(cat wave4-setup.js)" SHOT_AFTER_RELOAD="window.__POSE__='drag';$(cat wave4-pose.js)"`
+  makes Source → Target, and Left → knot "because" → Right. Poses: `rest`, `drag`
+  (the live line and its dot), `land` (with `SHOT_SETTLE_MS=60`, mid green flash),
+  and `reopen` (prefix the setup with `window.__STILL__=1;` for motion off): lands
+  Source → Right, deselects, records every connection path, reloads and compares
+  (`same: true` on 2026-09-25). `app-shot.cjs` now runs a pose a second time when it
+  returns `"reload":true`. `app-wave4-{rest,drag,land}-2026-09-25.png` and
+  `wave4-side-by-side-2026-09-25.png` (sketch 4, drag, land, rest).
