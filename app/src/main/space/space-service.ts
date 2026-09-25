@@ -665,6 +665,24 @@ export class SpaceService {
   }
 
   /**
+   * Whether this registry entry joins a stand-in in the open forest (the
+   * `memberFor` join). False when the space is not ready or the id names no
+   * registry entry. Never throws and never writes: an add's rollback asks it
+   * so it never closes a tree the forest holds (2.6 WR-02, T-2.6-24).
+   */
+  isMember(treeId: string): boolean {
+    if (!this.ready || !this.forest) return false
+    try {
+      const entry = this.registry.entry(treeId)
+      if (!entry) return false
+      return this.memberFor(entry, this.forest.members()) !== undefined
+    } catch (err) {
+      console.error('[SpaceService] isMember() failed:', err)
+      return false
+    }
+  }
+
+  /**
    * Try an unavailable member again (UI-SPEC "Reopen tree"). On success its
    * identity is recorded as on any first open. If its world turns out to be
    * open through another member already, the digest-less stand-in is folded

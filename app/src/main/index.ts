@@ -32,6 +32,7 @@ import { runAgentTool, type AgentCommands } from './commands/agent-tools'
 import { AgentRegistry, agentSocketPath } from './agents/registry'
 import { AgentSocketServer } from './agents/socket-server'
 import { SpaceRefusal, SpaceService } from './space/space-service'
+import { openWithRollback } from './space/open-into-space'
 import { SPACE_NOT_OPEN, type SpacePaths } from './space/migrate'
 import { FOREST_FILE, HOME_FILE, HOME_LOCATION } from './space/shapes'
 
@@ -515,9 +516,11 @@ app.whenReady().then(async () => {
    *
    * The actor is resolved before anything opens (RESEARCH "Name-before-commit
    * gap", answer 2.7): the forest commit is signed by the person, so without a
-   * name nothing is opened at all. If the forest cannot record a tree that
-   * this call opened, it is closed again, so the registry and the forest never
-   * disagree about what is in the space (T-2.6-24).
+   * name nothing is opened at all. If opening fails part-way (a vault tree
+   * that will not open, a failed catch-up) or the forest cannot record the
+   * tree, `openWithRollback` closes every registry entry this call introduced
+   * that joins no stand-in, so the registry and the forest never disagree
+   * about what is in the space (T-2.6-24, review WR-02).
    */
   async function openIntoSpace(open: () => TreeEntry | Promise<TreeEntry>): Promise<
     { ok: true; treeId: string } | { ok: false; error: string; notice?: string }
@@ -525,17 +528,16 @@ app.whenReady().then(async () => {
     try {
       const actor = getHumanActor()
       if (!space || !space.ready) throw new SpaceRefusal()
-      const before = new Set(registry.summary().map((t) => t.id))
-      const tree = await open()
-      try {
-        // A vault's first read is awaited above, so the space may have been
-        // closed by a quit in the meantime.
-        if (!space) throw new SpaceRefusal()
-        space.addMember(tree, actor)
-      } catch (err) {
-        if (!before.has(tree.id)) registry.close(tree.id)
-        throw err
-      }
+      const tree = await openWithRollback(registry, {
+        open,
+        record: (entry) => {
+          // A vault's first read is awaited inside open(), so the space may
+          // have been closed by a quit in the meantime (review IN-02).
+          if (!space || !space.ready) throw new SpaceRefusal()
+          space.addMember(entry, actor)
+        },
+        isMember: (id) => space?.isMember(id) ?? false,
+      })
       notifyTreesChanged()
       return { ok: true, treeId: tree.id }
     } catch (err) {
