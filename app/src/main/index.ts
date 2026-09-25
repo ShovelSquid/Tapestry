@@ -31,6 +31,7 @@ import { AgentRegistry, agentSocketPath } from './agents/registry'
 import { AgentSocketServer } from './agents/socket-server'
 import { ThreadIpc } from './threads/thread-ipc'
 import { ThreadService } from './threads/thread-service'
+import { isVaultThread, writeVaultThreadFile } from './threads/vault-thread'
 
 // ---------------------------------------------------------------------------
 // Window management
@@ -137,6 +138,10 @@ const registry = new TreeRegistry()
 let pluginHost: PluginHost
 let agentServer: AgentSocketServer | null = null
 let threadService: ThreadService | null = null
+/** Assigned once the vault IPC section below runs; read by the thread flush
+ * hook (D-25), which is wired earlier — the closure captures this binding by
+ * reference, not by the value at wiring time. */
+let vaultService: VaultService | null = null
 
 /** A tree id is exactly what the registry mints: `sha256:` + 64 hex digits. */
 const TREE_ID_PATTERN = /^sha256:[0-9a-f]{64}$/
@@ -243,6 +248,21 @@ app.whenReady().then(async () => {
     getHumanActor,
     (treeId, nodeId, version) => {
       mainWindow?.webContents.send('thread:confirmed', treeId, nodeId, version)
+      // D-25: a vault thread's current text reaches its `.md` file on the
+      // same cadence as every other thread flush. `vaultService` is assigned
+      // later in this function (the vault IPC section below) — by the time
+      // a real flush ever fires, startup has long finished, so the closure
+      // sees the assigned value even though it reads `vaultService` before
+      // that line runs at parse time.
+      const tree = registry.get(treeId)
+      const node = tree?.bridge.getNode(nodeId)
+      if (tree && node && vaultService && threadService && isVaultThread(node)) {
+        writeVaultThreadFile(vaultService, threadService, tree.bridge, getHumanActor(), treeId, nodeId).catch(
+          (err) => {
+            console.error('[VaultThread] failed to sync the vault file:', err)
+          },
+        )
+      }
     },
     (treeId, nodeId, reason) => {
       mainWindow?.webContents.send('thread:flush-error', treeId, nodeId, reason)
@@ -600,7 +620,7 @@ app.whenReady().then(async () => {
    * The bridge runs here, in main, rather than as a plugin: it needs the
    * filesystem and the reserved `obsidian.bridge` actor a plugin may not claim.
    */
-  const vaultService = new VaultService(registry, {
+  vaultService = new VaultService(registry, {
     onStatus: (treeId, status) => {
       mainWindow?.webContents.send('vault-status', { treeId, ...status })
     },
@@ -636,6 +656,10 @@ app.whenReady().then(async () => {
     const target = resolve(root)
     if (!approvedVaultRoots.has(target)) {
       return { ok: false, error: 'Choose the vault folder with Add Obsidian Vault... first.' }
+    }
+
+    if (!vaultService) {
+      return { ok: false, error: 'Vault service is not ready yet' }
     }
 
     try {

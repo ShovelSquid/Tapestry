@@ -26,6 +26,28 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
  * KnotNode's T-02.3-01-01 precedent). */
 export const THREAD_TYPE = 'tapestry.threads/thread@1'
 
+/**
+ * A vault thread's marker key (D-25) -- a vault note additionally carrying
+ * the thread property set stays typed `obsidian.vault/note@1`
+ * (`obsidian/shapes.ts`'s `VAULT_NOTE_TYPE`), never this card's own
+ * `THREAD_TYPE`. This card cannot import that predicate from
+ * `main/threads/vault-thread.ts` -- the renderer bundle never reaches into
+ * `main/`, the same boundary `VaultNoteCard.tsx` already keeps toward
+ * `obsidian/shapes.ts` -- so the two literals are duplicated here rather
+ * than imported; a grep across both files is what keeps them from drifting.
+ */
+const VAULT_NOTE_TYPE = 'obsidian.vault/note@1'
+const VAULT_THREAD_MARKER_KEY = 'thread.format'
+
+/** D-25's no-plugin fallback footer, verbatim (mirrors
+ * `main/threads/vault-thread.ts`'s `VAULT_THREAD_FOOTER_TEXT`). */
+export const VAULT_THREAD_FOOTER_TEXT =
+  'Timings, deleted letters and authors are kept in Tapestry, not in this file.'
+
+function isVaultThreadNode(node: ThreadNodeInfo): boolean {
+  return node.type === VAULT_NOTE_TYPE && VAULT_THREAD_MARKER_KEY in node.props
+}
+
 export interface ThreadNodeInfo {
   id: string
   type: string
@@ -178,6 +200,11 @@ export default function ThreadCard({
         onClick={(e) => e.stopPropagation()}
       />
       <div style={{ fontSize: 12, color: '#6B6B6B', marginTop: 6 }}>{previewText}</div>
+      {isVaultThreadNode(node) && (
+        <div style={{ fontSize: 11, color: '#8A8578', marginTop: 6, fontStyle: 'italic' }}>
+          {VAULT_THREAD_FOOTER_TEXT}
+        </div>
+      )}
       {isHovered && <div style={{ fontSize: 11, color: '#4A7CFF', marginTop: 6 }}>Click to open</div>}
     </div>
   )
