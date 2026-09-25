@@ -203,3 +203,36 @@ session; their checks are folded into item 5. 30 files / 655 tests, typecheck cl
 
 **If the answer is no:** each commit reverts on its own (`git revert cf0e0d7`, `git revert 7a0da94 a4e052f`,
 `git revert de0fc1f`). Answer in autonomy/RESPONSE.
+
+### 7. Phase 02.6 phase gate — re-verification `human_needed` 6/7, plus plan 02.6-10 and four new review warnings (queued by the 17:25 session, 2026-09-24)
+
+**What was built (cb75ba1, 487ca4b):** plan 10 (WR-02). If adding a tree fails inside `open()` or while
+it is being recorded in the forest, `openWithRollback` closes the registry entries that call opened
+and that have no stand-in. The original error still reaches the window. 31 files / 661 tests,
+typecheck clean, kernel 59/59.
+
+**Phase gate:** code review 07f3efd (0 critical, 4 warnings, 6 info). Re-verification d0e9563:
+`human_needed`, 6/7. All three earlier gaps (SC-1, SC-4, SC-5) are closed. SC-7 is your approval
+(item 1). The remaining human checks are items 1, 5 and 6. They are saved as
+`.planning/phases/02.6-placement-edges-forest-tree/02.6-UAT.md` (56c4f13). The phase was not marked
+complete in ROADMAP, because on `human_needed` the workflow waits for you (`/gsd-verify-work 02.6`).
+
+**New review warnings (advisory; the machine did not fix these, and each needs your OK to fix):**
+- WR-01: when two vault adds overlap and one fails, its rollback can close the other one while it is
+  still catching up. The other add then either errors or reports success for a tree the registry
+  does not list. The reviewer reproduced it. Proposed fix (quick task): run adds one at a time in
+  `openIntoSpace` (`index.ts`), or roll back only the ids this call adopted.
+- WR-02: `agents:setEnabled` doesn't catch the new unreadable-settings error, so the switch fails
+  silently. Proposed fix: add a try/catch and show the error in AgentsPanel. That needs a new banner
+  sentence, so it needs your wording.
+- WR-03 (your call): on an ordinary relaunch with a broken settings.json, the space stays empty
+  until the file is fixed. Plan 07 chose this, and the notice says why. The alternative is to open
+  the space read-only and block only the pointer write.
+- WR-04 (rest): main still signs a growth push as your `move frame …`. This waits on item 6
+  question 1.
+
+**How to check:** `git show cb75ba1`, then `npm --prefix app run test -- open-into-space membership`.
+Read `02.6-REVIEW.md` and `02.6-VERIFICATION.md` in the phase directory.
+
+**If the answer is no:** `git revert 487ca4b cb75ba1` undoes plan 10. Answer in autonomy/RESPONSE,
+for example `item 7: approved; fix WR-01 and WR-02` or `item 7: WR-03 open read-only`.

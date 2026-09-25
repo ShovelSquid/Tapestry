@@ -35,12 +35,8 @@ are recorded in app/src/main/space/shapes.ts and 02.6-02-SUMMARY.
 
 ## In progress
 
-All 10 plans have SUMMARYs (02.6-10 done: cb75ba1 487ca4b 139d4ac).
-Now running the phase gates of `gsd-execute-phase 02.6 --gaps-only --wave 2`
-(code review, regression, re-verification). If cut off: rerun
-`gsd-execute-phase 02.6` with no flags; it resumes at the phase gates
-(#2868) when VERIFICATION is stale/missing, else re-run the verifier.
-`passed`/`human_needed` -> PROTOCOL step 7 (DONE).
+(none) Phase 02.6 is finished for the machine and autonomy/DONE is written. Waiting on Kaelen's
+answers to REVIEW items 1-7 and `/gsd-verify-work 02.6` (see 02.6-UAT.md).
 
 ## Log
 
@@ -89,6 +85,11 @@ Now running the phase gates of `gsd-execute-phase 02.6 --gaps-only --wave 2`
   655 tests, typecheck clean. No checkpoints; 09's wording questions and
   the gap checks queued as REVIEW item 6. Next: gaps wave 2 (02.6-10).
 
+- 2026-09-24 17:25 gaps wave 2 (02.6-10) + phase gate: executor cb75ba1 487ca4b
+  139d4ac (~4 min); code review 07f3efd (0 crit / 4 warn); re-verify d0e9563
+  human_needed 6/7, all gaps closed; UAT 56c4f13; REVIEW item 7; DONE. 31 files /
+  661 tests, kernel 59/59.
+
 ## Learned
 
 - The worktree shares `node_modules` with `~/Tapestry` by symlink.
@@ -106,6 +107,7 @@ Now running the phase gates of `gsd-execute-phase 02.6 --gaps-only --wave 2`
   After 02.6-05 (`01258ee`): 29 files, 596 tests.
   After 02.6-06 (`3fdf623`): 30 files, 619 tests; kernel 59/59.
   After gaps wave 1 (`ef1517a`): 30 files, 655 tests.
+  After 02.6-10 (`139d4ac`): 31 files, 661 tests.
 - The executors' RED-evidence checker parses only node test-runner counts,
   not vitest output; they quote the failing vitest lines in the SUMMARY.
 - Code-review scope: `git diff` from the phase start includes the merged
@@ -127,3 +129,9 @@ Now running the phase gates of `gsd-execute-phase 02.6 --gaps-only --wave 2`
   the fixes are backend plus small renderer changes using approved wording.
   Planner chose to key unavailable records by digest (reversible, in-memory
   only) over rewriting the replaced stand-in.
+- 2026-09-24 17:25: the execute-phase `close_parent_artifacts` step would have
+  marked 02-UAT.md's gaps resolved. Took: skipped it, because 2.6's gaps came from
+  its own VERIFICATION and G-02-1 (note titles) is unrelated.
+- 2026-09-24 17:25: the new review warnings WR-01/WR-02 are real but advisory.
+  Took: queued them in REVIEW item 7 for approval rather than fixing them outside
+  a plan. WR-02's fix needs new banner wording.
