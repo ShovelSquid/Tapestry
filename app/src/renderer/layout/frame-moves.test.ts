@@ -9,7 +9,7 @@
 
 import { describe, expect, it } from 'vitest'
 import { FRAME_GAP, FRAME_MIN_HEIGHT, FRAME_MIN_WIDTH, type PositionedRect } from './frames'
-import { buildFrameMoveBatch } from './frame-moves'
+import { buildFrameMoveBatch, originAfterFit } from './frame-moves'
 
 /** A frame-sized rect, so the numbers below read as real frames. */
 function frame(id: string, x: number, y: number): PositionedRect {
@@ -92,5 +92,25 @@ describe('buildFrameMoveBatch', () => {
     expect(buildFrameMoveBatch(trees, [frame('b', 0, 0)], 'a', { x: 5, y: 5 })).toEqual([
       { treeId: 'a', x: 5, y: 5 },
     ])
+  })
+})
+
+describe('originAfterFit (2.6 WR-05)', () => {
+  const fitted = { x: 5, y: 6 }
+
+  it('shows the fitted origin once main committed it', () => {
+    expect(originAfterFit({ ok: true, committed: true }, fitted)).toEqual({ x: 5, y: 6 })
+  })
+
+  it('shows nothing when main refused the fit (spent, person-moved or unchanged)', () => {
+    expect(originAfterFit({ ok: true, committed: false }, fitted)).toBeNull()
+  })
+
+  it('shows nothing when main did not say it committed', () => {
+    expect(originAfterFit({ ok: true }, fitted)).toBeNull()
+  })
+
+  it('shows nothing when the fit failed', () => {
+    expect(originAfterFit({ ok: false, error: 'x' }, fitted)).toBeNull()
   })
 })
