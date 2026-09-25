@@ -1,0 +1,487 @@
+<title>Tapestry Line Lab</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --bg:#EFECE6; --panel:#FAF9F6; --ink:#1C1C1C; --muted:#6B675F; --rule:#DAD5CB;
+  --accent:#489AFE; --accent-ink:#1F5FB0; --focus:#489AFE;
+  --paper:#F7F5F0; --note:#FBFAF7; --pencil:#1C1C1C; --select:#489AFE; --flash:#00E070; --delete:#FC3B02;
+  --display:"Bricolage Grotesque", ui-sans-serif, system-ui, sans-serif;
+  --ui:-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --mono:"IBM Plex Mono", ui-monospace, "SF Mono", monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){ color-scheme:dark; --bg:#1B1A18; --panel:#252320; --ink:#EDEAE3; --muted:#A39E94; --rule:#3A3732; --accent-ink:#8CBEFF; }
+}
+:root[data-theme="dark"]{ color-scheme:dark; --bg:#1B1A18; --panel:#252320; --ink:#EDEAE3; --muted:#A39E94; --rule:#3A3732; --accent-ink:#8CBEFF; }
+
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--ui);font-size:14px;line-height:1.5;padding-inline:20px;padding-block:24px 48px}
+.wrap{max-width:1180px;margin:0 auto;display:grid;gap:20px}
+header{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:8px 24px}
+h1{font-family:var(--display);font-weight:700;font-size:30px;letter-spacing:-.01em;margin:0;text-wrap:balance}
+header p{margin:0;color:var(--muted);max-width:62ch}
+h2{font-family:var(--display);font-weight:500;font-size:18px;margin:0}
+.lab{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:20px;align-items:start}
+@media (max-width:900px){.lab{grid-template-columns:minmax(0,1fr)}}
+.stagebox{display:grid;gap:8px}
+.stage{position:relative;border-radius:14px;overflow:hidden;background:var(--paper);border:1px solid var(--rule);touch-action:none}
+.stage canvas{display:block;width:100%;height:480px;cursor:default}
+@media (max-width:600px){.stage canvas{height:380px}}
+.status{display:flex;flex-wrap:wrap;gap:6px 16px;font-family:var(--mono);font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.status b{color:var(--ink);font-weight:500}
+.hint{font-size:13px;color:var(--muted)}
+.panel{background:var(--panel);border:1px solid var(--rule);border-radius:14px;padding:16px;display:grid;gap:18px}
+fieldset{border:0;margin:0;padding:0;display:grid;gap:10px}
+legend{font-family:var(--display);font-weight:500;font-size:15px;padding:0;margin-bottom:6px}
+.row{display:grid;grid-template-columns:1fr auto;gap:2px 10px;align-items:center}
+.row label{font-size:13px}
+.row output{font-family:var(--mono);font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums;min-width:5ch;text-align:right}
+.row input[type=range]{grid-column:1 / -1;width:100%;accent-color:var(--accent)}
+.row input[type=text]{grid-column:1 / -1;width:100%;font-family:var(--mono);font-size:12px;padding:6px 8px;border-radius:8px;border:1px solid var(--rule);background:var(--bg);color:var(--ink)}
+.row .note{grid-column:1/-1;font-size:12px;color:var(--muted)}
+.check{display:flex;gap:8px;align-items:center;font-size:13px}
+.buttons{display:flex;flex-wrap:wrap;gap:8px}
+button{font:inherit;font-size:13px;padding:7px 12px;border-radius:999px;border:1.5px solid var(--ink);background:transparent;color:var(--ink);cursor:pointer}
+button.primary{background:var(--ink);color:var(--panel)}
+button:focus-visible,input:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+textarea{width:100%;min-height:120px;font-family:var(--mono);font-size:11px;border-radius:8px;border:1px solid var(--rule);background:var(--bg);color:var(--ink);padding:8px}
+.compare{background:var(--panel);border:1px solid var(--rule);border-radius:14px;padding:16px;display:grid;gap:12px}
+.pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+@media (max-width:640px){.pair{grid-template-columns:minmax(0,1fr)}}
+figure{margin:0;display:grid;gap:6px}
+figure img,figure canvas{width:100%;max-width:100%;height:auto;border-radius:10px;border:1px solid var(--rule);background:#fff;display:block}
+figcaption{font-size:12px;color:var(--muted)}
+.measure{display:flex;flex-wrap:wrap;gap:6px 18px;font-family:var(--mono);font-size:12px;color:var(--muted)}
+.measure span b{color:var(--ink);font-weight:500}
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Line Lab</h1>
+    <p>Tune the hand-drawn line and note motion for Tapestry, then copy the values into the spec. Line weight stays the same on screen at every zoom.</p>
+  </header>
+
+  <section class="lab">
+    <div class="stagebox">
+      <div class="stage"><canvas id="stage" aria-label="Note preview. Hover, click, drag, and scroll to zoom."></canvas></div>
+      <div class="status" id="status"></div>
+      <div class="hint">Hover the note for the bloom. Click to select (blue grows from where you click, then the bob). Drag to move. Scroll or use the zoom slider to watch it collapse to a circle, then a dot. Hover the red dot. Click empty paper to deselect.</div>
+  <section class="compare" style="margin-top:12px">
+    <h2>Your strokes, and the renderer drawing the same shapes</h2>
+    <div class="measure">
+      <span>ink <b>#1C1C1C</b>, flat</span>
+      <span>width <b>7–9 px</b> on a 1000 px canvas</span>
+      <span>corners <b>up to 18 px</b></span>
+      <span>edges <b>crisp, ~1 px anti-alias</b></span>
+      <span>"straight" line drifts <b>7 px over 220 px</b></span>
+    </div>
+    <div class="pair">
+      <figure><img id="sample" alt="Kaelen's sample strokes: two dots, a vertical line, a circle, a pill, two curves and a pair of brackets" src="data:image/jpeg;base64,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"><figcaption>Sample (strokes.jpg), cropped</figcaption></figure>
+      <figure><canvas id="copyCanvas" width="465" height="398"></canvas><figcaption>Renderer, same scale, using the line settings above</figcaption></figure>
+    </div>
+  </section>
+    </div>
+
+    <form class="panel" id="controls" onsubmit="return false">
+      <fieldset>
+        <legend>Line</legend>
+        <div class="row"><label for="weight">Weight on screen</label><output data-for="weight"></output><input type="range" id="weight" min="1" max="8" step="0.25"></div>
+        <div class="row"><label for="wobble">Wobble amount</label><output data-for="wobble"></output><input type="range" id="wobble" min="0" max="8" step="0.1"></div>
+        <div class="row"><label for="bumps">Wobble bumps per loop</label><output data-for="bumps"></output><input type="range" id="bumps" min="1" max="12" step="1"></div>
+        <div class="row"><label for="widthVar">Width variation</label><output data-for="widthVar"></output><input type="range" id="widthVar" min="0" max="40" step="1"></div>
+        <div class="row"><label for="swell">Corner swell</label><output data-for="swell"></output><input type="range" id="swell" min="0" max="120" step="1"></div>
+        <div class="row"><label for="grain">Edge grain</label><output data-for="grain"></output><input type="range" id="grain" min="0" max="100" step="1"><span class="note">Your sample strokes have none. Kept for other brushes.</span></div>
+        <div class="row"><label for="seed">Note id (seed)</label><output data-for="seed"></output><input type="range" id="seed" min="1" max="999" step="1"></div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Selection waves</legend>
+        <div class="row"><label for="waveAmp">Wave height</label><output data-for="waveAmp"></output><input type="range" id="waveAmp" min="0" max="4" step="0.1"></div>
+        <div class="row"><label for="waveCount">Waves around the loop</label><output data-for="waveCount"></output><input type="range" id="waveCount" min="2" max="30" step="1"></div>
+        <div class="row"><label for="waveSpeed">Wave speed</label><output data-for="waveSpeed"></output><input type="range" id="waveSpeed" min="0" max="2" step="0.05"></div>
+        <label class="check"><input type="checkbox" id="waveMeet"> Second wave runs the other way and meets the first</label>
+      </fieldset>
+
+      <fieldset>
+        <legend>Motion</legend>
+        <div class="row"><label for="bobKeys">Bob keyframes (scale)</label><input type="text" id="bobKeys" spellcheck="false"></div>
+        <div class="row"><label for="bobMs">Bob length</label><output data-for="bobMs"></output><input type="range" id="bobMs" min="120" max="1000" step="10"></div>
+        <div class="row"><label for="growMs">Selection grow</label><output data-for="growMs"></output><input type="range" id="growMs" min="80" max="900" step="10"></div>
+        <div class="row"><label for="bloomMs">Hover bloom</label><output data-for="bloomMs"></output><input type="range" id="bloomMs" min="80" max="1200" step="10"></div>
+        <div class="row"><label for="particles">Move particles</label><output data-for="particles"></output><input type="range" id="particles" min="0" max="6" step="1"></div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Zoom and collapse</legend>
+        <div class="row"><label for="zoom">Zoom</label><output data-for="zoom"></output><input type="range" id="zoom" min="0.08" max="2.5" step="0.01"></div>
+        <div class="row"><label for="circleBelow">Circle when note is narrower than</label><output data-for="circleBelow"></output><input type="range" id="circleBelow" min="40" max="240" step="2"></div>
+        <div class="row"><label for="dotBelow">Dot when note is narrower than</label><output data-for="dotBelow"></output><input type="range" id="dotBelow" min="12" max="120" step="2"></div>
+      </fieldset>
+
+      <div class="buttons">
+        <button type="button" class="primary" id="copy">Copy values</button>
+        <button type="button" id="reset">Reset to measured</button>
+      </div>
+      <textarea id="out" readonly hidden aria-label="Values as JSON"></textarea>
+    </form>
+  </section>
+
+
+</div>
+
+<script>
+(() => {
+const DEFAULTS = { weight:3, wobble:1.6, bumps:4, widthVar:10, swell:45, grain:0, seed:42,
+  waveAmp:1.2, waveCount:9, waveSpeed:0.5, waveMeet:true,
+  bobKeys:"1.06, 0.97, 1.015, 0.995, 1", bobMs:360, growMs:380, bloomMs:420, particles:3,
+  zoom:1, circleBelow:110, dotBelow:48 };
+const UNITS = { weight:v=>v.toFixed(2)+' px', wobble:v=>v.toFixed(1)+' px', bumps:v=>v, widthVar:v=>v+'%', swell:v=>v+'%', grain:v=>v+'%', seed:v=>'n'+v,
+  waveAmp:v=>v.toFixed(1)+' px', waveCount:v=>v, waveSpeed:v=>v.toFixed(2), bobMs:v=>v+' ms', growMs:v=>v+' ms', bloomMs:v=>v+' ms', particles:v=>v,
+  zoom:v=>Math.round(v*100)+'%', circleBelow:v=>v+' px', dotBelow:v=>v+' px' };
+const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+let P = {...DEFAULTS};
+let saved = null;
+try { saved = JSON.parse(localStorage.getItem('lineLab') || 'null'); } catch {}
+if (saved) P = {...P, ...saved};
+else if (reduced) { P.waveSpeed = 0; P.particles = 0; P.bobKeys = '1'; }
+
+const cssVar = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const C = { paper:'#F7F5F0', note:'#FBFAF7', pencil:'#1C1C1C', select:'#489AFE', flash:'#00E070', del:'#FC3B02' };
+
+// ---------- controls ----------
+const form = document.getElementById('controls');
+function syncControls(){
+  for (const k of Object.keys(DEFAULTS)) {
+    const el = document.getElementById(k); if (!el) continue;
+    if (el.type === 'checkbox') el.checked = !!P[k]; else el.value = P[k];
+  }
+  updateOutputs();
+}
+function updateOutputs(){
+  form.querySelectorAll('output[data-for]').forEach(o => { const k=o.dataset.for; o.textContent = UNITS[k] ? UNITS[k](Number(P[k])) : P[k]; });
+}
+form.addEventListener('input', e => {
+  const el = e.target; if (!el.id || !(el.id in DEFAULTS)) return;
+  P[el.id] = el.type === 'checkbox' ? el.checked : el.type === 'text' ? el.value : Number(el.value);
+  updateOutputs(); save(); dirtyShapes(); drawCopy();
+});
+function save(){ try { localStorage.setItem('lineLab', JSON.stringify(P)); } catch {} }
+document.getElementById('reset').onclick = () => { P = {...DEFAULTS}; syncControls(); save(); dirtyShapes(); drawCopy(); };
+document.getElementById('copy').onclick = async () => {
+  const out = document.getElementById('out');
+  const json = JSON.stringify({
+    line:{ weightPx:P.weight, wobblePx:P.wobble, wobbleBumpsPerLoop:P.bumps, widthVariationPct:P.widthVar, cornerSwellPct:P.swell, edgeGrainPct:P.grain },
+    selectionWaves:{ heightPx:P.waveAmp, wavesPerLoop:P.waveCount, speed:P.waveSpeed, counterWave:P.waveMeet },
+    motion:{ bobKeyframes:bobKeys(), bobMs:P.bobMs, selectionGrowMs:P.growMs, hoverBloomMs:P.bloomMs, moveParticles:P.particles },
+    collapse:{ circleBelowPx:P.circleBelow, dotBelowPx:P.dotBelow }
+  }, null, 2);
+  out.value = json; out.hidden = false;
+  const btn = document.getElementById('copy');
+  try { await navigator.clipboard.writeText(json); btn.textContent = 'Copied'; }
+  catch { out.focus(); out.select(); btn.textContent = 'Select and copy below'; }
+  setTimeout(() => btn.textContent = 'Copy values', 1600);
+};
+function bobKeys(){
+  const k = String(P.bobKeys).split(/[\s,]+/).map(Number).filter(n => isFinite(n) && n > 0.3 && n < 2);
+  return k.length ? k : [1];
+}
+
+// ---------- geometry ----------
+function rng(seed){ let a = seed >>> 0; return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function hash(i){ let x = Math.imul(i ^ 0x9E3779B9, 0x85EBCA6B); x ^= x >>> 13; x = Math.imul(x, 0xC2B2AE35); x ^= x >>> 16; return (x >>> 0) / 4294967296; }
+
+// periodic noise in [-1,1] built from a few integer harmonics around `base`
+function makeNoise(seed, base, spread){
+  const r = rng(seed); const terms = []; let sum = 0;
+  for (let j = 0; j < 4; j++) { const k = Math.max(1, base - 1 + j * spread); const a = 0.35 + r() * 0.65; terms.push([k, a, r() * Math.PI * 2]); sum += a; }
+  return t => { let v = 0; for (const [k,a,ph] of terms) v += a * Math.sin(2*Math.PI*k*t + ph); return v / sum; };
+}
+
+function resample(pts, closed, step){
+  const src = closed ? [...pts, pts[0]] : pts; const segs = []; let L = 0;
+  for (let i = 0; i < src.length - 1; i++) { const d = Math.hypot(src[i+1].x - src[i].x, src[i+1].y - src[i].y); segs.push(d); L += d; }
+  const n = Math.max(2, Math.round(L / step)); const out = []; let si = 0, acc = 0;
+  const count = closed ? n : n + 1;
+  for (let i = 0; i < count; i++) {
+    const s = i * L / n;
+    while (si < segs.length - 1 && acc + segs[si] < s) { acc += segs[si]; si++; }
+    const f = segs[si] ? (s - acc) / segs[si] : 0; const a = src[si], b = src[si+1];
+    out.push({ x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f });
+  }
+  return { pts: out, L };
+}
+
+// dense points -> points with normal, curvature-based cornerness, wobble applied (units of the input)
+function shape(raw, closed, seed, opts){
+  const { pts, L } = resample(raw, closed, opts.step || 2);
+  const n = pts.length;
+  const at = i => closed ? pts[(i + n) % n] : pts[Math.max(0, Math.min(n - 1, i))];
+  const out = [];
+  const bumps = closed ? P.bumps : Math.max(1, Math.round(P.bumps * L / 900));
+  const wob = makeNoise(seed * 7 + 1, bumps, 1);
+  const wid = makeNoise(seed * 13 + 5, Math.max(3, bumps * 3), 2);
+  let curv = [];
+  for (let i = 0; i < n; i++) {
+    const a = at(i - 2), b = at(i), c = at(i + 2);
+    const a1 = Math.atan2(b.y - a.y, b.x - a.x), a2 = Math.atan2(c.y - b.y, c.x - b.x);
+    let d = a2 - a1; while (d > Math.PI) d -= 2*Math.PI; while (d < -Math.PI) d += 2*Math.PI;
+    const ds = (Math.hypot(b.x - a.x, b.y - a.y) + Math.hypot(c.x - b.x, c.y - b.y)) || 1;
+    curv.push((!closed && (i < 2 || i > n - 3)) ? 0 : Math.abs(d) / ds);
+  }
+  // smooth cornerness
+  const R = 4; const corner = curv.map((_, i) => { let s = 0, w = 0; for (let j = -R; j <= R; j++) { const k = closed ? (i + j + n) % n : Math.max(0, Math.min(n-1, i + j)); s += curv[k]; w++; } return Math.min(1, (s / w) * (opts.cornerRadius || 14)); });
+  for (let i = 0; i < n; i++) {
+    const a = at(i - 1), c = at(i + 1); let tx = c.x - a.x, ty = c.y - a.y; const tl = Math.hypot(tx, ty) || 1; tx /= tl; ty /= tl;
+    const t = i / (closed ? n : n - 1);
+    const off = wob(t) * P.wobble * (opts.wobbleScale ?? 1) * (closed ? 1 : Math.sin(Math.PI * t) * 0.6 + 0.4);
+    const nx = -ty, ny = tx;
+    out.push({ x: pts[i].x + nx * off, y: pts[i].y + ny * off, nx, ny, t, corner: corner[i], wv: wid(t) });
+  }
+  return { pts: out, closed, L };
+}
+
+function roundedRect(w, h, radii){
+  const [tl, tr, br, bl] = radii; const pts = [];
+  const arc = (cx, cy, r, a0, a1) => { for (let i = 0; i <= 10; i++) { const a = a0 + (a1 - a0) * i / 10; pts.push({ x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) }); } };
+  arc(tl, tl, tl, Math.PI, Math.PI * 1.5);
+  arc(w - tr, tr, tr, -Math.PI / 2, 0);
+  arc(w - br, h - br, br, 0, Math.PI / 2);
+  arc(bl, h - bl, bl, Math.PI / 2, Math.PI);
+  return pts;
+}
+function circlePts(cx, cy, r){ const p = []; for (let i = 0; i < 48; i++) { const a = i / 48 * Math.PI * 2 - Math.PI/2; p.push({ x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) }); } return p; }
+function bez(p0, p1, p2, p3){ const p = []; for (let i = 0; i <= 40; i++) { const t = i / 40, u = 1 - t; p.push({ x: u*u*u*p0[0] + 3*u*u*t*p1[0] + 3*u*t*t*p2[0] + t*t*t*p3[0], y: u*u*u*p0[1] + 3*u*u*t*p1[1] + 3*u*t*t*p2[1] + t*t*t*p3[1] }); } return p; }
+function poly(list){ return list.map(([x, y]) => ({ x, y })); }
+
+// draw a shaped stroke. map: world->screen; weight in screen px; wave(t) -> screen px offset; filter(t) -> bool
+function drawStroke(ctx, S, map, weight, color, o = {}){
+  const pts = S.pts, n = pts.length; const segs = S.closed ? n : n - 1;
+  ctx.strokeStyle = color; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.globalAlpha = o.alpha ?? 1;
+  const scr = pts.map(p => { const q = map(p); const w = o.wave ? o.wave(p.t) : 0; return { x: q.x + p.nx * w, y: q.y + p.ny * w }; });
+  const widthAt = (p, i) => weight * (1 + (P.widthVar / 100) * p.wv) * (1 + (P.swell / 100) * p.corner) * (1 + (P.grain / 100) * 0.45 * (hash(i * 31 + (o.seed || 0)) * 2 - 1));
+  for (let i = 0; i < segs; i++) {
+    const a = pts[i], b = pts[(i + 1) % n];
+    if (o.filter && !o.filter(a.t)) continue;
+    ctx.lineWidth = Math.max(0.5, (widthAt(a, i) + widthAt(b, i + 1)) / 2);
+    ctx.beginPath(); ctx.moveTo(scr[i].x, scr[i].y); ctx.lineTo(scr[(i + 1) % n].x, scr[(i + 1) % n].y); ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+  return scr;
+}
+
+// ---------- the note ----------
+const NOTE = { x: -150, y: -100, w: 300, h: 200, title: 'Orbit rules', body: ['Heavier nodes pull lighter ones', 'toward the centre knot.'] };
+let shapes = null;
+function dirtyShapes(){ shapes = null; }
+function buildShapes(){
+  const r = rng(P.seed * 101 + 3); const radii = [0,0,0,0].map(() => 16 + (r() - 0.5) * 9);
+  shapes = {
+    outline: shape(roundedRect(NOTE.w, NOTE.h, radii), true, P.seed, { step: 2, cornerRadius: 16 }),
+    rule: shape(poly([[22, 62], [NOTE.w - 40, 60]]), false, P.seed + 2, { step: 2, wobbleScale: 0.6 }),
+    fBtn: shape(circlePts(NOTE.w - 62, 22, 13), true, P.seed + 3, { step: 1.5, wobbleScale: 0.35 }),
+    gear: shape(circlePts(NOTE.w - 28, 22, 13), true, P.seed + 4, { step: 1.5, wobbleScale: 0.35 }),
+  };
+}
+
+// ---------- stage ----------
+const cv = document.getElementById('stage'); const ctx = cv.getContext('2d');
+let W = 0, H = 0, DPR = 1;
+function resize(){ DPR = Math.min(2, devicePixelRatio || 1); const b = cv.getBoundingClientRect(); W = b.width; H = b.height; cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR); }
+new ResizeObserver(resize).observe(cv); resize();
+
+const st = { hover: false, hoverAt: 0, hoverPt: { x: 0, y: 0 }, selected: false, selAt: 0, selT: 0, bobAt: -1e9, flashAt: -1e9,
+  drag: null, redHover: false, redAt: 0, form: 'note', formFrom: 'note', formAt: -1e9, particles: [] };
+const cam = { x: 0, y: 0 };
+const toScreen = p => ({ x: W / 2 + (p.x - cam.x) * P.zoom, y: H / 2 + (p.y - cam.y) * P.zoom });
+const toWorld = (sx, sy) => ({ x: (sx - W / 2) / P.zoom + cam.x, y: (sy - H / 2) / P.zoom + cam.y });
+
+function currentForm(){ const sw = NOTE.w * P.zoom; return sw < P.dotBelow ? 'dot' : sw < P.circleBelow ? 'circle' : 'note'; }
+function ease(t){ t = Math.max(0, Math.min(1, t)); return 1 - Math.pow(1 - t, 3); }
+function bobScale(now){
+  const k = bobKeys(); const t = (now - st.bobAt) / P.bobMs; if (t < 0 || t >= 1 || k.length < 1) return 1;
+  const pts = [1, ...k]; const f = t * (pts.length - 1); const i = Math.floor(f); const u = f - i;
+  const s = (1 - Math.cos(Math.PI * u)) / 2; return pts[i] + (pts[Math.min(i + 1, pts.length - 1)] - pts[i]) * s;
+}
+function nearestT(wp){
+  let best = 0, bd = 1e9; for (const p of shapes.outline.pts) { const d = (p.x + NOTE.x - wp.x) ** 2 + (p.y + NOTE.y - wp.y) ** 2; if (d < bd) { bd = d; best = p.t; } } return best;
+}
+
+function drawNote(now, alpha){
+  const s = bobScale(now);
+  const cx = NOTE.x + NOTE.w / 2, cy = NOTE.y + NOTE.h / 2;
+  const map = p => toScreen({ x: cx + (p.x + NOTE.x - cx) * s, y: cy + (p.y + NOTE.y - cy) * s });
+  ctx.save(); ctx.globalAlpha = alpha;
+  // fill
+  const O = shapes.outline.pts.map(map);
+  ctx.beginPath(); O.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.closePath();
+  ctx.fillStyle = C.note; ctx.fill();
+  // hover bloom from the entry point
+  if (st.hover || st.selected) {
+    const t = ease((now - st.hoverAt) / P.bloomMs); const c = toScreen(st.hoverPt);
+    const R = Math.max(1, t * Math.hypot(NOTE.w, NOTE.h) * P.zoom * 1.1);
+    ctx.save(); ctx.clip();
+    const g = ctx.createRadialGradient(c.x, c.y, 0, c.x, c.y, R);
+    g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(0.8, 'rgba(255,255,255,0.95)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H); ctx.restore();
+  }
+  ctx.globalAlpha = alpha;
+  // pencil outline
+  drawStroke(ctx, shapes.outline, map, P.weight, C.pencil, { seed: P.seed, alpha });
+  // selection
+  if (st.selected) {
+    const g = ease((now - st.selAt) / P.growMs); const jitL = 0.8 + hash(P.seed + 11) * 0.4, jitR = 0.8 + hash(P.seed + 17) * 0.4;
+    const filter = t => { if (g >= 1) return true; let d = t - st.selT; if (d > 0.5) d -= 1; if (d < -0.5) d += 1; return d >= 0 ? d <= 0.5 * Math.min(1, g * jitR) : -d <= 0.5 * Math.min(1, g * jitL); };
+    const tm = now / 1000 * P.waveSpeed;
+    const wave = t => { let v = Math.sin(2 * Math.PI * (P.waveCount * t - tm)); if (P.waveMeet) v = (v + 0.6 * Math.sin(2 * Math.PI * ((P.waveCount + 3) * t + tm * 0.7))) / 1.6; return v * P.waveAmp; };
+    drawStroke(ctx, shapes.outline, map, P.weight * 1.05, C.select, { seed: P.seed, filter, wave, alpha });
+  }
+  // title + rule + body (fonted text, never roughened)
+  const z = P.zoom * s; const tl = map({ x: 22, y: 46 });
+  ctx.fillStyle = C.pencil; ctx.font = `600 ${26 * z}px ${cssVar('--ui')}`; ctx.textBaseline = 'alphabetic'; ctx.fillText(NOTE.title, tl.x, tl.y);
+  drawStroke(ctx, shapes.rule, map, P.weight, C.pencil, { seed: P.seed + 2, alpha });
+  ctx.font = `400 ${14 * z}px ${cssVar('--ui')}`; ctx.fillStyle = '#3A3834';
+  NOTE.body.forEach((line, i) => { const q = map({ x: 22, y: 92 + i * 21 }); ctx.fillText(line, q.x, q.y); });
+  // value row with node dot
+  const vd = map({ x: 28, y: 150 }); ctx.beginPath(); ctx.arc(vd.x, vd.y, P.weight * 1.3, 0, Math.PI * 2); ctx.fillStyle = C.pencil; ctx.fill();
+  const vt = map({ x: 40, y: 155 }); ctx.font = `500 ${14 * z}px ${cssVar('--mono')}`; ctx.fillText('mass  4.0', vt.x, vt.y);
+  // f and settings buttons when selected
+  if (st.selected) {
+    drawStroke(ctx, shapes.fBtn, map, P.weight * 0.8, C.pencil, { seed: P.seed + 3, alpha });
+    drawStroke(ctx, shapes.gear, map, P.weight * 0.8, C.pencil, { seed: P.seed + 4, alpha });
+    const fp = map({ x: NOTE.w - 62, y: 27 }); ctx.font = `italic 600 ${15 * z}px Georgia, serif`; ctx.textAlign = 'center'; ctx.fillStyle = C.pencil; ctx.fillText('f', fp.x, fp.y);
+    const gp = map({ x: NOTE.w - 28, y: 22 }); ctx.lineWidth = Math.max(1, P.weight * 0.6); ctx.strokeStyle = C.pencil; ctx.lineCap = 'round';
+    for (let i = 0; i < 6; i++) { const a = i / 6 * Math.PI * 2; ctx.beginPath(); ctx.moveTo(gp.x + Math.cos(a) * 3.5 * z, gp.y + Math.sin(a) * 3.5 * z); ctx.lineTo(gp.x + Math.cos(a) * 7 * z, gp.y + Math.sin(a) * 7 * z); ctx.stroke(); }
+    ctx.textAlign = 'start';
+  }
+  // corner dots: red (delete) and blue (start a connection)
+  const red = map({ x: 4, y: 4 }); const rr = 13 * z;
+  const rh = st.redHover ? ease((now - st.redAt) / 180) : 0;
+  const R = rr * (1 + 0.3 * rh);
+  ctx.beginPath(); ctx.arc(red.x, red.y, R, 0, Math.PI * 2);
+  ctx.fillStyle = rh > 0 ? mix(C.del, '#FFFFFF', 0.35 * rh) : C.del; ctx.fill();
+  if (rh > 0) { ctx.lineWidth = P.weight; ctx.strokeStyle = C.del; ctx.globalAlpha = alpha * rh; ctx.stroke();
+    ctx.lineWidth = Math.max(1.5, P.weight * 0.8); const x = R * 0.36; ctx.beginPath(); ctx.moveTo(red.x - x, red.y - x); ctx.lineTo(red.x + x, red.y + x); ctx.moveTo(red.x + x, red.y - x); ctx.lineTo(red.x - x, red.y + x); ctx.stroke(); ctx.globalAlpha = alpha; }
+  const blue = map({ x: 28, y: -2 }); ctx.beginPath(); ctx.arc(blue.x, blue.y, Math.max(2.5, 4.2 * z), 0, Math.PI * 2);
+  const fl = Math.max(0, 1 - (now - st.flashAt) / 500);
+  ctx.fillStyle = fl > 0 ? mix(C.select, C.flash, fl) : C.select; ctx.fill();
+  ctx.restore();
+}
+function mix(a, b, t){ const pa = [1,3,5].map(i => parseInt(a.slice(i, i + 2), 16)), pb = [1,3,5].map(i => parseInt(b.slice(i, i + 2), 16)); return 'rgb(' + pa.map((v, i) => Math.round(v + (pb[i] - v) * t)).join(',') + ')'; }
+
+function drawCircleForm(now, alpha){
+  const c = toScreen({ x: NOTE.x + NOTE.w / 2, y: NOTE.y + NOTE.h / 2 }); const r = 22 * bobScale(now);
+  const S = shape(circlePts(0, 0, r), true, P.seed, { step: 1.5, wobbleScale: 0.25 });
+  const map = p => ({ x: c.x + p.x, y: c.y + p.y });
+  ctx.save(); ctx.globalAlpha = alpha;
+  ctx.beginPath(); ctx.arc(c.x, c.y, r, 0, Math.PI * 2); ctx.fillStyle = C.note; ctx.fill();
+  drawStroke(ctx, S, map, P.weight, st.selected ? C.select : C.pencil, { seed: P.seed, alpha });
+  ctx.globalAlpha = alpha; ctx.fillStyle = C.pencil; ctx.font = `600 17px ${cssVar('--ui')}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(NOTE.title[0], c.x, c.y + 1);
+  ctx.restore(); ctx.textAlign = 'start'; ctx.textBaseline = 'alphabetic';
+}
+function drawDotForm(now, alpha){
+  const c = toScreen({ x: NOTE.x + NOTE.w / 2, y: NOTE.y + NOTE.h / 2 });
+  ctx.save(); ctx.globalAlpha = alpha; ctx.beginPath(); ctx.arc(c.x, c.y, P.weight * 1.4 * bobScale(now), 0, Math.PI * 2); ctx.fillStyle = st.selected ? C.select : C.pencil; ctx.fill(); ctx.restore();
+}
+
+function spawnParticles(dirx, diry){
+  if (!P.particles) return; const len = Math.hypot(dirx, diry) || 1; dirx /= len; diry /= len;
+  const corners = [[0, 0], [NOTE.w, 0], [NOTE.w, NOTE.h], [0, NOTE.h]].map(([x, y]) => ({ x: x + NOTE.x, y: y + NOTE.y }));
+  const cx = NOTE.x + NOTE.w / 2, cy = NOTE.y + NOTE.h / 2;
+  corners.sort((a, b) => ((a.x - cx) * dirx + (a.y - cy) * diry) - ((b.x - cx) * dirx + (b.y - cy) * diry));
+  const now = performance.now();
+  for (let i = 0; i < P.particles; i++) {
+    const c = corners[i % 2]; const sp = (Math.random() - 0.5) * 0.6;
+    st.particles.push({ x: c.x, y: c.y, vx: -dirx + sp * diry, vy: -diry - sp * dirx, born: now + i * 25, life: 340 + Math.random() * 120 });
+  }
+}
+function drawParticles(now){
+  st.particles = st.particles.filter(p => now - p.born < p.life);
+  ctx.save(); ctx.strokeStyle = C.pencil; ctx.lineCap = 'round'; ctx.lineWidth = 1.5;
+  for (const p of st.particles) {
+    const t = (now - p.born) / p.life; if (t < 0) continue;
+    const d = 10 + t * 26; const q = toScreen({ x: p.x, y: p.y }); const x = q.x + p.vx * d, y = q.y + p.vy * d;
+    ctx.globalAlpha = 0.5 * (1 - t); ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + p.vx * 8, y + p.vy * 8); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+const statusEl = document.getElementById('status');
+function frame(now){
+  if (!shapes) buildShapes();
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0); ctx.fillStyle = C.paper; ctx.fillRect(0, 0, W, H);
+  const f = currentForm(); if (f !== st.form) { st.formFrom = st.form; st.form = f; st.formAt = now; }
+  const k = ease((now - st.formAt) / 220);
+  const draw = (form, a) => form === 'note' ? drawNote(now, a) : form === 'circle' ? drawCircleForm(now, a) : drawDotForm(now, a);
+  if (k < 1) draw(st.formFrom, 1 - k);
+  draw(st.form, k);
+  drawParticles(now);
+  statusEl.innerHTML = `<span>zoom <b>${Math.round(P.zoom * 100)}%</b></span><span>note on screen <b>${Math.round(NOTE.w * P.zoom)} px</b></span><span>shows as <b>${st.form}</b></span><span>line <b>${P.weight.toFixed(2)} px</b> at every zoom</span>`;
+  requestAnimationFrame(frame);
+}
+
+// ---------- input ----------
+function pos(e){ const b = cv.getBoundingClientRect(); return { x: e.clientX - b.left, y: e.clientY - b.top }; }
+function insideNote(wp){
+  if (st.form === 'note') return wp.x >= NOTE.x && wp.x <= NOTE.x + NOTE.w && wp.y >= NOTE.y && wp.y <= NOTE.y + NOTE.h;
+  const c = toScreen({ x: NOTE.x + NOTE.w / 2, y: NOTE.y + NOTE.h / 2 }), s = toScreen(wp); return Math.hypot(s.x - c.x, s.y - c.y) < 26;
+}
+function onRed(sp){ if (st.form !== 'note') return false; const r = toScreen({ x: NOTE.x + 4, y: NOTE.y + 4 }); return Math.hypot(sp.x - r.x, sp.y - r.y) < 16 * P.zoom + 4; }
+cv.addEventListener('pointermove', e => {
+  const sp = pos(e), wp = toWorld(sp.x, sp.y); const now = performance.now();
+  if (st.drag) {
+    const dx = (sp.x - st.drag.sx) / P.zoom, dy = (sp.y - st.drag.sy) / P.zoom;
+    if (!st.drag.moved && Math.hypot(sp.x - st.drag.sx, sp.y - st.drag.sy) > 4) { st.drag.moved = true; spawnParticles(dx, dy); }
+    if (st.drag.moved) { NOTE.x = st.drag.nx + dx; NOTE.y = st.drag.ny + dy; st.drag.lastDx = e.movementX || st.drag.lastDx; st.drag.lastDy = e.movementY || st.drag.lastDy; }
+    return;
+  }
+  const inside = insideNote(wp);
+  if (inside && !st.hover) { st.hover = true; st.hoverAt = now; st.hoverPt = wp; }
+  if (!inside && st.hover) st.hover = false;
+  const r = onRed(sp); if (r && !st.redHover) st.redAt = now; st.redHover = r;
+  cv.style.cursor = r ? 'pointer' : inside ? 'grab' : 'default';
+});
+cv.addEventListener('pointerleave', () => { if (!st.drag) { st.hover = false; st.redHover = false; } });
+cv.addEventListener('pointerdown', e => {
+  const sp = pos(e), wp = toWorld(sp.x, sp.y); const now = performance.now();
+  if (insideNote(wp) || onRed(sp)) {
+    cv.setPointerCapture(e.pointerId);
+    st.drag = { sx: sp.x, sy: sp.y, nx: NOTE.x, ny: NOTE.y, moved: false, lastDx: 0, lastDy: 0 };
+    if (!st.selected) { st.selected = true; st.selAt = now; st.selT = st.form === 'note' ? nearestT(wp) : 0; if (!st.hover) { st.hover = true; st.hoverAt = now; st.hoverPt = wp; } }
+    st.bobAt = now; st.flashAt = -1e9;
+    cv.style.cursor = 'grabbing';
+  } else { st.selected = false; }
+});
+cv.addEventListener('pointerup', e => {
+  if (st.drag) { if (st.drag.moved) spawnParticles(st.drag.lastDx || 1, st.drag.lastDy); st.drag = null; cv.style.cursor = 'grab'; }
+});
+cv.addEventListener('wheel', e => {
+  e.preventDefault(); const z = Math.max(0.08, Math.min(2.5, P.zoom * Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0015))));
+  P.zoom = +z.toFixed(3); document.getElementById('zoom').value = P.zoom; updateOutputs(); save();
+}, { passive: false });
+
+// ---------- sample comparison ----------
+const cc = document.getElementById('copyCanvas'); const c2 = cc.getContext('2d');
+function drawCopy(){
+  // coordinates are in the original 1000 px sample, cropped at (30,20) and scaled 0.75
+  const S = 0.75, ox = 30, oy = 20; const map = p => ({ x: (p.x - ox) * S, y: (p.y - oy) * S });
+  c2.setTransform(1, 0, 0, 1, 0, 0); c2.fillStyle = '#FFFFFF'; c2.fillRect(0, 0, cc.width, cc.height);
+  const wt = 8 * S; const saved = P.wobble; const pen = '#1C1C1C';
+  const shapesList = [
+    [poly([[58, 72], [61, 180], [66, 295]]), false, 1],
+    [circlePts(131, 62, 23), true, 0.25],
+    [roundedRect(48, 155, [24, 24, 24, 24]).map(p => ({ x: p.x + 111, y: p.y + 99 })), true, 0.4],
+    [bez([298, 108], [300, 230], [320, 330], [357, 425]), false, 1],
+    [bez([64, 355], [62, 450], [150, 525], [278, 527]), false, 1],
+    [poly([[500, 102], [480, 102], [480, 210], [503, 210]]), false, 0.5],
+    [poly([[585, 98], [606, 99], [607, 208], [588, 210]]), false, 0.5],
+  ];
+  shapesList.forEach(([pts, closed, ws], i) => drawStroke(c2, shape(pts, closed, P.seed + i * 3, { step: 1.5, wobbleScale: ws * 1.4, cornerRadius: 10 }), map, wt, pen, { seed: i }));
+  c2.fillStyle = pen; [[57, 51], [82, 51]].forEach(([x, y]) => { const q = map({ x, y }); c2.beginPath(); c2.arc(q.x, q.y, 4.6 * S, 0, Math.PI * 2); c2.fill(); });
+  P.wobble = saved;
+}
+
+syncControls(); drawCopy(); requestAnimationFrame(frame);
+})();
+</script>
