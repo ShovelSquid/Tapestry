@@ -41,6 +41,7 @@ import {
   FALLBACK_SIZE,
   absolutePositions as nestedPositions,
   buildNesting,
+  clampToSurface,
   containerMinSizes,
   dropContainer,
   isNestable,
@@ -462,7 +463,8 @@ export default function TreeFrame({
     const current = containerOf(nodeId)
     if (target === current) {
       const origin = current !== null ? frameSpot(current) : { x: 0, y: 0 }
-      writePosition(nodeId, frameX - origin.x, frameY - origin.y)
+      const local = clampToSurface({ x: frameX - origin.x, y: frameY - origin.y }, current !== null)
+      writePosition(nodeId, local.x, local.y)
       return
     }
     const targetAt = target !== null ? frameSpot(target) : null

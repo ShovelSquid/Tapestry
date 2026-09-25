@@ -7,6 +7,7 @@
 
 import { describe, expect, it } from 'vitest'
 import {
+  CHILD_TOP,
   CONTAINER_PADDING,
   MAX_NESTING_DEPTH,
   NESTABLE_TYPE,
@@ -133,7 +134,7 @@ describe('moveIntoOps', () => {
   it('moves into a container in local coordinates, clamped to its surface', () => {
     expect(moveIntoOps('n5', 'n1', { x: 150, y: 90 }, { x: 100, y: 100 }, null)).toEqual([
       { op: 'setProperty', target: 'n5', key: 'position.x', type: 'real', value: 50 },
-      { op: 'setProperty', target: 'n5', key: 'position.y', type: 'real', value: 0 },
+      { op: 'setProperty', target: 'n5', key: 'position.y', type: 'real', value: CHILD_TOP },
       { op: 'setProperty', target: 'n5', key: 'inside', type: 'ref', value: 'n1' },
     ])
   })

@@ -46,6 +46,64 @@ a note. Physics must never rearrange ideas. So:
   world as a body, and **pin** a body back onto the plane as a note. That is
   an explicit, recorded action, never a side effect of physics.
 
+## Notes, not trees
+
+Kaelen, 2026-09-24: *"I don't think we should have trees, I think we should
+just have notes, and they can contain notes within them, to create a
+recursive folder-like structure."* So the core concept is the note. Every
+note has its text and a 2D surface, and other notes can sit anywhere on
+that surface, to any depth. The note plane is the root surface.
+
+A tree does three jobs today, and only one of them goes away:
+
+| Job | Today | Notes-only |
+| --- | --- | --- |
+| Container on the canvas | Tree frame | A top-level note holding notes. Goes away as its own concept. |
+| History (undo, branches, threads) | One journal per tree | Stays, underneath: the boundary becomes a note and everything inside it. |
+| File on disk | One `.tree` per tree | Stays as storage: a note can be stored in its own file. Vaults and workspaces become nested notes. |
+
+**Stage 1 (built, `layout/nesting.ts`)** works inside today's trees:
+
+- A note records its container on itself as `set n5 inside ref n2`. Its
+  `position.*` is then measured from the container's top-left.
+- Drop a note on another note to put it inside, and drag it out to lift it.
+  Right-click a note for **New note inside** and **Zoom into note**.
+- A container is drawn big enough to hold its contents. Its stored size is
+  never overwritten, so emptying it lets it shrink.
+- Zoomed out, a nested note narrower than 64 screen px draws as an empty
+  outline at its real place and size, and nothing inside it is drawn.
+  Double-clicking an outline zooms into it.
+- Deleting a note deletes everything inside it, in one commit that one undo
+  restores.
+- Agents' `look` and `place` measure nested notes where they are drawn.
+  `place` keeps a note inside its container.
+
+Tunable values, all exported from `layout/nesting.ts` except the last:
+
+| Value | Setting | Why |
+| --- | --- | --- |
+| `CHILD_TOP` | 56 px | Contents start below the container's title row, so a note never hides the title of the note it is in. |
+| `CONTAINER_PADDING` | 24 px | Room to the right of and below a container's contents. |
+| `OUTLINE_BELOW_PX` | 64 screen px | Below this width, a card's text is unreadable anyway. |
+| `MAX_NESTING_DEPTH` | 32 | A bound on every walk. Deeper chains, and cycles, fall back to the top level. |
+| `ZOOM_FIT_SHARE` (Canvas) | 0.85 | Zoom into note leaves a margin around the note. |
+
+The rules I chose:
+
+- A drop lands in the deepest note under the dragged card's centre.
+- Only `tapestry.notes/note@1` nests in this stage. Threads, knots and
+  plugin nodes stay at the top level.
+- Workspace folders keep their own path-based nesting (02.7) until stage 2.
+- A malformed `inside` (a missing target, a non-note target, a cycle) leaves
+  the note at the top level and never breaks the tree.
+
+**Stage 2:** tree frames become top-level notes, and vault and workspace
+folders become ordinary nested notes. **Stage 3:** storage and history
+follow notes. That means choosing default file boundaries (one file for
+everything, or one per top-level note) and moving undo, agent tools and
+threads from tree ids to note ids. Still to do in stage 1: `create_note`
+for agents has no `inside` argument yet.
+
 ## Coordinates
 
 One world unit is one canvas unit (a CSS pixel at zoom 1), so the plane
@@ -59,7 +117,9 @@ position.
 - These axes are left-handed. A renderer that wants right-handed axes
   (three.js) maps world `(x, y, z)` to `(x, −y, z)`. That conversion lives in
   one function, next to the camera, and nowhere else.
-- A note's world position is `frame origin + frame-local position`. Frame
+- A note's world position is `frame origin + frame-local position`, where a
+  nested note's frame-local position adds up its containers' (see *Notes,
+  not trees*). Frame
   origins belong to the forest (Phase 2.6), note positions to their tree
   (02.2 D-15). Neither changes.
 - Numbers crossing into Mathspace follow its rule: a `real` is accepted only

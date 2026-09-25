@@ -1125,3 +1125,49 @@ describe('a following note after place (D-05)', () => {
     }
   })
 })
+
+// ---------------------------------------------------------------------------
+// Notes inside notes (renderer/layout/nesting.ts)
+// ---------------------------------------------------------------------------
+
+describe('look and place with notes inside notes', () => {
+  /** n1: a container far to the right; n2: a note at the origin; n3 (Claude's): inside n1. */
+  function seedNested(): void {
+    seed([
+      { x: 1000, y: 0, width: 400, height: 400 },
+      { x: 0, y: 0 },
+    ])
+    tree.bridge.submitAs(CLAUDE, 'Create note', [
+      {
+        op: 'createNode',
+        type: NOTE_TYPE,
+        props: {
+          title: { type: 'text', value: 'Inner' },
+          body: { type: 'text', value: '' },
+          'position.x': { type: 'real', value: 24 },
+          'position.y': { type: 'real', value: 80 },
+          inside: { type: 'ref', value: 'n1' },
+        },
+      },
+    ])
+  }
+
+  it('sees a nested note where it is drawn, not at its container-local spot', () => {
+    seedNested()
+    const value = lookOk({ tree: 'spatial', from: 'n2' })
+    const relationOf = (id: string) => value.neighbours.find((n) => n.note === id)?.relation
+    // Stored at (24, 80) it would overlap n2; drawn at (1024, 80) it sits
+    // beside its container, off to the right.
+    expect(relationOf('n3')).toBe(relationOf('n1'))
+  })
+
+  it('writes a placed nested note back in its container, on its surface', () => {
+    seedNested()
+    placeOk({ tree: 'spatial', note: 'n3', where: { near: 'n2' } })
+    expect(propOf('n3', 'inside')).toEqual({ type: 'ref', value: 'n1' })
+    // The spot beside n2 is left of the container, so it is kept on its
+    // surface: at its left edge, below its title row.
+    expect(propOf('n3', 'position.x')?.value).toBe(0)
+    expect(Number(propOf('n3', 'position.y')?.value)).toBeGreaterThanOrEqual(56)
+  })
+})

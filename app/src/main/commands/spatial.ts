@@ -61,6 +61,11 @@ import {
   type WhereRole,
 } from '../../renderer/layout/placement'
 import { absolutePositions, toLocalPosition } from '../../renderer/layout/subspaces'
+import {
+  absolutePositions as nestedPositions,
+  buildNesting,
+  clampToSurface,
+} from '../../renderer/layout/nesting'
 
 /**
  * Node ids the kernel issues: `n1`, `n2`, ... (never `n0`). Re-declared here
@@ -73,14 +78,36 @@ function errorText(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
 }
 
+/** A node's stored position, or the origin when it has none. */
+function storedPoint(node: NodeData): { x: number; y: number } {
+  return { x: Number(node.props['position.x']?.value ?? 0), y: Number(node.props['position.y']?.value ?? 0) }
+}
+
+/**
+ * Frame-local positions of notes inside other notes (renderer/layout/nesting.ts),
+ * by id. Only nested notes have an entry.
+ */
+function nestedFramePositions(nodes: NodeData[]): Map<string, { x: number; y: number }> {
+  const nesting = buildNesting(nodes)
+  const byId = new Map(nodes.map((node) => [node.id, node]))
+  const all = nestedPositions(nesting, (id) => {
+    const node = byId.get(id)
+    return node ? storedPoint(node) : { x: 0, y: 0 }
+  })
+  const nested = new Map<string, { x: number; y: number }>()
+  for (const [id, at] of all) if ((nesting.containerOf.get(id) ?? null) !== null) nested.set(id, at)
+  return nested
+}
+
 /**
  * The nodes as `look` and `place` measure them. A workspace tree's positions
- * are folder-local (02.7 D-21), so every placed node is given its absolute
- * (workspace-frame) position; any other tree's nodes are returned unchanged.
+ * are folder-local (02.7 D-21), and a note inside another note stores its spot
+ * relative to that note, so every such node is given its absolute (frame)
+ * position; every other node is returned unchanged.
  */
 function inFrameCoordinates(tree: OpenTree, nodes: NodeData[]): NodeData[] {
-  if (tree.kind !== 'workspace') return nodes
-  const absolute = absolutePositions(nodes)
+  const absolute = tree.kind === 'workspace' ? absolutePositions(nodes) : nestedFramePositions(nodes)
+  if (absolute.size === 0) return nodes
   return nodes.map((node) => {
     const x = node.props['position.x']
     const y = node.props['position.y']
@@ -91,6 +118,18 @@ function inFrameCoordinates(tree: OpenTree, nodes: NodeData[]): NodeData[] {
       props: { ...node.props, 'position.x': { ...x, value: at.x }, 'position.y': { ...y, value: at.y } },
     }
   })
+}
+
+/** A frame spot for `noteId` in its container's coordinates; unchanged at the top level. */
+function localToContainer(
+  nodes: NodeData[],
+  noteId: string,
+  frame: { x: number; y: number },
+): { x: number; y: number } {
+  const container = buildNesting(nodes).containerOf.get(noteId) ?? null
+  if (container === null) return frame
+  const origin = nestedFramePositions(nodes).get(container) ?? storedPoint(nodes.find((n) => n.id === container)!)
+  return clampToSurface({ x: frame.x - origin.x, y: frame.y - origin.y }, true)
 }
 
 /** How many neighbours `look` returns when no limit is given (the search_notes precedent). */
@@ -397,11 +436,13 @@ export class SpatialCommands {
         return { ok: false, error: `no finite spot for ${noteId} in ${tree.name}` }
       }
 
-      // A workspace note stores its spot relative to its folder (02.7 D-21).
+      // A workspace note stores its spot relative to its folder (02.7 D-21),
+      // and a note inside another note relative to that note: it stays inside,
+      // and the note holding it grows if the spot is past its edge.
       const spot =
         tree.kind === 'workspace'
           ? { ...outcome, ...toLocalPosition(stored, noteId, { x: outcome.x, y: outcome.y }) }
-          : outcome
+          : { ...outcome, ...localToContainer(stored, noteId, { x: outcome.x, y: outcome.y }) }
 
       // (8) One commit, signed by the socket's actor.
       const result = tree.bridge.submitAs(actor, placeMessage(noteId, where), placeOps(note, spot))

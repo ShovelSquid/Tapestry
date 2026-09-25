@@ -33,6 +33,12 @@ export const INSIDE_KEY = 'inside'
 /** The one type that can hold and be held, in this stage. */
 export const NESTABLE_TYPE = 'tapestry.notes/note@1'
 
+/**
+ * How far below a container's top edge its contents start, so a note never
+ * covers the title of the note it is in (the card's padding plus one title row).
+ */
+export const CHILD_TOP = 56
+
 /** Space kept to the right of and below a container's contents. */
 export const CONTAINER_PADDING = 24
 
@@ -290,10 +296,18 @@ export type NestingOp =
   | { op: 'unsetProperty'; target: string; key: string }
 
 /**
+ * A local spot inside a container, kept on its surface: never left of it and
+ * never over its title row. Top-level spots are unchanged.
+ */
+export function clampToSurface(local: Point, inContainer: boolean): Point {
+  if (!inContainer) return { x: Math.round(local.x), y: Math.round(local.y) }
+  return { x: Math.max(0, Math.round(local.x)), y: Math.max(CHILD_TOP, Math.round(local.y)) }
+}
+
+/**
  * The ops that put `id` inside `container` (null: the top level) with its
  * top-left at `absolute` (frame-local). The new local spot is measured from
- * the container's absolute top-left and never negative, so a note cannot sit
- * above or left of the surface that holds it.
+ * the container's absolute top-left and kept on its surface (clampToSurface).
  */
 export function moveIntoOps(
   id: string,
@@ -303,9 +317,7 @@ export function moveIntoOps(
   currentContainer: string | null,
 ): NestingOp[] {
   const origin = container !== null && containerAbsolute ? containerAbsolute : { x: 0, y: 0 }
-  const floor = container !== null ? 0 : -Infinity
-  const x = Math.max(floor, Math.round(absolute.x - origin.x))
-  const y = Math.max(floor, Math.round(absolute.y - origin.y))
+  const { x, y } = clampToSurface({ x: absolute.x - origin.x, y: absolute.y - origin.y }, container !== null)
   const ops: NestingOp[] = [
     { op: 'setProperty', target: id, key: 'position.x', type: 'real', value: x },
     { op: 'setProperty', target: id, key: 'position.y', type: 'real', value: y },
@@ -333,7 +345,7 @@ export function newChildSpot(
   containerHeight: number,
 ): Point {
   const children = nesting.childrenOf.get(container) ?? []
-  let bottom = children.length === 0 ? containerHeight : 0
+  let bottom = children.length === 0 ? Math.max(containerHeight, CHILD_TOP) : 0
   for (const child of children) {
     bottom = Math.max(bottom, localOf(child).y + sizeOf(child).height)
   }
