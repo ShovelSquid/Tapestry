@@ -23,13 +23,14 @@ checklist:
 
 ## In progress
 
-(empty) Wave 2 is done (REVIEW #5). Next session: **Part 2, Wave 3 (the format bar
-and note settings)**. Start with `git merge ws/mergin`. The `f` and settings
-buttons go top-right on a selected note (Line Lab `drawNote`: pencil circles at
-(w-62, 22) and (w-28, 22), r 13, `wobbleScale` 0.35); `f` expands into the
-`f i b u ✱` pill replacing `FloatingToolbar`. Underline and strikethrough stay
-disabled (gate 1). Screenshots: `autonomy/checks/line-lab-v2/wave2-*.js` show how
-to get notes on screen.
+Wave 3 (format bar and note settings) started 13:40 on 2026-09-25; mergin
+already merged (07aeaa4). Plan: `look/format-bar.ts` (pill model + tests),
+`look/FormatBar.tsx` (f and settings circles at (w-62,22)/(w-28,22); pill on the
+top edge x 44..w-44 when editing with text selected or f hovered; red-dot hover
+collapses it), `look/NoteSettings.tsx` (flip face; colour and thresholds
+read-only), FloatingToolbar deleted, KnotNode gets the pill alone. Underline and
+strikethrough: not in the schema (paste would write them); buttons disabled.
+Round-trip test through the real kernel in `editor/format-roundtrip.test.ts`.
 
 ## Blocked
 
