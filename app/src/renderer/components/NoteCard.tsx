@@ -373,6 +373,7 @@ export default function NoteCard({
   const [settingsOpen, setSettingsOpen] = useState(false)
   const toggleSettings = useCallback(() => setSettingsOpen((o) => !o), [])
   const closeSettings = useCallback(() => setSettingsOpen(false), [])
+  const [faceShown, setFaceShown] = useState(false)
   useEffect(() => {
     if (!blue) setSettingsOpen(false)
   }, [blue])
@@ -759,6 +760,7 @@ export default function NoteCard({
   if (isEditing) borderClass += ' tapestry-note-card--editing'
   if (isConnectTarget) borderClass += ' tapestry-note-card--connect-target'
   borderClass += ' tapestry-note-card--ink'
+  if (faceShown) borderClass += ' tapestry-note-card--flipped'
 
   const cardStyle: React.CSSProperties = {
     left: `${effectiveX}px`,
@@ -806,7 +808,7 @@ export default function NoteCard({
       />
 
       {/* Editable title, with the chat button beside it (D-19) */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 4, paddingRight: blue ? 64 : 0 }}>
+      <div className="tapestry-note-title-row" style={{ paddingRight: blue ? 64 : 0 }}>
         <input
           type="text"
           className="tapestry-note-title-input"
@@ -860,7 +862,7 @@ export default function NoteCard({
       {provenanceFooter}
 
       {/* The back of the note: its settings (Line Lab v2 wave 3) */}
-      <NoteSettings open={settingsOpen} onClose={closeSettings} />
+      <NoteSettings open={settingsOpen} onClose={closeSettings} onShownChange={setFaceShown} />
 
       {/* The format bar: `f`, the settings button and the pill (D-24) */}
       {blue && box.w > 0 && (

@@ -972,23 +972,37 @@ html, body, #root {
   border-radius: 50%;
 }
 
+/* Text selected in a note or knot is the selection's light blue (sketch 3). */
+.tapestry-note-card ::selection,
+.knot-editor ::selection {
+  background: var(--tap-select-fill);
+}
+
 /* ---- The back of a note: its settings (look/NoteSettings.tsx) ---- */
 
 .tapestry-note-settings {
-  position: absolute;
-  inset: 0;
-  z-index: 2;
-  padding: 16px;
-  padding-top: 24px;
-  border-radius: 14px;
-  background: var(--tap-note);
   display: flex;
   flex-direction: column;
   gap: 8px;
+  padding-right: 64px; /* clear of the corner buttons */
   font-size: 13px;
   color: var(--tap-ink);
-  overflow: hidden;
   backface-visibility: hidden;
+}
+
+/* The title row: the title input and the Ask Claude button. */
+.tapestry-note-title-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* While the settings face is up, it takes the front's place. */
+.tapestry-note-card--flipped > .tapestry-note-title-row,
+.tapestry-note-card--flipped > .tapestry-note-rule,
+.tapestry-note-card--flipped > .tapestry-note-editor,
+.tapestry-note-card--flipped > .tapestry-provenance-footer {
+  display: none;
 }
 
 .tapestry-note-settings-title {

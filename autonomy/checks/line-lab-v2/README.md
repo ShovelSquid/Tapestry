@@ -37,3 +37,10 @@ before the capture (wave 0 used it to click "Save my name").
   catches a selection mid-grow and the red dot hovered.
   `app-wave2-2026-09-25.png`, `app-wave2-midgrow-2026-09-25.png`, and
   `wave2-side-by-side-2026-09-25.png` (sketches 0-2 above, the app below).
+
+- Wave 3: `SHOT_SCRIPT="$(cat wave3-setup.js)" SHOT_AFTER_RELOAD="$(cat wave3-pose.js)"`
+  edits "Formatting", selects "some", presses `b` in the pill and reads the body
+  back from the kernel (`savedBold: true`). Prefix the pose with
+  `window.__POSE__='settings';` to select "Settings" and flip it instead.
+  `app-wave3-pill-2026-09-25.png`, `app-wave3-settings-2026-09-25.png`, and
+  `wave3-side-by-side-2026-09-25.png` (sketch 3, the pill, the settings face).

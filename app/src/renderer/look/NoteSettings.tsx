@@ -9,7 +9,8 @@
  * note shows the defaults until Kaelen approves the names.
  *
  * The flip is render-only: a 0→1 `Amount` turns the face in about its
- * vertical axis over the card's contents, through the shared frame loop.
+ * vertical axis in place of the card's front (which the card hides while
+ * the face is up), through the shared frame loop.
  * With the `noteFlip` effect off it swaps at once.
  */
 
@@ -20,9 +21,12 @@ import { LOOK } from './values'
 export interface NoteSettingsProps {
   readonly open: boolean
   readonly onClose: () => void
+  /** Whether the face is up (open, or still turning away): the card hides
+   *  its front meanwhile, so the face sits in its place and sizes it. */
+  readonly onShownChange?: (shown: boolean) => void
 }
 
-function NoteSettingsImpl({ open, onClose }: NoteSettingsProps): React.ReactElement | null {
+function NoteSettingsImpl({ open, onClose, onShownChange }: NoteSettingsProps): React.ReactElement | null {
   const amount = useRef<Amount | null>(null)
   if (!amount.current) amount.current = new Amount(LOOK.detail.noteFlipMs, smoothstep)
   const faceRef = useRef<HTMLDivElement>(null)
@@ -57,6 +61,10 @@ function NoteSettingsImpl({ open, onClose }: NoteSettingsProps): React.ReactElem
     })
     return unsubscribe
   }, [open, shown])
+
+  useEffect(() => {
+    onShownChange?.(shown)
+  }, [shown, onShownChange])
 
   useEffect(() => {
     if (!open) return
