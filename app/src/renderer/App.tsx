@@ -24,7 +24,12 @@ import ForestBar from './components/ForestBar'
 import { LiveAnnouncer } from './components/LiveAnnouncer'
 import TransientNotice from './components/TransientNotice'
 import PluginErrorNotification from './components/PluginErrorNotification'
-import PluginSurfaceLayer, { SurfaceLauncher, type SurfaceInfo } from './components/PluginSurfaceLayer'
+import {
+  SurfaceLauncher,
+  SurfaceWindowStack,
+  useSurfaceWindows,
+  type SurfaceInfo,
+} from './components/PluginSurfaceLayer'
 import NamePromptDialog from './components/NamePromptDialog'
 import ChatPanel, { type ChatPanelState } from './components/ChatPanel'
 import { ContextMenuProvider } from './components/ContextMenu'
@@ -183,9 +188,9 @@ export default function App(): React.ReactElement {
   // Plugin contributions: maps node types to component names from plugins
   const [pluginNodeViews, setPluginNodeViews] = useState<Record<string, string>>({})
 
-  // Plugin surfaces (CANV-04): what the registry lists, and which one is open.
+  // Plugin surfaces (CANV-04): what the registry lists, and the open windows.
   const [pluginSurfaces, setPluginSurfaces] = useState<SurfaceInfo[]>([])
-  const [openSurface, setOpenSurface] = useState<SurfaceInfo | null>(null)
+  const [surfaceWindows, surfaceWindowActions] = useSurfaceWindows()
 
   // Plugin error notification state (D-34)
   const [pluginError, setPluginError] = useState<{
@@ -1208,7 +1213,10 @@ export default function App(): React.ReactElement {
             />
 
             {/* Plugin surfaces (CANV-04): one launcher per registered surface */}
-            <SurfaceLauncher surfaces={pluginSurfaces} onOpen={setOpenSurface} />
+            <SurfaceLauncher
+              surfaces={pluginSurfaces}
+              onOpen={(surface) => surfaceWindowActions.open(surface, selectedTreeId ?? '')}
+            />
 
             {/* An agent write ended a rewound state (UA-14) */}
             {notice && <TransientNotice message={notice} onHide={() => setNotice(null)} />}
@@ -1235,14 +1243,8 @@ export default function App(): React.ReactElement {
               />
             )}
 
-            {/* An open plugin surface: full-window layer over the canvas (CANV-04) */}
-            {openSurface && (
-              <PluginSurfaceLayer
-                surface={openSurface}
-                treeId={selectedTreeId ?? ''}
-                onClose={() => setOpenSurface(null)}
-              />
-            )}
+            {/* Open plugin surfaces: floating windows over the canvas (CANV-04) */}
+            <SurfaceWindowStack windows={surfaceWindows} actions={surfaceWindowActions} />
 
             {/* The space: one frame per open tree, with pan/zoom and connections */}
             <Canvas

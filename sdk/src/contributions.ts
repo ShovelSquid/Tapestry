@@ -121,7 +121,10 @@ export interface InspectorContribution {
 
 /**
  * Registers a renderer-side surface: an ES module the host loads into a
- * full-window stage layer and hands a container element.
+ * stage and hands a container element. The host shows every stage as a
+ * floating window over the canvas that the person can move, resize, maximize
+ * and close, so a surface must follow `SurfaceHost.onResize` rather than
+ * assume any size.
  *
  * The module is the plugin's own code, served from the plugin's directory
  * over the `tapestry-plugin://<plugin-id>/<entry>` origin (the plugin id is
@@ -148,7 +151,10 @@ export interface SurfaceContribution {
    */
   entry: string
 
-  /** API version "1" supports exactly one placement: a full-window stage layer. */
+  /**
+   * API version "1" supports exactly one placement: a stage, which the host
+   * presents as a movable, resizable window (full-window when maximized).
+   */
   placement: 'stage'
 }
 
@@ -161,8 +167,9 @@ export interface SurfaceContribution {
  */
 export interface SurfaceHost {
   /**
-   * Host-owned, absolutely sized element filling the stage layer. The plugin
-   * owns its children and must remove them in `SurfaceHandle.dispose`.
+   * Host-owned, absolutely sized element filling the stage window below its
+   * title bar; its size changes whenever the person resizes the window. The
+   * plugin owns its children and must remove them in `SurfaceHandle.dispose`.
    */
   readonly container: HTMLElement
 
