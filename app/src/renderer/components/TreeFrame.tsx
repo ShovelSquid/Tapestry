@@ -91,11 +91,14 @@ function unavailableCopy(tree: ForestTree): string {
 }
 
 /** The ways out of each state. The first is the primary action. */
-function unavailableActions(tree: ForestTree): Array<{ label: string; run: () => void }> {
+function unavailableActions(
+  tree: ForestTree,
+  onCloseTree: (treeId: string) => void,
+): Array<{ label: string; run: () => void }> {
   const closeTree = {
     label: 'Close tree',
     run: (): void => {
-      void window.tapestry.trees.close(tree.id)
+      onCloseTree(tree.id)
     },
   }
 
@@ -152,6 +155,11 @@ export interface TreeFrameHandlers {
   onRegisterDims: (ref: NodeRef, width: number, height: number) => void
   onDragMove: (ref: NodeRef, x: number, y: number) => void
   onDragEnd: (ref: NodeRef) => void
+  /**
+   * Close a tree, from Tree options or an unavailable frame's actions. App
+   * waits for main and shows a refusal or failure (review WR-03).
+   */
+  onCloseTree: (treeId: string) => void
 }
 
 interface TreeFrameProps {
@@ -250,7 +258,7 @@ export default function TreeFrame({
   // It renders no content layer at all: there is no graph to draw, and nothing
   // here holds a handle through which it could be written to.
   if (isUnavailable) {
-    const actions = unavailableActions(tree)
+    const actions = unavailableActions(tree, handlers.onCloseTree)
     return (
       <div
         className={`tapestry-tree-frame tapestry-tree-frame--unavailable${stateClass}`}
@@ -265,6 +273,7 @@ export default function TreeFrame({
             saveState={tree.saveState}
             zoom={zoom}
             onPointerDown={onHeaderPointerDown}
+            onClose={() => handlers.onCloseTree(tree.id)}
           />
         </div>
 
@@ -386,6 +395,7 @@ export default function TreeFrame({
           saveState={tree.saveState}
           zoom={zoom}
           onPointerDown={onHeaderPointerDown}
+          onClose={() => handlers.onCloseTree(tree.id)}
         />
       </div>
 

@@ -723,6 +723,33 @@ export default function App(): React.ReactElement {
   )
 
   /**
+   * Close a tree, from Tree options or an unavailable frame (review WR-03).
+   *
+   * Closing needs a name and an open space, so main can refuse it. A refusal
+   * main marks with a `notice` (4.9, 4.10) is shown word for word, as
+   * addTreeToSpace does; any other failure goes to the banner in the same
+   * `<action> failed: <error>` form Undo and Redo use. A close that works
+   * needs nothing here: main's trees-changed refreshes the list.
+   */
+  const handleCloseTree = useCallback(
+    async (treeId: string) => {
+      try {
+        const result = await window.tapestry.trees.close(treeId)
+        if (result.ok) return
+        if (result.notice) {
+          setNotice(result.notice)
+          return
+        }
+        showAppError(`Close tree failed: ${result.error ?? 'unknown error'}`)
+      } catch (err) {
+        console.error('Close tree failed:', err)
+        showAppError(`Close tree failed: ${errorMessage(err)}`)
+      }
+    },
+    [showAppError],
+  )
+
+  /**
    * Undo or redo a drop (2.6 D-08, D-09). Main writes a new forest commit
    * with origins it read from the forest; nothing here names a position or
    * an actor. The run follows main's stacks, so it never promises a step
@@ -935,6 +962,7 @@ export default function App(): React.ReactElement {
           onPropertyEdit={handlePropertyEdit}
           onFrameMove={setFrameLocal}
           onFramesMoved={handleFramesMoved}
+          onCloseTree={(treeId) => void handleCloseTree(treeId)}
         />
       </div>
     </LiveAnnouncer>

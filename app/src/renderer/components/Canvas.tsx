@@ -149,6 +149,12 @@ interface CanvasProps {
     result: { ok: boolean; committed?: boolean; error?: string },
     frameMoved: boolean,
   ) => void
+  /**
+   * Close a tree (Tree options, or an unavailable frame's actions). App
+   * waits for main's answer and shows a refusal notice (4.9) or the error,
+   * so a close never fails silently (review WR-03).
+   */
+  onCloseTree: (treeId: string) => void
   /** The selected frame, which is the space's focal point and undo target. */
   selectedTreeId: string | null
   onSelectTree: (treeId: string | null) => void
@@ -230,6 +236,7 @@ function Canvas({
   onPropertyEdit,
   onFrameMove,
   onFramesMoved,
+  onCloseTree,
   selectedTreeId,
   onSelectTree,
 }: CanvasProps, ref: React.ForwardedRef<CanvasHandle>): React.ReactElement {
@@ -870,6 +877,7 @@ function Canvas({
     onRegisterDims: registerNodeDims,
     onDragMove: handleDragMove,
     onDragEnd: handleDragEnd,
+    onCloseTree,
   }
 
   // The in-progress connection line is drawn in world space, above the frames,

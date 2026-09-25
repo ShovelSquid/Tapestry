@@ -24,6 +24,11 @@ interface FrameHeaderProps {
   /** The canvas zoom, which decides whether the name has to counter-scale. */
   zoom: number
   onPointerDown: (e: React.PointerEvent<HTMLDivElement>) => void
+  /**
+   * Close this tree. App waits for main's answer and shows a refusal, so
+   * the header never drops it (review WR-03).
+   */
+  onClose: () => void
 }
 
 /**
@@ -67,6 +72,7 @@ export default function FrameHeader({
   saveState,
   zoom,
   onPointerDown,
+  onClose,
 }: FrameHeaderProps): React.ReactElement {
   const [isMenuOpen, setIsMenuOpen] = useState(false)
 
@@ -91,7 +97,7 @@ export default function FrameHeader({
       label: 'Close tree',
       title: 'Removes the tree from this space. Files and history stay on disk.',
       run: () => {
-        void window.tapestry.trees.close(treeId)
+        onClose()
       },
     },
   ]
