@@ -96,6 +96,15 @@ interface NoteCardProps {
   onSelectionChange?: (nodeId: string, hasSelection: boolean, from: number, to: number) => void
   /** Whether another note has a text selection (for NoteControls tooltip) */
   hasTextSelection?: boolean
+  /**
+   * The smallest size this note is drawn at, when notes sit inside it: large
+   * enough to hold them (layout/nesting.ts). Its stored size is not changed.
+   */
+  minSize?: { width: number; height: number }
+  /** "New note inside": make a note on this note's surface. */
+  onCreateInside?: () => void
+  /** "Zoom into note": fit this note to the view. */
+  onZoomTo?: () => void
 }
 
 // ---------------------------------------------------------------------------
@@ -148,6 +157,9 @@ export default function NoteCard({
   onDragEnd,
   onSelectionChange,
   hasTextSelection,
+  minSize,
+  onCreateInside,
+  onZoomTo,
 }: NoteCardProps): React.ReactElement {
   const cardRef = useRef<HTMLDivElement>(null)
 
@@ -610,9 +622,12 @@ export default function NoteCard({
       // While the note is being edited, its text keeps the native menu.
       const target = e.target as HTMLElement
       if (isEditing && (target.closest('.ProseMirror') || target.closest('input'))) return
-      openContextMenu(e, [{ label: 'Ask Claude…', run: askClaude }])
+      const items = [{ label: 'Ask Claude…', run: askClaude }]
+      if (onCreateInside) items.push({ label: 'New note inside', run: onCreateInside })
+      if (onZoomTo) items.push({ label: 'Zoom into note', run: onZoomTo })
+      openContextMenu(e, items)
     },
-    [isEditing, openContextMenu, askClaude],
+    [isEditing, openContextMenu, askClaude, onCreateInside, onZoomTo],
   )
 
   const askLabel = `Ask Claude about ${localTitle.trim().length > 0 ? localTitle : 'Untitled'}`
@@ -627,6 +642,14 @@ export default function NoteCard({
     top: `${effectiveY}px`,
     ...(effectiveWidth ? { width: `${effectiveWidth}px`, minWidth: `${MIN_WIDTH}px`, maxWidth: 'none' } : {}),
     ...(effectiveHeight ? { height: `${effectiveHeight}px`, minHeight: `${MIN_HEIGHT}px` } : {}),
+    // A container is drawn large enough for what is inside it (nesting.ts).
+    ...(minSize
+      ? {
+          minWidth: `${Math.max(MIN_WIDTH, minSize.width)}px`,
+          minHeight: `${Math.max(MIN_HEIGHT, minSize.height)}px`,
+          maxWidth: 'none',
+        }
+      : {}),
   }
 
   return (

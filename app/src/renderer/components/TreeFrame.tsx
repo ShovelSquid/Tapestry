@@ -37,6 +37,19 @@ import {
   type SubspaceLayout,
 } from '../layout/subspaces'
 import type { NodeInfo } from './Canvas'
+import {
+  FALLBACK_SIZE,
+  absolutePositions as nestedPositions,
+  buildNesting,
+  containerMinSizes,
+  dropContainer,
+  isNestable,
+  moveIntoOps,
+  newChildSpot,
+  outlineState,
+  type NestingOp,
+  type Size,
+} from '../layout/nesting'
 
 /** Fallback knot size until the node registers its real dims. */
 const KNOT_FALLBACK_WIDTH = 200
@@ -186,6 +199,12 @@ export interface TreeFrameHandlers {
   onToggleFolder: (ref: NodeRef, collapsed: boolean) => void
   /** Pointer down on a folder frame's header: the start of a folder drag (D-21). */
   onFolderHeaderPointerDown: (ref: NodeRef, e: React.PointerEvent<HTMLDivElement>) => void
+  /** A note moved into or out of another note: one 'Move note' commit (nesting.ts). */
+  onNestingMove: (ref: NodeRef, ops: NestingOp[]) => void
+  /** "New note inside" a note, at a spot local to it. */
+  onCreateInside: (container: NodeRef, x: number, y: number) => void
+  /** Fit a frame-local rect to the view ("Zoom into note", an outline's double-click). */
+  onZoomToRect: (treeId: string, rect: { x: number; y: number; width: number; height: number }) => void
 }
 
 /** A workspace tree's folder subspaces, computed once in Canvas (02.7 D-21). */
@@ -371,6 +390,119 @@ export default function TreeFrame({
     }
     return false
   }
+  const nodesById = new Map(tree.nodes.map((node) => [node.id, node]))
+
+  // ---------------------------------------------------------------------
+  // Notes inside notes (layout/nesting.ts). A nested note's stored position
+  // is local to its container; everything here draws it at its frame-local
+  // spot and turns a drop back into local coordinates. Workspace trees nest
+  // by folder instead, so they skip this.
+  // ---------------------------------------------------------------------
+
+  const nesting = subspaces ? null : buildNesting(tree.nodes)
+
+  /** A note's own spot in its container's coordinates (or the frame's). */
+  const localSpot = (nodeId: string): Point => {
+    const spot = displayPositions.get(nodeId)
+    if (spot) return { x: spot.x, y: spot.y }
+    const drag = dragPositions[keyFor(nodeId)]
+    if (drag) return drag
+    const node = nodesById.get(nodeId)
+    return node ? storedPosition(node) : { x: 0, y: 0 }
+  }
+
+  /** A note's drawn size as last measured, else its stored or default size. */
+  const sizeOf = (nodeId: string): Size => {
+    const dims = getDims(keyFor(nodeId))
+    if (dims) return dims
+    const node = nodesById.get(nodeId)
+    const w = Number(node?.props['width']?.value ?? 0)
+    const h = Number(node?.props['height']?.value ?? 0)
+    return { width: w > 0 ? w : FALLBACK_SIZE.width, height: h > 0 ? h : FALLBACK_SIZE.height }
+  }
+
+  const nestedAt = nesting ? nestedPositions(nesting, localSpot) : null
+  const containerMins = nesting ? containerMinSizes(nesting, localSpot, sizeOf) : null
+  const outlines = nesting
+    ? outlineState(nesting, (id) => sizeOf(id).width, zoom)
+    : { outlined: new Set<string>(), hidden: new Set<string>() }
+  const containerOf = (nodeId: string): string | null => nesting?.containerOf.get(nodeId) ?? null
+
+  /** Where a note is in the frame, following every container it is in. */
+  const frameSpot = (nodeId: string): Point => nestedAt?.get(nodeId) ?? localSpot(nodeId)
+
+  /** The note's drawn rect in the frame, or null while it is not drawn. */
+  const drawnRect = (nodeId: string): { x: number; y: number; width: number; height: number } | null => {
+    if (outlines.hidden.has(nodeId)) return null
+    const at = frameSpot(nodeId)
+    const size = sizeOf(nodeId)
+    const min = containerMins?.get(nodeId)
+    return {
+      x: at.x,
+      y: at.y,
+      width: Math.max(size.width, min?.width ?? 0),
+      height: Math.max(size.height, min?.height ?? 0),
+    }
+  }
+
+  /**
+   * A card dropped with its top-left at a frame-local point: the note lands
+   * inside whatever note is under its centre (or at the top level), in that
+   * note's coordinates. Staying in the same container is an ordinary move,
+   * so a following note is still taken over exactly as before.
+   */
+  const placeNote = (nodeId: string, frameX: number, frameY: number): void => {
+    if (!nesting || !nesting.depthOf.has(nodeId)) {
+      writePosition(nodeId, frameX, frameY)
+      return
+    }
+    const size = sizeOf(nodeId)
+    const centre = { x: frameX + size.width / 2, y: frameY + size.height / 2 }
+    const target = dropContainer(nesting, drawnRect, nodeId, centre)
+    const current = containerOf(nodeId)
+    if (target === current) {
+      const origin = current !== null ? frameSpot(current) : { x: 0, y: 0 }
+      writePosition(nodeId, frameX - origin.x, frameY - origin.y)
+      return
+    }
+    const targetAt = target !== null ? frameSpot(target) : null
+    handlers.onNestingMove(refFor(nodeId), moveIntoOps(nodeId, target, { x: frameX, y: frameY }, targetAt, current))
+  }
+
+  /** A live drag reported in frame coordinates, stored in the note's own. */
+  const dragNote = (nodeId: string, frameX: number, frameY: number): void => {
+    const current = containerOf(nodeId)
+    const origin = current !== null ? frameSpot(current) : { x: 0, y: 0 }
+    handlers.onDragMove(refFor(nodeId), frameX - origin.x, frameY - origin.y)
+  }
+
+  // The note being dragged in this tree (if any) and the note it would land in.
+  const draggingId = nesting
+    ? (tree.nodes.find((n) => isNestable(n) && dragPositions[keyFor(n.id)] !== undefined)?.id ?? null)
+    : null
+  const dropTargetId = (() => {
+    if (!nesting || draggingId === null) return null
+    const at = frameSpot(draggingId)
+    const size = sizeOf(draggingId)
+    const target = dropContainer(nesting, drawnRect, draggingId, { x: at.x + size.width / 2, y: at.y + size.height / 2 })
+    return target !== containerOf(draggingId) ? target : null
+  })()
+
+  const createInside = (nodeId: string): void => {
+    if (!nesting) return
+    const spot = newChildSpot(nesting, nodeId, localSpot, sizeOf, sizeOf(nodeId).height)
+    handlers.onCreateInside(refFor(nodeId), spot.x, spot.y)
+  }
+
+  const zoomTo = (nodeId: string): void => {
+    const rect = drawnRect(nodeId)
+    if (rect) handlers.onZoomToRect(tree.id, rect)
+  }
+
+  /** Nested notes draw after (over) their containers. */
+  const depthOrder = (a: NodeInfo, b: NodeInfo): number =>
+    (nesting?.depthOf.get(a.id) ?? 0) - (nesting?.depthOf.get(b.id) ?? 0)
+
   // ThreadCard menu (D-07 UI-SPEC "The thread on the 2D canvas": "Open
   // thread", "Thread settings", "Delete thread") and the settings popover it
   // opens (UI-SPEC "Thread settings": "opened from ... the ThreadCard menu").
@@ -386,6 +518,11 @@ export default function TreeFrame({
       const at = absolute.get(nodeId) ?? storedPosition(node)
       const dims = getDims(keyFor(nodeId))
       return { x: at.x + (dims?.width ?? 240) / 2, y: at.y + (dims?.height ?? 80) / 2 }
+    }
+    const nestedSpot = nestedAt?.get(nodeId)
+    if (nestedSpot && containerOf(nodeId) !== null) {
+      const dims = getDims(keyFor(nodeId))
+      return { x: nestedSpot.x + (dims?.width ?? 240) / 2, y: nestedSpot.y + (dims?.height ?? 80) / 2 }
     }
     const drag = dragPositions[keyFor(nodeId)]
     const spot = displayPositions.get(nodeId)
@@ -438,8 +575,6 @@ export default function TreeFrame({
     if (auto) return { x: auto.left + auto.width / 2, y: auto.top + auto.height / 2 }
     return getNodeCenter(nodeId)
   }
-
-  const nodesById = new Map(tree.nodes.map((node) => [node.id, node]))
 
   /** A node's local position, honouring a live drag (subspace trees). */
   const localOf = (nodeId: string): Point => {
@@ -520,6 +655,7 @@ export default function TreeFrame({
         >
           {tree.edges.map((edge) => {
             if (isInsideCollapsed(edge.from) || isInsideCollapsed(edge.to)) return null
+            if (outlines.hidden.has(edge.from) || outlines.hidden.has(edge.to)) return null
             const from = resolveNodeCenter(edge.from)
             const to = resolveNodeCenter(edge.to)
             if (!from || !to) return null
@@ -607,9 +743,40 @@ export default function TreeFrame({
         {/* Note cards — the component a plugin registered, or the fallback.
             In a workspace tree, folders and the cards inside them are drawn by
             their FolderFrame, not here. */}
-        {tree.nodes.filter((n) => !isKnot(n) && !isNestedInSubspace(n)).map((node) => {
+        {tree.nodes
+          .filter((n) => !isKnot(n) && !isNestedInSubspace(n) && !outlines.hidden.has(n.id))
+          .sort(depthOrder)
+          .map((node) => {
           const key = keyFor(node.id)
           const view = mappedNodeView(pluginNodeViews[node.type])
+
+          // Zoomed out, a nested note is its outline: its real place and size,
+          // none of its contents. A double-click zooms into it.
+          if (outlines.outlined.has(node.id)) {
+            const rect = drawnRect(node.id)
+            if (!rect) return null
+            return (
+              <div
+                key={node.id}
+                className="tapestry-note-outline"
+                data-node-id={node.id}
+                aria-label={`${String(node.props['title']?.value ?? '') || 'Untitled'} (zoom in to see)`}
+                onDoubleClick={(e) => {
+                  e.stopPropagation()
+                  zoomTo(node.id)
+                }}
+                style={{
+                  position: 'absolute',
+                  left: rect.x,
+                  top: rect.y,
+                  width: rect.width,
+                  height: rect.height,
+                  borderWidth: 1 / zoom,
+                  borderRadius: 8,
+                }}
+              />
+            )
+          }
 
           if (view === 'WorkspaceFileCard') return renderWorkspaceCard(node)
 
@@ -784,11 +951,18 @@ export default function TreeFrame({
                 key={node.id}
                 treeId={tree.id}
                 node={node}
-                displayPosition={displayPositions.get(node.id)?.followSpot ?? undefined}
+                displayPosition={
+                  containerOf(node.id) !== null
+                    ? frameSpot(node.id)
+                    : (displayPositions.get(node.id)?.followSpot ?? undefined)
+                }
+                minSize={containerMins?.get(node.id)}
+                onCreateInside={nesting ? () => createInside(node.id) : undefined}
+                onZoomTo={nesting ? () => zoomTo(node.id) : undefined}
                 isEditing={editingKey === key}
                 isHovered={hoveredKey === key}
                 isSelected={selectedKey === key}
-                isConnectTarget={connectingHoverKey === key}
+                isConnectTarget={connectingHoverKey === key || dropTargetId === node.id}
                 isConnecting={isConnecting}
                 zoom={zoom}
                 roll={roll}
@@ -799,7 +973,7 @@ export default function TreeFrame({
                 onSave={(nodeId, body, title) => handlers.onSave(refFor(nodeId), body, title)}
                 onMarkDirty={(nodeId) => handlers.onMarkDirty(refFor(nodeId))}
                 onMarkClean={(nodeId) => handlers.onMarkClean(refFor(nodeId))}
-                onPositionChange={writePosition}
+                onPositionChange={placeNote}
                 onWidthChange={(nodeId, width) => handlers.onWidthChange(refFor(nodeId), width)}
                 onHeightChange={(nodeId, height) =>
                   handlers.onHeightChange(refFor(nodeId), height)
@@ -812,7 +986,7 @@ export default function TreeFrame({
                 onLeaveDuringConnection={() => handlers.onHoverDuringConnection(null)}
                 onStartConnection={() => handlers.onStartConnection(refFor(node.id))}
                 onRegisterDims={(nodeId, w, h) => handlers.onRegisterDims(refFor(nodeId), w, h)}
-                onDragMove={(nodeId, x, y) => handlers.onDragMove(refFor(nodeId), x, y)}
+                onDragMove={dragNote}
                 onDragEnd={(nodeId) => handlers.onDragEnd(refFor(nodeId))}
               />
             )

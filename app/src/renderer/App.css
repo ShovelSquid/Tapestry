@@ -320,6 +320,22 @@ html, body, #root {
 }
 
 /* Note card -- secondary color #FFFFFF */
+/* A nested note seen from far away (layout/nesting.ts): its place and size,
+   none of its contents. The border width is set inline to 1 / zoom so it stays
+   one screen pixel. */
+.tapestry-note-outline {
+  position: absolute;
+  box-sizing: border-box;
+  border-style: solid;
+  border-color: #B8B3AA;
+  background-color: rgba(255, 255, 255, 0.55);
+  cursor: zoom-in;
+}
+
+.tapestry-note-outline:hover {
+  border-color: #6B6660;
+}
+
 .tapestry-note-card {
   position: absolute;
   min-width: 200px;

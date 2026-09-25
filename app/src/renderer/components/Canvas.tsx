@@ -43,6 +43,7 @@ import {
 } from '../layout/frames'
 import { buildFrameMoveBatch, originAfterFit } from '../layout/frame-moves'
 import { displayPositions, type DisplaySpot } from '../layout/placement'
+import { buildNesting, isNested, type NestingOp } from '../layout/nesting'
 import { isZoomPinchDelta, normalizeWheelDelta, panDelta, zoomFactor } from '../layout/wheel'
 import {
   CameraRig,
@@ -186,6 +187,10 @@ interface CanvasProps {
    * has been refreshed, so the live drag position can be let go without a jump.
    */
   onFolderDrop: (treeId: string, folderId: string, local: Point, dimsOf: DimsOf) => Promise<void>
+  /** A note moved into or out of another note: submit these ops as one commit (nesting.ts). */
+  onNestingMove: (ref: NodeRef, ops: NestingOp[]) => void
+  /** Make a note inside `container`, at a spot local to it. */
+  onCreateInside: (container: NodeRef, x: number, y: number) => void
   /** The selected frame, which is the space's focal point and undo target. */
   selectedTreeId: string | null
   onSelectTree: (treeId: string | null) => void
@@ -204,6 +209,8 @@ interface CanvasProps {
 
 const MIN_ZOOM = 0.1
 const MAX_ZOOM = 5
+/** How much of the viewport's smaller side "Zoom into note" fills. */
+const ZOOM_FIT_SHARE = 0.85
 
 const DEFAULT_NODE_WIDTH = 240
 const DEFAULT_NODE_HEIGHT = 80
@@ -277,6 +284,8 @@ function Canvas({
   onCloseTree,
   onToggleFolder,
   onFolderDrop,
+  onNestingMove,
+  onCreateInside,
   selectedTreeId,
   onSelectTree,
   revealedFolders,
@@ -453,7 +462,10 @@ function Canvas({
       continue
     }
 
-    const boxes: ContentBox[] = tree.nodes.map((node) => {
+    // A note inside another note is inside that note's drawn box, which is
+    // measured grown to hold it, so only top-level notes size the frame.
+    const nesting = buildNesting(tree.nodes)
+    const boxes: ContentBox[] = tree.nodes.filter((node) => !isNested(nesting, node.id)).map((node) => {
       const key = nodeKey({ treeId: tree.id, nodeId: node.id })
       const drag = dragPositions[key]
       const spot = spots.get(node.id)
@@ -525,6 +537,27 @@ function Canvas({
       panY: clientHeight / 2 - cy * prev.zoom,
     }))
   }, [])
+
+  /**
+   * Fit a frame-local rect to the viewport ("Zoom into note"): zoom so it
+   * fills ZOOM_FIT_SHARE of the smaller side, within the zoom limits, and
+   * glide its centre to the middle. Keeps the current roll.
+   */
+  const zoomToFrameRect = useCallback(
+    (treeId: string, rect: { x: number; y: number; width: number; height: number }) => {
+      const viewport = viewportRef.current
+      const tree = treesRef.current.find((t) => t.id === treeId)
+      if (!viewport || !tree || rect.width <= 0 || rect.height <= 0) return
+      const { clientWidth, clientHeight } = viewport
+      const fit = Math.min(clientWidth / rect.width, clientHeight / rect.height) * ZOOM_FIT_SHARE
+      const zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, fit))
+      const cx = tree.frame.x + rect.x + rect.width / 2
+      const cy = tree.frame.y + rect.y + rect.height / 2
+      rig.easeTo((c) => centerOn({ ...c, zoom }, cx, cy, clientWidth, clientHeight), FLY_TAU_MS)
+      kick()
+    },
+    [rig, kick],
+  )
 
   useImperativeHandle(ref, () => ({ panToFrame, panToNote }), [panToFrame, panToNote])
 
@@ -1093,6 +1126,15 @@ function Canvas({
         .then(() => requestSettle(folderRef.treeId))
         .catch(() => undefined)
     },
+    onNestingMove: (noteRef, ops) => {
+      onNestingMove(noteRef, ops)
+      recordFrameGrowth(noteRef.treeId)
+    },
+    onCreateInside: (container, x, y) => {
+      onCreateInside(container, x, y)
+      recordFrameGrowth(container.treeId)
+    },
+    onZoomToRect: (treeId, rect) => zoomToFrameRect(treeId, rect),
     onFolderHeaderPointerDown: (folderRef, e) => {
       if (e.button !== 0) return
       // A folder header is not canvas background: dragging it must not pan.

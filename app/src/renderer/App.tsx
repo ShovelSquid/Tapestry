@@ -32,6 +32,7 @@ import {
 } from './components/PluginSurfaceLayer'
 import NamePromptDialog from './components/NamePromptDialog'
 import ChatPanel, { type ChatPanelState } from './components/ChatPanel'
+import { INSIDE_KEY, buildNesting, subtreeDeepestFirst, type NestingOp } from './layout/nesting'
 import { ContextMenuProvider } from './components/ContextMenu'
 import {
   EMPTY_FRAME_RUN,
@@ -605,6 +606,34 @@ export default function App(): React.ReactElement {
     [trees, submitChange, refreshTree, reportSaveError],
   )
 
+  /** "New note inside": a note on another note's surface, opened for typing. */
+  const handleCreateInside = useCallback(
+    async (container: NodeRef, x: number, y: number) => {
+      try {
+        const commitResult = await submitChange(container.treeId, 'Create note', [
+          {
+            op: 'createNode',
+            type: 'tapestry.notes/note@1',
+            props: {
+              'position.x': { type: 'real', value: x },
+              'position.y': { type: 'real', value: y },
+              [INSIDE_KEY]: { type: 'ref', value: container.nodeId },
+              body: { type: 'text', value: '' },
+              title: { type: 'text', value: '' },
+            },
+          },
+        ])
+        await refreshTree(container.treeId)
+        if (commitResult.nodeIds && commitResult.nodeIds.length > 0) {
+          setEditingRef({ treeId: container.treeId, nodeId: commitResult.nodeIds[0] })
+        }
+      } catch (err) {
+        reportSaveError('Failed to create note', err)
+      }
+    },
+    [submitChange, refreshTree, reportSaveError],
+  )
+
   const handleCanvasDoubleClick = useCallback(
     async (target: DoubleClickTarget) => {
       // Inside a frame: the note belongs to that tree, at frame-local coords.
@@ -709,6 +738,19 @@ export default function App(): React.ReactElement {
         await refreshTree(ref.treeId)
       } catch (err) {
         reportSaveError('Failed to update position', err)
+      }
+    },
+    [submitChange, refreshTree, reportSaveError],
+  )
+
+  /** A note moved into or out of another note: position and `inside` in one commit. */
+  const handleNestingMove = useCallback(
+    async (ref: NodeRef, ops: NestingOp[]) => {
+      try {
+        await submitChange(ref.treeId, 'Move note', ops)
+        await refreshTree(ref.treeId)
+      } catch (err) {
+        reportSaveError('Failed to move note', err)
       }
     },
     [submitChange, refreshTree, reportSaveError],
@@ -850,10 +892,20 @@ export default function App(): React.ReactElement {
         return
       }
       try {
-        await submitChange(ref.treeId, 'Delete note', [{ op: 'deleteNode', id: ref.nodeId }])
+        // A note goes with everything inside it (layout/nesting.ts), deepest
+        // first, in one commit, so one undo brings the whole note back.
+        const tree = trees.find((t) => t.id === ref.treeId)
+        const ids = tree ? subtreeDeepestFirst(buildNesting(tree.nodes), ref.nodeId) : [ref.nodeId]
+        await submitChange(
+          ref.treeId,
+          ids.length > 1 ? `Delete note and ${ids.length - 1} inside it` : 'Delete note',
+          ids.map((id) => ({ op: 'deleteNode', id })),
+        )
 
         setEditingRef((prev) =>
-          prev && prev.treeId === ref.treeId && prev.nodeId === ref.nodeId ? null : prev,
+          prev && prev.treeId === ref.treeId && (prev.nodeId === ref.nodeId || ids.includes(prev.nodeId))
+            ? null
+            : prev,
         )
 
         // Edges touching the deleted node are cascaded, so the whole tree is
@@ -1265,6 +1317,8 @@ export default function App(): React.ReactElement {
               onStartEditing={(ref) => setEditingRef(ref)}
               onStopEditing={() => setEditingRef(null)}
               onCanvasDoubleClick={handleCanvasDoubleClick}
+              onNestingMove={handleNestingMove}
+              onCreateInside={handleCreateInside}
               onStartThread={handleStartThread}
               onSelectedNoteChange={setSelectedRef}
               onSave={handleNoteSave}
