@@ -1,6 +1,11 @@
 {
   "name": "tapestry-workspace",
   "private": true,
+  "scripts": {
+    "dev": "npm --prefix app run dev",
+    "build": "npm --prefix app run build",
+    "build:plugins": "npm --prefix app run build:plugins"
+  },
   "workspaces": [
     "app",
     "sdk",

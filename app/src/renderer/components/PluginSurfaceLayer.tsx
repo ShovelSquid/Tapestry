@@ -179,8 +179,22 @@ export default function PluginSurfaceLayer({
         }
         handle = mounted
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err)
+        let message = err instanceof Error ? err.message : String(err)
         console.error(`[PluginSurfaceLayer] failed to mount ${url}:`, err)
+        // A failed import does not say why. If the entry itself is absent it
+        // is usually build output that was never made (a gitignored dist/),
+        // so say that instead of leaving "failed to fetch" to be decoded.
+        try {
+          const probe = await fetch(url, { method: 'HEAD' })
+          if (probe.status === 404) {
+            message +=
+              `\n\n${surface.entry} does not exist in plugin "${surface.pluginName}".` +
+              `\nIf it is build output, the plugin surface was not built: run` +
+              ` \`npm --prefix app run build:plugins\` and check its warnings.`
+          }
+        } catch {
+          // Probe is best-effort; keep the original message.
+        }
         if (!cancelled) setError({ url, message })
       }
     })()
