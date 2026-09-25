@@ -30,6 +30,7 @@ import { useForest, type NodeRef } from './state/use-forest'
 import {
   EMPTY_FRAME_RUN,
   chooseUndoTarget,
+  frameRunEventForDrop,
   nextFrameRun,
   type FrameRun,
   type FrameRunEvent,
@@ -701,15 +702,18 @@ export default function App(): React.ReactElement {
   // -----------------------------------------------------------------------
 
   /**
-   * The result of a drop the canvas recorded (2.6 D-11). A commit starts or
-   * extends the frame run. A drop that could not be recorded is shown with
-   * the approved wording (4.12), and every frame goes back to where the
-   * forest has it.
+   * The result of a batch the canvas recorded (2.6 D-11). A committed drag
+   * starts or extends the frame run; a neighbour pushed aside by a note
+   * landing or resizing does not, because that tree edit already ended the
+   * run (D-08, review WR-04; the rule is frameRunEventForDrop's). A batch
+   * that could not be recorded is shown with the approved wording (4.12),
+   * and every frame goes back to where the forest has it.
    */
   const handleFramesMoved = useCallback(
-    (result: { ok: boolean; committed?: boolean; error?: string }) => {
+    (result: { ok: boolean; committed?: boolean; error?: string }, frameMoved: boolean) => {
       if (result.ok) {
-        if (result.committed) noteFrameEvent('frames-moved')
+        const event = frameRunEventForDrop(result, frameMoved)
+        if (event !== null) noteFrameEvent(event)
         return
       }
       showAppError(`Could not move the frame: ${result.error ?? 'unknown error'}`)

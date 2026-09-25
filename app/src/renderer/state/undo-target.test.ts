@@ -13,6 +13,7 @@ import {
   EMPTY_FRAME_RUN,
   FRAME_UNDO_REACH,
   chooseUndoTarget,
+  frameRunEventForDrop,
   nextFrameRun,
   type FrameRun,
   type FrameRunEvent,
@@ -160,5 +161,28 @@ describe('nextFrameRun resets and bounds', () => {
     expect(['run', 'single']).toContain(FRAME_UNDO_REACH)
     const twice = nextFrameRun(nextFrameRun(EMPTY_FRAME_RUN, 'frames-moved'), 'frames-moved')
     expect(twice.undoable).toBe(FRAME_UNDO_REACH === 'run' ? 2 : 1)
+  })
+})
+
+describe('frameRunEventForDrop (2.6 WR-04)', () => {
+  it('a committed drop of a dragged frame arms the run', () => {
+    expect(frameRunEventForDrop({ ok: true, committed: true }, true)).toBe('frames-moved')
+  })
+
+  it('a committed push from a note landing or resizing does not (the tree edit ended the run)', () => {
+    expect(frameRunEventForDrop({ ok: true, committed: true }, false)).toBeNull()
+  })
+
+  it('a drop that changed nothing does not', () => {
+    expect(frameRunEventForDrop({ ok: true, committed: false }, true)).toBeNull()
+  })
+
+  it('a result without committed does not', () => {
+    expect(frameRunEventForDrop({ ok: true }, true)).toBeNull()
+  })
+
+  it('a failed batch never does, dragged or pushed', () => {
+    expect(frameRunEventForDrop({ ok: false, error: 'x' }, true)).toBeNull()
+    expect(frameRunEventForDrop({ ok: false, error: 'x' }, false)).toBeNull()
   })
 })

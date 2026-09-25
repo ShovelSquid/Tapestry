@@ -78,6 +78,22 @@ export function nextFrameRun(
   }
 }
 
+/**
+ * The frame-run event a recorded batch earns, or null when it earns none.
+ *
+ * Only a committed batch whose frame the person actually dragged starts or
+ * extends the run. A push caused by a note landing or resizing is part of
+ * that tree edit, which already ended the run, so it must not start a new
+ * one: the next Ctrl+Z belongs to the note change (2.6 D-08, review WR-04).
+ * A batch that changed nothing, or failed, earns nothing either.
+ */
+export function frameRunEventForDrop(
+  result: { ok: boolean; committed?: boolean; error?: string },
+  frameMoved: boolean,
+): FrameRunEvent | null {
+  return result.ok && result.committed === true && frameMoved ? 'frames-moved' : null
+}
+
 export type UndoTarget = { kind: 'frames' } | { kind: 'tree'; treeId: string } | null
 
 export interface UndoTargetInput {

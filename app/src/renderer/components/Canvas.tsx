@@ -139,10 +139,16 @@ interface CanvasProps {
   /** Move a frame in renderer state only; the canvas persists the final spot. */
   onFrameMove: (treeId: string, x: number, y: number) => void
   /**
-   * Called with the result of every recorded drop (2.6 D-08, D-11): App arms
-   * frame undo when it committed, and shows the failure otherwise.
+   * Called with the result of every recorded batch (2.6 D-08, D-11), and
+   * whether the person dragged the frame (`frameMoved`) or a note grew it.
+   * App arms frame undo only for a committed drag, since a push from a note
+   * change is part of that tree edit (review WR-04), and shows the failure
+   * otherwise.
    */
-  onFramesMoved: (result: { ok: boolean; committed?: boolean; error?: string }) => void
+  onFramesMoved: (
+    result: { ok: boolean; committed?: boolean; error?: string },
+    frameMoved: boolean,
+  ) => void
   /** The selected frame, which is the space's focal point and undo target. */
   selectedTreeId: string | null
   onSelectTree: (treeId: string | null) => void
@@ -450,8 +456,13 @@ function Canvas({
 
     // App arms frame undo on a commit and shows the approved notice (4.12)
     // on a failure, putting every frame back where the forest has it.
-    void window.tapestry.trees.moveFrames(batch).then(onFramesMoved, (err: unknown) =>
-      onFramesMoved({ ok: false, error: err instanceof Error ? err.message : String(err) }),
+    void window.tapestry.trees.moveFrames(batch).then(
+      (result) => onFramesMoved(result, frameMoved),
+      (err: unknown) =>
+        onFramesMoved(
+          { ok: false, error: err instanceof Error ? err.message : String(err) },
+          frameMoved,
+        ),
     )
   }
 
