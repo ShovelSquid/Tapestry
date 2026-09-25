@@ -17,3 +17,14 @@ Result on 2026-09-25: defaults show Kaelen's values; the red dot eases back
 at most 0.094 per frame; the light drains to the exit point; the pencil band
 goes 971 → 682 (early grow) → 1 → 0 pixels as the blue takes over; particles:
 start 2, steady 0, gentle curve 0, sharp turn 2 toward (-0.7, 0.7).
+
+## Part 2 app screenshots (`app-shot.cjs`)
+
+`electron autonomy/checks/line-lab-v2/app-shot.cjs <out.png>` (from the repo
+root, after `npm --prefix app run build:js`) launches the built app with
+`TAPESTRY_USER_DATA_DIR` and `TAPESTRY_SPACE_DIR` pointed at a fresh temp
+folder, so it never opens real data. `SHOT_SCRIPT` runs JS in the renderer
+before the capture (wave 0 used it to click "Save my name").
+
+- `app-wave0-2026-09-25.png`: wave 0 after the token pass. Pixel-identical
+  to the same state built from 379c07f (the commit before wave 0).
