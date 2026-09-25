@@ -53,3 +53,14 @@ before the capture (wave 0 used it to click "Save my name").
   (`same: true` on 2026-09-25). `app-shot.cjs` now runs a pose a second time when it
   returns `"reload":true`. `app-wave4-{rest,drag,land}-2026-09-25.png` and
   `wave4-side-by-side-2026-09-25.png` (sketch 4, drag, land, rest).
+
+- Wave 5: `SHOT_SCRIPT="$(cat wave5-setup.js)" SHOT_AFTER_RELOAD="$(cat wave5-pose.js)"` makes Garden
+  (a container, 704 px wide with its contents) holding Beds (260) and Tap (120), plus Seeds (260) at the top
+  level connected to Garden. The pose zooms out with Ctrl+wheel from 100% to the canvas's 10% floor, logging
+  every change of form. On 2026-09-25: `monotonic: true` (only note → circle → dot), each handoff at the right
+  width (Tap circle at 110 px, dot at 27 px; Seeds/Beds circle at 108 px; Garden circle at 102 px; Seeds dot at
+  26 px), and 23 samples with the old form fading out over the new (the crossfade). Then it zooms back to ~29%
+  and clicks Seeds' circle (`selectedCircle: true`). Prefix `window.__DBL__=1;` to double-click Beds' circle:
+  zoom 29% → 392%, Beds a note again. `app-wave5-forms-2026-09-25.png`,
+  `app-wave5-after-dblclick-2026-09-25.png` and `wave5-side-by-side-2026-09-25.png` (Line Lab's circle
+  form at 30%, the app at 29%). `wave5-ref.js` is the Line Lab pose (`python3 mk.py wave5-ref.js …`).
