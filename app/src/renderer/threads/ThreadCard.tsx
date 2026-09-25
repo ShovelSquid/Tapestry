@@ -164,8 +164,8 @@ export default function ThreadCard({
     top: `${y}px`,
     minWidth: 200,
     maxWidth: 400,
-    background: '#F4F1E8',
-    border: isHighlighted ? '2px solid #4A7CFF' : '1px solid #C8C5BE',
+    background: 'var(--tap-surface-card)',
+    border: isHighlighted ? '2px solid var(--tap-accent)' : '1px solid var(--tap-border-strong)',
     borderRadius: 8,
     padding: '16px 16px 12px',
     cursor: 'pointer',
@@ -199,13 +199,13 @@ export default function ThreadCard({
         }}
         onClick={(e) => e.stopPropagation()}
       />
-      <div style={{ fontSize: 12, color: '#6B6B6B', marginTop: 6 }}>{previewText}</div>
+      <div style={{ fontSize: 12, color: 'var(--tap-muted)', marginTop: 6 }}>{previewText}</div>
       {isVaultThreadNode(node) && (
-        <div style={{ fontSize: 11, color: '#8A8578', marginTop: 6, fontStyle: 'italic' }}>
+        <div style={{ fontSize: 11, color: 'var(--tap-muted-olive)', marginTop: 6, fontStyle: 'italic' }}>
           {VAULT_THREAD_FOOTER_TEXT}
         </div>
       )}
-      {isHovered && <div style={{ fontSize: 11, color: '#4A7CFF', marginTop: 6 }}>Click to open</div>}
+      {isHovered && <div style={{ fontSize: 11, color: 'var(--tap-accent)', marginTop: 6 }}>Click to open</div>}
     </div>
   )
 }

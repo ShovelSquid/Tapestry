@@ -211,7 +211,7 @@ export default function FloatingToolbar({
         onMouseLeave={startSubmenuClose}
       >
         <button className="ft-btn" title="Text Color">
-          <span style={{ color: '#E5484D' }}>A</span>
+          <span style={{ color: 'var(--tap-destructive)' }}>A</span>
         </button>
         {openSubmenu === 'color' && (
           <div className="ft-submenu ft-color-grid">

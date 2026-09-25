@@ -1,9 +1,12 @@
 /* Tapestry App -- visual values from UI-SPEC.md */
 
-/* Design tokens (02.3-time-threads UI-SPEC "Theming"): most of this file
-   still uses raw hex per-component, matching the rest of the app; this
-   token is introduced for ThreadNotice.tsx specifically, whose failure
-   copy must never carry a raw hex literal at its own use site. */
+/* Design tokens. Every colour in the renderer is named here and nowhere
+   else (Line Lab v2, Part 2 wave 0): App.css rules and inline styles read
+   `var(--tap-*)`, so a later theme changes one block. The one exception
+   is the user text-colour palette in editor/schema.ts, which is document
+   data written to `.tree`, not styling. Values were lifted verbatim from
+   the old per-rule hex, so near-duplicates keep their own token until a
+   design pass merges them. */
 :root {
   /* #B4232A: 6.00:1 on --tap-paper (#F7F5F0), 6.53:1 on --tap-surface
      (#FFFFFF) -- AA and AAA for normal text (UI-SPEC TA-20). */
@@ -11,7 +14,8 @@
   /* UI-SPEC "Secondary (30%)": the surface ThreadNotice's card sits on. */
   --tap-surface: #FFFFFF;
   /* UI-SPEC "Non-text contrast audit" (TA-19): 3.16:1 on --tap-paper --
-     passes the 3:1 graphics floor, unlike 02.1's --tap-line (2.06:1), which
+     passes the 3:1 graphics floor, unlike 02.1's --tap-line colour (2.06:1; never declared, and the
+     name now means line weight, below), which
      stays for borders and dashed rules where the 02.2 non-text exemption
      still holds. The thread line, strands and pause stretches read this
      token; stage/tokens.ts reads it into a shader uniform. */
@@ -52,6 +56,49 @@
   --tap-author-4: #6E56CF;       /* 4th: 4.95:1 */
   --tap-author-5: #D13415;       /* 5th: 4.57:1 */
   --tap-author-unknown: #6B6B6B; /* observed edits, an agent beyond the 5th cycles back to --tap-author-1; this token is only for a truly unattributable author: 4.89:1 */
+
+  /* Spec - Notes, Lines and Motion §1 (the note look, Line Lab v2). Not
+     read by anything yet; waves 1-5 draw with them. */
+  --tap-pencil: #1C1C1C;        /* note outline, title rule */
+  --tap-select: #489AFE;        /* selection outline, connect dot, connections */
+  --tap-select-fill: #C2DBFA;   /* text selection */
+  --tap-connect-flash: #00FF7F; /* brief flash when a connection lands; to tune */
+  --tap-delete: #FC3B02;        /* the red delete dot */
+  --tap-line: 1px;              /* every line's weight at 100% zoom; scales with zoom */
+
+  /* Named in wave 0 from values that were raw hex in rules and inline
+     styles. */
+  --tap-destructive: #E5484D;        /* delete bubble, error borders */
+  --tap-destructive-strong: #B3261E; /* workspace file card errors */
+  --tap-destructive-wash: #FFF1F1;   /* error notice fill */
+  --tap-faint: #B0ADA6;              /* placeholders, dashed rules, idle connection line */
+  --tap-accent-wash: #EDF2FF;        /* accent-tinted hover and active fills */
+  --tap-surface-press: #E7E3DC;      /* hover on an already-sunk surface */
+  --tap-surface-warm: #FAF9F7;
+  --tap-surface-readonly: #F5F4F1;
+  --tap-surface-card: #F4F1E8;       /* thread card */
+  --tap-surface-header: #F0EDEA;     /* fallback node header */
+  --tap-border-strong: #C8C5BE;
+  --tap-border-warm: #D5D1CA;
+  --tap-outline: #B8B3AA;            /* nested note drawn as an outline */
+  --tap-outline-hover: #6B6660;
+  --tap-muted-warm: #6B6760;
+  --tap-muted-olive: #8A8578;
+  --tap-rule-light: #F0F0F0;
+  --tap-warning-wash: #FFF4E0;
+  --tap-warning-border: #E8C98A;
+  --tap-neutral-dark: #555555;
+  --tap-neutral: #666666;
+  --tap-neutral-light: #888888;
+  --tap-neutral-faint: #999999;
+  /* The plugin surface dev console (PluginSurfaceLayer.tsx), a dark panel. */
+  --tap-console-bg: #1E1E1E;
+  --tap-console-ink: #F0EDE6;
+  --tap-console-border: #3A3A3A;
+  --tap-console-border-strong: #5A5A5A;
+  --tap-console-error-bg: #3B1212;
+  --tap-console-error-border: #AA3333;
+  --tap-console-error-ink: #FFD6D6;
 }
 
 /* Reset */
@@ -70,7 +117,7 @@ html, body, #root {
   font-size: 16px;
   font-weight: 400;
   line-height: 1.5;
-  color: #2C2C2C;
+  color: var(--tap-ink);
 }
 
 /* App layout */
@@ -80,12 +127,12 @@ html, body, #root {
   position: relative;
 }
 
-/* Canvas -- dominant color #F7F5F0 */
+/* Canvas -- dominant color --tap-paper */
 .tapestry-canvas {
   width: 100%;
   height: 100%;
   position: relative;
-  background-color: #F7F5F0;
+  background-color: var(--tap-paper);
   overflow: hidden;
   cursor: default;
   touch-action: none; /* Prevent browser pan/zoom on touch */
@@ -121,7 +168,7 @@ html, body, #root {
   font-size: 22px;
   font-weight: 600;
   line-height: 1.25;
-  color: #2C2C2C;
+  color: var(--tap-ink);
   margin-bottom: 8px;
 }
 
@@ -129,7 +176,7 @@ html, body, #root {
   font-size: 16px;
   font-weight: 400;
   line-height: 1.5;
-  color: #6B6B6B;
+  color: var(--tap-muted);
 }
 
 /* The save indicator that used to sit in this corner is gone: the space holds
@@ -147,8 +194,8 @@ html, body, #root {
 .tapestry-tree-frame {
   position: absolute;
   box-sizing: border-box;
-  background: #F0EDE8;
-  border: 1px solid #E0DDD7;
+  background: var(--tap-surface-sunk);
+  border: 1px solid var(--tap-border);
   /* Frame corner radius 16px: the declared "container shape" exception. */
   border-radius: 16px;
 }
@@ -162,15 +209,15 @@ html, body, #root {
 /* Frame states (UI-SPEC "Tree frame visual states"). Dragging and selected
    both use the 2px accent border; only dragging adds the lift. */
 .tapestry-tree-frame--hovered {
-  border: 1px solid #B0ADA6;
+  border: 1px solid var(--tap-faint);
 }
 
 .tapestry-tree-frame--selected {
-  border: 2px solid #4A7CFF;
+  border: 2px solid var(--tap-accent);
 }
 
 .tapestry-tree-frame--dragging {
-  border: 2px solid #4A7CFF;
+  border: 2px solid var(--tap-accent);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
 }
 
@@ -211,7 +258,7 @@ html, body, #root {
   font-size: 18px;
   font-weight: 600;
   line-height: 1.25;
-  color: #2C2C2C;
+  color: var(--tap-ink);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -222,7 +269,7 @@ html, body, #root {
   font-size: 13px;
   font-weight: 400;
   line-height: 1.4;
-  color: #6B6B6B;
+  color: var(--tap-muted);
   white-space: nowrap;
 }
 
@@ -232,7 +279,7 @@ html, body, #root {
   font-size: 13px;
   font-weight: 400;
   line-height: 1.4;
-  color: #6B6B6B;
+  color: var(--tap-muted);
   max-width: 320px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -240,27 +287,27 @@ html, body, #root {
 }
 
 .tapestry-frame-status--error {
-  color: #E5484D;
+  color: var(--tap-destructive);
 }
 
 /* A tree that would not open: dashed and unfilled, so it reads as a place
    held open rather than as a working frame (UI-SPEC "Unavailable"). */
 .tapestry-tree-frame--unavailable {
-  background: #F7F5F0;
-  border: 1px dashed #B0ADA6;
+  background: var(--tap-paper);
+  border: 1px dashed var(--tap-faint);
 }
 
 /* A workspace folder's frame (02.7 D-21): the tree frame's design one level
    down, a shade lighter so a nested frame reads against its parent. The
    header, border states and radius are the tree frame's own. */
 .tapestry-tree-frame--folder {
-  background: #F7F5F0;
+  background: var(--tap-paper);
   border-radius: 12px;
 }
 
 /* Collapsed: the header band alone. */
 .tapestry-tree-frame--folder.tapestry-tree-frame--collapsed {
-  background: #FAF9F7;
+  background: var(--tap-surface-warm);
 }
 
 /* The collapse/expand chevron sits at the end of row 1, where Tree options
@@ -292,7 +339,7 @@ html, body, #root {
   font-size: 16px;
   font-weight: 400;
   line-height: 1.5;
-  color: #2C2C2C;
+  color: var(--tap-ink);
   max-width: 384px;
 }
 
@@ -319,7 +366,7 @@ html, body, #root {
   border: 0;
 }
 
-/* Note card -- secondary color #FFFFFF */
+/* Note card -- secondary color --tap-surface */
 /* A nested note seen from far away (layout/nesting.ts): its place and size,
    none of its contents. The border width is set inline to 1 / zoom so it stays
    one screen pixel. */
@@ -327,21 +374,21 @@ html, body, #root {
   position: absolute;
   box-sizing: border-box;
   border-style: solid;
-  border-color: #B8B3AA;
+  border-color: var(--tap-outline);
   background-color: rgba(255, 255, 255, 0.55);
   cursor: zoom-in;
 }
 
 .tapestry-note-outline:hover {
-  border-color: #6B6660;
+  border-color: var(--tap-outline-hover);
 }
 
 .tapestry-note-card {
   position: absolute;
   min-width: 200px;
   max-width: 400px;
-  background-color: #FFFFFF;
-  border: 1px solid #E0DDD7;
+  background-color: var(--tap-surface);
+  border: 1px solid var(--tap-border);
   border-radius: 8px;
   padding: 16px;
   padding-top: 24px; /* Extra top for drag handle */
@@ -353,17 +400,17 @@ html, body, #root {
 }
 
 .tapestry-note-card--selected {
-  border: 2px solid #4A7CFF;
+  border: 2px solid var(--tap-accent);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.10);
 }
 
 .tapestry-note-card--editing {
-  border-color: #4A7CFF;
+  border-color: var(--tap-accent);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.10);
 }
 
 .tapestry-note-card--connect-target {
-  border: 2px solid #4A7CFF;
+  border: 2px solid var(--tap-accent);
   box-shadow: 0 0 0 4px rgba(74, 124, 255, 0.20);
 }
 
@@ -392,14 +439,14 @@ html, body, #root {
   font-size: 18px;
   font-weight: 600;
   line-height: 1.25;
-  color: #2C2C2C;
+  color: var(--tap-ink);
   margin-bottom: 6px;
   padding: 0;
   font-family: inherit;
 }
 
 .tapestry-note-title-input::placeholder {
-  color: #B0ADA6;
+  color: var(--tap-faint);
   font-weight: 400;
 }
 
@@ -420,7 +467,7 @@ html, body, #root {
   font-size: 16px;
   font-weight: 400;
   line-height: 1.5;
-  color: #2C2C2C;
+  color: var(--tap-ink);
 }
 
 .tapestry-note-editor .ProseMirror p {
@@ -465,7 +512,7 @@ html, body, #root {
 /* ProseMirror placeholder for empty editors */
 .tapestry-note-editor .ProseMirror:empty::before {
   content: 'Start typing...';
-  color: #B0ADA6;
+  color: var(--tap-faint);
   pointer-events: none;
   font-style: italic;
 }
@@ -504,17 +551,17 @@ html, body, #root {
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.20);
 }
 
-/* Connection handle -- right edge, accent #4A7CFF */
+/* Connection handle -- right edge, accent --tap-accent */
 .tapestry-control-bubble--connect {
-  background-color: #4A7CFF;
+  background-color: var(--tap-accent);
   right: -14px;
   top: 50%;
   margin-top: -14px;
 }
 
-/* Delete bubble -- top-right corner, destructive #E5484D */
+/* Delete bubble -- top-right corner, destructive --tap-destructive */
 .tapestry-control-bubble--delete {
-  background-color: #E5484D;
+  background-color: var(--tap-destructive);
   right: -10px;
   top: -10px;
 }
@@ -599,7 +646,7 @@ html, body, #root {
 .tapestry-editor-unreadable .ProseMirror {
   font-family: 'SF Mono', 'Fira Code', monospace;
   font-size: 12px;
-  color: #6B6B6B;
+  color: var(--tap-muted);
   cursor: not-allowed;
 }
 
@@ -648,8 +695,8 @@ html, body, #root {
 /* ---- Knot node (D-16/D-17/D-18) ---- */
 
 .knot-node {
-  background: #ffffff;
-  border: 1.5px solid #C8C5BE;
+  background: var(--tap-surface);
+  border: 1.5px solid var(--tap-border-strong);
   border-radius: 8px;
   padding: 8px;
   cursor: grab;
@@ -665,13 +712,13 @@ html, body, #root {
 .knot-node.ghost.hovered {
   opacity: 1;
   pointer-events: auto;
-  border-color: #4A7CFF;
+  border-color: var(--tap-accent);
 }
 
 .knot-node.editing {
   opacity: 1;
   pointer-events: auto;
-  border-color: #4A7CFF;
+  border-color: var(--tap-accent);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
   cursor: default;
 }
@@ -726,8 +773,8 @@ html, body, #root {
   display: flex;
   align-items: center;
   gap: 2px;
-  background: #FFFFFF;
-  border: 1px solid #E0DDD7;
+  background: var(--tap-surface);
+  border: 1px solid var(--tap-border);
   border-radius: 8px;
   padding: 4px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
@@ -748,23 +795,23 @@ html, body, #root {
   justify-content: center;
   font-size: 14px;
   font-weight: 600;
-  color: #2C2C2C;
+  color: var(--tap-ink);
   transition: background 100ms ease;
 }
 
 .ft-btn:hover {
-  background: #F0EDE8;
+  background: var(--tap-surface-sunk);
 }
 
 .ft-btn.active {
-  background: #EDF2FF;
-  color: #4A7CFF;
+  background: var(--tap-accent-wash);
+  color: var(--tap-accent);
 }
 
 .ft-sep {
   width: 1px;
   height: 20px;
-  background: #E0DDD7;
+  background: var(--tap-border);
   margin: 0 2px;
 }
 
@@ -778,8 +825,8 @@ html, body, #root {
   left: 50%;
   transform: translateX(-50%);
   margin-top: 4px;
-  background: #FFFFFF;
-  border: 1px solid #E0DDD7;
+  background: var(--tap-surface);
+  border: 1px solid var(--tap-border);
   border-radius: 8px;
   padding: 4px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
@@ -798,18 +845,18 @@ html, body, #root {
   text-align: left;
   cursor: pointer;
   font-size: 13px;
-  color: #2C2C2C;
+  color: var(--tap-ink);
   white-space: nowrap;
   transition: background 100ms ease;
 }
 
 .ft-sub-btn:hover {
-  background: #F0EDE8;
+  background: var(--tap-surface-sunk);
 }
 
 .ft-sub-btn.active {
-  background: #EDF2FF;
-  color: #4A7CFF;
+  background: var(--tap-accent-wash);
+  color: var(--tap-accent);
 }
 
 .ft-color-grid {
@@ -830,15 +877,15 @@ html, body, #root {
 }
 
 .ft-color-swatch:hover {
-  border-color: #4A7CFF;
+  border-color: var(--tap-accent);
   transform: scale(1.15);
 }
 
 /* ---- Passage chooser (D-15) ---- */
 
 .passage-chooser {
-  background: #FFFFFF;
-  border: 1px solid #E0DDD7;
+  background: var(--tap-surface);
+  border: 1px solid var(--tap-border);
   border-radius: 8px;
   padding: 4px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
@@ -849,7 +896,7 @@ html, body, #root {
 .passage-chooser-header {
   font-size: 11px;
   font-weight: 600;
-  color: #6B6B6B;
+  color: var(--tap-muted);
   padding: 4px 8px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -865,11 +912,11 @@ html, body, #root {
   text-align: left;
   cursor: pointer;
   font-size: 13px;
-  color: #2C2C2C;
+  color: var(--tap-ink);
 }
 
 .passage-chooser-item:hover {
-  background: #EDF2FF;
+  background: var(--tap-accent-wash);
 }
 
 /* ------------------------------------------------------------------------ */
@@ -888,8 +935,8 @@ html, body, #root {
 }
 
 .tapestry-dialog {
-  background: #FFFFFF;
-  border: 1px solid #E0DDD7;
+  background: var(--tap-surface);
+  border: 1px solid var(--tap-border);
   border-radius: 8px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
   width: 440px;
@@ -901,7 +948,7 @@ html, body, #root {
   font-size: 22px;
   font-weight: 600;
   line-height: 1.25;
-  color: #2C2C2C;
+  color: var(--tap-ink);
 }
 
 .tapestry-dialog-body {
@@ -913,7 +960,7 @@ html, body, #root {
   font-size: 16px;
   font-weight: 400;
   line-height: 1.5;
-  color: #2C2C2C;
+  color: var(--tap-ink);
 }
 
 .tapestry-dialog-buttons {
@@ -934,7 +981,7 @@ html, body, #root {
   font-size: 13px;
   font-weight: 400;
   line-height: 1.4;
-  color: #6B6B6B;
+  color: var(--tap-muted);
 }
 
 .tapestry-field-input {
@@ -946,14 +993,14 @@ html, body, #root {
   font-size: 16px;
   font-weight: 400;
   line-height: 1.5;
-  color: #2C2C2C;
-  background: #FFFFFF;
-  border: 1px solid #E0DDD7;
+  color: var(--tap-ink);
+  background: var(--tap-surface);
+  border: 1px solid var(--tap-border);
   border-radius: 8px;
 }
 
 .tapestry-field-input::placeholder {
-  color: #B0ADA6;
+  color: var(--tap-faint);
 }
 
 /* The exact line this name will write into the .tree file. */
@@ -963,7 +1010,7 @@ html, body, #root {
   font-size: 13px;
   font-weight: 400;
   line-height: 1.4;
-  color: #6B6B6B;
+  color: var(--tap-muted);
   word-break: break-all;
 }
 
@@ -972,7 +1019,7 @@ html, body, #root {
   font-size: 13px;
   font-weight: 400;
   line-height: 1.4;
-  color: #E5484D;
+  color: var(--tap-destructive);
 }
 
 /* ------------------------------------------------------------------------ */
@@ -993,8 +1040,8 @@ html, body, #root {
 }
 
 .tapestry-button--primary {
-  background: #4A7CFF;
-  color: #FFFFFF;
+  background: var(--tap-accent);
+  color: var(--tap-surface);
   border: none;
 }
 
@@ -1004,14 +1051,14 @@ html, body, #root {
 }
 
 .tapestry-button--secondary {
-  background: #FFFFFF;
-  color: #2C2C2C;
-  border: 1px solid #E0DDD7;
+  background: var(--tap-surface);
+  color: var(--tap-ink);
+  border: 1px solid var(--tap-border);
 }
 
 .tapestry-button--destructive {
-  background: #E5484D;
-  color: #FFFFFF;
+  background: var(--tap-destructive);
+  color: var(--tap-surface);
   border: none;
 }
 
@@ -1025,7 +1072,7 @@ html, body, #root {
 .tapestry-provenance-footer {
   margin-top: 8px;
   padding-top: 8px;
-  border-top: 1px solid #E0DDD7;
+  border-top: 1px solid var(--tap-border);
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -1034,7 +1081,7 @@ html, body, #root {
   font-size: 13px;
   font-weight: 400;
   line-height: 1.4;
-  color: #6B6B6B;
+  color: var(--tap-muted);
   /* Lets the badge text below shrink far enough to ellipsize. */
   min-width: 0;
 }
@@ -1062,7 +1109,7 @@ html, body, #root {
   /* xs token: the glyph-to-text gap. */
   gap: 4px;
   min-width: 0;
-  color: #6B6B6B;
+  color: var(--tap-muted);
 }
 
 /* The glyph keeps its 16px however narrow the card gets. */
@@ -1086,7 +1133,7 @@ html, body, #root {
 .tapestry-button--secondary:focus-visible,
 .tapestry-button--destructive:focus-visible,
 .tapestry-field-input:focus-visible {
-  outline: 2px solid #4A7CFF;
+  outline: 2px solid var(--tap-accent);
   outline-offset: 2px;
 }
 
@@ -1119,21 +1166,21 @@ html, body, #root {
 .tapestry-forest-button {
   height: 32px;
   padding: 0 12px;
-  background: #FFFFFF;
-  border: 1px solid #E0DDD7;
+  background: var(--tap-surface);
+  border: 1px solid var(--tap-border);
   border-radius: 8px;
   font-family: inherit;
   /* Label role: 13/400/1.4 */
   font-size: 13px;
   font-weight: 400;
   line-height: 1.4;
-  color: #2C2C2C;
+  color: var(--tap-ink);
   cursor: pointer;
   white-space: nowrap;
 }
 
 .tapestry-forest-button:hover {
-  border-color: #B0ADA6;
+  border-color: var(--tap-faint);
 }
 
 /* ------------------------------------------------------------------------ */
@@ -1146,8 +1193,8 @@ html, body, #root {
   top: calc(100% + 4px);
   left: 0;
   min-width: 200px;
-  background: #FFFFFF;
-  border: 1px solid #E0DDD7;
+  background: var(--tap-surface);
+  border: 1px solid var(--tap-border);
   border-radius: 8px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
   padding: 4px;
@@ -1175,13 +1222,13 @@ html, body, #root {
   font-size: 13px;
   font-weight: 400;
   line-height: 1.4;
-  color: #2C2C2C;
+  color: var(--tap-ink);
   white-space: nowrap;
   cursor: pointer;
 }
 
 .tapestry-menu-item:hover {
-  background: #F0EDE8;
+  background: var(--tap-surface-sunk);
 }
 
 /* 32px icon-only control, carried from the 02.1 toolbar hit target. */
@@ -1195,18 +1242,18 @@ html, body, #root {
   background: transparent;
   border: none;
   border-radius: 4px;
-  color: #6B6B6B;
+  color: var(--tap-muted);
   cursor: pointer;
 }
 
-/* The frame surface is already #F0EDE8, so the hover needs its own step. */
+/* The frame surface is already --tap-surface-sunk, so the hover needs its own step. */
 .tapestry-icon-button:hover {
-  background: #E7E3DC;
+  background: var(--tap-surface-press);
 }
 
 .tapestry-menu-item:focus-visible,
 .tapestry-icon-button:focus-visible {
-  outline: 2px solid #4A7CFF;
+  outline: 2px solid var(--tap-accent);
   outline-offset: 2px;
 }
 
@@ -1226,8 +1273,8 @@ html, body, #root {
   top: calc(100% + 8px);
   left: 0;
   min-width: 320px;
-  background: #FFFFFF;
-  border: 1px solid #E0DDD7;
+  background: var(--tap-surface);
+  border: 1px solid var(--tap-border);
   border-radius: 8px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
   /* md token */
@@ -1244,7 +1291,7 @@ html, body, #root {
   font-size: 18px;
   font-weight: 600;
   line-height: 1.25;
-  color: #2C2C2C;
+  color: var(--tap-ink);
 }
 
 /* Label role, Muted: the panel's explanatory copy. */
@@ -1252,14 +1299,14 @@ html, body, #root {
   font-size: 13px;
   font-weight: 400;
   line-height: 1.4;
-  color: #6B6B6B;
+  color: var(--tap-muted);
 }
 
 .tapestry-agents-note {
   font-size: 13px;
   font-weight: 400;
   line-height: 1.4;
-  color: #6B6B6B;
+  color: var(--tap-muted);
 }
 
 .tapestry-agents-switch {
@@ -1273,7 +1320,7 @@ html, body, #root {
   font-size: 13px;
   font-weight: 400;
   line-height: 1.4;
-  color: #2C2C2C;
+  color: var(--tap-ink);
   cursor: pointer;
 }
 
@@ -1286,7 +1333,7 @@ html, body, #root {
   width: 32px;
   height: 18px;
   border-radius: 9px;
-  background: #E0DDD7;
+  background: var(--tap-border);
   display: inline-flex;
   align-items: center;
   padding: 2px;
@@ -1294,14 +1341,14 @@ html, body, #root {
 }
 
 .tapestry-agents-switch[aria-checked='true'] .tapestry-agents-switch-track {
-  background: #2C2C2C;
+  background: var(--tap-ink);
 }
 
 .tapestry-agents-switch-thumb {
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background: #FFFFFF;
+  background: var(--tap-surface);
   transition: transform 120ms ease;
 }
 
@@ -1336,7 +1383,7 @@ html, body, #root {
 
 .tapestry-agent-glyph {
   flex: none;
-  color: #6B6B6B;
+  color: var(--tap-muted);
 }
 
 .tapestry-agent-text {
@@ -1355,7 +1402,7 @@ html, body, #root {
   font-size: 13px;
   font-weight: 400;
   line-height: 1.4;
-  color: #2C2C2C;
+  color: var(--tap-ink);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1365,7 +1412,7 @@ html, body, #root {
   font-size: 13px;
   font-weight: 400;
   line-height: 1.4;
-  color: #6B6B6B;
+  color: var(--tap-muted);
 }
 
 .tapestry-agent-menu-wrap {
@@ -1383,12 +1430,12 @@ html, body, #root {
   background: transparent;
   border: none;
   border-radius: 4px;
-  color: #6B6B6B;
+  color: var(--tap-muted);
   cursor: pointer;
 }
 
 .tapestry-agent-menu-button:hover {
-  background: #F0EDE8;
+  background: var(--tap-surface-sunk);
 }
 
 .tapestry-agent-menu {
@@ -1396,8 +1443,8 @@ html, body, #root {
   top: calc(100% + 4px);
   right: 0;
   min-width: 160px;
-  background: #FFFFFF;
-  border: 1px solid #E0DDD7;
+  background: var(--tap-surface);
+  border: 1px solid var(--tap-border);
   border-radius: 8px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
   padding: 4px;
@@ -1416,12 +1463,12 @@ html, body, #root {
   font-size: 13px;
   font-weight: 400;
   line-height: 1.4;
-  color: #2C2C2C;
+  color: var(--tap-ink);
   cursor: pointer;
 }
 
 .tapestry-agent-menu-item:hover {
-  background: #F0EDE8;
+  background: var(--tap-surface-sunk);
 }
 
 /* ------------------------------------------------------------------------ */
@@ -1433,7 +1480,7 @@ html, body, #root {
   font-size: 13px;
   font-weight: 400;
   line-height: 1.4;
-  color: #6B6B6B;
+  color: var(--tap-muted);
 }
 
 /*
@@ -1446,14 +1493,14 @@ html, body, #root {
   padding: 8px;
   max-height: 120px;
   overflow: auto;
-  background: #F7F5F0;
-  border: 1px solid #E0DDD7;
+  background: var(--tap-paper);
+  border: 1px solid var(--tap-border);
   border-radius: 8px;
   font-family: 'SF Mono', 'Fira Code', monospace;
   font-size: 13px;
   font-weight: 400;
   line-height: 1.4;
-  color: #2C2C2C;
+  color: var(--tap-ink);
   white-space: pre-wrap;
   word-break: break-all;
 }
@@ -1469,15 +1516,15 @@ html, body, #root {
   transform: translateX(-50%);
   z-index: 10000;
   max-width: 440px;
-  background: #FFFFFF;
-  border: 1px solid #E0DDD7;
+  background: var(--tap-surface);
+  border: 1px solid var(--tap-border);
   border-radius: 8px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
   padding: 12px 20px;
   font-size: 13px;
   font-weight: 400;
   line-height: 1.4;
-  color: #2C2C2C;
+  color: var(--tap-ink);
 }
 
 /* Keyboard focus rings for the forest bar and agents panel controls. */
@@ -1485,7 +1532,7 @@ html, body, #root {
 .tapestry-agents-switch:focus-visible,
 .tapestry-agent-menu-button:focus-visible,
 .tapestry-agent-menu-item:focus-visible {
-  outline: 2px solid #4A7CFF;
+  outline: 2px solid var(--tap-accent);
   outline-offset: 2px;
 }
 
@@ -1502,8 +1549,8 @@ html, body, #root {
   z-index: 150;
   display: flex;
   flex-direction: column;
-  background: #FFFFFF;
-  border: 1px solid #E0DDD7;
+  background: var(--tap-surface);
+  border: 1px solid var(--tap-border);
   border-radius: 8px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
   text-align: left;
@@ -1511,7 +1558,7 @@ html, body, #root {
 
 .tapestry-chat-header {
   padding: 12px 16px;
-  border-bottom: 1px solid #E0DDD7;
+  border-bottom: 1px solid var(--tap-border);
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -1539,7 +1586,7 @@ html, body, #root {
 .tapestry-chat-notice {
   font-size: 13px;
   line-height: 1.4;
-  color: #6B6B6B;
+  color: var(--tap-muted);
 }
 
 .tapestry-chat-transcript {
@@ -1565,39 +1612,39 @@ html, body, #root {
   max-width: 85%;
   padding: 8px 12px;
   border-radius: 8px;
-  background: #F0EDE8;
+  background: var(--tap-surface-sunk);
 }
 
 .tapestry-chat-tool {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 12px;
   line-height: 1.4;
-  color: #6B6B6B;
+  color: var(--tap-muted);
   overflow-wrap: anywhere;
 }
 
 .tapestry-chat-tool--refused {
-  color: #B4232A;
+  color: var(--tap-destructive-text);
 }
 
 .tapestry-chat-error {
   padding: 8px 12px;
   border-radius: 8px;
-  border: 1px solid #E5484D;
-  background: #FFF1F1;
-  color: #B4232A;
+  border: 1px solid var(--tap-destructive);
+  background: var(--tap-destructive-wash);
+  color: var(--tap-destructive-text);
   font-size: 13px;
   line-height: 1.4;
 }
 
 .tapestry-chat-error-hint {
   margin-top: 4px;
-  color: #2C2C2C;
+  color: var(--tap-ink);
 }
 
 .tapestry-chat-composer {
   padding: 12px 16px;
-  border-top: 1px solid #E0DDD7;
+  border-top: 1px solid var(--tap-border);
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -1607,7 +1654,7 @@ html, body, #root {
   width: 100%;
   resize: none;
   padding: 8px;
-  border: 1px solid #E0DDD7;
+  border: 1px solid var(--tap-border);
   border-radius: 8px;
   font-family: inherit;
   font-size: 14px;
@@ -1615,7 +1662,7 @@ html, body, #root {
 }
 
 .tapestry-chat-input:focus-visible {
-  outline: 2px solid #4A7CFF;
+  outline: 2px solid var(--tap-accent);
   outline-offset: 1px;
 }
 
@@ -1632,23 +1679,23 @@ html, body, #root {
   margin-left: auto;
   height: 24px;
   padding: 0 8px;
-  background: #FFFFFF;
-  border: 1px solid #E0DDD7;
+  background: var(--tap-surface);
+  border: 1px solid var(--tap-border);
   border-radius: 6px;
   font-family: inherit;
   font-size: 12px;
   line-height: 1.4;
-  color: #2C2C2C;
+  color: var(--tap-ink);
   cursor: pointer;
   white-space: nowrap;
 }
 
 .tapestry-frame-chat-button:hover {
-  border-color: #B0ADA6;
+  border-color: var(--tap-faint);
 }
 
 .tapestry-frame-chat-button:focus-visible {
-  outline: 2px solid #4A7CFF;
+  outline: 2px solid var(--tap-accent);
   outline-offset: 2px;
 }
 
@@ -1657,9 +1704,9 @@ html, body, #root {
   align-items: center;
   gap: 8px;
   padding: 4px 8px;
-  border: 1px solid #E0DDD7;
+  border: 1px solid var(--tap-border);
   border-radius: 6px;
-  background: #F7F5F0;
+  background: var(--tap-paper);
   font-size: 12px;
   line-height: 1.4;
 }
@@ -1679,12 +1726,12 @@ html, body, #root {
   padding: 0;
   font-family: inherit;
   font-size: 12px;
-  color: #4A7CFF;
+  color: var(--tap-accent);
   cursor: pointer;
 }
 
 .tapestry-chat-chip-remove:focus-visible {
-  outline: 2px solid #4A7CFF;
+  outline: 2px solid var(--tap-accent);
   outline-offset: 2px;
 }
 
@@ -1715,12 +1762,12 @@ html, body, #root {
   font-family: inherit;
   font-size: 13px;
   line-height: 1.4;
-  color: #2C2C2C;
+  color: var(--tap-ink);
   cursor: pointer;
 }
 
 .tapestry-chat-shell-switch:focus-visible {
-  outline: 2px solid #4A7CFF;
+  outline: 2px solid var(--tap-accent);
   outline-offset: 2px;
 }
 
@@ -1730,7 +1777,7 @@ html, body, #root {
   height: 16px;
   flex: none;
   border-radius: 8px;
-  background: #E0DDD7;
+  background: var(--tap-border);
 }
 
 .tapestry-chat-shell-thumb {
@@ -1740,11 +1787,11 @@ html, body, #root {
   width: 12px;
   height: 12px;
   border-radius: 50%;
-  background: #FFFFFF;
+  background: var(--tap-surface);
 }
 
 .tapestry-chat-shell-switch--on .tapestry-chat-shell-track {
-  background: #E5484D;
+  background: var(--tap-destructive);
 }
 
 .tapestry-chat-shell-switch--on .tapestry-chat-shell-thumb {
@@ -1754,14 +1801,14 @@ html, body, #root {
 .tapestry-chat-shell-risk {
   font-size: 12px;
   line-height: 1.4;
-  color: #6B6B6B;
+  color: var(--tap-muted);
 }
 
 /* Shown under the header for as long as the shell is on. */
 .tapestry-chat-shell-banner {
   padding: 6px 16px;
-  background: #E5484D;
-  color: #FFFFFF;
+  background: var(--tap-destructive);
+  color: var(--tap-surface);
   font-size: 13px;
   font-weight: 600;
   line-height: 1.4;
@@ -1785,17 +1832,17 @@ html, body, #root {
   background: transparent;
   border: none;
   border-radius: 4px;
-  color: #6B6B6B;
+  color: var(--tap-muted);
   cursor: pointer;
 }
 
 .tapestry-ask-claude-button:hover {
-  background: #E7E3DC;
-  color: #2C2C2C;
+  background: var(--tap-surface-press);
+  color: var(--tap-ink);
 }
 
 .tapestry-ask-claude-button:focus-visible {
-  outline: 2px solid #4A7CFF;
+  outline: 2px solid var(--tap-accent);
   outline-offset: 2px;
 /* 02.3-07: every new side-view navigation control (the date scrubber, the
    stage's own focus point) gets the identical 2px accent ring at 2px offset

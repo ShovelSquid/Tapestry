@@ -1,8 +1,8 @@
 /**
  * ConnectionLine -- renders an SVG line between two world-space points.
  *
- * Default color: warm gray #B0ADA6 (UI-SPEC thread line default).
- * Temporary (connecting-mode) lines use accent #4A7CFF.
+ * Default color: warm gray --tap-faint (UI-SPEC thread line default).
+ * Temporary (connecting-mode) lines use accent --tap-accent.
  *
  * The SVG element sits inside the transformed canvas container so lines
  * pan and zoom with the notes.
@@ -32,7 +32,7 @@ export default function ConnectionLine({
       y1={y1}
       x2={x2}
       y2={y2}
-      stroke={isTemporary ? '#4A7CFF' : '#B0ADA6'}
+      style={{ stroke: isTemporary ? 'var(--tap-accent)' : 'var(--tap-faint)' }}
       strokeWidth={isTemporary ? 2 : 1.5}
       strokeLinecap="round"
       strokeDasharray={isTemporary ? '6 4' : undefined}
