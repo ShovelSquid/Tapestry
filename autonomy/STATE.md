@@ -23,12 +23,12 @@ checklist:
 
 ## In progress
 
-Session 2026-09-25 13:12: **Part 2, Wave 1** (ink line renderer). `git merge
-ws/mergin` was up to date. Plan: `look/ink.ts` (pure port: noise, resample,
-shape, loopWave, blueReach, filled-outline SVG path in world units),
-`look/InkLine.tsx` (static path memoised; animated lines rebuild per frame
-through the shared scheduler), `look/ink.test.ts` (seed determinism, no
-seam, zoom never rebuilds, per-frame cost budget).
+(empty) Wave 1 is done (REVIEW #4). Next session: **Part 2, Wave 2 (the note
+restyle)**. Start with `git merge ws/mergin`. In `NoteCard.tsx`, replace the CSS
+border with `<InkLine shape={inkShape(noteOutlinePts(w,h,seed),true,seed,{step:2,cornerRadius:16})}
+seed={seedFromId(id)} takeover={{on: selected, fromT: nearestT(shape, clickX, clickY)}}/>`.
+Memoise the shape on (w, h, seed). Then add the ink rule, hover bloom, bob and corner cluster.
+Line Lab's `drawNote` is the reference.
 
 ## Blocked
 
@@ -65,6 +65,9 @@ seam, zoom never rebuilds, per-frame cost budget).
   `--virtual-time-budget`. Test pages must shim it with a timer; see
   `autonomy/checks/line-lab-v2/`.
 - No Artifact tool in unattended sessions, so publish steps go to REVIEW.
+- Standalone renderer checks: bundle with the root `node_modules/.bin/esbuild`
+  and run in Electron via `cd app && npx electron <script>`. A shown window
+  with `backgroundThrottling: false` ticks rAF at a real 60 fps (see ink-bench).
 
 ## Log
 
@@ -75,3 +78,6 @@ seam, zoom never rebuilds, per-frame cost budget).
 - 2026-09-25 10:03: Line Lab v2 Part 2 Wave 0 done and ticked (token pass,
   look/values.ts, look/motion.ts + tests; 1148 tests green; screenshot
   pixel-identical to 379c07f). Commits 70f1436, cc76bb7. REVIEW #3 queued.
+- 2026-09-25 13:12: Line Lab v2 Part 2 Wave 1 done and ticked (look/ink.ts,
+  <InkLine>, 16 tests, 1164 green; the Electron bench holds 60 fps with 200 notes
+  and 3 selected). Commit aa12cda. REVIEW #4 queued.

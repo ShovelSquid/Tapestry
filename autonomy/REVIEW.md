@@ -75,6 +75,28 @@ Done on `ws/ui` in 70f1436 and cc76bb7 (`git merge ws/mergin` was already up to 
 Answer `item 3: approved` or the issues in `autonomy/RESPONSE`.
 If no: `git revert cc76bb7 70f1436` on ws/ui.
 
+### 4. Wave 1 (the ink line renderer): merge into mergin, and a look at the line (Plan - Line Lab v2, Part 2)
+
+Done on `ws/ui` in aa12cda. Nothing in the app draws with it yet (wave 2 wires it into NoteCard), so the app itself doesn't change.
+- `renderer/look/ink.ts` ports Line Lab's line (seeded noise, resample, wobble, width variation, corner swell, selection
+  wave, the blue's two-sided grow) and outputs **one filled SVG outline path** in world units: both sides of the line
+  plus round caps. A whole loop is two rings. `renderer/look/InkLine.tsx` draws it at the card's (0, 0), in pencil or
+  blue. With `takeover`, the blue grows from a click point and *replaces* the pencil, then waves. Only animated lines
+  request frames.
+- Choices: round caps are drawn as short polylines (6 steps) rather than SVG arcs. The minimum width is a quarter of
+  the weight. A small note's corner radii are clamped to half its shorter side. Note seeds come from the note id
+  through FNV-1a (`seedFromId`).
+- Checks: 16 new unit tests (the same seed gives the same path, no seam at any wave time, the blue and pencil never
+  overlap, the markup is identical at 8%, 100% and 250% zoom, 3 waving outlines per frame fit the budget). Full suite:
+  1164 tests. Electron bench: 200 notes with 3 selected hold 60 fps at 50% and 200% (p95 17.4 ms).
+  See `autonomy/checks/line-lab-v2/ink-bench/`.
+- **To check:** open `autonomy/checks/line-lab-v2/ink-bench/ink-wave1-zoom200.png` next to Line Lab's note. Does the
+  pencil wobble and weight read like the lab?
+- **Merge `ws/ui` wave 1 into `ws/mergin`** (sessions can't merge there).
+
+Answer `item 4: approved` or the issues in `autonomy/RESPONSE`.
+If no: `git revert aa12cda` on ws/ui, and untick wave 1 in the plan.
+
 ## Closed
 
 (none)
