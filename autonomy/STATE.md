@@ -23,12 +23,12 @@ checklist:
 
 ## In progress
 
-(empty) Wave 1 is done (REVIEW #4). Next session: **Part 2, Wave 2 (the note
-restyle)**. Start with `git merge ws/mergin`. In `NoteCard.tsx`, replace the CSS
-border with `<InkLine shape={inkShape(noteOutlinePts(w,h,seed),true,seed,{step:2,cornerRadius:16})}
-seed={seedFromId(id)} takeover={{on: selected, fromT: nearestT(shape, clickX, clickY)}}/>`.
-Memoise the shape on (w, h, seed). Then add the ink rule, hover bloom, bob and corner cluster.
-Line Lab's `drawNote` is the reference.
+Wave 2 (the note restyle), session started 2026-09-25 13:20. ws/mergin had
+nothing new. Plan: `look/bloom.ts` (light tween, tested), `look/NoteInk.tsx`
+(fill + bloom + outline behind the card content), `look/CornerCluster.tsx`
+(red delete dot, blue connect dot), NoteCard uses them with a
+`tapestry-note-card--ink` modifier (other cards share `.tapestry-note-card`,
+so the base class keeps its border).
 
 ## Blocked
 
