@@ -184,6 +184,38 @@ If no: `git revert b720a75 2bea1d6` on ws/ui, and untick wave 3 in the plan.
 Answer `item 7: approved` or the issues in `autonomy/RESPONSE`.
 If no: `git revert 529442f` on ws/ui (and the wip before it), and untick wave 4 in the plan.
 
+### 8. Wave 5 (zoom collapse): gate 2, merge into mergin, and a look (Plan - Line Lab v2, Part 2)
+
+Done on `ws/ui` in 595cfdf (code) and f71416e (checks).
+- `look/collapse.ts` decides the form from the note's width on screen: note, then a **circle** below 110 px,
+  then a **dot** below 28 px. It applies to every note now, **top-level ones too**, not only nested ones (the
+  stage 1 outline was nested-only); a collapsed note hides what is inside it. The hook in `layout/nesting.ts`:
+  `OUTLINE_BELOW_PX` and `isOutlined` are gone and `outlineState` calls `collapseForm` (it returns
+  `collapsed` forms instead of an `outlined` set). The `.tapestry-note-outline` look is replaced.
+- `look/CollapsedNote.tsx`: the circle (44 px, paper fill, the title's first letter, a pencil edge built once
+  from the note's seed) and the dot (1.4 px radius) sit at the note's centre, fixed on screen. A selected circle
+  is taken over by the blue and waves; a selected dot turns blue. Click selects, double-click zooms in.
+- Form changes crossfade over `formCrossfadeMs` (220 ms; the `collapseFade` effect turns it off). A note that
+  disappears into a collapsing container fades out too.
+- **⚠ Gate 2 (per-note thresholds):** not stored. Every note uses the defaults (`thresholdsFor` in
+  collapse.ts), and note settings shows them read-only, as wave 3 left it. To open it, approve a record shape,
+  e.g. `look.collapse.circle` and `look.collapse.dot` (real, screen px) on the note.
+- **My calls (taste):** the dot is Line Lab's 1.4 px radius, so it is very faint (its hit area is 16 px); the
+  circle's letter is 17 px semibold. Connections end at the note's centre, so they meet a circle or dot.
+- **Note:** the canvas floor is 10% zoom (`MIN_ZOOM` in Canvas.tsx, canvas-owned), so the plan's "250% to 8%"
+  sweep runs 100% to 10%; a 260 px note is already a dot at 10%.
+- Checks: 13 new tests (forms, thresholds, the fade tracker, what draws), full suite 1207 green, typecheck and
+  build clean. In the app, zooming out gives only note → circle → dot changes, each with both forms on screen
+  mid-fade; double-click on a circle zooms 29% → 392%. Screenshots:
+  `autonomy/checks/line-lab-v2/wave5-side-by-side-2026-09-25.png` and `app-wave5-*.png`.
+- **To check in the dev app:** make a note inside a note, zoom out slowly with the trackpad and watch the
+  handoffs, select a note and zoom out (the circle waves), double-click a circle.
+- **Merge `ws/ui` wave 5 into `ws/mergin`** (sessions can't merge there; `layout/nesting.ts` is canvas-owned,
+  so check the hook against mergin's copy).
+
+Answer `item 8: approved` or the issues in `autonomy/RESPONSE`.
+If no: `git revert f71416e 595cfdf` on ws/ui, and untick wave 5 in the plan.
+
 ## Closed
 
 (none)

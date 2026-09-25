@@ -23,12 +23,12 @@ checklist:
 
 ## In progress
 
-(empty) Wave 4 is done (REVIEW #7). Next session: **Part 2, Wave 5 (zoom collapse)**.
-Start with `git merge ws/mergin`. Hook: `layout/nesting.ts` swaps its `OUTLINE_BELOW_PX`
-rule for a call into a new `look/collapse.ts` (note → circle below 110 px → dot below
-28 px on screen, crossfade `LOOK.detail.formCrossfadeMs`, circle/dot fixed size and 1 px on
-screen; nested notes too). Thresholds read-only (gate 2). Double-click a circle/dot zooms
-in, as the stage 1 outline did. Screenshot scripts: `autonomy/checks/line-lab-v2/wave4-*.js`.
+(empty) Wave 5 is done (REVIEW #8). Next session: **Part 2, Wave 6 (motion flourishes)**.
+Start with `git merge ws/mergin`. Particles on drag velocity changes (Line Lab's `trackMotion`/
+`spawnParticles`, see line-lab.src.html; `LOOK.detail.particleKick`/`particleCooldownMs`), rifling and
+text bob at low strength (gate 4), paper-swell buttons with a pencil edge, and a motion settings panel
+(one slider + off switch per `MOTION_EFFECTS` entry, stored by `saveMotionSettings`). Done when all off
+leaves a still app. Screenshot scripts: `autonomy/checks/line-lab-v2/wave5-*.js` show the zoom pattern.
 
 ## Blocked
 
@@ -45,6 +45,10 @@ in, as the stage 1 outline did. Screenshot scripts: `autonomy/checks/line-lab-v2
   fly along Δv from the corners facing it. Queued in REVIEW #2.
 
 ## Learned
+
+- Synthetic Ctrl+wheel events on the canvas zoom the app (see `wave5-pose.js`); read the zoom as the tree
+  frame's rect width over its offsetWidth. The canvas floors at 10% (`MIN_ZOOM`); wheeling on past the
+  floor made the camera jump back up to ~120% in one run, so stop at the floor.
 
 - An `<svg>` with a 0 × 0 box draws nothing even with `overflow: visible`; overlay SVGs
   inside unsized parents need `width: 1, height: 1`. An `<InkLine>` drawn inside an
@@ -106,3 +110,6 @@ in, as the stage 1 outline did. Screenshot scripts: `autonomy/checks/line-lab-v2
 - 2026-09-25 16:13: Line Lab v2 Part 2 Wave 4 done and ticked (ink connections, landed
   flash, knot restyle, connection SVG sizing fix; 6 tests, 1194 green; save/reopen same;
   side-by-side with sketch 4). Commits 529442f (+ wip). REVIEW #7 queued.
+- 2026-09-25 17:05: Line Lab v2 Part 2 Wave 5 done and ticked (look/collapse.ts, CollapsedNote, nesting hook,
+  crossfade; 13 tests, 1207 green; zoom sweep monotonic with crossfade; double-click zooms in; side-by-side
+  with Line Lab). Commits 595cfdf, f71416e. REVIEW #8 queued (gate 2 open).
