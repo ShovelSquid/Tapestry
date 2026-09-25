@@ -1,0 +1,1 @@
+No external API integration: phase 2.6 moves the tree arrangement from settings.json into local `.tree` files (forest and Tapestry tree) through Tapestry's own kernel addon and its internal Electron preload/IPC channels; no third-party API, SDK or network service is called.
