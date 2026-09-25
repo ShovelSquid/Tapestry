@@ -22,6 +22,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [ ] **Phase 2.5: Agent Spatial Verbs** - Task-space `look` and `place` for agents: relations in, relations out, refused by `lock.layout` (INSERTED; depends on 2.4)
 - [ ] **Phase 2.6: Placement Edges & Forest Tree** - An always-open Tapestry tree, the arrangement of trees as a forest tree with placement edges, and trees named by header digest (INSERTED; depends on 2.2)
 - [ ] **Phase 2.7: File Windows & Workspace Sandbox** - Open a workspace folder, edit its files in canvas windows, and give agents file tools confined to that folder, with an in-app Claude chat panel on the Claude Code CLI; then dogfood Tapestry on its own repo (INSERTED; depends on 2.5)
+- [ ] **Phase 2.8: Agent Note Windows** - In-app chat sessions become session notes on the canvas: a live status line, observed states, a set_status tool, edge arrows, the transcript as one document, and reply-at-any-turn forks (INSERTED; depends on 2.7)
 - [ ] **Phase 3: Branching History & Deterministic Replay** - History navigation, fork-preserving branches, snapshots, and replay from recorded inputs
 - [ ] **Phase 4: Spatial Notebook** - Bundled note, drawing, property, and provenance-display plugins delivering the usable spatial workspace
 - [ ] **Phase 5: Deterministic Rule Engine** - Typed rule inputs/outputs, fixed-step simulation, forces, and explicit failure semantics
@@ -433,6 +434,31 @@ Plans:
 **Wave 7** *(blocked on Wave 6 completion)*
 
 - [ ] 02.7-07-PLAN.md — API-key chat engine (D-16): @anthropic-ai/sdk tool runner over the same sandboxed tools in-process, engine picker, encrypted key storage; blocking package-legitimacy check first
+
+**UI hint**: yes
+
+### Phase 2.8: Agent Note Windows (INSERTED)
+
+**Goal**: Every in-app chat session is a note on the canvas. Its card shows a live status line and a state (idle, working, needs you, done, failed) that is observed from the engine, never guessed from text. The conversation is written into the note as one readable document, and replying at any earlier turn forks a new session note linked to that turn.
+**Mode:** mvp
+**Depends on**: Phase 2.7 (ChatService, ChatEngine, ChatPanel, window geometry); uses 2.1 passage anchors and 2.5's placement resolver
+**Branch**: `ws/mergin`
+**Spec**: `~/Tree/Connections/Spec - Agent Note Windows.md` (every scope decision, Kaelen 2026-09-25)
+**Requirements**: TBD
+**Success Criteria** (what must be TRUE):
+
+  1. A workspace can hold any number of chat sessions, each its own note (a node with a real placement). `ChatService` is keyed by session note id, and every session acts as its own agent, `agent.claude-chat.<session>`
+  2. Each turn is appended to the session note's text as one passage, one commit per turn, with tool calls as one-line summaries. The transcript reads as one document in `.tree`, and turns are never child notes
+  3. The card keeps its note size and the conversation scrolls inside it. The docked ChatPanel is the enlarged view of the same session note, not a second store, and you can reply from the card
+  4. Idle, Working, Needs you, Done and Failed come from engine events and the new `set_status({ text, needs?, level? })` tool. Status is renderer state that never enters the tree, Done decays and Needs you persists until you reply, and after a relaunch every session shows Idle
+  5. Levels 0-3 (ceiling 3) and a visibility threshold setting decide what animates. Agents never move the camera; an off-screen session at level 2 or above gets an edge arrow in its author colour, and clicking it pans there
+  6. Replying at an earlier completed turn k leaves the original untouched and creates a new session note beside it (2.5's `beyond`) holding turns 1..k, in one commit with a `forked-from` edge to turn k's passage anchor. The fork gets its own engine session, started by replaying turns 1..k from the transcript through `ChatEngine.fork(atTurn)`
+
+**Plans**: 0 plans
+
+Plans:
+
+- [ ] TBD (run gsd-plan-phase 2.8 to break down)
 
 **UI hint**: yes
 
