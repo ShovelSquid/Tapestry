@@ -52,6 +52,7 @@ import {
   type Size,
 } from '../layout/nesting'
 import { FormFades, formsToDraw, type ShownForm } from '../look/collapse'
+import { flightScale, formScreenWidth, type FlightFrame } from '../look/enter'
 import { CollapsedNote } from '../look/CollapsedNote'
 import { seedFromId } from '../look/ink'
 import { effectStrength, readMotionSettings } from '../look/motion'
@@ -209,8 +210,16 @@ export interface TreeFrameHandlers {
   onNestingMove: (ref: NodeRef, ops: NestingOp[]) => void
   /** "New note inside" a note, at a spot local to it. */
   onCreateInside: (container: NodeRef, x: number, y: number) => void
-  /** Fit a frame-local rect to the view ("Zoom into note", an outline's double-click). */
-  onZoomToRect: (treeId: string, rect: { x: number; y: number; width: number; height: number }) => void
+  /**
+   * Fit a frame-local rect to the view ("Zoom into note", a double-click). With
+   * `onFlight`, the note flies with the glide and Escape flies back out
+   * (look/enter.ts): it hears the flight's progress every frame.
+   */
+  onZoomToRect: (
+    treeId: string,
+    rect: { x: number; y: number; width: number; height: number },
+    onFlight?: (f: FlightFrame) => void,
+  ) => void
 }
 
 /** A workspace tree's folder subspaces, computed once in Canvas (02.7 D-21). */
@@ -437,17 +446,44 @@ export default function TreeFrame({
   const containerMins = nesting ? containerMinSizes(nesting, localSpot, sizeOf) : null
   // Zoomed out, a note too small to read collapses to a circle or a dot
   // (look/collapse.ts) and its contents are hidden; changes of form crossfade.
+  const outlineWidth = (id: string): number => Math.max(sizeOf(id).width, containerMins?.get(id)?.width ?? 0)
   const outlines = nesting
-    ? outlineState(nesting, (id) => Math.max(sizeOf(id).width, containerMins?.get(id)?.width ?? 0), zoom)
+    ? outlineState(nesting, outlineWidth, zoom)
     : { collapsed: new Map<string, 'circle' | 'dot'>(), hidden: new Set<string>() }
+  const formAt = (o: typeof outlines, id: string): ShownForm =>
+    o.hidden.has(id) ? 'hidden' : (o.collapsed.get(id) ?? 'note')
+
+  // Entering a note (look/enter.ts): the note in flight is drawn as its card
+  // the whole way, scaled from the form it left to the form it lands in, and
+  // its form changes without a crossfade.
+  const [flyingId, setFlyingId] = useState<string | null>(null)
+  const flightRef = useRef<FlightFrame | null>(null)
+  const flight = flyingId !== null && nesting?.depthOf.has(flyingId) ? flightRef.current : null
+  const flying = flight ? flyingId : null
+  let flyScale = 1
+  let flyEndForm: ShownForm = 'note'
+  if (nesting && flight && flying) {
+    const w = outlineWidth(flying)
+    const fromForm = formAt(outlineState(nesting, outlineWidth, flight.fromZoom), flying)
+    flyEndForm = formAt(outlineState(nesting, outlineWidth, flight.toZoom), flying)
+    flyScale = flightScale(
+      formScreenWidth(fromForm, w, flight.fromZoom),
+      formScreenWidth(flyEndForm, w, flight.toZoom),
+      w,
+      zoom,
+      flight.p,
+    )
+  }
+
   const shownForms = new Map<string, ShownForm>()
   for (const id of nesting?.depthOf.keys() ?? []) {
-    shownForms.set(id, outlines.hidden.has(id) ? 'hidden' : (outlines.collapsed.get(id) ?? 'note'))
+    // The tracker hears where a flying note lands, so it has nothing to fade then either.
+    shownForms.set(id, id === flying ? flyEndForm : formAt(outlines, id))
   }
   const fadeMs = effectStrength(readMotionSettings(), 'collapseFade') > 0 ? LOOK.detail.formCrossfadeMs : 0
   const formFades = useRef<FormFades | null>(null)
   if (!formFades.current) formFades.current = new FormFades()
-  const fades = formFades.current.update(shownForms, performance.now(), fadeMs)
+  const fades = formFades.current.update(shownForms, performance.now(), fadeMs, flying ? new Set([flying]) : undefined)
   // Draw once more when the soonest fade ends, to drop the form it left.
   const [, setFadeTick] = useState(0)
   const fadeEnd = formFades.current.nextEndMs(fadeMs)
@@ -525,9 +561,19 @@ export default function TreeFrame({
     handlers.onCreateInside(refFor(nodeId), spot.x, spot.y)
   }
 
+  /** Enter a note: zoom in on it with the note flying along (look/enter.ts). */
   const zoomTo = (nodeId: string): void => {
     const rect = drawnRect(nodeId)
-    if (rect) handlers.onZoomToRect(tree.id, rect)
+    if (!rect) return
+    handlers.onZoomToRect(tree.id, rect, (f) => {
+      if (f.p >= 1) {
+        flightRef.current = null
+        setFlyingId(null)
+      } else {
+        flightRef.current = f
+        setFlyingId(nodeId)
+      }
+    })
   }
 
   /** Nested notes draw after (over) their containers. */
@@ -788,7 +834,12 @@ export default function TreeFrame({
             In a workspace tree, folders and the cards inside them are drawn by
             their FolderFrame, not here. */}
         {tree.nodes
-          .filter((n) => !isKnot(n) && !isNestedInSubspace(n) && (!outlines.hidden.has(n.id) || fades.has(n.id)))
+          .filter(
+            (n) =>
+              !isKnot(n) &&
+              !isNestedInSubspace(n) &&
+              (!outlines.hidden.has(n.id) || fades.has(n.id) || n.id === flying),
+          )
           .sort(depthOrder)
           .map((node) => {
           const key = keyFor(node.id)
@@ -798,7 +849,10 @@ export default function TreeFrame({
           // the card, or a circle or dot at its centre, and while a form
           // changes, the form it left fading out over the new one fading in.
           const shown = shownForms.get(node.id)
-          const draws = shown ? formsToDraw(shown, fades.get(node.id)) : [{ form: 'note' as const, fade: null }]
+          const draws =
+            shown && node.id !== flying
+              ? formsToDraw(shown, fades.get(node.id))
+              : [{ form: 'note' as const, fade: null }]
           const collapsedEls = draws.flatMap((d) => {
             if (d.form === 'note') return []
             const at = frameSpot(node.id)
@@ -1000,6 +1054,7 @@ export default function TreeFrame({
               <NoteCard
                 key="note"
                 formFade={noteDraw.fade}
+                flightScale={node.id === flying ? flyScale : undefined}
                 treeId={tree.id}
                 node={node}
                 displayPosition={

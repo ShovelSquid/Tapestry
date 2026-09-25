@@ -61,6 +61,7 @@ import {
   type Camera,
 } from '../layout/camera'
 import { absolutePositions, isWorkspaceNode, subspaceRects, type DimsOf, type Point } from '../layout/subspaces'
+import { flightProgress, type FlightFrame } from '../look/enter'
 import { useContextMenu } from './ContextMenu'
 import { ChatContext } from '../state/chat'
 
@@ -306,6 +307,41 @@ function Canvas({
   }, [rig])
 
   /**
+   * The shared-element flight riding the current glide, if any (entering a
+   * note, look/enter.ts). Each frame it is told how far the drawn camera has
+   * come; it ends on landing, or where it is when other input moves the
+   * target. `entered` remembers where the camera was before the last note
+   * was entered, so Escape can fly back out.
+   */
+  const flightRef = useRef<{ from: Camera; to: Camera; onFlight: (f: FlightFrame) => void } | null>(null)
+  const enteredRef = useRef<{ from: Camera; onFlight: (f: FlightFrame) => void } | null>(null)
+
+  const advanceFlight = useCallback(
+    (more: boolean) => {
+      const f = flightRef.current
+      if (!f) return
+      const t = rig.target
+      const interrupted = t.zoom !== f.to.zoom || t.panX !== f.to.panX || t.panY !== f.to.panY || t.roll !== f.to.roll
+      const done = interrupted || !more
+      f.onFlight({ p: done ? 1 : flightProgress(f.from, f.to, rig.drawn), fromZoom: f.from.zoom, toZoom: f.to.zoom })
+      if (done) flightRef.current = null
+    },
+    [rig],
+  )
+
+  /** Start a flight along the glide just set on the rig, ending any other. */
+  const startFlight = useCallback(
+    (from: Camera, onFlight: (f: FlightFrame) => void) => {
+      const prev = flightRef.current
+      if (prev) prev.onFlight({ p: 1, fromZoom: prev.from.zoom, toZoom: prev.to.zoom })
+      const to = { ...rig.target }
+      flightRef.current = { from, to, onFlight }
+      onFlight({ p: 0, fromZoom: from.zoom, toZoom: to.zoom })
+    },
+    [rig],
+  )
+
+  /**
    * Start the animation loop if it is not running. Each frame advances the
    * drawn camera by the real elapsed time; the loop stops as soon as the
    * camera has arrived, so an idle canvas schedules no frames.
@@ -317,11 +353,12 @@ function Canvas({
       const dt = Math.max(0, now - lastFrameRef.current)
       lastFrameRef.current = now
       const more = rig.tick(now, dt)
+      advanceFlight(more)
       setView({ ...rig.drawn })
       rafRef.current = more ? requestAnimationFrame(frame) : 0
     }
     rafRef.current = requestAnimationFrame(frame)
-  }, [rig])
+  }, [rig, advanceFlight])
 
   useEffect(
     () => () => {
@@ -547,7 +584,11 @@ function Canvas({
    * glide its centre to the middle. Keeps the current roll.
    */
   const zoomToFrameRect = useCallback(
-    (treeId: string, rect: { x: number; y: number; width: number; height: number }) => {
+    (
+      treeId: string,
+      rect: { x: number; y: number; width: number; height: number },
+      onFlight?: (f: FlightFrame) => void,
+    ) => {
       const viewport = viewportRef.current
       const tree = treesRef.current.find((t) => t.id === treeId)
       if (!viewport || !tree || rect.width <= 0 || rect.height <= 0) return
@@ -556,11 +597,44 @@ function Canvas({
       const zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, fit))
       const cx = tree.frame.x + rect.x + rect.width / 2
       const cy = tree.frame.y + rect.y + rect.height / 2
+      const from = { ...rig.drawn }
       rig.easeTo((c) => centerOn({ ...c, zoom }, cx, cy, clientWidth, clientHeight), FLY_TAU_MS)
+      // With a flight, the note's parts fly with the glide, and Escape can
+      // fly back to where the camera was (look/enter.ts).
+      if (onFlight) {
+        startFlight(from, onFlight)
+        if (!enteredRef.current) enteredRef.current = { from, onFlight }
+        else enteredRef.current = { from: enteredRef.current.from, onFlight }
+      }
       kick()
     },
-    [rig, kick],
+    [rig, kick, startFlight],
   )
+
+  /** Leave the entered note: fly back to the camera from before it was entered. */
+  const leaveNote = useCallback((): boolean => {
+    const entered = enteredRef.current
+    if (!entered) return false
+    enteredRef.current = null
+    const from = { ...rig.drawn }
+    rig.easeTo(() => ({ ...entered.from }), FLY_TAU_MS)
+    startFlight(from, entered.onFlight)
+    kick()
+    return true
+  }, [rig, kick, startFlight])
+
+  // Escape leaves an entered note, once nothing is being typed in (the first
+  // Escape stops editing; App handles that).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || !enteredRef.current) return
+      const active = document.activeElement
+      if (active && active.closest('.ProseMirror, input, textarea, [contenteditable="true"]')) return
+      leaveNote()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [leaveNote])
 
   useImperativeHandle(ref, () => ({ panToFrame, panToNote }), [panToFrame, panToNote])
 
@@ -1138,7 +1212,7 @@ function Canvas({
       onCreateInside(container, x, y)
       recordFrameGrowth(container.treeId)
     },
-    onZoomToRect: (treeId, rect) => zoomToFrameRect(treeId, rect),
+    onZoomToRect: (treeId, rect, onFlight) => zoomToFrameRect(treeId, rect, onFlight),
     onFolderHeaderPointerDown: (folderRef, e) => {
       if (e.button !== 0) return
       // A folder header is not canvas background: dragging it must not pan.

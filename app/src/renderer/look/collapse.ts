@@ -71,19 +71,29 @@ export interface FormFade {
   readonly atMs: number
 }
 
+const NONE: ReadonlySet<string> = new Set()
+
 /**
  * Remembers each note's last shown form and fades between forms when one
  * changes. `update` is called once per render with every note's form; it
  * returns the fades still running. A note that goes away is forgotten.
- * With `durationMs` 0 (the `collapseFade` effect off) nothing fades.
+ * With `durationMs` 0 (the `collapseFade` effect off) nothing fades, and a
+ * note in `instant` (one flying in or out, look/enter.ts) changes form
+ * without a fade and stops any fade it had.
  */
 export class FormFades {
   private last = new Map<string, ShownForm>()
   private fades = new Map<string, FormFade>()
 
-  update(forms: ReadonlyMap<string, ShownForm>, nowMs: number, durationMs: number): ReadonlyMap<string, FormFade> {
+  update(
+    forms: ReadonlyMap<string, ShownForm>,
+    nowMs: number,
+    durationMs: number,
+    instant: ReadonlySet<string> = NONE,
+  ): ReadonlyMap<string, FormFade> {
     const next = new Map<string, FormFade>()
     for (const [id, form] of forms) {
+      if (instant.has(id)) continue
       const was = this.last.get(id)
       const running = this.fades.get(id)
       if (was !== undefined && was !== form && durationMs > 0) {

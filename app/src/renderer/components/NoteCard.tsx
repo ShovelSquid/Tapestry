@@ -112,10 +112,16 @@ interface NoteCardProps {
   minSize?: { width: number; height: number }
   /** "New note inside": make a note on this note's surface. */
   onCreateInside?: () => void
-  /** "Zoom into note": fit this note to the view. */
+  /** "Zoom into note", and a double-click: enter this note (look/enter.ts). */
   onZoomTo?: () => void
   /** The zoom-collapse crossfade (look/collapse.ts): fading in, or out to a circle or dot. */
   formFade?: 'in' | 'out' | null
+  /**
+   * While the note is entered or left, the extra scale that grows it out of
+   * (or back into) the form it was drawn in (look/enter.ts). A CSS `scale`,
+   * apart from the bob's `transform` and the rifle's `translate`.
+   */
+  flightScale?: number
 }
 
 // ---------------------------------------------------------------------------
@@ -180,6 +186,7 @@ export default function NoteCard({
   onCreateInside,
   onZoomTo,
   formFade,
+  flightScale,
 }: NoteCardProps): React.ReactElement {
   const cardRef = useRef<HTMLDivElement>(null)
 
@@ -679,6 +686,26 @@ export default function NoteCard({
     [isEditing, onStartEditing],
   )
 
+  // Double-click enters the note (spec §7). A double-click inside a note
+  // that was already being written in selects a word as usual instead.
+  const editingAtFirstPressRef = useRef(false)
+  const handleMouseDownCapture = useCallback(
+    (e: React.MouseEvent) => {
+      if (e.detail <= 1) editingAtFirstPressRef.current = isEditing
+    },
+    [isEditing],
+  )
+  const handleDoubleClick = useCallback(
+    (e: React.MouseEvent) => {
+      if (!onZoomTo || editingAtFirstPressRef.current) return
+      const target = e.target as HTMLElement
+      if (target.closest('.tapestry-resize-handle, .tapestry-format-bar, .tapestry-corner-cluster, .tapestry-note-settings, button')) return
+      e.stopPropagation()
+      onZoomTo()
+    },
+    [onZoomTo],
+  )
+
   const handleBorderClick = useCallback(
     (e: React.MouseEvent) => {
       e.stopPropagation()
@@ -790,6 +817,7 @@ export default function NoteCard({
   if (formFade) borderClass += ` tap-form-fade-${formFade}`
 
   const cardStyle: React.CSSProperties = {
+    ...(flightScale !== undefined && flightScale !== 1 ? { scale: String(flightScale) } : {}),
     left: `${effectiveX}px`,
     top: `${effectiveY}px`,
     ...(effectiveWidth ? { width: `${effectiveWidth}px`, minWidth: `${MIN_WIDTH}px`, maxWidth: 'none' } : {}),
@@ -812,6 +840,8 @@ export default function NoteCard({
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
       onPointerDownCapture={localPoint}
+      onMouseDownCapture={handleMouseDownCapture}
+      onDoubleClick={handleDoubleClick}
       onContextMenu={handleContextMenu}
     >
       {/* Paper, hover bloom and the pencil outline (Line Lab v2 wave 2) */}

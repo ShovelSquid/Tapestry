@@ -68,6 +68,19 @@ describe('FormFades', () => {
     expect(f.nextEndMs(220)).toBeNull()
   })
 
+  it('never fades a flying note (entering), in or after the flight, and stops its running fade', () => {
+    const f = new FormFades()
+    const flying = new Set(['n1'])
+    f.update(forms([['n1', 'circle'], ['n2', 'note']]), 0, 220)
+    f.update(forms([['n1', 'note'], ['n2', 'circle']]), 100, 220)
+    // Flight starts mid-fade: the tracker hears the landing form, instantly.
+    const during = f.update(forms([['n1', 'note'], ['n2', 'circle']]), 120, 220, flying)
+    expect(during.has('n1')).toBe(false)
+    expect(during.has('n2')).toBe(true)
+    // It lands in the form it was told, so nothing fades once it stops flying.
+    expect(f.update(forms([['n1', 'note'], ['n2', 'circle']]), 900, 220).has('n1')).toBe(false)
+  })
+
   it('restarts from the form it was showing when the form changes again mid-fade', () => {
     const f = new FormFades()
     f.update(forms([['n1', 'note']]), 0, 220)
