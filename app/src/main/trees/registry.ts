@@ -70,8 +70,11 @@ export type UnavailableStatus = 'damaged' | 'locked' | 'missing'
  */
 export interface UnavailableTree {
   /**
-   * `path:<resolved path>` — a tree that would not open has no header digest
-   * to be named by, so it is named by the only thing known about it.
+   * The member's recorded digest (`sha256:<hex>`) when the caller expected
+   * one (2.6 D-03): a known member is named by its identity whether or not
+   * it opens, so a different world at its path can never hide it (WR-01).
+   * Otherwise `path:<resolved path>`, for a tree that has never been read
+   * and so has no digest to be named by (SC-4). Never written to disk.
    */
   readonly id: string
   readonly path: string
@@ -220,7 +223,10 @@ export class TreeRegistry {
   /** Keyed by tree id. Map preserves insertion order, which is open order. */
   private readonly trees = new Map<string, OpenTree>()
 
-  /** Trees in the space that would not open, keyed by their `path:` id. */
+  /**
+   * Trees in the space that would not open, keyed by their id: the expected
+   * digest for a known member, `path:` only for a tree never read.
+   */
   private readonly unavailable = new Map<string, UnavailableTree>()
 
   /** The tree the single-tree UI acts on until Plan 05 opens the frame view. */
@@ -324,14 +330,27 @@ export class TreeRegistry {
    * With `opts.expect`, a world whose digest is not the expected one is not
    * adopted: a different world now sits at this member's path, and giving it
    * the member's frame would hand an old place to a new identity (2.6 D-03,
-   * RESEARCH Pitfall 5). It is recorded `missing` with the caller's reason.
+   * RESEARCH Pitfall 5). It is recorded `missing` with the caller's reason,
+   * under the expected id. That holds when the different world is already
+   * open at the path too: it is left open and untouched. An expected id that
+   * is already open from elsewhere is a clash, and nothing is recorded, so an
+   * id is never both open and unavailable.
    */
   tryOpen(path: string, opts: OpenTreeOptions = {}): OpenTree | UnavailableTree {
     const target = resolve(path)
     this.refuseReservedPath(target)
 
     const existing = this.findByPath(target)
-    if (existing) return existing
+    if (existing && (!opts.expect || opts.expect.id === existing.id)) return existing
+
+    if (opts.expect) {
+      const elsewhere = this.trees.get(opts.expect.id)
+      if (elsewhere) throw new TreeIdentityClash(elsewhere)
+      if (existing) {
+        // A different world is open at this member's path (Pitfall 5).
+        return this.recordUnavailable(target, opts, 'missing', opts.expect.reason)
+      }
+    }
 
     // Checked here rather than left to the kernel: its "missing" detail is the
     // path again, which says nothing a reader did not already know.
@@ -411,7 +430,7 @@ export class TreeRegistry {
     reason: string,
   ): UnavailableTree {
     const entry: UnavailableTree = {
-      id: unavailableId(target),
+      id: opts.expect?.id ?? unavailableId(target),
       path: target,
       kind: opts.kind ?? 'native',
       name: opts.name ?? defaultName(target),

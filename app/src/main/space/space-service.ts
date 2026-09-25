@@ -8,10 +8,13 @@
  * agents (who reach trees only through the registry) can neither read nor
  * write them (RESEARCH Pitfall 2, T-2.6-02).
  *
- * The join between the two worlds is by member identity: a registry entry is
- * matched to a forest stand-in by digest, or by path hint while the digest is
- * not yet known. A registry id is used only to look things up and is never
- * written: on disk a member is its path hint plus digest (D-03).
+ * The join between the two worlds is by member identity, and it is one to
+ * one: each registry entry joins at most one stand-in and each stand-in is
+ * joined by at most one entry (see `memberFor`). A known member is named by
+ * its digest whether or not it opens; the path hint joins only a stand-in
+ * whose digest is not yet known. A registry id is used only to look things
+ * up and is never written: on disk a member is its path hint plus digest
+ * (D-03).
  *
  * Every write takes an `Actor` main has already resolved; nothing a caller
  * passes names who made it (T-2.6-11). There is exactly one forest (D-07),
@@ -602,7 +605,8 @@ export class SpaceService {
         actor,
         addTreeMessage(entry.name),
       )
-      this.dropStaleRecord(recorded.pathHint, entry.path)
+      // Its record at the old path was keyed by its digest, and the registry
+      // ended it when the world opened here.
       return { committed: true }
     }
 
@@ -740,7 +744,8 @@ export class SpaceService {
         SYSTEM_ACTOR,
         forgetDuplicateMessage(memberName(standIn), standIn.pathHint, memberName(established)),
       )
-      this.dropStaleRecord(established.pathHint, tree.path)
+      // The established member's record was keyed by this digest, and the
+      // registry ended it when the world opened.
       return { committed: true }
     }
 
@@ -769,32 +774,43 @@ export class SpaceService {
   }
 
   /**
-   * Take the registry's in-memory `path:` record for a stale hint out of the
-   * space, so a member found at a new path is not shown twice.
-   */
-  private dropStaleRecord(staleHint: string, currentPath: string): void {
-    if (samePath(staleHint, currentPath)) return
-    const stale = this.registry.unavailableList().find((t) => samePath(t.path, staleHint))
-    if (stale) this.registry.close(stale.id)
-  }
-
-  /**
    * The stand-in for a registry entry (the join rule `list`, `moveFrames`
-   * and membership all use): by digest for an open tree, falling back to a
-   * path match on a stand-in whose digest is not yet recorded; by path for a
-   * tree that would not open and so has no digest.
+   * and membership all use). It is one to one (2.6 gaps 2 and 3):
+   *
+   * - An open tree joins the stand-in carrying its digest, or else a
+   *   digest-less stand-in at its path (its identity is not recorded yet).
+   * - An unavailable record named by a digest joins only the stand-in with
+   *   that digest: a path shared with another member never hides it.
+   * - A `path:` record (a tree never read) joins a digest-less stand-in at its
+   *   path, or else a stand-in at its path whose digest names no registry
+   *   entry (a vault member that was never restored, IN-06).
+   *
+   * The registry keeps a `path:` record only while no world is open at that
+   * path, so an open tree and a `path:` record never reach the same
+   * digest-less stand-in.
    */
   private memberFor(
     entry: TreeEntry | TreeSummary,
     members: ForestMember[] = this.forest?.members() ?? [],
   ): ForestMember | undefined {
-    if (entry.id.startsWith('sha256:')) {
+    if (this.registry.get(entry.id)) {
       return (
         members.find((m) => m.digest === entry.id) ??
         members.find((m) => m.digest === undefined && samePath(m.pathHint, entry.path))
       )
     }
-    return members.find((m) => samePath(m.pathHint, entry.path))
+    if (entry.id.startsWith('sha256:')) {
+      return members.find((m) => m.digest === entry.id)
+    }
+    return (
+      members.find((m) => m.digest === undefined && samePath(m.pathHint, entry.path)) ??
+      members.find(
+        (m) =>
+          m.digest !== undefined &&
+          samePath(m.pathHint, entry.path) &&
+          this.registry.entry(m.digest) === null,
+      )
+    )
   }
 
   // -------------------------------------------------------------------------
