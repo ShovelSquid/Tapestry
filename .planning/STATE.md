@@ -1,19 +1,19 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0
-current_phase: "02.2"
-current_phase_name: Obsidian Bridge
-status: executing
-stopped_at: Completed 02.2-07-PLAN.md
-last_updated: "2026-09-23T06:50:00.000Z"
-last_activity: 2026-09-23
-last_activity_desc: Phase 02.4 Lock Model complete and rebased onto the main line; Phase 02.2 still executing
-state_head: c3f4f3d6c993f90c55415c6117705b124bb9667a
+current_phase: "02.6"
+current_phase_name: Placement Edges & Forest Tree
+status: verifying
+stopped_at: Completed 02.6-10-PLAN.md
+last_updated: "2026-09-25T00:30:02.075Z"
+last_activity: 2026-09-24
+last_activity_desc: Phase 02.6 execution started
+state_head: 487ca4b0004f3d8983809b50e199b19e4e8d25c3
 progress:
-  total_phases: 11
-  completed_phases: 1
-  total_plans: 40
-  completed_plans: 22
+  total_phases: 13
+  completed_phases: 0
+  total_plans: 55
+  completed_plans: 37
 ---
 
 # Project State
@@ -23,15 +23,15 @@ progress:
 See: .planning/PROJECT.md (updated 2026-09-08)
 
 **Core value:** Your world of thoughts must remain readable and under your control — in its spatial interface, its editable relationships and behavior, and its files and branching history.
-**Current focus:** Phase 02.2 — Obsidian Bridge (executing). Phase 02.4 — Lock Model is complete and on the main line; open for Kaelen: WR-02 redo decision, WR-01 owner-matching confirmation, #19 lock naming
+**Current focus:** Phase 02.6 — Placement Edges & Forest Tree
 
 ## Current Position
 
-Phase: 02.2 (Obsidian Bridge) — EXECUTING
-Plan: 8 of 16 (02.2-01 to 02.2-07 complete; 02.2-08 code committed, no summary yet)
-Status: Executing
-Phase 02.4 (Lock Model): COMPLETE — verified 25/25, 2026-09-16; rebased onto the main line 2026-09-23
-Last activity: 2026-09-24 - Completed quick task 260924-dwq: Make pan and zoom far more sensitive
+Phase: 02.6 (Placement Edges & Forest Tree) — READY TO EXECUTE
+Plan: 6 of 6
+Status: Phase complete — ready for verification
+Main line (phase-2-implementation-v1) at merge: 02.2 executing (8 of 16), 02.4 complete, 02.5 5/5
+Last activity: 2026-09-24 — Phase 02.6 execution started
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -74,6 +74,16 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 02.2 P07 | 35 min | 1 tasks | 26 files |
 | Phase 02.4 P01 | 14 min | 2 tasks | 4 files |
 | Phase 02.4 P02 | 8 min | 2 tasks | 5 files |
+| Phase 02.6 P01 | 6 min | 3 tasks | 8 files |
+| Phase 02.6 P02 | 9min | 1 tasks | 8 files |
+| Phase 02.6 P03 | 6min | 2 tasks | 5 files |
+| Phase 02.6 P04 | 12min | 2 tasks | 8 files |
+| Phase 02.6 P05 | 8min | 2 tasks | 9 files |
+| Phase 02.6 P06 | 10min | 2 tasks | 10 files |
+| Phase 02.6 P07 | 4min | 2 tasks | 4 files |
+| Phase 02.6 P08 | 6min | 2 tasks | 5 files |
+| Phase 02.6 P09 | 3min | 3 tasks | 8 files |
+| Phase 02.6 P10 | 4min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -132,6 +142,22 @@ Recent decisions affecting current work:
 - [Phase 02.4]: 02.4-01: malformed lock values fail closed; only exact 'open' unlocks; blank owner shown as (unknown); allow list read in Plan 02
 - [Phase 02.4]: 02.4-02: lock.<aspect>.allow is read for explicit and derived locks; only a text value counts, whitespace-split, exact match
 - [Phase 02.4]: 02.4-02: agent tool text states the lock rule and that refusals name the owner, without publishing lock.* key names
+- [Phase 02.6]: 02.6-01: settings writes are a passthrough (unknown keys, raw trees, version never lowered); FRAME_UNDO_REACH defaults to 'run' pending Plan 02 checkpoint; registry reserved paths compared resolved + real (folder-real for unborn files)
+- [Phase 02.6]: 02.6-02 checkpoint resolved 'recommended' autonomously (pending Kaelen review, autonomy/REVIEW.md item 1): Option A names, absolute path hints, origin.x/origin.y only, settings pointer key 'tapestry' {path}, version 2, pointer written last
+- [Phase 02.6]: 02.6-02: a failed import removes only files the same call created, so the next launch retries case A; cases B/C return not-set-up until Plan 06
+- [Phase 02.6]: 02.6-03: No restoreVault hook at launch; this branch has no vault launch-restore branch (2.2 Plan 08 not landed), so vault members stay in the forest unopened
+- [Phase 02.6]: 02.6-03: Note landing/resize pushes use the same one-batch trees:moveFrames call as a frame drop (settleFrames removed)
+- [Phase 02.6]: 02.6-03: Forest identity is its header (name + creation second); two forests made in the same second cannot be told apart by the case H digest check
+- [Phase 02.6]: 02.6-04: vault:locate absent on this branch; relocateMember built and tested with no caller until 2.2 Plan 08
+- [Phase 02.6]: 02.6-04: setReserved runs before member restore; restoreVault requests carry expect; relocate and re-identify use the approved add message
+- [Phase 02.6]: 02.6-05: FRAME_UNDO_REACH stays 'run'; frame undo/redo are compensating forest commits read from the forest, never a rewind
+- [Phase 02.6]: 02.6-05: fitFrame is system-signed, once per member per session, spent even when nothing moves, never after the person moved the frame; trees:setFrame removed
+- [Phase 02.6]: 02.6-06: cases B and C implemented as B(i)/C(i) (reuse, pointer last, no re-import); not-set-up kind removed; settings tree writers deleted (2.2) and trees never written; a file without trees keeps none
+- [Phase 02.6]: 02.6-07: an empty or whitespace-only settings.json counts as missing (nothing to lose); a present-but-unparseable one is never written over and launch returns setup-failed
+- [Phase 02.6]: 02.6-07: agents:setEnabled now rejects its IPC call over an unreadable settings.json instead of overwriting it; index.ts unchanged
+- [Phase 02.6]: 02.6-08: Gap 3 (WR-01) fixed with option (b): unavailable records keyed by the member's recorded digest, path: only for never-read trees; adopt() retires both the path: record and the adopted id's record; memberFor is one-to-one and removeMember refuses a shared stand-in
+- [Phase 02.6]: 02.6-09: WR-04 closed on the renderer side only (a growth push no longer arms frame undo); the growth-push forest commit message and the new 'Close tree failed: <error>' banner are queued for Kaelen as wording questions
+- [Phase 02.6]: 02.6-10: add rollback lives in openWithRollback; it closes only new registry entries with no stand-in (SpaceService.isMember), so a concurrent add is never undone (WR-02, T-2.6-24/40)
 
 ### Pending Todos
 
@@ -158,6 +184,7 @@ Recent decisions affecting current work:
 | 260915-v51 | Fix the kernel copy-per-commit quadratic: Kernel::replayUpTo and Kernel::submit copied the entire World once per commit, making reopen O(n^2) in commit count | 2026-09-15 | 7fed53f | [260915-v51-fix-the-kernel-copy-per-commit-quadratic](./quick/260915-v51-fix-the-kernel-copy-per-commit-quadratic/) |
 | 260924-0ii | Add layout as a third lock aspect (lock.layout), text-aspect defaults, not yet gating any command | 2026-09-24 | 4d78287 | [260924-0ii-add-layout-as-a-third-lock-aspect-lock-l](./quick/260924-0ii-add-layout-as-a-third-lock-aspect-lock-l/) |
 | 260924-dwq | Make pan and zoom far more sensitive: exponential zoom with pinch/wheel rate split, 1.6x pan multiplier, deltaMode normalization | 2026-09-24 | a146b7f | [260924-dwq-make-pan-and-zoom-far-more-sensitive-in-](./quick/260924-dwq-make-pan-and-zoom-far-more-sensitive-in-/) |
+| 260924-glr | Canvas camera: view roll and eased camera motion | 2026-09-24 | e66b3a8 | [260924-glr-canvas-camera-view-roll-and-eased-camera](./quick/260924-glr-canvas-camera-view-roll-and-eased-camera/) |
 
 ### Roadmap Evolution
 
@@ -165,6 +192,7 @@ Recent decisions affecting current work:
 - Phase 2.3 inserted after Phase 2.2: Time Threads: live z-axis writing threads split out of the 2.2 discussion (Kaelen, 2026-09-15); discuss with Kaelen before planning
 - Phase 2.2 edited: goal reworded to cover the agent MCP bridge plus the Obsidian bridge (02.2-CONTEXT D-01)
 - Phase 2.4 inserted after Phase 2.3: Lock Model: allow unless locked; lock aspects replace the D-05 authorship gate (Kaelen, 2026-09-16)
+- Phase 2.6 inserted after Phase 2.3: Placement Edges & Forest Tree — Tapestry tree, forest tree with placement edges, digest identity (Decision Register #2 C, #4, #5 A, #6, #7, #13 B; one-way doors #17/#18 gated at a blocking checkpoint). Numbered 2.6 by the orchestrator; note-position migration excluded (later phase after 2.3).
 
 ## Deferred Items
 
@@ -184,6 +212,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-16T06:54:29.284Z
-Stopped at: Completed 02.2-07-PLAN.md
+Last session: 2026-09-25T00:30:02.011Z
+Stopped at: Completed 02.6-10-PLAN.md
 Resume file: None

@@ -91,11 +91,14 @@ function unavailableCopy(tree: ForestTree): string {
 }
 
 /** The ways out of each state. The first is the primary action. */
-function unavailableActions(tree: ForestTree): Array<{ label: string; run: () => void }> {
+function unavailableActions(
+  tree: ForestTree,
+  onCloseTree: (treeId: string) => void,
+): Array<{ label: string; run: () => void }> {
   const closeTree = {
     label: 'Close tree',
     run: (): void => {
-      void window.tapestry.trees.close(tree.id)
+      onCloseTree(tree.id)
     },
   }
 
@@ -152,6 +155,11 @@ export interface TreeFrameHandlers {
   onRegisterDims: (ref: NodeRef, width: number, height: number) => void
   onDragMove: (ref: NodeRef, x: number, y: number) => void
   onDragEnd: (ref: NodeRef) => void
+  /**
+   * Close a tree, from Tree options or an unavailable frame's actions. App
+   * waits for main and shows a refusal or failure (review WR-03).
+   */
+  onCloseTree: (treeId: string) => void
 }
 
 interface TreeFrameProps {
@@ -159,6 +167,11 @@ interface TreeFrameProps {
   /** The frame's world rect, already computed from content bounds. */
   rect: FrameRect
   zoom: number
+  /**
+   * The drawn camera roll, in degrees. Cards need it, with zoom, to turn
+   * screen deltas into world deltas; the frame header does not.
+   */
+  roll: number
   /** Per-note UI state, keyed by nodeKey so two trees cannot collide. */
   editingKey: string | null
   hoveredKey: string | null
@@ -191,6 +204,7 @@ export default function TreeFrame({
   tree,
   rect,
   zoom,
+  roll,
   editingKey,
   hoveredKey,
   selectedKey,
@@ -244,7 +258,7 @@ export default function TreeFrame({
   // It renders no content layer at all: there is no graph to draw, and nothing
   // here holds a handle through which it could be written to.
   if (isUnavailable) {
-    const actions = unavailableActions(tree)
+    const actions = unavailableActions(tree, handlers.onCloseTree)
     return (
       <div
         className={`tapestry-tree-frame tapestry-tree-frame--unavailable${stateClass}`}
@@ -259,6 +273,7 @@ export default function TreeFrame({
             saveState={tree.saveState}
             zoom={zoom}
             onPointerDown={onHeaderPointerDown}
+            onClose={() => handlers.onCloseTree(tree.id)}
           />
         </div>
 
@@ -380,6 +395,7 @@ export default function TreeFrame({
           saveState={tree.saveState}
           zoom={zoom}
           onPointerDown={onHeaderPointerDown}
+          onClose={() => handlers.onCloseTree(tree.id)}
         />
       </div>
 
@@ -443,6 +459,7 @@ export default function TreeFrame({
               isEditing={editingKey === keyFor(node.id)}
               isHovered={isCenterHovered}
               zoom={zoom}
+              roll={roll}
               onStartEditing={() => handlers.onStartEditing(refFor(node.id))}
               onSave={(nodeId, body2, title) => handlers.onSave(refFor(nodeId), body2, title)}
               onMarkDirty={(nodeId) => handlers.onMarkDirty(refFor(nodeId))}
@@ -468,6 +485,7 @@ export default function TreeFrame({
                 node={node}
                 isSelected={selectedKey === key}
                 zoom={zoom}
+                roll={roll}
                 provenance={tree.history?.nodes[node.id]}
                 onBorderSelect={() => handlers.onBorderSelect(refFor(node.id))}
                 onHover={(hovered) => handlers.onHover(refFor(node.id), hovered)}
@@ -493,6 +511,7 @@ export default function TreeFrame({
                 isConnectTarget={connectingHoverKey === key}
                 isConnecting={isConnecting}
                 zoom={zoom}
+                roll={roll}
                 provenance={tree.history?.nodes[node.id]}
                 currentUserActorId={currentUserActorId}
                 onStartEditing={() => handlers.onStartEditing(refFor(node.id))}
@@ -528,6 +547,7 @@ export default function TreeFrame({
               isSelected={selectedKey === key}
               isHovered={hoveredKey === key}
               zoom={zoom}
+              roll={roll}
               onBorderSelect={() => handlers.onBorderSelect(refFor(node.id))}
               onHover={(hovered) => handlers.onHover(refFor(node.id), hovered)}
               onPositionChange={writePosition}

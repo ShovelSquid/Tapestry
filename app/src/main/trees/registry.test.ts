@@ -14,11 +14,21 @@
 
 import { afterEach, describe, expect, it } from 'vitest'
 import { join, resolve } from 'node:path'
-import { readFileSync, rmSync, statSync, truncateSync, writeFileSync } from 'node:fs'
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  truncateSync,
+  writeFileSync,
+} from 'node:fs'
 import { makeTempDir } from '../../../test/helpers/temp-tree'
 import { KernelBridge } from '../kernel-bridge'
 import { humanActor, pluginActor } from '../commands/actor'
-import { TreeRegistry, type OpenTree, type UnavailableTree } from './registry'
+import { TreeIdentityClash, TreeRegistry, type OpenTree, type UnavailableTree } from './registry'
 
 const dirs: string[] = []
 const registries: TreeRegistry[] = []
@@ -399,5 +409,366 @@ describe('TreeRegistry: trees that will not open', () => {
 
     registry.close(entry.id)
     expect(registry.summary()).toEqual([])
+  })
+})
+
+describe('TreeRegistry: a world read at a path ends its never-read record (2.6 gap 2, CR-02)', () => {
+  function pathIds(registry: TreeRegistry): string[] {
+    return registry
+      .summary()
+      .map((t) => t.id)
+      .filter((id) => id.startsWith('path:'))
+  }
+
+  it('create at a path with a never-read record clears it', () => {
+    const dir = tempDir('reg-create-clears')
+    const missingPath = join(dir, 'later.tree')
+    const registry = newRegistry()
+
+    const missing = registry.tryOpen(missingPath) as UnavailableTree
+    expect(missing.id).toBe(`path:${resolve(missingPath)}`)
+
+    const created = registry.create(missingPath, 'create-clears')
+
+    expect(pathIds(registry)).toEqual([])
+    expect(registry.entry(missing.id)).toBeNull()
+    expect(registry.summary()).toEqual([expect.objectContaining({ id: created.id, status: 'ok' })])
+  })
+
+  it('open at a path with a never-read record clears it', () => {
+    const dir = tempDir('reg-open-clears')
+    const missingPath = join(dir, 'later.tree')
+    const registry = newRegistry()
+
+    registry.tryOpen(missingPath)
+    expect(pathIds(registry)).toEqual([`path:${resolve(missingPath)}`])
+
+    const maker = new KernelBridge()
+    maker.create(missingPath, 'open-clears')
+    maker.close()
+
+    const opened = registry.open(missingPath)
+
+    expect(pathIds(registry)).toEqual([])
+    expect(registry.summary()).toEqual([expect.objectContaining({ id: opened.id, status: 'ok' })])
+  })
+})
+
+describe('TreeRegistry: identity clash by type (2.6 Pitfall 10)', () => {
+  it('throws a TreeIdentityClash naming the open tree, with the same message', () => {
+    const dir = tempDir('reg-clash-type')
+    const path = join(dir, 'clash-alpha.tree')
+    const registry = newRegistry()
+    const tree = registry.create(path, 'clash-alpha')
+
+    const copyPath = join(dir, 'clash-copy.tree')
+    copyFileSync(path, copyPath)
+
+    let caught: unknown
+    try {
+      registry.open(copyPath)
+    } catch (err) {
+      caught = err
+    }
+
+    expect(caught).toBeInstanceOf(TreeIdentityClash)
+    expect(caught).toBeInstanceOf(Error)
+    const clash = caught as TreeIdentityClash
+    expect(clash.treeId).toBe(tree.id)
+    expect(clash.openPath).toBe(tree.path)
+    expect(clash.openName).toBe(tree.name)
+    expect(clash.message).toBe(`${tree.name} is already open from ${tree.path}`)
+    expect(registry.list()).toHaveLength(1)
+  })
+})
+
+describe('TreeRegistry: an expected identity (2.6 D-03, Pitfall 5)', () => {
+  /** A world created and closed again, so a later open is the first holder. */
+  function closedWorld(prefix: string, name: string): { path: string; id: string } {
+    const dir = tempDir(prefix)
+    const path = join(dir, `${name}.tree`)
+    const bridge = new KernelBridge()
+    bridge.create(path, name)
+    const id = bridge.getHeaderDigest()
+    bridge.close()
+    return { path, id }
+  }
+
+  const reason = 'A different tree now sits at this path'
+
+  it('records a different world at the path as missing, with the caller reason, and holds nothing', () => {
+    const { path } = closedWorld('reg-expect-diff', 'expect-diff')
+    const bytesBefore = readFileSync(path)
+    const registry = newRegistry()
+
+    const entry = registry.tryOpen(path, {
+      expect: { id: 'sha256:0000000000000000000000000000000000000000000000000000000000000000', reason },
+    }) as UnavailableTree
+
+    expect('bridge' in entry).toBe(false)
+    expect(entry.status).toBe('missing')
+    expect(entry.reason).toBe(reason)
+    expect(registry.list()).toHaveLength(0)
+    // The expectation is kept for a retry but never shown to the renderer.
+    expect(registry.summary()).toEqual([
+      {
+        id: entry.id,
+        name: 'expect-diff',
+        kind: 'native',
+        path: resolve(path),
+        status: 'missing',
+        reason,
+      },
+    ])
+
+    // The lock was released and nothing was written.
+    const fresh = new KernelBridge()
+    expect(() => fresh.open(path)).not.toThrow()
+    fresh.close()
+    expect(readFileSync(path).equals(bytesBefore)).toBe(true)
+  })
+
+  it('keeps the expectation on reopen, so the same mismatch stays missing', () => {
+    const { path } = closedWorld('reg-expect-reopen', 'expect-reopen')
+    const registry = newRegistry()
+    const expect_ = { id: 'sha256:not-this-world', reason }
+
+    const first = registry.tryOpen(path, { expect: expect_ }) as UnavailableTree
+    const again = registry.reopen(first.id) as UnavailableTree
+
+    expect(again).not.toBeNull()
+    expect('bridge' in again).toBe(false)
+    expect(again.status).toBe('missing')
+    expect(again.reason).toBe(reason)
+    expect(again.expect).toEqual(expect_)
+  })
+
+  it('opens normally when the digest is the one expected', () => {
+    const { path, id } = closedWorld('reg-expect-match', 'expect-match')
+    const registry = newRegistry()
+
+    const tree = registry.tryOpen(path, { expect: { id, reason } }) as OpenTree
+
+    expect('bridge' in tree).toBe(true)
+    expect(tree.id).toBe(id)
+    expect(registry.summary().map((entry) => entry.status)).toEqual(['ok'])
+  })
+})
+
+describe('TreeRegistry: unavailable records keyed by expected identity (2.6 gap 3)', () => {
+  /** A world created and closed again, so a later open is the first holder. */
+  function closedWorld(prefix: string, name: string): { dir: string; path: string; id: string } {
+    const dir = tempDir(prefix)
+    const path = join(dir, `${name}.tree`)
+    const bridge = new KernelBridge()
+    bridge.create(path, name)
+    const id = bridge.getHeaderDigest()
+    bridge.close()
+    return { dir, path, id }
+  }
+
+  const reason = 'A different world is now at this path'
+  const fakeA = 'sha256:' + 'a'.repeat(64)
+  const fakeB = 'sha256:' + 'b'.repeat(64)
+
+  it('names a mismatch by the expected id, and a failed open without expect by path', () => {
+    const { dir, path } = closedWorld('reg-key-expect', 'key-expect')
+    const registry = newRegistry()
+
+    const mismatch = registry.tryOpen(path, { expect: { id: fakeA, reason } }) as UnavailableTree
+    expect(mismatch.id).toBe(fakeA)
+    expect(mismatch.status).toBe('missing')
+
+    const gone = registry.tryOpen(join(dir, 'gone.tree')) as UnavailableTree
+    expect(gone.id).toBe(`path:${resolve(join(dir, 'gone.tree'))}`)
+  })
+
+  it('lists two members expected at one path separately, both missing', () => {
+    const { path } = closedWorld('reg-key-two', 'key-two')
+    const registry = newRegistry()
+
+    registry.tryOpen(path, { expect: { id: fakeA, reason } })
+    registry.tryOpen(path, { expect: { id: fakeB, reason } })
+
+    const listed = registry.summary()
+    expect(listed.map((t) => t.id)).toEqual([fakeA, fakeB])
+    expect(listed.map((t) => t.status)).toEqual(['missing', 'missing'])
+    expect(registry.list()).toHaveLength(0)
+  })
+
+  it("keeps a member's record when a different world is opened at its path", () => {
+    const y = closedWorld('reg-key-keep', 'key-keep')
+    const registry = newRegistry()
+
+    registry.tryOpen(y.path, { expect: { id: fakeA, reason } })
+    const opened = registry.open(y.path)
+
+    expect(opened.id).toBe(y.id)
+    expect(registry.summary()).toEqual([
+      expect.objectContaining({ id: y.id, status: 'ok' }),
+      expect.objectContaining({ id: fakeA, status: 'missing', reason }),
+    ])
+  })
+
+  it("ends a member's record when it is opened from another path", () => {
+    const w = closedWorld('reg-key-found', 'key-found')
+    const registry = newRegistry()
+    const oldPath = join(w.dir, 'old.tree')
+
+    const missing = registry.tryOpen(oldPath, { expect: { id: w.id, reason } }) as UnavailableTree
+    expect(missing.id).toBe(w.id)
+    expect(registry.get(w.id)).toBeNull()
+
+    registry.open(w.path)
+
+    expect(registry.summary()).toEqual([expect.objectContaining({ id: w.id, status: 'ok' })])
+    expect(registry.refusalFor(w.id)).toBeNull()
+  })
+
+  it('honours expect when a different world is already open at the path', () => {
+    const y = closedWorld('reg-key-shortcut', 'key-shortcut')
+    const registry = newRegistry()
+    const open = registry.open(y.path)
+
+    const other = registry.tryOpen(y.path, { expect: { id: fakeA, reason } }) as UnavailableTree
+    expect('bridge' in other).toBe(false)
+    expect(other).toEqual(expect.objectContaining({ id: fakeA, status: 'missing', reason }))
+    expect(registry.get(y.id)).toBe(open)
+
+    expect(registry.tryOpen(y.path, { expect: { id: y.id, reason } })).toBe(open)
+    expect(registry.summary().map((t) => [t.id, t.status])).toEqual([
+      [y.id, 'ok'],
+      [fakeA, 'missing'],
+    ])
+  })
+
+  it('refuses an expected id that is open elsewhere, and records nothing', () => {
+    const w = closedWorld('reg-key-clash', 'key-clash')
+    const registry = newRegistry()
+    registry.open(w.path)
+    const elsewhere = join(w.dir, 'elsewhere.tree')
+
+    let caught: unknown
+    try {
+      registry.tryOpen(elsewhere, { expect: { id: w.id, reason } })
+    } catch (err) {
+      caught = err
+    }
+
+    expect(caught).toBeInstanceOf(TreeIdentityClash)
+    expect((caught as TreeIdentityClash).treeId).toBe(w.id)
+    expect(registry.unavailableList()).toEqual([])
+    expect(registry.summary()).toEqual([expect.objectContaining({ id: w.id, status: 'ok' })])
+  })
+
+  it('keeps the digest id through reopen while the mismatch persists', () => {
+    const { path } = closedWorld('reg-key-reopen', 'key-reopen')
+    const registry = newRegistry()
+
+    const first = registry.tryOpen(path, { expect: { id: fakeA, reason } }) as UnavailableTree
+    const again = registry.reopen(first.id) as UnavailableTree
+
+    expect(again.id).toBe(fakeA)
+    expect(registry.summary().map((t) => t.id)).toEqual([fakeA])
+  })
+})
+
+describe("TreeRegistry: Tapestry's own files are reserved (2.6 Pitfall 4)", () => {
+  const refusal = (name: string): string => `refused: ${name}`
+
+  function closedWorld(dir: string, name: string): { path: string; id: string } {
+    const path = join(dir, `${name}.tree`)
+    const bridge = new KernelBridge()
+    bridge.create(path, name)
+    const id = bridge.getHeaderDigest()
+    bridge.close()
+    return { path, id }
+  }
+
+  it('refuses a reserved path through open, create and tryOpen, recording nothing', () => {
+    const dir = tempDir('reg-reserved-path')
+    const { path } = closedWorld(dir, 'reserved-forest')
+    const unborn = join(dir, 'reserved-unborn.tree')
+    const registry = newRegistry()
+    registry.setReserved({ paths: [path, unborn], ids: [], refusal })
+
+    expect(() => registry.open(path)).toThrow('refused: reserved-forest.tree')
+    expect(() => registry.create(path, 'again')).toThrow('refused: reserved-forest.tree')
+    expect(() => registry.tryOpen(path)).toThrow('refused: reserved-forest.tree')
+    expect(() => registry.create(unborn, 'reserved-unborn')).toThrow(
+      'refused: reserved-unborn.tree',
+    )
+
+    expect(existsSync(unborn)).toBe(false)
+    expect(registry.summary()).toEqual([])
+    // No lock was taken on the reserved file.
+    const fresh = new KernelBridge()
+    expect(() => fresh.open(path)).not.toThrow()
+    fresh.close()
+  })
+
+  it('refuses a symlink that points at a reserved path', () => {
+    const dir = tempDir('reg-reserved-link')
+    const { path } = closedWorld(dir, 'reserved-linked')
+    const link = join(dir, 'reserved-link.tree')
+    symlinkSync(path, link)
+    const registry = newRegistry()
+    registry.setReserved({ paths: [path], ids: [], refusal })
+
+    expect(() => registry.open(link)).toThrow('refused: reserved-link.tree')
+    expect(() => registry.tryOpen(link)).toThrow('refused: reserved-link.tree')
+    expect(registry.summary()).toEqual([])
+  })
+
+  it('refuses a path reached through a symlinked folder, even when reserved before the file exists', () => {
+    const dir = tempDir('reg-reserved-folder')
+    const realFolder = join(dir, 'real')
+    const linkedFolder = join(dir, 'linked')
+    mkdirSync(realFolder)
+    symlinkSync(realFolder, linkedFolder)
+    const registry = newRegistry()
+    // Reserved by its real-folder path while it does not exist yet.
+    registry.setReserved({ paths: [join(realFolder, 'Forest.tree')], ids: [], refusal })
+
+    closedWorld(realFolder, 'Forest')
+
+    expect(() => registry.open(join(linkedFolder, 'Forest.tree'))).toThrow('refused: Forest.tree')
+    expect(registry.summary()).toEqual([])
+  })
+
+  it('refuses a copy carrying a reserved identity and holds no lock on it', () => {
+    const dir = tempDir('reg-reserved-id')
+    const { path, id } = closedWorld(dir, 'reserved-id')
+    const copy = join(dir, 'reserved-copy.tree')
+    copyFileSync(path, copy)
+    const registry = newRegistry()
+    registry.setReserved({ paths: [], ids: [id], refusal })
+
+    expect(() => registry.open(copy)).toThrow('refused: reserved-copy.tree')
+    expect(() => registry.tryOpen(copy)).toThrow('refused: reserved-copy.tree')
+    expect(registry.summary()).toEqual([])
+
+    const fresh = new KernelBridge()
+    expect(() => fresh.open(copy)).not.toThrow()
+    fresh.close()
+  })
+
+  it('setReserved(null) removes both refusals', () => {
+    const dir = tempDir('reg-reserved-clear')
+    const { path, id } = closedWorld(dir, 'reserved-clear')
+    const copy = join(dir, 'reserved-clear-copy.tree')
+    copyFileSync(path, copy)
+    const registry = newRegistry()
+    registry.setReserved({ paths: [path], ids: [id], refusal })
+
+    expect(() => registry.open(path)).toThrow('refused: reserved-clear.tree')
+    expect(() => registry.open(copy)).toThrow('refused: reserved-clear-copy.tree')
+
+    registry.setReserved(null)
+
+    const original = registry.open(path)
+    expect(original.id).toBe(id)
+    registry.close(original.id)
+    expect(registry.open(copy).id).toBe(id)
   })
 })

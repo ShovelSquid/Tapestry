@@ -20,10 +20,10 @@ import { userInfo } from 'os'
 import { KernelBridge } from './kernel-bridge'
 import { PluginHost } from './plugin-host'
 import { PLUGIN_SCHEME, SCHEME_PRIVILEGES, makePluginSchemeHandler } from './plugin-scheme'
-import { SettingsStore, suggestUserName, type TreeFrameSetting } from './settings'
+import { SettingsStore, suggestUserName } from './settings'
 import { agentActor, humanActor, isValidActorName, type Actor } from './commands/actor'
 import { buildConnectCommand } from './agents/connect-command'
-import { TreeRegistry } from './trees/registry'
+import { TreeRegistry, type TreeEntry } from './trees/registry'
 import { VaultService } from './obsidian/vault-service'
 import { NoteCommands, type CommandHooks } from './commands/notes'
 import { ConnectionCommands } from './commands/connections'
@@ -31,6 +31,10 @@ import { SpatialCommands } from './commands/spatial'
 import { runAgentTool, type AgentCommands } from './commands/agent-tools'
 import { AgentRegistry, agentSocketPath } from './agents/registry'
 import { AgentSocketServer } from './agents/socket-server'
+import { SpaceRefusal, SpaceService } from './space/space-service'
+import { openWithRollback } from './space/open-into-space'
+import { SPACE_NOT_OPEN, type SpacePaths } from './space/migrate'
+import { FOREST_FILE, HOME_FILE, HOME_LOCATION } from './space/shapes'
 
 // ---------------------------------------------------------------------------
 // Plugin surface scheme (CANV-04)
@@ -74,15 +78,45 @@ function createWindow(): void {
 }
 
 // ---------------------------------------------------------------------------
+// Development-only path overrides (2.6 RESEARCH Pitfall 6, T-2.6-22)
+// ---------------------------------------------------------------------------
+
+/**
+ * A folder named by an environment variable, honoured only in a development
+ * build, so a check can run against copies instead of live data.
+ *
+ * A packaged build ignores both variables: they could otherwise redirect
+ * where a person's arrangement is read and written. The value must be an
+ * absolute path with no `..` segment.
+ */
+function devPathOverride(name: 'TAPESTRY_USER_DATA_DIR' | 'TAPESTRY_SPACE_DIR'): string | null {
+  if (app.isPackaged) return null
+  const value = process.env[name]
+  if (!value || !isAbsolute(value)) return null
+  if (value.split(/[\\/]/).includes('..')) return null
+  return resolve(value)
+}
+
+// userData must be redirected before 'ready': settings.json, last-opened.json
+// and the agent socket are all resolved from it.
+if (!app.isPackaged) {
+  const userDataOverride = devPathOverride('TAPESTRY_USER_DATA_DIR')
+  if (userDataOverride) {
+    console.log('[Main] development userData:', userDataOverride)
+    app.setPath('userData', userDataOverride)
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Phase 2's last-opened file (D-18)
 // ---------------------------------------------------------------------------
 
 /**
- * There is no forest file: which trees are open lives in settings.json.
+ * Phase 2's record of the one open world.
  *
- * This path is still read once, by SettingsStore.migrateLastOpened, so a
- * world opened before the space existed survives the upgrade. Nothing writes
- * it any more.
+ * The arrangement now lives in the forest tree (2.6 D-01, superseding 2.2
+ * D-18). This file is read once, by the space's first-launch import, when the
+ * old settings `trees` list is empty. Nothing writes it any more.
  */
 function getLastOpenedPath(): string {
   return join(app.getPath('userData'), 'last-opened.json')
@@ -142,6 +176,12 @@ function isWellFormedVaultRoot(folderPath: unknown): folderPath is string {
 
 /** Every open tree, keyed by the identity in its file (D-15). */
 const registry = new TreeRegistry()
+
+/**
+ * The forest tree and the Tapestry tree (2.6 D-01, D-02). Held outside the
+ * registry, so plugins and agents cannot reach either; null until launch.
+ */
+let space: SpaceService | null = null
 
 let pluginHost: PluginHost
 let agentServer: AgentSocketServer | null = null
@@ -433,40 +473,158 @@ app.whenReady().then(async () => {
   })
 
   // -------------------------------------------------------------------------
-  // Trees IPC (D-15, D-18): which worlds are in the space, and where
+  // Trees IPC (D-15): which worlds are in the space, and where
+  //
+  // Frames live in the forest tree, one placement edge per member (2.6 D-01,
+  // D-04). `trees:list` reads them there and `trees:moveFrames` writes them
+  // there. `trees:open`, `trees:create`, `trees:close` and `vault:add` record
+  // membership there too (Plan 04), and `trees:undoFrames`, `trees:redoFrames`
+  // and `trees:fitFrame` write there as well (Plan 05). Nothing writes frame
+  // positions to settings.json any more.
   // -------------------------------------------------------------------------
 
+  // The space folder (D-06): ~/Documents/Tapestry, unless a development build
+  // was pointed at a scratch folder. The Tapestry tree sits beside the forest
+  // (answer 1.10), readable without the app.
+  const spaceDir = devPathOverride('TAPESTRY_SPACE_DIR') ?? join(app.getPath('documents'), 'Tapestry')
+  const spacePaths: SpacePaths = {
+    forest: join(spaceDir, FOREST_FILE),
+    home:
+      HOME_LOCATION === 'space-dir'
+        ? join(spaceDir, HOME_FILE)
+        : join(app.getPath('userData'), HOME_FILE),
+    lastOpenedFile: getLastOpenedPath(),
+  }
+
+  // No vault launch-restore branch exists yet (2.2 Plan 08 has not landed on
+  // this branch), so vault members stay in the forest unopened: there is no
+  // restoreVault hook to give the service.
+  space = new SpaceService({
+    registry,
+    settings,
+    paths: spacePaths,
+    hooks: {
+      // Members were chosen by the person in an earlier session.
+      approvePath: (path) => {
+        approvedPaths.add(resolve(path))
+      },
+    },
+  })
+
   /**
-   * Where a newly opened tree's frame goes before the renderer measures it.
+   * Open or create a tree, then record it in the forest (2.6 D-01, D-02).
    *
-   * The renderer corrects this with real content bounds through
-   * `trees:setFrame` as soon as it has laid the frame out; this only has to be
-   * somewhere sensible and never on top of an existing frame. 480 and 64 are
-   * FRAME_MIN_WIDTH and FRAME_GAP from renderer/layout/frames.ts, repeated
-   * rather than imported because main and renderer are separate bundles.
+   * The actor is resolved before anything opens (RESEARCH "Name-before-commit
+   * gap", answer 2.7): the forest commit is signed by the person, so without a
+   * name nothing is opened at all. If opening fails part-way (a vault tree
+   * that will not open, a failed catch-up) or the forest cannot record the
+   * tree, `openWithRollback` closes every registry entry this call introduced
+   * that joins no stand-in, so the registry and the forest never disagree
+   * about what is in the space (T-2.6-24, review WR-02).
    */
-  function placeNewFrameFromSettings(): TreeFrameSetting {
-    const trees = settings.read().trees
-    if (trees.length === 0) return { x: 0, y: 0 }
-
-    let rightmost = trees[0]
-    for (const tree of trees) {
-      if (tree.frame.x > rightmost.frame.x) rightmost = tree
+  async function openIntoSpace(open: () => TreeEntry | Promise<TreeEntry>): Promise<
+    { ok: true; treeId: string } | { ok: false; error: string; notice?: string }
+  > {
+    try {
+      const actor = getHumanActor()
+      if (!space || !space.ready) throw new SpaceRefusal()
+      const tree = await openWithRollback(registry, {
+        open,
+        record: (entry) => {
+          // A vault's first read is awaited inside open(), so the space may
+          // have been closed by a quit in the meantime (review IN-02).
+          if (!space || !space.ready) throw new SpaceRefusal()
+          space.addMember(entry, actor)
+        },
+        isMember: (id) => space?.isMember(id) ?? false,
+      })
+      notifyTreesChanged()
+      return { ok: true, treeId: tree.id }
+    } catch (err) {
+      return spaceFailure(err)
     }
-    return { x: rightmost.frame.x + 480 + 64, y: rightmost.frame.y }
   }
 
-  /** Record a tree in the space, leaving an already-recorded frame alone. */
-  function rememberTree(treePath: string): void {
-    settings.addTree({ path: treePath, kind: 'native', frame: placeNewFrameFromSettings() })
+  /**
+   * A failed space action. `notice` carries an approved sentence (4.9 or
+   * 4.10) the window shows verbatim in place of its generic wording.
+   */
+  function spaceFailure(err: unknown): { ok: false; error: string; notice?: string } {
+    const notice = err instanceof SpaceRefusal ? err.message : space?.noticeFor(err) ?? undefined
+    return notice === undefined
+      ? { ok: false, error: errorMessage(err) }
+      : { ok: false, error: errorMessage(err), notice }
   }
+
+  /**
+   * Why the space did not open, in the approved wording (4.2-4.8), or null.
+   * The window asks on load and on every trees-changed, and shows each
+   * distinct message once in the app-error banner (answer 4.1).
+   */
+  ipcMain.handle('trees:spaceProblem', () => {
+    return { message: space?.problemNotice() ?? null }
+  })
 
   ipcMain.handle('trees:list', () => {
-    const frames = new Map(settings.read().trees.map((tree) => [tree.path, tree.frame]))
-    return registry.summary().map((tree) => ({
-      ...tree,
-      frame: frames.get(tree.path) ?? { x: 0, y: 0 },
-    }))
+    // Frames come from placement edges in the forest (2.6 D-04), never from
+    // settings.json.
+    if (space) return space.list()
+    return registry.summary().map((tree) => ({ ...tree, frame: { x: 0, y: 0 } }))
+  })
+
+  /**
+   * Record one drop: the dragged frame first, then every frame it pushed
+   * aside, as exactly one forest commit (2.6 D-11).
+   *
+   * Main signs it with the person's name; the renderer sends no actor
+   * (T-2.6-11). The batch is passed untouched to the service, which checks it
+   * in full before writing anything (T-2.6-05).
+   *
+   * Deliberately does not emit 'trees-changed': the renderer already has the
+   * positions it just sent, and echoing them back would refresh every tree on
+   * every drop.
+   */
+  ipcMain.handle('trees:moveFrames', (_event, moves: unknown) => {
+    try {
+      const actor = getHumanActor()
+      if (!space || !space.ready) return { ok: false, error: SPACE_NOT_OPEN }
+      const { committed } = space.moveFrames(moves, actor)
+      return { ok: true, committed }
+    } catch (err) {
+      return { ok: false, error: errorMessage(err) }
+    }
+  })
+
+  /**
+   * Put the last drop back (2.6 D-08, D-09): a new forest commit signed by
+   * the person, writing origins main read from the forest before the drop.
+   * The renderer sends nothing; the forest is never rewound, so `kernel:undo`
+   * never reaches it (the forest is not in the registry).
+   *
+   * Does not emit 'trees-changed': the renderer refreshes the frames itself
+   * when something was committed.
+   */
+  ipcMain.handle('trees:undoFrames', () => {
+    try {
+      const actor = getHumanActor()
+      if (!space || !space.ready) return { ok: false, error: SPACE_NOT_OPEN }
+      const { committed, undoable, redoable } = space.undoFrames(actor)
+      return { ok: true, committed, undoable, redoable }
+    } catch (err) {
+      return { ok: false, error: errorMessage(err) }
+    }
+  })
+
+  /** Put an undone drop forward again (2.6 D-08, D-09); the mirror of `trees:undoFrames`. */
+  ipcMain.handle('trees:redoFrames', () => {
+    try {
+      const actor = getHumanActor()
+      if (!space || !space.ready) return { ok: false, error: SPACE_NOT_OPEN }
+      const { committed, undoable, redoable } = space.redoFrames(actor)
+      return { ok: true, committed, undoable, redoable }
+    } catch (err) {
+      return { ok: false, error: errorMessage(err) }
+    }
   })
 
   /**
@@ -481,17 +639,10 @@ app.whenReady().then(async () => {
     if (typeof path !== 'string' || !validateTreePath(path)) {
       return { ok: false, error: 'Invalid .tree file path' }
     }
-    try {
-      // A world that will not open still joins the space, as a frame carrying
-      // its reason: silently refusing it would leave Kaelen with a file picker
-      // that appeared to do nothing.
-      const tree = registry.tryOpen(path, { kind: 'native' })
-      rememberTree(tree.path)
-      notifyTreesChanged()
-      return { ok: true, treeId: tree.id }
-    } catch (err) {
-      return { ok: false, error: errorMessage(err) }
-    }
+    // A world that will not open still joins the space, as a frame carrying
+    // its reason: silently refusing it would leave Kaelen with a file picker
+    // that appeared to do nothing.
+    return openIntoSpace(() => registry.tryOpen(path, { kind: 'native' }))
   })
 
   ipcMain.handle('trees:create', async (_event, path: unknown, worldName: unknown) => {
@@ -501,14 +652,7 @@ app.whenReady().then(async () => {
     if (typeof worldName !== 'string' || worldName.length === 0) {
       return { ok: false, error: 'A world needs a name' }
     }
-    try {
-      const tree = registry.create(path, worldName, { kind: 'native' })
-      rememberTree(tree.path)
-      notifyTreesChanged()
-      return { ok: true, treeId: tree.id }
-    } catch (err) {
-      return { ok: false, error: errorMessage(err) }
-    }
+    return openIntoSpace(() => registry.create(path, worldName, { kind: 'native' }))
   })
 
   /**
@@ -517,14 +661,21 @@ app.whenReady().then(async () => {
    */
   ipcMain.handle('trees:close', (_event, treeId: unknown) => {
     if (typeof treeId !== 'string') return { ok: false, error: 'Unknown tree' }
-    const tree = registry.entry(treeId)
-    if (!tree) return { ok: false, error: `Unknown tree ${treeId}` }
+    try {
+      const actor = getHumanActor()
+      if (!space || !space.ready) throw new SpaceRefusal()
+      if (!registry.entry(treeId)) return { ok: false, error: `Unknown tree ${treeId}` }
 
-    const treePath = tree.path
-    registry.close(treeId)
-    settings.removeTree(treePath)
-    notifyTreesChanged()
-    return { ok: true }
+      // The forest first, while the registry entry still joins to its
+      // stand-in. Deleting the stand-in deletes its placement, so the tree's
+      // last position stays in the forest's history (2.6 D-01).
+      space.removeMember(treeId, actor)
+      registry.close(treeId)
+      notifyTreesChanged()
+      return { ok: true }
+    } catch (err) {
+      return spaceFailure(err)
+    }
   })
 
   /**
@@ -554,7 +705,9 @@ app.whenReady().then(async () => {
     if (typeof treeId !== 'string') return { ok: false, error: 'Unknown tree' }
 
     try {
-      const tree = registry.reopen(treeId)
+      // Through the space, so a first successful open records the member's
+      // identity, and a duplicate it reveals is folded (2.6 D-03).
+      const tree = space ? space.reopenMember(treeId) : registry.reopen(treeId)
       if (!tree) return { ok: false, error: `Unknown tree ${treeId}` }
       notifyTreesChanged()
       return { ok: true, treeId: tree.id }
@@ -567,22 +720,23 @@ app.whenReady().then(async () => {
   })
 
   /**
-   * Persist a frame position (D-18).
+   * The renderer's automatic correction of a frame it found crowding a
+   * neighbour when first measured (2.6 D-12). Signed by the system, never the
+   * person; the service writes only when the origin changes, at most once per
+   * member per session, and never over a frame the person moved (T-2.6-01).
+   * Needs no name, since the person is not signing it.
    *
    * Deliberately does not emit 'trees-changed': the renderer already has the
-   * position it just sent, and echoing it back would refresh every tree on
-   * every drop.
+   * position it just sent.
    */
-  ipcMain.handle('trees:setFrame', (_event, treeId: unknown, x: unknown, y: unknown) => {
-    if (typeof treeId !== 'string') return { ok: false, error: 'Unknown tree' }
-    if (!Number.isFinite(x) || !Number.isFinite(y)) {
-      return { ok: false, error: 'A frame position must be two finite numbers' }
+  ipcMain.handle('trees:fitFrame', (_event, treeId: unknown, x: unknown, y: unknown) => {
+    try {
+      if (!space || !space.ready) return { ok: false, error: SPACE_NOT_OPEN }
+      const { committed } = space.fitFrame(treeId, x, y)
+      return { ok: true, committed }
+    } catch (err) {
+      return { ok: false, error: errorMessage(err) }
     }
-    const tree = registry.get(treeId)
-    if (!tree) return { ok: false, error: `Unknown tree ${treeId}` }
-
-    settings.setTreeFrame(tree.path, { x: x as number, y: y as number })
-    return { ok: true }
   })
 
   // -------------------------------------------------------------------------
@@ -631,19 +785,7 @@ app.whenReady().then(async () => {
       return { ok: false, error: 'Choose the vault folder with Add Obsidian Vault... first.' }
     }
 
-    try {
-      const tree = await vaultService.addVault(target)
-      settings.addTree({
-        path: tree.path,
-        kind: 'vault',
-        vaultRoot: target,
-        frame: placeNewFrameFromSettings(),
-      })
-      notifyTreesChanged()
-      return { ok: true, treeId: tree.id }
-    } catch (err) {
-      return { ok: false, error: errorMessage(err) }
-    }
+    return openIntoSpace(() => vaultService.addVault(target))
   })
 
   // Save dialog for creating new .tree files
@@ -689,24 +831,22 @@ app.whenReady().then(async () => {
   createWindow()
 
   // -------------------------------------------------------------------------
-  // Restore the space (D-18): the trees in settings, at their saved frames
+  // Open the space (2.6 D-02): the Tapestry tree, its forest, and every member
   // -------------------------------------------------------------------------
 
-  // A world opened before the space existed becomes the first entry.
-  settings.migrateLastOpened(getLastOpenedPath())
-
-  for (const tree of settings.read().trees) {
-    if (tree.kind !== 'native') continue
-    // These paths were chosen by the user in an earlier session.
-    approvedPaths.add(resolve(tree.path))
-    try {
-      // A tree that has been moved, deleted or damaged must not cost the user
-      // the rest of their space: it comes back as an unavailable frame holding
-      // the reason, rather than vanishing from the space it was part of.
-      registry.tryOpen(tree.path, { kind: 'native' })
-    } catch (err) {
-      console.error('[Main] could not reopen tree:', err)
+  // On first launch this imports the settings arrangement into the forest
+  // (D-10); afterwards it reopens from the settings pointer. A tree that has
+  // been moved, deleted or damaged comes back as an unavailable frame holding
+  // its reason. A space that cannot open writes nothing and opens no member
+  // (D-14); the window asks for the problem through `trees:spaceProblem`.
+  try {
+    await space.start()
+    const problem = space.problemNotice()
+    if (problem !== null) {
+      console.error('[Main] space did not open:', problem)
     }
+  } catch (err) {
+    console.error('[Main] space did not open:', err)
   }
 
   // Plugin problems must not be mistaken for a missing world (D-33)
@@ -743,5 +883,8 @@ app.on('will-quit', () => {
     void agentServer.close()
     agentServer = null
   }
+  // The forest and the Tapestry tree first, so every journal lock is released
+  // and the next launch can open the space.
+  space?.close()
   registry.closeAll()
 })

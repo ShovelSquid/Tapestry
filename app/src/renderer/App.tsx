@@ -27,6 +27,14 @@ import PluginErrorNotification from './components/PluginErrorNotification'
 import PluginSurfaceLayer, { SurfaceLauncher, type SurfaceInfo } from './components/PluginSurfaceLayer'
 import NamePromptDialog from './components/NamePromptDialog'
 import { useForest, type NodeRef } from './state/use-forest'
+import {
+  EMPTY_FRAME_RUN,
+  chooseUndoTarget,
+  frameRunEventForDrop,
+  nextFrameRun,
+  type FrameRun,
+  type FrameRunEvent,
+} from './state/undo-target'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -60,7 +68,8 @@ export default function App(): React.ReactElement {
     patchNodeProps,
     refreshTree,
     refreshAll,
-    submitChange,
+    refreshTreeList,
+    submitChange: submitToTree,
     markDirty,
     markClean,
     setFrameLocal,
@@ -124,6 +133,46 @@ export default function App(): React.ReactElement {
     },
     [showAppError],
   )
+
+  // -----------------------------------------------------------------------
+  // Frame run (2.6 D-08): how far Ctrl+Z reaches into frame moves
+  // -----------------------------------------------------------------------
+
+  /**
+   * The consecutive frame moves Ctrl+Z and Ctrl+Shift+Z can reach. A ref, not
+   * state: it changes on every drop and nothing renders from it. The rules
+   * live in undo-target.ts (nextFrameRun), which is tested on its own.
+   */
+  const frameRunRef = useRef<FrameRun>(EMPTY_FRAME_RUN)
+
+  const noteFrameEvent = useCallback((event: FrameRunEvent) => {
+    frameRunRef.current = nextFrameRun(frameRunRef.current, event)
+  }, [])
+
+  /**
+   * Every note commit goes through here, so any tree edit ends a frame run:
+   * after it, Ctrl+Z means the tree again, not a frame moved earlier.
+   */
+  const submitChange = useCallback(
+    (treeId: string, message: string, ops: any[]) => {
+      noteFrameEvent('tree-edited')
+      return submitToTree(treeId, message, ops)
+    },
+    [noteFrameEvent, submitToTree],
+  )
+
+  // Starting to edit a note, or selecting a note or a frame, ends the run too.
+  useEffect(() => {
+    if (editingRef !== null) noteFrameEvent('editing-started')
+  }, [editingRef, noteFrameEvent])
+
+  useEffect(() => {
+    noteFrameEvent('selection-changed')
+  }, [selectedRef, noteFrameEvent])
+
+  useEffect(() => {
+    noteFrameEvent('selection-changed')
+  }, [selectedTreeId, noteFrameEvent])
 
   // -----------------------------------------------------------------------
   // Plugins and agents
@@ -204,6 +253,41 @@ export default function App(): React.ReactElement {
   }, [refreshAgents, refreshTree])
 
   // -----------------------------------------------------------------------
+  // Space problem (2.6 D-14, answers 4.1-4.8)
+  // -----------------------------------------------------------------------
+
+  /** The last space problem shown, so each distinct message appears once. */
+  const shownSpaceProblemRef = useRef<string | null>(null)
+
+  // Main opens the space after the window loads, then says trees-changed, so
+  // the question is asked on mount and again on every trees-changed. A space
+  // that could not open says why in the app-error banner, which stays until
+  // dismissed (4.1); the same message is not shown twice.
+  useEffect(() => {
+    let cancelled = false
+    const check = () => {
+      window.tapestry.trees
+        .spaceProblem()
+        .then(({ message }) => {
+          if (cancelled) return
+          if (message !== null && message !== shownSpaceProblemRef.current) {
+            showAppError(message)
+          }
+          shownSpaceProblemRef.current = message
+        })
+        .catch((err) => {
+          console.error('Could not ask whether the space opened:', err)
+        })
+    }
+    check()
+    const removeTreesChanged = window.tapestry.onTreesChanged(check)
+    return () => {
+      cancelled = true
+      removeTreesChanged()
+    }
+  }, [showAppError])
+
+  // -----------------------------------------------------------------------
   // User name (D-07)
   // -----------------------------------------------------------------------
 
@@ -249,11 +333,20 @@ export default function App(): React.ReactElement {
    * Every failure reads as the UI-SPEC's file-open error rather than as the
    * raw reason: a damaged header, an unreadable file and a copy of a world
    * that is already open all arrive here as text, and what Kaelen can do next
-   * is the same in each case.
+   * is the same in each case. The exception is a refusal main marks with a
+   * `notice` (no space open, 4.9; Tapestry's own file, 4.10), which is shown
+   * word for word, because the generic sentence would be wrong about it.
    */
   const addTreeToSpace = useCallback(
-    async (filePath: string, result: { ok: boolean; treeId?: string; error?: string }) => {
+    async (
+      filePath: string,
+      result: { ok: boolean; treeId?: string; error?: string; notice?: string },
+    ) => {
       if (!result.ok || !result.treeId) {
+        if (result.notice) {
+          setNotice(result.notice)
+          return
+        }
         setNotice(
           `Could not open ${fileNameOf(filePath)} -- The file may be damaged or in an ` +
             'unrecognized format. Create a new world or choose another file.',
@@ -301,6 +394,10 @@ export default function App(): React.ReactElement {
 
     const added = await window.tapestry.vault.add(picked.folderPath)
     if (!added.ok || !added.treeId) {
+      if (added.notice) {
+        setNotice(added.notice)
+        return
+      }
       setNotice(
         `Could not add ${fileNameOf(picked.folderPath)} as a tree -- ` +
           `${added.error ?? 'unknown error'} Nothing in the vault was changed.`,
@@ -605,51 +702,118 @@ export default function App(): React.ReactElement {
   // -----------------------------------------------------------------------
 
   /**
-   * Which tree undo acts on.
-   *
-   * History is per journal, so "undo" has to mean one tree. The note being
-   * edited or selected is the clearest statement of what the person is working
-   * on; with nothing selected, the tree they last changed is the next best
-   * answer, and the only open tree is the answer when there is just one.
+   * The result of a batch the canvas recorded (2.6 D-11). A committed drag
+   * starts or extends the frame run; a neighbour pushed aside by a note
+   * landing or resizing does not, because that tree edit already ended the
+   * run (D-08, review WR-04; the rule is frameRunEventForDrop's). A batch
+   * that could not be recorded is shown with the approved wording (4.12),
+   * and every frame goes back to where the forest has it.
    */
-  // A selected frame is a statement about which tree is being worked on, so it
-  // outranks "the tree I last changed" — but not the note actually being
-  // edited or selected, which is more specific still.
-  const undoTargetTreeId =
-    editingRef?.treeId ??
-    selectedRef?.treeId ??
-    selectedTreeId ??
-    lastChangedTreeId ??
-    trees[0]?.id ??
-    null
-
-  const handleUndo = useCallback(async () => {
-    if (!undoTargetTreeId) return
-    try {
-      const result = await window.tapestry.kernel.undo(undoTargetTreeId)
+  const handleFramesMoved = useCallback(
+    (result: { ok: boolean; committed?: boolean; error?: string }, frameMoved: boolean) => {
       if (result.ok) {
-        setEditingRef(null)
-        await refreshTree(undoTargetTreeId)
+        const event = frameRunEventForDrop(result, frameMoved)
+        if (event !== null) noteFrameEvent(event)
+        return
       }
-    } catch (err) {
-      console.error('Undo failed:', err)
-      showAppError(`Undo failed: ${errorMessage(err)}`)
-    }
-  }, [undoTargetTreeId, refreshTree, showAppError])
+      showAppError(`Could not move the frame: ${result.error ?? 'unknown error'}`)
+      void refreshTreeList()
+    },
+    [noteFrameEvent, showAppError, refreshTreeList],
+  )
 
-  const handleRedo = useCallback(async () => {
-    if (!undoTargetTreeId) return
-    try {
-      const result = await window.tapestry.kernel.redo(undoTargetTreeId)
-      if (result.ok) {
-        setEditingRef(null)
-        await refreshTree(undoTargetTreeId)
+  /**
+   * Close a tree, from Tree options or an unavailable frame (review WR-03).
+   *
+   * Closing needs a name and an open space, so main can refuse it. A refusal
+   * main marks with a `notice` (4.9, 4.10) is shown word for word, as
+   * addTreeToSpace does; any other failure goes to the banner in the same
+   * `<action> failed: <error>` form Undo and Redo use. A close that works
+   * needs nothing here: main's trees-changed refreshes the list.
+   */
+  const handleCloseTree = useCallback(
+    async (treeId: string) => {
+      try {
+        const result = await window.tapestry.trees.close(treeId)
+        if (result.ok) return
+        if (result.notice) {
+          setNotice(result.notice)
+          return
+        }
+        showAppError(`Close tree failed: ${result.error ?? 'unknown error'}`)
+      } catch (err) {
+        console.error('Close tree failed:', err)
+        showAppError(`Close tree failed: ${errorMessage(err)}`)
       }
-    } catch (err) {
-      console.error('Redo failed:', err)
-      showAppError(`Redo failed: ${errorMessage(err)}`)
-    }
-  }, [undoTargetTreeId, refreshTree, showAppError])
+    },
+    [showAppError],
+  )
+
+  /**
+   * Undo or redo a drop (2.6 D-08, D-09). Main writes a new forest commit
+   * with origins it read from the forest; nothing here names a position or
+   * an actor. The run follows main's stacks, so it never promises a step
+   * main no longer holds.
+   */
+  const handleFrameStep = useCallback(
+    async (direction: 'undo' | 'redo') => {
+      try {
+        const result =
+          direction === 'undo'
+            ? await window.tapestry.trees.undoFrames()
+            : await window.tapestry.trees.redoFrames()
+        if (!result.ok) throw new Error(result.error ?? 'unknown error')
+
+        noteFrameEvent(direction === 'undo' ? 'frames-undone' : 'frames-redone')
+        const run = frameRunRef.current
+        frameRunRef.current = {
+          undoable: Math.min(run.undoable, result.undoable ?? 0),
+          redoable: Math.min(run.redoable, result.redoable ?? 0),
+        }
+        if (result.committed) await refreshTreeList()
+      } catch (err) {
+        frameRunRef.current = EMPTY_FRAME_RUN
+        const action = direction === 'undo' ? 'Undo failed' : 'Redo failed'
+        console.error(`${action}:`, err)
+        showAppError(`${action}: ${errorMessage(err)}`)
+      }
+    },
+    [noteFrameEvent, refreshTreeList, showAppError],
+  )
+
+  const handleUndo = useCallback(
+    async (treeId: string) => {
+      try {
+        const result = await window.tapestry.kernel.undo(treeId)
+        if (result.ok) {
+          setEditingRef(null)
+          await refreshTree(treeId)
+        }
+      } catch (err) {
+        console.error('Undo failed:', err)
+        showAppError(`Undo failed: ${errorMessage(err)}`)
+      }
+      noteFrameEvent('tree-undo')
+    },
+    [refreshTree, showAppError, noteFrameEvent],
+  )
+
+  const handleRedo = useCallback(
+    async (treeId: string) => {
+      try {
+        const result = await window.tapestry.kernel.redo(treeId)
+        if (result.ok) {
+          setEditingRef(null)
+          await refreshTree(treeId)
+        }
+      } catch (err) {
+        console.error('Redo failed:', err)
+        showAppError(`Redo failed: ${errorMessage(err)}`)
+      }
+      noteFrameEvent('tree-redo')
+    },
+    [refreshTree, showAppError, noteFrameEvent],
+  )
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -667,16 +831,47 @@ export default function App(): React.ReactElement {
 
         e.preventDefault()
         e.stopPropagation()
-        if (e.shiftKey) {
-          handleRedo()
+
+        // Which journal this press acts on (undo-target.ts). Right after a
+        // frame drag it is the forest's compensating frame undo (2.6 D-08).
+        // Otherwise it is a tree, in the order App has always used: the note
+        // being edited or selected is the clearest statement of what the
+        // person is working on; a selected frame outranks "the tree I last
+        // changed" but not the note actually being edited or selected; with
+        // nothing selected, the tree they last changed is the next best
+        // answer, and the only open tree is the answer when there is just one.
+        const direction = e.shiftKey ? 'redo' : 'undo'
+        const target = chooseUndoTarget({
+          direction,
+          frameRun: frameRunRef.current,
+          editingTreeId: editingRef?.treeId ?? null,
+          selectedNoteTreeId: selectedRef?.treeId ?? null,
+          selectedTreeId,
+          lastChangedTreeId,
+          firstTreeId: trees[0]?.id ?? null,
+        })
+        if (target === null) return
+        if (target.kind === 'frames') {
+          void handleFrameStep(direction)
+        } else if (direction === 'redo') {
+          void handleRedo(target.treeId)
         } else {
-          handleUndo()
+          void handleUndo(target.treeId)
         }
       }
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [handleUndo, handleRedo])
+  }, [
+    handleUndo,
+    handleRedo,
+    handleFrameStep,
+    editingRef,
+    selectedRef,
+    selectedTreeId,
+    lastChangedTreeId,
+    trees,
+  ])
 
   // -----------------------------------------------------------------------
   // Render
@@ -766,6 +961,8 @@ export default function App(): React.ReactElement {
           onDeleteNote={handleDeleteNote}
           onPropertyEdit={handlePropertyEdit}
           onFrameMove={setFrameLocal}
+          onFramesMoved={handleFramesMoved}
+          onCloseTree={(treeId) => void handleCloseTree(treeId)}
         />
       </div>
     </LiveAnnouncer>

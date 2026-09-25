@@ -85,26 +85,52 @@ interface TapestryTreeSummary {
   kind: 'native' | 'vault'
   path: string
   vaultRoot?: string
-  /** Where the tree's frame origin sits in world space (D-18). */
+  /** Where the tree's frame origin sits in world space, read from its placement edge in the forest tree (2.6 D-04). */
   frame: { x: number; y: number }
   /** A tree that would not open stays in the space with its reason. */
   status: TapestryTreeStatus
   reason?: string
 }
 
+/** One frame's new origin within a drop (2.6 D-11). */
+interface TapestryFrameMove {
+  treeId: string
+  x: number
+  y: number
+}
+
 interface TapestryTreesAPI {
   list(): Promise<TapestryTreeSummary[]>
-  open(path: string): Promise<{ ok: boolean; treeId?: string; error?: string }>
+  /** `notice`, when present, is an approved refusal to show verbatim (4.9, 4.10). */
+  open(path: string): Promise<{ ok: boolean; treeId?: string; error?: string; notice?: string }>
   create(
     path: string,
     worldName: string,
-  ): Promise<{ ok: boolean; treeId?: string; error?: string }>
-  close(treeId: string): Promise<{ ok: boolean; error?: string }>
+  ): Promise<{ ok: boolean; treeId?: string; error?: string; notice?: string }>
+  close(treeId: string): Promise<{ ok: boolean; error?: string; notice?: string }>
+  /** Why the space did not open, in the approved wording, or null (4.1-4.8). */
+  spaceProblem(): Promise<{ message: string | null }>
   /** Show the tree's file in Finder. The renderer names an id, never a path. */
   reveal(treeId: string): Promise<{ ok: boolean; error?: string }>
   /** Try a damaged, locked or missing tree again (UI-SPEC "Reopen tree"). */
   reopen(treeId: string): Promise<{ ok: boolean; treeId?: string; error?: string }>
-  setFrame(treeId: string, x: number, y: number): Promise<{ ok: boolean; error?: string }>
+  /** An automatic correction, recorded by the system only when it moves the frame (D-12). */
+  fitFrame(treeId: string, x: number, y: number): Promise<{ ok: boolean; committed?: boolean; error?: string }>
+  /** One drop, the dragged frame first, as one forest commit. Main signs it; no actor is sent. */
+  moveFrames(moves: TapestryFrameMove[]): Promise<{ ok: boolean; committed?: boolean; error?: string }>
+  /** Put the last drop back as a new signed forest commit, never a rewind (D-08, D-09). */
+  undoFrames(): Promise<TapestryFrameStepResult>
+  /** Put an undone drop forward again as a new signed forest commit (D-08, D-09). */
+  redoFrames(): Promise<TapestryFrameStepResult>
+}
+
+/** What a frame undo or redo did, and how many drops each way remain. */
+interface TapestryFrameStepResult {
+  ok: boolean
+  committed?: boolean
+  undoable?: number
+  redoable?: number
+  error?: string
 }
 
 interface TapestryPluginsAPI {
@@ -196,7 +222,7 @@ interface TapestryVaultStatus {
 
 interface TapestryVaultAPI {
   /** Mirror the vault folder as its own tree. Main refuses an unpicked root. */
-  add(root: string): Promise<{ ok: boolean; treeId?: string; error?: string }>
+  add(root: string): Promise<{ ok: boolean; treeId?: string; error?: string; notice?: string }>
 }
 
 interface TapestrySettingsAPI {

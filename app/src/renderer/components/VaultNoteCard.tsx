@@ -18,11 +18,18 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import type { NodeInfo } from './Canvas'
 import ProvenanceBadge, { actorSpokenText } from './ProvenanceBadge'
+import { layoutSize, screenDeltaToWorld } from '../layout/camera'
 
 interface VaultNoteCardProps {
   node: NodeInfo
   isSelected: boolean
   zoom: number
+  /**
+   * The drawn camera roll, in degrees. With zoom, it turns screen deltas into
+   * world deltas, so a drag stays under the pointer on a rolled canvas.
+   * Defaults to 0 (unrolled).
+   */
+  roll?: number
   /** Who recorded this note, derived from the journal (D-05, D-21). */
   provenance?: TapestryNodeHistory
   onBorderSelect: () => void
@@ -55,6 +62,7 @@ export default function VaultNoteCard({
   node,
   isSelected,
   zoom,
+  roll = 0,
   provenance,
   onBorderSelect,
   onHover,
@@ -87,8 +95,8 @@ export default function VaultNoteCard({
 
   useEffect(() => {
     if (cardRef.current) {
-      const rect = cardRef.current.getBoundingClientRect()
-      onRegisterDims(node.id, rect.width / zoom, rect.height / zoom)
+      const size = layoutSize(cardRef.current, zoom, roll)
+      onRegisterDims(node.id, size.width, size.height)
     }
   })
 
@@ -108,8 +116,14 @@ export default function VaultNoteCard({
 
       const onMove = (me: PointerEvent) => {
         if (!isDraggingRef.current) return
-        const nextX = dragStartRef.current.startX + (me.clientX - dragStartRef.current.mouseX) / zoom
-        const nextY = dragStartRef.current.startY + (me.clientY - dragStartRef.current.mouseY) / zoom
+        const d = screenDeltaToWorld(
+          me.clientX - dragStartRef.current.mouseX,
+          me.clientY - dragStartRef.current.mouseY,
+          zoom,
+          roll,
+        )
+        const nextX = dragStartRef.current.startX + d.x
+        const nextY = dragStartRef.current.startY + d.y
         setLocalPos({ x: nextX, y: nextY })
         onDragMove?.(node.id, nextX, nextY)
       }
@@ -128,7 +142,7 @@ export default function VaultNoteCard({
       document.addEventListener('pointermove', onMove, true)
       document.addEventListener('pointerup', onUp, true)
     },
-    [effectiveX, effectiveY, zoom, node.id, onPositionChange, onDragMove, onDragEnd],
+    [effectiveX, effectiveY, zoom, roll, node.id, onPositionChange, onDragMove, onDragEnd],
   )
 
   // ----- Provenance footer (D-06, D-07, D-21) -----

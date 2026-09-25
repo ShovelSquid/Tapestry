@@ -53,10 +53,11 @@ const tapestryAPI = {
   },
 
   /**
-   * The trees in the space and where their frames sit (D-15, D-18).
+   * The trees in the space and where their frames sit (D-15).
    *
-   * There is no forest file: `open`, `create` and `close` change both the open
-   * set and what the next launch restores.
+   * The arrangement lives in the forest tree, a readable `Forest.tree` that
+   * the Tapestry tree references (2.6 D-01): each frame is a placement edge
+   * there, and a move is a signed commit rather than a settings write.
    */
   trees: {
     list: (): Promise<
@@ -70,17 +71,24 @@ const tapestryAPI = {
       }>
     > => ipcRenderer.invoke('trees:list'),
 
-    open: (path: string): Promise<{ ok: boolean; treeId?: string; error?: string }> =>
+    /** `notice`, when present, is an approved refusal to show verbatim (4.9, 4.10). */
+    open: (
+      path: string,
+    ): Promise<{ ok: boolean; treeId?: string; error?: string; notice?: string }> =>
       ipcRenderer.invoke('trees:open', path),
 
     create: (
       path: string,
       worldName: string,
-    ): Promise<{ ok: boolean; treeId?: string; error?: string }> =>
+    ): Promise<{ ok: boolean; treeId?: string; error?: string; notice?: string }> =>
       ipcRenderer.invoke('trees:create', path, worldName),
 
-    close: (treeId: string): Promise<{ ok: boolean; error?: string }> =>
+    close: (treeId: string): Promise<{ ok: boolean; error?: string; notice?: string }> =>
       ipcRenderer.invoke('trees:close', treeId),
+
+    /** Why the space did not open, in the approved wording, or null (4.1-4.8). */
+    spaceProblem: (): Promise<{ message: string | null }> =>
+      ipcRenderer.invoke('trees:spaceProblem'),
 
     /** Show the tree's `.tree` file in Finder. Main resolves the path. */
     reveal: (treeId: string): Promise<{ ok: boolean; error?: string }> =>
@@ -90,12 +98,41 @@ const tapestryAPI = {
     reopen: (treeId: string): Promise<{ ok: boolean; treeId?: string; error?: string }> =>
       ipcRenderer.invoke('trees:reopen', treeId),
 
-    setFrame: (
+    /**
+     * An automatic correction, recorded by the system only when it moves the
+     * frame (D-12). Main signs it; no actor is sent.
+     */
+    fitFrame(
       treeId: string,
       x: number,
       y: number,
-    ): Promise<{ ok: boolean; error?: string }> =>
-      ipcRenderer.invoke('trees:setFrame', treeId, x, y),
+    ): Promise<{ ok: boolean; committed?: boolean; error?: string }> {
+      return ipcRenderer.invoke('trees:fitFrame', treeId, x, y)
+    },
+
+    /** One drop, with every frame it pushed aside, is one forest commit (D-11). */
+    moveFrames: (
+      moves: Array<{ treeId: string; x: number; y: number }>,
+    ): Promise<{ ok: boolean; committed?: boolean; error?: string }> =>
+      ipcRenderer.invoke('trees:moveFrames', moves),
+
+    /** Put the last drop back as a new signed forest commit, never a rewind (D-08, D-09). */
+    undoFrames: (): Promise<{
+      ok: boolean
+      committed?: boolean
+      undoable?: number
+      redoable?: number
+      error?: string
+    }> => ipcRenderer.invoke('trees:undoFrames'),
+
+    /** Put an undone drop forward again as a new signed forest commit (D-08, D-09). */
+    redoFrames: (): Promise<{
+      ok: boolean
+      committed?: boolean
+      undoable?: number
+      redoable?: number
+      error?: string
+    }> => ipcRenderer.invoke('trees:redoFrames'),
   },
 
   plugins: {
@@ -142,7 +179,9 @@ const tapestryAPI = {
    * refuses any other root, creates `<vault>/<name>.tree` and catches up.
    */
   vault: {
-    add: (root: string): Promise<{ ok: boolean; treeId?: string; error?: string }> =>
+    add: (
+      root: string,
+    ): Promise<{ ok: boolean; treeId?: string; error?: string; notice?: string }> =>
       ipcRenderer.invoke('vault:add', root),
   },
 

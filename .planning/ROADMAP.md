@@ -20,6 +20,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [ ] **Phase 2.3: Time Threads** - Live z-axis writing threads: one note and its history, per-letter timing, side-view read-back (INSERTED)
 - [x] **Phase 2.4: Lock Model** - Allow unless locked: lock aspects replace the D-05 authorship gate for agent note commands (INSERTED) (completed 2026-09-16)
 - [ ] **Phase 2.5: Agent Spatial Verbs** - Task-space `look` and `place` for agents: relations in, relations out, refused by `lock.layout` (INSERTED; depends on 2.4)
+- [ ] **Phase 2.6: Placement Edges & Forest Tree** - An always-open Tapestry tree, the arrangement of trees as a forest tree with placement edges, and trees named by header digest (INSERTED; depends on 2.2)
 - [ ] **Phase 3: Branching History & Deterministic Replay** - History navigation, fork-preserving branches, snapshots, and replay from recorded inputs
 - [ ] **Phase 4: Spatial Notebook** - Bundled note, drawing, property, and provenance-display plugins delivering the usable spatial workspace
 - [ ] **Phase 5: Deterministic Rule Engine** - Typed rule inputs/outputs, fixed-step simulation, forces, and explicit failure semantics
@@ -326,6 +327,62 @@ Plans:
 - [x] 02.5-05-PLAN.md — `create_note` optional `where` beside the unchanged default path; phase gate (SC2, SC5, SC6)
 
 **UI hint**: no
+
+### Phase 2.6: Placement Edges & Forest Tree (INSERTED)
+
+**Goal**: The arrangement of your trees stops being an unrecorded preference: it lives in a forest tree, referenced from one always-open Tapestry tree, where every frame is a placement edge and every member is named by its header digest — so arranging trees gets an actor, undo, history and branches like any other edit
+**Mode:** mvp
+**Depends on**: Phase 2.2 (tree registry, `settings.json` trees, D-15 frames, T-02.2-32 unavailable members)
+**Requirements**: none owned — exercises TREE and PROV requirements through integration
+**Design source**: `~/Tapestry Tales/Connections/Spec - Placement Edges.md` §1–§5 and `Decision Packet - Tree Identity and the Forest.md` (Decision Register #2 shape C, #4, #5 A, #6, #7, #13 B; one-way doors #17, #18)
+**Success Criteria** (what must be TRUE):
+
+  1. Launching Tapestry opens one always-open Tapestry tree, and `settings.json` holds a pointer to it; the migration is non-destructive — the old `trees` entries stay readable and the settings `version` is bumped — so the previous app state can be recovered (#2 C, #18)
+  2. The arrangement of open trees lives in a forest tree the Tapestry tree references; moving a frame writes a commit with an actor, and undo, close-and-reopen and replay reproduce the arrangement without reading frame positions from `settings.json` (#5 A)
+  3. Each frame is a `placement` edge in the forest tree carrying `origin.*` and, where set, `size.*`; no kernel verb or value type is added, and nothing in the space model refuses a kind of thing from being placed (#6, #7)
+  4. Members are named by header digest with a `path.hint`: a moved or renamed `.tree` that is found again keeps its frame; two paths with one digest are one member; a tree unreadable since it was added keeps an in-memory `path:` id until its first successful open, and a `path:` id is never written to disk as an identity (#13 B)
+  5. A member that will not open still renders as its frame with its status and the kernel's reason, as 2.2 ships it (T-02.2-32)
+  6. Note positions are untouched: `position.x/y` stay node properties and D-27's thread frame is not moved — that migration is a later phase after 2.3 (#4)
+  7. No code writes the Tapestry-tree or forest-tree record shape, or migrates `settings.json`, until Kaelen has approved the exact type strings, keys and labels and the migration at a blocking checkpoint (#17, #18)
+
+**Plans:** 10/10 plans executed (4 gap-closure plans added 2026-09-24)
+
+Plans:
+**Wave 1**
+
+- [x] 02.6-01-PLAN.md — Groundwork that writes no record: settings passthrough (tracer), pure drop-batch and Ctrl+Z routing helpers, registry seams (D-08, D-10, D-11)
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [x] 02.6-02-PLAN.md — BLOCKING CHECKPOINT for #17/#18 (record shape, migration, Ctrl+Z reach, new wording), then tracer at the service level: first launch imports into the forest, a drop is one signed commit, a second launch restores from the forest (D-01..D-07, D-10, D-11, D-13, D-14)
+
+**Wave 3** *(blocked on Wave 2)*
+
+- [x] 02.6-03-PLAN.md — The app launches into the forest: startup/shutdown wiring, `trees:list`, `trees:moveFrames`, preload, types and the Canvas drop (tracer); launch cases E, G, H write nothing and open no member (D-10, D-11, D-14)
+
+**Wave 4** *(blocked on Wave 3)*
+
+- [x] 02.6-04-PLAN.md — Membership and identity: open/create/close/vault-add recorded in the forest; a tree is its digest (moved files, copies, impostors, duplicates, reserved files) (D-01..D-03, D-12)
+
+**Wave 5** *(blocked on Wave 4)*
+
+- [x] 02.6-05-PLAN.md — Ctrl+Z after a drag as a compensating commit (tracer), and system-signed automatic fit; `trees:setFrame` removed (D-08, D-09, D-11, D-12)
+
+**Wave 6** *(blocked on Wave 5)*
+
+- [x] 02.6-06-PLAN.md — Remaining launch cases (B, C, F, I, J) with in-window notices (tracer), reader's guide `docs/tree/forest.md`, legacy settings writers removed, phase gate and Kaelen's check on copied data (D-05..D-07, D-10, D-14)
+
+**Gap closure, Wave 1** *(from 02.6-VERIFICATION.md gaps and 02.6-REVIEW.md; disjoint files)*
+
+- [x] 02.6-07-PLAN.md — Gap 1 / CR-01 (SC-1): settings.json read as missing | unreadable | ok; no writer overwrites an unreadable file; cases A, B and C return setup-failed before creating anything
+- [x] 02.6-08-PLAN.md — Gaps 2+3 / CR-02, WR-01 (SC-4, SC-5): `adopt()` ends the path's `path:` record; `removeMember` never deletes a shared stand-in; unavailable members keyed by recorded digest, so one path cannot hide another member
+- [x] 02.6-09-PLAN.md — Renderer warnings WR-03, WR-04, WR-05: close refusals shown, growth pushes do not arm frame undo, fits shown only when committed
+
+**Gap closure, Wave 2** *(blocked on 02.6-08: shares space-service.ts and membership.test.ts)*
+
+- [x] 02.6-10-PLAN.md — WR-02 (T-2.6-24): `openWithRollback` closes every entry a failed add introduced that the forest does not hold
+
+**UI hint**: yes
 
 ### Phase 3: Branching History & Deterministic Replay
 

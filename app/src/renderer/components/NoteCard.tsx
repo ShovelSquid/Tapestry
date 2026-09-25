@@ -29,6 +29,7 @@ import type { EditorView } from 'prosemirror-view'
 import { useProseMirror } from '../editor/use-prosemirror'
 import NoteControls from './NoteControls'
 import FloatingToolbar from './FloatingToolbar'
+import { layoutSize, screenDeltaToWorld } from '../layout/camera'
 import ProvenanceBadge, { actorSpokenText } from './ProvenanceBadge'
 
 // ---------------------------------------------------------------------------
@@ -54,6 +55,12 @@ interface NoteCardProps {
   isConnectTarget: boolean
   isConnecting: boolean
   zoom: number
+  /**
+   * The drawn camera roll, in degrees. With zoom, it turns screen deltas into
+   * world deltas, so a drag stays under the pointer on a rolled canvas.
+   * Defaults to 0 (unrolled).
+   */
+  roll?: number
   /**
    * Who made this note and who changed it last, derived by the kernel from
    * the commits in the journal (D-05). Undefined until history is read.
@@ -116,6 +123,7 @@ export default function NoteCard({
   isConnectTarget,
   isConnecting,
   zoom,
+  roll = 0,
   provenance,
   onStartEditing,
   onBorderSelect,
@@ -292,8 +300,8 @@ export default function NoteCard({
 
   useEffect(() => {
     if (cardRef.current) {
-      const rect = cardRef.current.getBoundingClientRect()
-      onRegisterDims(node.id, rect.width / zoom, rect.height / zoom)
+      const size = layoutSize(cardRef.current, zoom, roll)
+      onRegisterDims(node.id, size.width, size.height)
     }
   })
 
@@ -372,10 +380,14 @@ export default function NoteCard({
 
       const onMove = (me: PointerEvent) => {
         if (!isDraggingRef.current) return
-        const dx = (me.clientX - dragStartRef.current.mouseX) / zoom
-        const dy = (me.clientY - dragStartRef.current.mouseY) / zoom
-        const newX = dragStartRef.current.startX + dx
-        const newY = dragStartRef.current.startY + dy
+        const d = screenDeltaToWorld(
+          me.clientX - dragStartRef.current.mouseX,
+          me.clientY - dragStartRef.current.mouseY,
+          zoom,
+          roll,
+        )
+        const newX = dragStartRef.current.startX + d.x
+        const newY = dragStartRef.current.startY + d.y
         setLocalPos({ x: newX, y: newY })
         onDragMove?.(node.id, newX, newY)
       }
@@ -395,7 +407,7 @@ export default function NoteCard({
       document.addEventListener('pointermove', onMove, true)
       document.addEventListener('pointerup', onUp, true)
     },
-    [effectiveX, effectiveY, zoom, node.id, onPositionChange, onDragMove, onDragEnd],
+    [effectiveX, effectiveY, zoom, roll, node.id, onPositionChange, onDragMove, onDragEnd],
   )
 
   // -----------------------------------------------------------------------
@@ -410,16 +422,9 @@ export default function NoteCard({
 
       isResizingRef.current = true
       resizeDirRef.current = direction
-      const currentWidth =
-        effectiveWidth ??
-        (cardRef.current
-          ? cardRef.current.getBoundingClientRect().width / zoom
-          : 240)
-      const currentHeight =
-        effectiveHeight ??
-        (cardRef.current
-          ? cardRef.current.getBoundingClientRect().height / zoom
-          : 100)
+      const measured = cardRef.current ? layoutSize(cardRef.current, zoom, roll) : null
+      const currentWidth = effectiveWidth ?? (measured ? measured.width : 240)
+      const currentHeight = effectiveHeight ?? (measured ? measured.height : 100)
       resizeStartRef.current = {
         mouseX: e.clientX,
         mouseY: e.clientY,
@@ -431,8 +436,13 @@ export default function NoteCard({
 
       const onMove = (me: PointerEvent) => {
         if (!isResizingRef.current) return
-        const dx = (me.clientX - resizeStartRef.current.mouseX) / zoom
-        const dy = (me.clientY - resizeStartRef.current.mouseY) / zoom
+        // In the card's own axes, so the left and top rules hold at any roll.
+        const { x: dx, y: dy } = screenDeltaToWorld(
+          me.clientX - resizeStartRef.current.mouseX,
+          me.clientY - resizeStartRef.current.mouseY,
+          zoom,
+          roll,
+        )
         const dir = resizeDirRef.current
 
         let newWidth = resizeStartRef.current.width
@@ -486,7 +496,7 @@ export default function NoteCard({
       document.addEventListener('pointermove', onMove, true)
       document.addEventListener('pointerup', onUp, true)
     },
-    [effectiveWidth, effectiveHeight, effectiveX, effectiveY, zoom, node.id, onWidthChange, onHeightChange, onPositionChange],
+    [effectiveWidth, effectiveHeight, effectiveX, effectiveY, zoom, roll, node.id, onWidthChange, onHeightChange, onPositionChange],
   )
 
   // -----------------------------------------------------------------------
@@ -639,7 +649,7 @@ export default function NoteCard({
       {provenanceFooter}
 
       {/* Floating formatting toolbar near the text selection (D-24) */}
-      {isEditing && <FloatingToolbar view={editorView} containerRef={cardRef} zoom={zoom} />}
+      {isEditing && <FloatingToolbar view={editorView} containerRef={cardRef} zoom={zoom} roll={roll} />}
 
       {/* Bubbly controls (D-06) */}
       {showControlsBool && (

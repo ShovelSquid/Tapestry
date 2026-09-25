@@ -15,6 +15,7 @@
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react'
+import { layoutSize, screenDeltaToWorld } from '../layout/camera'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -36,6 +37,12 @@ interface FallbackNodeViewProps {
   isSelected: boolean
   isHovered: boolean
   zoom: number
+  /**
+   * The drawn camera roll, in degrees. With zoom, it turns screen deltas into
+   * world deltas, so a drag stays under the pointer on a rolled canvas.
+   * Defaults to 0 (unrolled).
+   */
+  roll?: number
   onBorderSelect: () => void
   onHover: (hovered: boolean) => void
   onPositionChange: (nodeId: string, x: number, y: number) => void
@@ -160,6 +167,7 @@ export default function FallbackNodeView({
   // isHovered is accepted (Canvas passes it) but the fallback view has no
   // hover-only affordance yet, so it is intentionally not destructured.
   zoom,
+  roll = 0,
   onBorderSelect,
   onHover,
   onPositionChange,
@@ -184,8 +192,8 @@ export default function FallbackNodeView({
   // Register dims
   useEffect(() => {
     if (cardRef.current) {
-      const rect = cardRef.current.getBoundingClientRect()
-      onRegisterDims(node.id, rect.width / zoom, rect.height / zoom)
+      const size = layoutSize(cardRef.current, zoom, roll)
+      onRegisterDims(node.id, size.width, size.height)
     }
   })
 
@@ -205,11 +213,15 @@ export default function FallbackNodeView({
   const handleDragMove = useCallback(
     (e: React.PointerEvent) => {
       if (!isDraggingRef.current) return
-      const dx = (e.clientX - dragStartRef.current.x) / zoom
-      const dy = (e.clientY - dragStartRef.current.y) / zoom
-      setLocalPos({ x: px + dx, y: py + dy })
+      const d = screenDeltaToWorld(
+        e.clientX - dragStartRef.current.x,
+        e.clientY - dragStartRef.current.y,
+        zoom,
+        roll,
+      )
+      setLocalPos({ x: px + d.x, y: py + d.y })
     },
-    [px, py, zoom],
+    [px, py, zoom, roll],
   )
 
   const handleDragEnd = useCallback(
