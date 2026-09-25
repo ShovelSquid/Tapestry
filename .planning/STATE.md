@@ -5,15 +5,15 @@ current_phase: "02.7"
 current_phase_name: File Windows & Workspace Sandbox
 status: executing
 stopped_at: Completed 02.7-06-PLAN.md
-last_updated: "2026-09-24T23:16:00.000Z"
+last_updated: "2026-09-25T23:34:29.534Z"
 last_activity: 2026-09-24
 last_activity_desc: 02.7-06 live watching, watch status, Retry write and scale complete (hands-on check deferred); next 02.7-07 (wave 7)
-state_head: 10bf2224bd66f01675688b3a7cf2194f1156a0b1
+state_head: 07aeaa40f4c2ee5d145f0aa25785713445e3dd5c
 progress:
-  total_phases: 13
+  total_phases: 15
   completed_phases: 0
-  total_plans: 52
-  completed_plans: 33
+  total_plans: 62
+  completed_plans: 52
 ---
 
 # Project State
@@ -189,6 +189,7 @@ Recent decisions affecting current work:
 - Phase 2.2 edited: goal reworded to cover the agent MCP bridge plus the Obsidian bridge (02.2-CONTEXT D-01)
 - Phase 2.4 inserted after Phase 2.3: Lock Model: allow unless locked; lock aspects replace the D-05 authorship gate (Kaelen, 2026-09-16)
 - Phase 2.7 inserted after Phase 2.5: File Windows & Workspace Sandbox: workspace folder, file windows, agent file tools confined to the root; dogfood on this repo (ws/windows)
+- Phase 2.8 inserted after Phase 2.7: Agent Note Windows: chat sessions as notes, spec in ~/Tree/Connections/Spec - Agent Note Windows.md
 
 ## Deferred Items
 
