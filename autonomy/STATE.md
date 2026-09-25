@@ -35,16 +35,12 @@ are recorded in app/src/main/space/shapes.ts and 02.6-02-SUMMARY.
 
 ## In progress
 
-Gap-closure plans are written and checked (plan-checker PASSED):
-- wave 1: 02.6-07 (CR-01 settings unreadable -> refuse to write, setup-failed),
-  02.6-08 (CR-02 + WR-01: adopt clears path record, records keyed by digest,
-  removeMember guard), 02.6-09 (WR-03/04/05 renderer); no shared files.
-- wave 2: 02.6-10 (WR-02 add rollback; depends on 08).
-Next sessions: `gsd-execute-phase 02.6 --gaps-only --wave 1`, then
-`--wave 2`, then re-run phase verification. `passed`/`human_needed` ->
-PROTOCOL step 7 (DONE). Do not write DONE before that. Plan 09's SUMMARY
-must record WR-04's commit-message wording as an open question (queue it in
-REVIEW.md: new wording needs Kaelen's approval).
+Gap-closure wave 1 is done (02.6-07, 08, 09 have SUMMARYs). Remaining:
+- wave 2: 02.6-10 (WR-02 add rollback; depends on 08, which is done).
+Next session: `gsd-execute-phase 02.6 --gaps-only --wave 2`. With no plans
+left, the workflow then runs the phase gates (code review, regression,
+verification). `passed`/`human_needed` -> PROTOCOL step 7 (DONE). Do not
+write DONE before that. REVIEW item 6 holds 09's wording questions.
 
 ## Log
 
@@ -87,6 +83,11 @@ REVIEW.md: new wording needs Kaelen's approval).
 - 2026-09-24 17:10 gap planning (`gsd-plan-phase 02.6 --gaps`): planner
   wrote 02.6-07..10 (~27 min), checker passed first try; 48a0fb1 plans,
   then docs state commit. No code touched. Next: execute gaps wave 1.
+- 2026-09-24 17:08 gaps wave 1 (02.6-07, 08, 09), executors sequential:
+  07 7c5517e 428fcb4 27620e9 (+docs), 08 4924ace bb8855a a3fc55d (+docs),
+  09 de0fc1f a4e052f 7a0da94 cf0e0d7 (+docs); ~15 min total. 30 files /
+  655 tests, typecheck clean. No checkpoints; 09's wording questions and
+  the gap checks queued as REVIEW item 6. Next: gaps wave 2 (02.6-10).
 
 ## Learned
 
@@ -104,6 +105,9 @@ REVIEW.md: new wording needs Kaelen's approval).
   After 02.6-04 (`487042b`): 27 files, 576 tests.
   After 02.6-05 (`01258ee`): 29 files, 596 tests.
   After 02.6-06 (`3fdf623`): 30 files, 619 tests; kernel 59/59.
+  After gaps wave 1 (`ef1517a`): 30 files, 655 tests.
+- The executors' RED-evidence checker parses only node test-runner counts,
+  not vitest output; they quote the failing vitest lines in the SUMMARY.
 - Code-review scope: `git diff` from the phase start includes the merged
   main; scope by files in `(02.6-0N)` commits instead.
 - Execute-phase here: dispatch-isolation says orchestrator-worktree but
