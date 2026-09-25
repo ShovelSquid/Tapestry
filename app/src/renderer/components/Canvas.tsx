@@ -120,6 +120,12 @@ interface CanvasProps {
   onStartEditing: (ref: NodeRef) => void
   onStopEditing: () => void
   onCanvasDoubleClick: (target: DoubleClickTarget) => void
+  /**
+   * "Start a thread" from the space's own menu (02.3 D-01, UI-SPEC canvas-menu
+   * copy): the same target shape as a double-click, local to the frame under
+   * the pointer, or `treeId: null` when the pointer is outside every frame.
+   */
+  onStartThread?: (target: DoubleClickTarget) => void
   /** The selected note changed, so undo/redo knows which tree to act on. */
   onSelectedNoteChange: (ref: NodeRef | null) => void
   onSave: (ref: NodeRef, body: string, title: string) => Promise<void>
@@ -201,7 +207,6 @@ const MAX_ZOOM = 5
 
 const DEFAULT_NODE_WIDTH = 240
 const DEFAULT_NODE_HEIGHT = 80
-
 /** The drawn-spot map for a tree that has none yet (D-05). */
 const NO_DISPLAY_SPOTS: ReadonlyMap<string, DisplaySpot> = new Map()
 
@@ -254,6 +259,7 @@ function Canvas({
   onStartEditing,
   onStopEditing,
   onCanvasDoubleClick,
+  onStartThread,
   onSelectedNoteChange,
   onSave,
   onMarkDirty,
@@ -897,14 +903,26 @@ function Canvas({
       if (!isBackground(e.target as HTMLElement, viewportRef.current)) return
       const world = pointerWorld(e.clientX, e.clientY)
       const tree = world ? treeAt(world.x, world.y) : null
-      openContextMenu(e, [
+      const items: Array<{ label: string; run: () => void }> = [
         {
           label: 'Ask Claude…',
           run: () => openChat(tree && tree.kind === 'workspace' ? { treeId: tree.id } : {}),
         },
-      ])
+      ]
+      if (onStartThread) {
+        items.push({
+          label: 'Start a thread',
+          run: () =>
+            onStartThread(
+              tree && world
+                ? { treeId: tree.id, x: world.x - tree.frame.x, y: world.y - tree.frame.y }
+                : { treeId: null, x: 0, y: 0 },
+            ),
+        })
+      }
+      openContextMenu(e, items)
     },
-    [pointerWorld, treeAt, openContextMenu, openChat],
+    [pointerWorld, treeAt, openContextMenu, openChat, onStartThread],
   )
 
   const handleDoubleClick = useCallback(

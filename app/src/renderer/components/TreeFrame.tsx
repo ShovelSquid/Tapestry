@@ -12,7 +12,7 @@
  * D-16, Plan 15).
  */
 
-import React, { useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useAnnounce } from './LiveAnnouncer'
 import NoteCard from './NoteCard'
 import VaultNoteCard from './VaultNoteCard'
@@ -20,8 +20,11 @@ import WorkspaceFileCard from './WorkspaceFileCard'
 import FolderFrame from './FolderFrame'
 import FallbackNodeView from './FallbackNodeView'
 import ConnectionLine from './ConnectionLine'
-import ThreadCenterNode from './ThreadCenterNode'
+import KnotNode, { KNOT_TYPE, KNOT_TIE_LABEL } from './KnotNode'
 import FrameHeader from './FrameHeader'
+import ThreadCard, { THREAD_TYPE } from '../threads/ThreadCard'
+import SessionBridge from '../threads/SessionBridge'
+import ThreadSettingsPopover from '../threads/ThreadSettingsPopover'
 import type { ForestTree, NodeRef } from '../state/use-forest'
 import { nodeKey } from '../state/use-forest'
 import type { FrameRect } from '../layout/frames'
@@ -35,12 +38,16 @@ import {
 } from '../layout/subspaces'
 import type { NodeInfo } from './Canvas'
 
-/** Fallback thread-center size until the node registers its real dims. */
-const THREAD_CENTER_FALLBACK_WIDTH = 200
-const THREAD_CENTER_FALLBACK_HEIGHT = 44
+/** Fallback knot size until the node registers its real dims. */
+const KNOT_FALLBACK_WIDTH = 200
+const KNOT_FALLBACK_HEIGHT = 44
 
-function isThreadCenter(node: NodeInfo): boolean {
-  return node.type.includes('thread-center')
+function isKnot(n: NodeInfo): boolean {
+  return n.type === KNOT_TYPE
+}
+
+function isThread(n: NodeInfo): boolean {
+  return n.type === THREAD_TYPE
 }
 
 /**
@@ -60,6 +67,7 @@ function isThreadCenter(node: NodeInfo): boolean {
  * nodes; it maps to nothing now, and is never reached for a workspace tree,
  * whose folders are drawn as FolderFrames from the hierarchy (02.7 D-21).
  */
+
 const NODE_VIEW_COMPONENTS = {
   NoteCard,
   VaultNoteCard,
@@ -363,6 +371,11 @@ export default function TreeFrame({
     }
     return false
   }
+  // ThreadCard menu (D-07 UI-SPEC "The thread on the 2D canvas": "Open
+  // thread", "Thread settings", "Delete thread") and the settings popover it
+  // opens (UI-SPEC "Thread settings": "opened from ... the ThreadCard menu").
+  const [threadMenuOpenFor, setThreadMenuOpenFor] = useState<string | null>(null)
+  const [threadSettingsFor, setThreadSettingsFor] = useState<{ nodeId: string; x: number; y: number } | null>(null)
 
   /** A note's center in this tree's local coordinates. */
   const getNodeCenter = (nodeId: string): { x: number; y: number } | null => {
@@ -383,22 +396,22 @@ export default function TreeFrame({
   }
 
   // ---------------------------------------------------------------------
-  // Thread-center auto positions (D-17), computed ONCE for this tree and
-  // shared by its edge layer and its node layer. An unpinned center is
-  // RENDERED at the midpoint of its endpoints rather than at its stored
-  // position, so edges must resolve it from here or the thread arms end at a
-  // phantom point that drifts whenever an endpoint note moves.
+  // Knot auto positions (D-17), computed ONCE for this tree and shared by its
+  // edge layer and its node layer. An unpinned knot is RENDERED at the
+  // midpoint of its endpoints rather than at its stored position, so edges
+  // must resolve it from here or the knot-ties end at a phantom point that
+  // drifts whenever an endpoint note moves.
   // ---------------------------------------------------------------------
 
-  const threadCenterAuto = new Map<
+  const knotAuto = new Map<
     string,
     { left: number; top: number; width: number; height: number }
   >()
   for (const node of tree.nodes) {
-    if (!isThreadCenter(node)) continue
+    if (!isKnot(node)) continue
     const dims = getDims(keyFor(node.id))
-    const width = dims?.width ?? THREAD_CENTER_FALLBACK_WIDTH
-    const height = dims?.height ?? THREAD_CENTER_FALLBACK_HEIGHT
+    const width = dims?.width ?? KNOT_FALLBACK_WIDTH
+    const height = dims?.height ?? KNOT_FALLBACK_HEIGHT
     const px = Number(node.props['position.x']?.value ?? 0)
     const py = Number(node.props['position.y']?.value ?? 0)
     const isPinned =
@@ -407,8 +420,8 @@ export default function TreeFrame({
     let left = px
     let top = py
     if (!isPinned) {
-      const sourceEdge = tree.edges.find((e) => e.label === 'thread-arm' && e.to === node.id)
-      const destEdge = tree.edges.find((e) => e.label === 'thread-arm' && e.from === node.id)
+      const sourceEdge = tree.edges.find((e) => e.label === KNOT_TIE_LABEL && e.to === node.id)
+      const destEdge = tree.edges.find((e) => e.label === KNOT_TIE_LABEL && e.from === node.id)
       const sourceCenter = sourceEdge ? getNodeCenter(sourceEdge.from) : null
       const destCenter = destEdge ? getNodeCenter(destEdge.to) : null
       if (sourceCenter && destCenter) {
@@ -416,12 +429,12 @@ export default function TreeFrame({
         top = (sourceCenter.y + destCenter.y) / 2 - height / 2
       }
     }
-    threadCenterAuto.set(node.id, { left, top, width, height })
+    knotAuto.set(node.id, { left, top, width, height })
   }
 
-  /** Node center honoring the displayed (auto) position of thread centers. */
+  /** Node center honoring the displayed (auto) position of knots. */
   const resolveNodeCenter = (nodeId: string): { x: number; y: number } | null => {
-    const auto = threadCenterAuto.get(nodeId)
+    const auto = knotAuto.get(nodeId)
     if (auto) return { x: auto.left + auto.width / 2, y: auto.top + auto.height / 2 }
     return getNodeCenter(nodeId)
   }
@@ -516,8 +529,8 @@ export default function TreeFrame({
           })}
         </svg>
 
-        {/* Thread center nodes (D-16/D-17/D-18) */}
-        {tree.nodes.filter(isThreadCenter).map((node) => {
+        {/* Knot nodes (D-16/D-17/D-18) */}
+        {tree.nodes.filter(isKnot).map((node) => {
           const px = Number(node.props['position.x']?.value ?? 0)
           const py = Number(node.props['position.y']?.value ?? 0)
           const isPinned =
@@ -525,22 +538,22 @@ export default function TreeFrame({
           const bodyVal = node.props['body']?.value
           const body = typeof bodyVal === 'string' ? bodyVal : ''
 
-          const sourceEdge = tree.edges.find((e) => e.label === 'thread-arm' && e.to === node.id)
-          const destEdge = tree.edges.find((e) => e.label === 'thread-arm' && e.from === node.id)
+          const sourceEdge = tree.edges.find((e) => e.label === KNOT_TIE_LABEL && e.to === node.id)
+          const destEdge = tree.edges.find((e) => e.label === KNOT_TIE_LABEL && e.from === node.id)
 
-          const auto = threadCenterAuto.get(node.id)
+          const auto = knotAuto.get(node.id)
 
-          // D-18: an empty (ghost) center has pointer-events: none, so it can
+          // D-18: an empty (ghost) knot has pointer-events: none, so it can
           // never hover itself. Reveal it when either endpoint is hovered.
           const endpointKeys = [sourceEdge?.from, destEdge?.to]
             .filter((id): id is string => typeof id === 'string')
             .map(keyFor)
-          const isCenterHovered =
+          const isKnotHovered =
             hoveredKey === keyFor(node.id) ||
             (hoveredKey !== null && endpointKeys.includes(hoveredKey))
 
           return (
-            <ThreadCenterNode
+            <KnotNode
               key={node.id}
               nodeId={node.id}
               body={body}
@@ -550,7 +563,7 @@ export default function TreeFrame({
               autoX={auto ? auto.left : px}
               autoY={auto ? auto.top : py}
               isEditing={editingKey === keyFor(node.id)}
-              isHovered={isCenterHovered}
+              isHovered={isKnotHovered}
               zoom={zoom}
               roll={roll}
               onStartEditing={() => handlers.onStartEditing(refFor(node.id))}
@@ -594,11 +607,154 @@ export default function TreeFrame({
         {/* Note cards — the component a plugin registered, or the fallback.
             In a workspace tree, folders and the cards inside them are drawn by
             their FolderFrame, not here. */}
-        {tree.nodes.filter((n) => !isThreadCenter(n) && !isNestedInSubspace(n)).map((node) => {
+        {tree.nodes.filter((n) => !isKnot(n) && !isNestedInSubspace(n)).map((node) => {
           const key = keyFor(node.id)
           const view = mappedNodeView(pluginNodeViews[node.type])
 
           if (view === 'WorkspaceFileCard') return renderWorkspaceCard(node)
+
+          if (isThread(node) && pluginNodeViews[node.type]) {
+            const px = Number(node.props['position.x']?.value ?? 0)
+            const py = Number(node.props['position.y']?.value ?? 0)
+            const dims = getDims(key)
+            const cardBottom = py + (dims?.height ?? 80)
+
+            // D-24: "Grew from [note title] · started by agent.[name]" --
+            // read generically from an ordinary `grew-from` edge and the
+            // creating actor, so this renders the moment a later plan
+            // (agents starting threads) actually produces that data; no
+            // thread today has either, so this is dormant until then.
+            const grewFromEdge = tree.edges.find((e) => e.label === 'grew-from' && e.from === node.id)
+            const originNode = grewFromEdge ? tree.nodes.find((n) => n.id === grewFromEdge.to) : undefined
+            const createdBy = tree.history?.nodes[node.id]?.createdBy
+            const isAgentStarted = createdBy?.kind === 'plugin' && createdBy.id.startsWith('agent.')
+            const originTitle = originNode ? String(originNode.props['title']?.value ?? 'Untitled') : null
+
+            const dimsWidth = dims?.width ?? 200
+
+            return (
+              <React.Fragment key={node.id}>
+                <ThreadCard
+                  node={node}
+                  isEditing={editingKey === key}
+                  isHovered={hoveredKey === key}
+                  isSelected={selectedKey === key}
+                  zoom={zoom}
+                  onStartEditing={() => handlers.onStartEditing(refFor(node.id))}
+                  onBorderSelect={() => handlers.onBorderSelect(refFor(node.id))}
+                  onSave={(nodeId, body, title) => handlers.onSave(refFor(nodeId), body, title)}
+                  onMarkDirty={(nodeId) => handlers.onMarkDirty(refFor(nodeId))}
+                  onMarkClean={(nodeId) => handlers.onMarkClean(refFor(nodeId))}
+                  onHover={(hovered) => handlers.onHover(refFor(node.id), hovered)}
+                  onRegisterDims={(nodeId, w, h) => handlers.onRegisterDims(refFor(nodeId), w, h)}
+                />
+                {isAgentStarted && originTitle && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      left: px,
+                      top: cardBottom + 2,
+                      fontSize: 11,
+                      color: 'var(--tap-muted)',
+                    }}
+                  >
+                    {`Grew from ${originTitle} · started by ${createdBy!.id}`}
+                  </div>
+                )}
+
+                {/* ThreadCard menu (UI-SPEC "Card menu"): "Open thread",
+                    "Thread settings", "Delete thread". */}
+                <button
+                  type="button"
+                  aria-label="Thread options"
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setThreadMenuOpenFor(threadMenuOpenFor === node.id ? null : node.id)
+                  }}
+                  style={{
+                    position: 'absolute',
+                    left: px + dimsWidth - 20,
+                    top: py + 4,
+                    width: 16,
+                    height: 16,
+                    fontSize: 12,
+                    lineHeight: '16px',
+                    padding: 0,
+                    border: 'none',
+                    background: 'transparent',
+                    color: 'var(--tap-muted)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  ⋯
+                </button>
+                {threadMenuOpenFor === node.id && (
+                  <div
+                    role="menu"
+                    className="passage-chooser"
+                    style={{ position: 'absolute', left: px + dimsWidth - 20, top: py + 20, zIndex: 10 }}
+                  >
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="passage-chooser-item"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setThreadMenuOpenFor(null)
+                        handlers.onStartEditing(refFor(node.id))
+                      }}
+                    >
+                      Open thread
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="passage-chooser-item"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setThreadMenuOpenFor(null)
+                        setThreadSettingsFor({ nodeId: node.id, x: e.clientX, y: e.clientY })
+                      }}
+                    >
+                      Thread settings
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="passage-chooser-item"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setThreadMenuOpenFor(null)
+                        handlers.onDeleteNote(refFor(node.id))
+                      }}
+                    >
+                      Delete thread
+                    </button>
+                  </div>
+                )}
+                {threadSettingsFor?.nodeId === node.id && (
+                  <ThreadSettingsPopover
+                    treeId={tree.id}
+                    nodeId={node.id}
+                    x={threadSettingsFor.x}
+                    y={threadSettingsFor.y}
+                    onClose={() => setThreadSettingsFor(null)}
+                  />
+                )}
+
+                <SessionBridge
+                  treeId={tree.id}
+                  nodeId={node.id}
+                  cardX={px}
+                  cardBottom={cardBottom}
+                  focusedSessionIndex={null}
+                  onOpenSession={() => handlers.onStartEditing(refFor(node.id))}
+                  onShowAllSessions={() => handlers.onStartEditing(refFor(node.id))}
+                />
+              </React.Fragment>
+            )
+          }
 
           if (view === 'VaultNoteCard') {
             return (
@@ -667,7 +823,7 @@ export default function TreeFrame({
             <FallbackNodeView
               key={node.id}
               node={node}
-              displayPosition={displayPositions.get(node.id)?.followSpot ?? undefined}
+              treeId={tree.id}
               isSelected={selectedKey === key}
               isHovered={hoveredKey === key}
               zoom={zoom}

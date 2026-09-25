@@ -3,10 +3,10 @@
     "target": "ES2020",
     "module": "ES2020",
     "moduleResolution": "bundler",
-    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "lib": ["ES2020", "ES2022.Intl", "DOM", "DOM.Iterable"],
     "jsx": "react-jsx",
     "outDir": "dist/renderer",
-    "rootDir": "src/renderer",
+    "rootDir": "src",
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
@@ -17,6 +17,6 @@
     "isolatedModules": true,
     "noEmit": true
   },
-  "include": ["src/renderer/**/*"],
+  "include": ["src/renderer/**/*", "src/shared/**/*"],
   "exclude": ["node_modules", "dist"]
 }

@@ -125,6 +125,68 @@ void buildGoldenWorld(Kernel& kernel, FixedClock& clock) {
     const CommitResult sixth =
         commitAfterAMinute(kernel, clock, proposalOf(kaelen, "", {SetProperty{NodeId{2}, "anger", Value::ofInt(4)}}));
     REQUIRE(sixth.seq == 6);
+
+    // Thread commits (02.3-03, D-06): a thread node, two `thread.log`
+    // batches exercising every verb this fixture needs to demonstrate --
+    // `in`, a plain `ins`, a paste-caused `ins`, an undo-caused `del`, a
+    // plain `del`, and `out` -- and a `body` checkpoint. Commits 1-6 above
+    // are untouched: the fixture only grows.
+    CreateNode thread;
+    thread.type = "tapestry.threads/thread@1";
+    thread.props["body"] = Value::ofText("");
+    thread.props["position.x"] = Value::ofReal(40);
+    thread.props["position.y"] = Value::ofReal(40);
+    thread.props["thread.direction.x"] = Value::ofReal(0);
+    thread.props["thread.direction.y"] = Value::ofReal(0);
+    thread.props["thread.direction.z"] = Value::ofReal(-1);
+    thread.props["thread.format"] = Value::ofInt(1);
+    thread.props["thread.origin.x"] = Value::ofReal(40);
+    thread.props["thread.origin.y"] = Value::ofReal(40);
+    thread.props["thread.origin.z"] = Value::ofReal(0);
+    thread.props["thread.roll"] = Value::ofReal(0);
+    thread.props["thread.slowdown"] = Value::ofText("10:30 30:10 60:1");
+    thread.props["thread.timeout"] = Value::ofReal(150);
+    thread.props["title"] = Value::ofText("");
+    const CommitResult seventh = commitAfterAMinute(kernel, clock, proposalOf(kaelen, "Create thread", {thread}));
+    REQUIRE(seventh.nodeIds == std::vector<NodeId>{NodeId{3}});
+
+    // Batch 1: a session opens (`in 1`), two typed letters, a pasted " Sam!"
+    // and an undo of that same paste. `v0` because no step has happened yet
+    // in this thread (`in`/`out` are not steps and never advance the count).
+    const std::string threadBatch1 =
+        "thread 1 v0\n"
+        "at 2026-09-08T21:23:07.000Z\n"
+        "+0.000 in 1\n"
+        "+0.000 ins 1 \"H\"\n"
+        "+0.182 ins 2 \"i\"\n"
+        "+0.950 paste ins 3 \" Sam!\"\n"
+        "+2.300 undo del 3 8 \" Sam!\"";
+    commitAfterAMinute(kernel, clock,
+        proposalOf(kaelen, "Thread batch", {SetProperty{NodeId{3}, "thread.log", Value::ofText(threadBatch1)}}));
+
+    // Batch 2 continues the same session (no new `in`) at `v4`: 4 steps
+    // happened in batch 1. Types " there", deletes it, types " Sam", then
+    // the session times out (D-10) after being idle past the thread's
+    // 150-second default -- offsets inside a batch are a typing-time clock,
+    // independent of the fixture's own once-a-minute `recorded` cadence
+    // (FORMAT.md's "Three kinds of time" applies inside thread.log too).
+    const std::string threadBatch2 =
+        "thread 1 v4\n"
+        "at 2026-09-08T21:24:07.000Z\n"
+        "+0.000 ins 3 \" there\"\n"
+        "+0.500 del 3 9 \" there\"\n"
+        "+1.000 ins 3 \" Sam\"\n"
+        "+154.000 out";
+    commitAfterAMinute(kernel, clock,
+        proposalOf(kaelen, "Thread batch", {SetProperty{NodeId{3}, "thread.log", Value::ofText(threadBatch2)}}));
+
+    // The body checkpoint: replaying both batches' `ins`/`del` records onto
+    // an empty document produces exactly "Hi Sam" -- fixture.test.ts (Task 2)
+    // proves this by reading and replaying the committed file itself, never
+    // a copy of it.
+    const CommitResult tenth = commitAfterAMinute(kernel, clock,
+        proposalOf(kaelen, "Thread checkpoint", {SetProperty{NodeId{3}, "body", Value::ofText("Hi Sam")}}));
+    REQUIRE(tenth.seq == 10);
 }
 
 // The golden world written to a scratch file by the real kernel under the
@@ -212,14 +274,16 @@ TEST_CASE("readability: the fixture reads as text") {
     CHECK(text.find('\0') == std::string::npos);
     CHECK(text.find('\t') == std::string::npos);
 
-    // One header record and six commits, each sealed by its own @end line.
-    CHECK(countLinesStartingWith(text, "@end sha256:") == 7);
+    // One header record and ten commits, each sealed by its own @end line.
+    CHECK(countLinesStartingWith(text, "@end sha256:") == 11);
     CHECK(countLinesStartingWith(text, "@tree 1 ") == 1);
-    CHECK(countLinesStartingWith(text, "@commit ") == 6);
-    CHECK(countLinesStartingWith(text, "recorded ") == 6);
-    CHECK(countLinesStartingWith(text, "tick ") == 6);
-    CHECK(countLinesStartingWith(text, "actor ") == 6);
-    CHECK(countLinesStartingWith(text, "message ") == 5); // the sixth commit has none
+    CHECK(countLinesStartingWith(text, "@commit ") == 10);
+    CHECK(countLinesStartingWith(text, "recorded ") == 10);
+    CHECK(countLinesStartingWith(text, "tick ") == 10);
+    CHECK(countLinesStartingWith(text, "actor ") == 10);
+    // Only the sixth commit has no message; every other commit (including
+    // all four new thread commits) carries one: 10 commits - 1 = 9.
+    CHECK(countLinesStartingWith(text, "message ") == 9);
 }
 
 TEST_CASE("readability: the fixture reopens Ok and equals the generated world") {
@@ -229,9 +293,9 @@ TEST_CASE("readability: the fixture reopens Ok and equals the generated world") 
     CHECK(kernel.status().kind == JournalStatus::Kind::Ok);
     CHECK(kernel.journal().header().world == "example");
     CHECK(kernel.journal().header().created.rfc3339Z() == kWorldCreated);
-    REQUIRE(kernel.journal().commitCount() == 6);
+    REQUIRE(kernel.journal().commitCount() == 10);
     CHECK(kernel.world().tick() == 3);
-    CHECK(kernel.world().nodeCount() == 2);
+    CHECK(kernel.world().nodeCount() == 3);
     CHECK(kernel.world().edgeCount() == 1);
 
     const Node* note = kernel.world().node(NodeId{1});
@@ -248,6 +312,16 @@ TEST_CASE("readability: the fixture reopens Ok and equals the generated world") 
     CHECK(person->props.at("anger") == Value::ofInt(4));
     CHECK(person->props.at("position.x") == Value::ofReal(12.5));
     CHECK(person->props.at("position.y") == Value::ofReal(-3));
+
+    // The thread node (02.3-03, D-06): its final `body` is the checkpoint
+    // value, not a replay of thread.log -- that cross-layer check belongs to
+    // fixture.test.ts (Task 2), which reads and replays this same file.
+    const Node* thread = kernel.world().node(NodeId{3});
+    REQUIRE(thread != nullptr);
+    CHECK(thread->type == "tapestry.threads/thread@1");
+    CHECK(thread->props.at("body") == Value::ofText("Hi Sam"));
+    CHECK(thread->props.at("thread.timeout") == Value::ofReal(150));
+    CHECK(thread->props.at("thread.slowdown") == Value::ofText("10:30 30:10 60:1"));
 
     const Edge* edge = kernel.world().edge(EdgeId{1});
     REQUIRE(edge != nullptr);

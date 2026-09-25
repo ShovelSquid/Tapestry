@@ -48,6 +48,9 @@ import { FOREST_FILE, HOME_FILE, HOME_LOCATION } from './space/shapes'
 // registration afterwards. The handler itself is attached inside whenReady,
 // once the plugins directory is known.
 protocol.registerSchemesAsPrivileged([{ scheme: PLUGIN_SCHEME, privileges: SCHEME_PRIVILEGES }])
+import { ThreadIpc } from './threads/thread-ipc'
+import { ThreadService } from './threads/thread-service'
+import { isVaultThread, writeVaultThreadFile } from './threads/vault-thread'
 
 // ---------------------------------------------------------------------------
 // Window management
@@ -203,6 +206,11 @@ let agentServer: AgentSocketServer | null = null
 let chatService: ChatService | null = null
 /** Kept at module level so will-quit can stop every workspace watcher. */
 let workspaceServiceRef: WorkspaceService | null = null
+let threadService: ThreadService | null = null
+/** Assigned once the vault IPC section below runs; read by the thread flush
+ * hook (D-25), which is wired earlier — the closure captures this binding by
+ * reference, not by the value at wiring time. */
+let vaultService: VaultService | null = null
 
 /** A tree id is exactly what the registry mints: `sha256:` + 64 hex digits. */
 const TREE_ID_PATTERN = /^sha256:[0-9a-f]{64}$/
@@ -304,6 +312,39 @@ app.whenReady().then(async () => {
     beforeReplay: (treeId) => (isWorkspaceTree(treeId) ? WORKSPACE_REPLAY_REFUSAL : null),
   })
 
+  // Thread IPC (D-06): the single write authority for every open thread.
+  // notifyConfirmed reaches every window, not just the one that pushed the
+  // steps that triggered the flush -- the same broadcast shape as
+  // 'tree-changed' below.
+  threadService = new ThreadService()
+  ThreadIpc.registerHandlers(
+    ipcMain,
+    threadService,
+    resolveTree,
+    getHumanActor,
+    (treeId, nodeId, version) => {
+      mainWindow?.webContents.send('thread:confirmed', treeId, nodeId, version)
+      // D-25: a vault thread's current text reaches its `.md` file on the
+      // same cadence as every other thread flush. `vaultService` is assigned
+      // later in this function (the vault IPC section below) — by the time
+      // a real flush ever fires, startup has long finished, so the closure
+      // sees the assigned value even though it reads `vaultService` before
+      // that line runs at parse time.
+      const tree = registry.get(treeId)
+      const node = tree?.bridge.getNode(nodeId)
+      if (tree && node && vaultService && threadService && isVaultThread(node)) {
+        writeVaultThreadFile(vaultService, threadService, tree.bridge, getHumanActor(), treeId, nodeId).catch(
+          (err) => {
+            console.error('[VaultThread] failed to sync the vault file:', err)
+          },
+        )
+      }
+    },
+    (treeId, nodeId, reason) => {
+      mainWindow?.webContents.send('thread:flush-error', treeId, nodeId, reason)
+    },
+  )
+
   // Discover and load plugins
   const pluginsDir = join(app.getAppPath(), '..', 'plugins')
   pluginHost = new PluginHost(pluginsDir)
@@ -371,8 +412,9 @@ app.whenReady().then(async () => {
   })
   workspaceServiceRef = workspaceService
 
+  const agentNotes = new NoteCommands(registry, commandHooks)
   const agentCommands: AgentCommands = {
-    notes: new NoteCommands(registry, commandHooks),
+    notes: agentNotes,
     connections: new ConnectionCommands(registry, commandHooks),
     spatial: new SpatialCommands(registry, commandHooks),
     files: new WorkspaceFileCommands(workspaceService, {
@@ -384,6 +426,11 @@ app.whenReady().then(async () => {
         return true
       },
     }),
+    // D-20..D-24 thread tools (Plan 08): only available once threadService
+    // exists, which it always does by this point in startup -- guarded
+    // rather than asserted so a future reordering fails soft (a clear "not
+    // available" refusal) instead of a startup crash.
+    threads: threadService ? { registry, threadService, notes: agentNotes } : undefined,
   }
 
   agentServer = new AgentSocketServer({
@@ -892,7 +939,7 @@ app.whenReady().then(async () => {
    * The bridge runs here, in main, rather than as a plugin: it needs the
    * filesystem and the reserved `obsidian.bridge` actor a plugin may not claim.
    */
-  const vaultService = new VaultService(registry, {
+  vaultService = new VaultService(registry, {
     onStatus: (treeId, status) => {
       mainWindow?.webContents.send('vault-status', { treeId, ...status })
     },
@@ -930,7 +977,11 @@ app.whenReady().then(async () => {
       return { ok: false, error: 'Choose the vault folder with Add Obsidian Vault... first.' }
     }
 
-    return openIntoSpace(() => vaultService.addVault(target))
+    // Assigned above in this same startup; guarded so a reordering fails
+    // soft (02.3 D-25 reads the binding by reference for the thread flush).
+    const vaults = vaultService
+    if (!vaults) return { ok: false, error: 'Vault service is not ready yet' }
+    return openIntoSpace(() => vaults.addVault(target))
   })
 
   /** A watcher that cannot start must never fail adding or restoring a workspace. */
@@ -1104,6 +1155,9 @@ app.on('will-quit', () => {
     chatService.killAllNow()
     chatService = null
   }
+  // Flush every open thread's pending batch and checkpoint before the
+  // journal locks are released below -- a clean quit should lose nothing.
+  threadService?.closeAll()
   if (agentServer) {
     void agentServer.close()
     agentServer = null

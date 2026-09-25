@@ -275,3 +275,22 @@ export function getHoveredPassageAnchorId(
   const state = passagePluginKey.getState(view.state)
   return state?.activeAnchorId ?? null
 }
+
+// ---------------------------------------------------------------------------
+// The link command (D-02)
+// ---------------------------------------------------------------------------
+
+/**
+ * Applies a passage mark to `[from, to)` and tags the transaction
+ * `threadCause: 'link'` (D-02: "making a link ... drops a small marker on
+ * the line at that moment"). This is the thread typer's own link command --
+ * `use-prosemirror.ts`'s `applyPassageMark` remains the ordinary note
+ * editor's connection flow and is unaffected; the two share the same mark
+ * creation, not the same call site, because only a thread cares about
+ * tagging the cause.
+ */
+export function applyPassageLink(view: EditorView, anchorId: string, from: number, to: number): void {
+  const mark = view.state.schema.marks.passage.create({ anchorId })
+  const tr = view.state.tr.addMark(from, to, mark).setMeta('threadCause', 'link')
+  view.dispatch(tr)
+}

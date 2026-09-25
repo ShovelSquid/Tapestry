@@ -11,11 +11,16 @@
  * is Plan 10's half, deliberately separate from this one.
  */
 
+import { createHash } from 'crypto'
 import { existsSync, lstatSync } from 'fs'
-import { isAbsolute, resolve } from 'path'
+import { rename, writeFile } from 'fs/promises'
+import { basename, dirname, isAbsolute, join, resolve, sep } from 'path'
+import type { Actor } from '../commands/actor'
 import { OBSIDIAN_BRIDGE_ACTOR } from '../commands/actor'
+import type { NodeData } from '../kernel-bridge'
 import type { OpenTree, TreeEntry, TreeRegistry } from '../trees/registry'
 import { buildVaultModel, planReconcile, type ReconcileSummary } from './reconcile'
+import { MD_PATH, MD_SHA256, MD_TEXT } from './shapes'
 import { vaultTreeFiles, walkVault } from './vault-fs'
 
 // ---------------------------------------------------------------------------
@@ -192,6 +197,62 @@ export class VaultService {
     this.report(treeId, { kind: 'up-to-date', done: total, total })
   }
 
+  /**
+   * Writes `text` to a vault note's `.md` file and records the tree's own
+   * `md.text`/`md.sha256` to match (02.3-09 D-25) — the one and only place
+   * a byte ever moves from Tapestry into the vault. `threads/vault-thread.ts`
+   * calls this after a vault thread's `ThreadService` batch flushes; nothing
+   * else in the codebase writes to a vault file, matching this class's own
+   * header comment ("it never writes to a `.md` file" was true until this
+   * method existed to be that one path, not a second one beside it).
+   *
+   * A write whose sha256 already matches the tree's own record is skipped
+   * entirely (no file touch, no commit) — the same "an unchanged catch-up
+   * writes nothing" discipline `catchUp` already keeps, so Tapestry's own
+   * repeated flushes of unchanged text can never echo into the journal.
+   *
+   * The write is atomic (write a sibling temp file, then rename), and the
+   * temp name matches `vault-fs.ts`'s own `.*.tapestry-tmp` ignore pattern so
+   * a concurrent vault walk never trips over it mid-write.
+   */
+  async writeThreadFile(treeId: string, nodeId: string, text: string, actor: Actor): Promise<void> {
+    const tree = this.registry.get(treeId)
+    if (!tree || !tree.vaultRoot) {
+      throw new Error(`${treeId} is not an open vault tree`)
+    }
+    const node = tree.bridge.getNode(nodeId)
+    if (!node) {
+      throw new Error(`Unknown node ${nodeId} in ${tree.name}`)
+    }
+    const relPath = stringProp(node, MD_PATH)
+    if (!relPath) {
+      throw new Error(`${nodeId} has no ${MD_PATH}; it is not a mirrored vault note`)
+    }
+
+    const bytes = Buffer.from(text, 'utf-8')
+    const sha256 = createHash('sha256').update(bytes).digest('hex')
+    if (stringProp(node, MD_SHA256) === sha256) {
+      return
+    }
+
+    const root = resolve(tree.vaultRoot)
+    const abs = resolve(root, ...relPath.split('/'))
+    if (abs !== root && !abs.startsWith(root + sep)) {
+      throw new Error(`refusing to write outside the vault: ${relPath}`)
+    }
+
+    const tmp = join(dirname(abs), `.${basename(abs)}.${process.pid}-${Date.now()}.tapestry-tmp`)
+    await writeFile(tmp, bytes)
+    await rename(tmp, abs)
+
+    tree.bridge.submitAs(actor, `Thread write reaches ${relPath}`, [
+      { op: 'setProperty', target: nodeId, key: MD_TEXT, type: 'text', value: text },
+      { op: 'setProperty', target: nodeId, key: MD_SHA256, type: 'text', value: sha256 },
+    ])
+
+    this.hooks.onCommitted?.(treeId)
+  }
+
   // -------------------------------------------------------------------------
   // Internals
   // -------------------------------------------------------------------------
@@ -234,6 +295,12 @@ export class VaultService {
 
 function fail(message: string): never {
   throw new Error(message)
+}
+
+/** A node's own string property, or `null` when absent or a different type. */
+function stringProp(node: NodeData, key: string): string | null {
+  const prop = node.props[key]
+  return prop && typeof prop.value === 'string' ? prop.value : null
 }
 
 /**

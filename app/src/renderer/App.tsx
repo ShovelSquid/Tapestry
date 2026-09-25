@@ -28,7 +28,6 @@ import PluginSurfaceLayer, { SurfaceLauncher, type SurfaceInfo } from './compone
 import NamePromptDialog from './components/NamePromptDialog'
 import ChatPanel, { type ChatPanelState } from './components/ChatPanel'
 import { ContextMenuProvider } from './components/ContextMenu'
-import { useForest, type NodeRef } from './state/use-forest'
 import {
   EMPTY_FRAME_RUN,
   chooseUndoTarget,
@@ -39,6 +38,11 @@ import {
 } from './state/undo-target'
 import { ChatContext, chatWorkspaceFor, type ChatContextValue, type ChatTarget } from './state/chat'
 import { COLLAPSED_KEY, revealExpanded, settleSubspace, type DimsOf, type Point } from './layout/subspaces'
+import ThreadOverlay from './threads/ThreadOverlay'
+import { THREAD_TYPE } from './threads/ThreadCard'
+import { threadInitialProperties } from '../shared/threads/settings'
+import type { NodeInfo } from './components/Canvas'
+import { useForest, type ForestTree, type NodeRef } from './state/use-forest'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -46,6 +50,18 @@ import { COLLAPSED_KEY, revealExpanded, settleSubspace, type DimsOf, type Point 
 
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
+}
+
+/** Looks up a NodeRef's live node data, across whichever tree holds it. */
+function findNode(trees: ForestTree[], ref: NodeRef | null): NodeInfo | null {
+  if (!ref) return null
+  const tree = trees.find((t) => t.id === ref.treeId)
+  return tree?.nodes.find((n) => n.id === ref.nodeId) ?? null
+}
+
+function stringProp(node: NodeInfo | null, key: string): string {
+  const prop = node?.props[key]
+  return typeof prop?.value === 'string' ? prop.value : ''
 }
 
 /** A note's title, derived from its file name, for a newly created world. */
@@ -616,6 +632,65 @@ export default function App(): React.ReactElement {
   )
 
   // -----------------------------------------------------------------------
+  // Create a thread (D-01, D-27) and open its overlay to start typing.
+  // -----------------------------------------------------------------------
+
+  const createThread = useCallback(
+    async (treeId: string, x: number, y: number) => {
+      try {
+        const commitResult = await submitChange(treeId, 'Create thread', [
+          { op: 'createNode', type: THREAD_TYPE, props: threadInitialProperties(x, y) },
+        ])
+        await refreshTree(treeId)
+        if (commitResult.nodeIds && commitResult.nodeIds.length > 0) {
+          setEditingRef({ treeId, nodeId: commitResult.nodeIds[0] })
+        }
+      } catch (err) {
+        reportSaveError('Failed to create thread', err)
+      }
+    },
+    [submitChange, refreshTree, reportSaveError],
+  )
+
+  /**
+   * "Start a thread" (UI-SPEC's canvas-menu copy). A thread must belong to a
+   * tree (D-24), same as a note: with one already open, place it a fixed
+   * offset from the origin; with none open, ask where to save first, exactly
+   * like the canvas double-click flow above.
+   */
+  const handleNewThread = useCallback(async () => {
+    if (trees.length > 0) {
+      await createThread(trees[0].id, 40, 40)
+      return
+    }
+    const result = await window.tapestry.dialog.showSave()
+    if (result.canceled || !result.filePath) return
+
+    const created = await window.tapestry.trees.create(result.filePath, worldNameFromPath(result.filePath))
+    if (!created.ok || !created.treeId) {
+      showAppError(`Could not create world: ${created.error ?? 'unknown error'}`)
+      return
+    }
+    await refreshAll()
+    await createThread(created.treeId, 0, 0)
+  }, [trees, createThread, refreshAll, showAppError])
+
+  /**
+   * "Start a thread" from the canvas menu: in the frame under the pointer, at
+   * that spot; outside every frame, the same fallback as the button had.
+   */
+  const handleStartThread = useCallback(
+    async (target: DoubleClickTarget) => {
+      if (target.treeId !== null) {
+        await createThread(target.treeId, target.x, target.y)
+        return
+      }
+      await handleNewThread()
+    },
+    [createThread, handleNewThread],
+  )
+
+  // -----------------------------------------------------------------------
   // Note edits. Each names its tree, so a commit lands in one journal.
   // -----------------------------------------------------------------------
 
@@ -1106,6 +1181,11 @@ export default function App(): React.ReactElement {
   // a name exists, which is exactly while the first-run prompt is up.
   const currentUserActorId = userName !== null ? `user.${userName}` : null
 
+  // A thread being edited opens the D-09 overlay instead of inline editing
+  // (ThreadCard renders no editor of its own).
+  const editingNode = findNode(trees, editingRef)
+  const isEditingThread = editingRef !== null && editingNode?.type === THREAD_TYPE
+
   return (
     // One pair of live regions for the whole space, mounted above everything
     // that announces into them (UI-SPEC screen-reader announcements).
@@ -1176,6 +1256,7 @@ export default function App(): React.ReactElement {
               onStartEditing={(ref) => setEditingRef(ref)}
               onStopEditing={() => setEditingRef(null)}
               onCanvasDoubleClick={handleCanvasDoubleClick}
+              onStartThread={handleStartThread}
               onSelectedNoteChange={setSelectedRef}
               onSave={handleNoteSave}
               onMarkDirty={markDirty}
@@ -1196,6 +1277,17 @@ export default function App(): React.ReactElement {
               revealedFolders={revealedFolders}
               openRequest={openRequest}
             />
+
+            {/* D-09 live writing view: the typer on top, the canvas dimmed behind. */}
+            {isEditingThread && editingRef && (
+              <ThreadOverlay
+                treeId={editingRef.treeId}
+                nodeId={editingRef.nodeId}
+                title={stringProp(editingNode, 'title')}
+                checkpointBody={stringProp(editingNode, 'body')}
+                onClose={() => setEditingRef(null)}
+              />
+            )}
 
             {/* Claude beside the canvas, for one workspace (02.7 D-12) */}
             {chatPanel !== null && <ChatPanel state={chatPanel} />}

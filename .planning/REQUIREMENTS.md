@@ -16,16 +16,16 @@ The first phase must prove an actual plugin-authored interaction and readable sa
 
 - [ ] **PLUG-01**: Developer can create and locally load a plugin from a documented starter without modifying or rebuilding the core.
 - [ ] **PLUG-02**: Developer can register node schemas, commands and property/UI contributions through a versioned public API.
-- [ ] **PLUG-03**: Bundled feature plugins use the same public API and lifecycle as third-party plugins.
-- [ ] **PLUG-04**: User can enable or disable a plugin and still inspect its persisted content through a readable fallback.
+- [x] **PLUG-03**: Bundled feature plugins use the same public API and lifecycle as third-party plugins.
+- [x] **PLUG-04**: User can enable or disable a plugin and still inspect its persisted content through a readable fallback.
 - [ ] **PLUG-05**: User receives a clear compatibility result when a plugin/API/schema version is unavailable; no silent behavior substitution occurs.
-- [ ] **PLUG-06**: Plugin-originated durable changes pass through validated, recorded core transactions; failed transactions leave the prior state intact.
+- [x] **PLUG-06**: Plugin-originated durable changes pass through validated, recorded core transactions; failed transactions leave the prior state intact.
 - [ ] **PLUG-07**: A failing or unloaded plugin releases its handlers and cannot prevent the base world from being opened.
 
 ### Spatial notebook
 
 - [ ] **NOTE-01**: User can create a text node, edit its title/body, save it and reopen the same content.
-- [ ] **NOTE-02**: User can select, copy, paste and compose text through normal keyboard and input-method interactions.
+- [x] **NOTE-02**: User can select, copy, paste and compose text through normal keyboard and input-method interactions.
 - [ ] **NOTE-03**: User can create and remove labeled connections between nodes and follow those relationships.
 - [ ] **NOTE-04**: User can pan, zoom, find a node by its text and bring it into a readable view.
 - [ ] **NOTE-05**: User can move any node and choose whether it is pinned or responds to movement rules.
@@ -41,14 +41,14 @@ The first phase must prove an actual plugin-authored interaction and readable sa
 
 ### History and replay
 
-- [ ] **HIST-01**: User can inspect an ordered history of accepted changes and navigate to an earlier state.
+- [x] **HIST-01**: User can inspect an ordered history of accepted changes and navigate to an earlier state.
 - [ ] **HIST-02**: User can edit an earlier state to create a new branch while retaining the original future.
 - [ ] **HIST-03**: User can name/select branches and see their parent/fork relationship.
 - [ ] **HIST-04**: User can replay a saved branch to the same verified core state within the declared engine/numeric compatibility envelope.
 - [ ] **HIST-05**: Replay consumes recorded AI/external outcomes and declared randomness without calling a live model or external service.
 - [ ] **HIST-06**: User can load from an optional compatible snapshot or replay from history and obtain the same state.
 - [ ] **HIST-07**: User can edit an event date or note contents without erasing its earlier values or changing historical recording order.
-- [ ] **HIST-08**: Continuous positions and other simulated values can be regenerated from recorded inputs and rules without a position entry for every frame.
+- [x] **HIST-08**: Continuous positions and other simulated values can be regenerated from recorded inputs and rules without a position entry for every frame.
 
 ### Interacting nodes
 
@@ -65,14 +65,14 @@ The first phase must prove an actual plugin-authored interaction and readable sa
 
 - [ ] **DRAW-01**: User can create and remove drawing strokes in world space alongside notes and retain them through save, replay and branching.
 - [ ] **DRAW-02**: User can associate a drawing with a node or related content.
-- [ ] **DRAW-03**: User can navigate dense or zoomed-out content and return to legible editable text without losing spatial orientation.
-- [ ] **DRAW-04**: User can operate essential editing, inspection and history controls without depending solely on hover or color.
+- [x] **DRAW-03**: User can navigate dense or zoomed-out content and return to legible editable text without losing spatial orientation.
+- [x] **DRAW-04**: User can operate essential editing, inspection and history controls without depending solely on hover or color.
 
 ### Origin and review
 
-- [ ] **PROV-01**: User can distinguish explicit user content from generated content at the relevant text passage/property level.
+- [x] **PROV-01**: User can distinguish explicit user content from generated content at the relevant text passage/property level.
 - [ ] **PROV-02**: User can accept or reject generated content while its generated origin remains permanently identifiable in history.
-- [ ] **PROV-03**: Editing mixed-origin content preserves attribution for unaffected content and records the authorship of new edits.
+- [x] **PROV-03**: Editing mixed-origin content preserves attribution for unaffected content and records the authorship of new edits.
 - [ ] **PROV-04**: User can inspect the source interaction or rule/input evidence behind a generated claim or state change.
 
 ### Conversational companion plugin
@@ -156,13 +156,13 @@ Each v1 requirement has one owning phase; later phases may exercise it through i
 |-------------|-------|--------|
 | PLUG-01 | Phase 2 | Pending |
 | PLUG-02 | Phase 2 | Pending |
-| PLUG-03 | Phase 2 | Pending |
-| PLUG-04 | Phase 2 | Pending |
+| PLUG-03 | Phase 2 | Complete |
+| PLUG-04 | Phase 2 | Complete |
 | PLUG-05 | Phase 2 | Pending |
-| PLUG-06 | Phase 2 | Pending |
+| PLUG-06 | Phase 2 | Complete |
 | PLUG-07 | Phase 2 | Pending |
 | NOTE-01 | Phase 4 | Pending |
-| NOTE-02 | Phase 4 | Pending |
+| NOTE-02 | Phase 4 | Complete |
 | NOTE-03 | Phase 4 | Pending |
 | NOTE-04 | Phase 4 | Pending |
 | NOTE-05 | Phase 4 | Pending |
@@ -172,14 +172,14 @@ Each v1 requirement has one owning phase; later phases may exercise it through i
 | TREE-02 | Phase 1 | Complete |
 | TREE-03 | Phase 1 | Complete |
 | TREE-04 | Phase 1 | Complete |
-| HIST-01 | Phase 3 | Pending |
+| HIST-01 | Phase 3 | Complete |
 | HIST-02 | Phase 3 | Pending |
 | HIST-03 | Phase 3 | Pending |
 | HIST-04 | Phase 3 | Pending |
 | HIST-05 | Phase 3 | Pending |
 | HIST-06 | Phase 3 | Pending |
 | HIST-07 | Phase 3 | Pending |
-| HIST-08 | Phase 3 | Pending |
+| HIST-08 | Phase 3 | Complete |
 | RULE-01 | Phase 5 | Pending |
 | RULE-02 | Phase 5 | Pending |
 | RULE-03 | Phase 5 | Pending |
@@ -190,11 +190,11 @@ Each v1 requirement has one owning phase; later phases may exercise it through i
 | RULE-08 | Phase 5 | Pending |
 | DRAW-01 | Phase 4 | Pending |
 | DRAW-02 | Phase 4 | Pending |
-| DRAW-03 | Phase 4 | Pending |
-| DRAW-04 | Phase 4 | Pending |
-| PROV-01 | Phase 4 | Pending |
+| DRAW-03 | Phase 4 | Complete |
+| DRAW-04 | Phase 4 | Complete |
+| PROV-01 | Phase 4 | Complete |
 | PROV-02 | Phase 4 | Pending |
-| PROV-03 | Phase 4 | Pending |
+| PROV-03 | Phase 4 | Complete |
 | PROV-04 | Phase 6 | Pending |
 | AI-01 | Phase 6 | Pending |
 | AI-02 | Phase 6 | Pending |

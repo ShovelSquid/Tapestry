@@ -1,0 +1,55 @@
+{
+  "results": [
+    {
+      "load": "1h",
+      "buildMs": 14.899999976158142,
+      "dots": 100549,
+      "glyphs": 3757,
+      "gpuBufferMB": 0.23059844970703125,
+      "privateMB": 79.5322265625,
+      "frames": 240,
+      "fps": 59.88023952095874,
+      "frameMedian": 16.699999999999818,
+      "frameP95": 18.299999999999727,
+      "frameP99": 18.5,
+      "frameWorst": 18.600000000000364,
+      "dropRate": 0,
+      "workMedian": 0.40000003576278687,
+      "workP95": 0.6000000238418579
+    },
+    {
+      "load": "8h",
+      "buildMs": 6.600000023841858,
+      "dots": 812236,
+      "glyphs": 28682,
+      "gpuBufferMB": 1.7586441040039062,
+      "privateMB": 85.8447265625,
+      "frames": 240,
+      "fps": 59.88023952095874,
+      "frameMedian": 16.699999999999818,
+      "frameP95": 17.600000000000364,
+      "frameP99": 18.5,
+      "frameWorst": 18.600000000000364,
+      "dropRate": 0,
+      "workMedian": 0.3999999761581421,
+      "workP95": 0.5
+    },
+    {
+      "load": "8h-continuous",
+      "buildMs": 6.5,
+      "dots": 1728000,
+      "glyphs": 61843,
+      "gpuBufferMB": 3.7794570922851562,
+      "privateMB": 90.5009765625,
+      "frames": 241,
+      "fps": 59.880239520962,
+      "frameMedian": 16.69999999999891,
+      "frameP95": 18.099999999998545,
+      "frameP99": 18.5,
+      "frameWorst": 18.700000000000728,
+      "dropRate": 0,
+      "workMedian": 0.30000001192092896,
+      "workP95": 0.5
+    }
+  ]
+}

@@ -37,6 +37,16 @@ interface TapestryHistoryIndex {
   edges: Record<string, TapestryEdgeHistory>
 }
 
+/** One value a property was ever set to, and the commit that set it
+ * (tapestry/kernel/PropertyValues.hpp `PropertyValueEntry`). */
+interface TapestryPropertyValueEntry {
+  seq: number
+  /** RFC 3339 UTC, whole seconds (the commit's own `recorded` stamp). */
+  recorded: string
+  actor: TapestryActorRef
+  value: { type: string; value: string | number | boolean }
+}
+
 /**
  * Kernel operations, each naming its tree first (D-15). A tree id is the
  * `sha256:<hex>` header digest the main process minted when it opened the file.
@@ -71,6 +81,12 @@ interface TapestryKernelAPI {
   getEdges(treeId: string): Promise<any[]>
   status(treeId: string): Promise<any>
   getHistoryIndex(treeId: string): Promise<TapestryHistoryIndex>
+  getPropertyValues(
+    treeId: string,
+    nodeId: string,
+    key: string,
+    fromSeq?: number,
+  ): Promise<TapestryPropertyValueEntry[]>
   undo(treeId: string): Promise<{ ok: boolean }>
   redo(treeId: string): Promise<{ ok: boolean }>
 }
@@ -290,6 +306,46 @@ interface TapestryAgentsAPI {
   setEnabled(enabled: boolean): Promise<{ ok: boolean; error?: string }>
 }
 
+/**
+ * Thread editing (D-06, D-09): the collab push/pull surface for
+ * ThreadService, the single write authority in main. No actor argument on
+ * `push` -- the main process stamps it, like `kernel.submit`.
+ */
+interface TapestryThreadOpenResult {
+  /** The collab version to start the renderer's `collab()` plugin at. */
+  version: number
+  /** ProseMirror JSON, replayed from `thread.log` records alone. Falls back
+   * to the `body` checkpoint alone when `unreadable` is true. */
+  doc: unknown
+  /** The number of `thread.log` values found on open (never an estimate). */
+  totalChanges: number
+  /** True when at least one `thread.log` value failed to parse: the thread
+   * stays read-only on the last checkpoint (T-02.3-03-01). */
+  unreadable?: boolean
+  /** Present when `unreadable` is true: why the parse failed. */
+  unreadableReason?: string
+}
+
+type TapestryThreadPushResult =
+  | { confirmed: true; version: number }
+  | { confirmed: false; missing: { steps: unknown[]; fromVersion: number } }
+  | { confirmed: false; rejected: true; reason: string }
+
+interface TapestryThreadAPI {
+  open(treeId: string, nodeId: string): Promise<TapestryThreadOpenResult>
+  push(
+    treeId: string,
+    nodeId: string,
+    version: number,
+    steps: unknown[],
+    times: number[],
+    causes: (string | null)[],
+  ): Promise<TapestryThreadPushResult>
+  close(treeId: string, nodeId: string): Promise<{ ok: boolean }>
+  /** D-22 (TA-07): the Authors legend's refused-change count, per actor id. */
+  getRefusedCounts(treeId: string, nodeId: string): Promise<Record<string, number>>
+}
+
 /** What an agent write into a rewound tree reports (UA-14). */
 interface TapestryRedoDiscarded {
   treeId: string
@@ -358,6 +414,7 @@ interface TapestryAPI {
   chat: TapestryChatAPI
   /** Something happened in a workspace's chat. */
   onChatEvent(callback: (payload: { treeId: string; event: TapestryChatEvent }) => void): () => void
+  thread: TapestryThreadAPI
   /** The set of open trees changed: one opened, one closed, or the space restored. */
   onTreesChanged(callback: () => void): () => void
   /** A commit landed in a tree from outside the renderer (an agent, a plugin). */
@@ -375,6 +432,10 @@ interface TapestryAPI {
   onPluginError(
     callback: (pluginName: string, displayName: string, message: string, canRestart: boolean) => void,
   ): () => void
+  /** A thread's pending batch was durably committed (D-06). */
+  onThreadConfirmed(callback: (treeId: string, nodeId: string, version: number) => void): () => void
+  /** A thread's flush was refused; the batch retries, but "Saved" would lie. */
+  onThreadFlushError(callback: (treeId: string, nodeId: string, reason: string) => void): () => void
 }
 
 interface Window {

@@ -177,7 +177,7 @@ describe('MCP shim over stdio', () => {
     }
   })
 
-  it('advertises exactly the fifteen tools, with no actor argument anywhere', async () => {
+  it('advertises exactly the twenty tools, with no actor argument anywhere', async () => {
     const listed = await request(2, 'tools/list', {})
     expect(listed.error).toBeUndefined()
 
@@ -189,11 +189,17 @@ describe('MCP shim over stdio', () => {
 
     // Exactly these, so a tool added later has to be a deliberate decision
     // rather than something that appeared in the agent's reach unnoticed.
+    // Plan 08 added the five D-20..D-24 thread tools alongside the original
+    // eight note/connection tools.
     expect([...tools.map((t) => t.name)].sort()).toEqual([
+      'append_to_thread',
       'connect_notes',
       'create_note',
+      'create_thread',
+      'delete_from_thread',
       'delete_note',
       'edit_file',
+      'insert_into_thread',
       'list_files',
       'list_trees',
       'look',
@@ -202,6 +208,7 @@ describe('MCP shim over stdio', () => {
       'read_file',
       'read_note',
       'rename_note',
+      'replace_in_thread',
       'search_notes',
       'update_note',
       'write_file',

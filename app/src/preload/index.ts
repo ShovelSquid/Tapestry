@@ -59,6 +59,13 @@ const tapestryAPI = {
     getHistoryIndex: (treeId: string): Promise<any> =>
       ipcRenderer.invoke('kernel:getHistoryIndex', treeId),
 
+    /** Every value `key` was ever set to on `nodeId`, in commit order — a
+     * generic kernel read capability (not thread-specific), used by
+     * FallbackNodeView to read a checkpoint's own `recorded` stamp even
+     * with the owning plugin disabled (PLUG-04). */
+    getPropertyValues: (treeId: string, nodeId: string, key: string, fromSeq?: number): Promise<any[]> =>
+      ipcRenderer.invoke('kernel:getPropertyValues', treeId, nodeId, key, fromSeq),
+
     undo: (treeId: string): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke('kernel:undo', treeId),
 
@@ -305,6 +312,32 @@ const tapestryAPI = {
   },
 
   /**
+   * Thread editing (D-06, D-09): the collab push/pull surface for the single
+   * write authority in main. No actor argument on `push` -- the main process
+   * stamps `human user.<name>` from the stored settings, exactly like
+   * `kernel.submit`.
+   */
+  thread: {
+    open: (treeId: string, nodeId: string): Promise<any> => ipcRenderer.invoke('thread:open', treeId, nodeId),
+
+    push: (
+      treeId: string,
+      nodeId: string,
+      version: number,
+      steps: unknown[],
+      times: number[],
+      causes: (string | null)[],
+    ): Promise<any> => ipcRenderer.invoke('thread:push', treeId, nodeId, version, steps, times, causes),
+
+    close: (treeId: string, nodeId: string): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke('thread:close', treeId, nodeId),
+
+    /** D-22 (TA-07): the Authors legend's refused-change count, per actor id. */
+    getRefusedCounts: (treeId: string, nodeId: string): Promise<Record<string, number>> =>
+      ipcRenderer.invoke('thread:getRefusedCounts', treeId, nodeId),
+  },
+
+  /**
    * Listen for changes to the set of open trees — one opened, one closed, or
    * the space restored at launch. Carries no payload: the renderer re-reads
    * the list, so it can never hold half an update.
@@ -444,6 +477,32 @@ const tapestryAPI = {
     }
     ipcRenderer.on('plugin-error', handler)
     return () => ipcRenderer.removeListener('plugin-error', handler)
+  },
+
+  /**
+   * A thread's pending batch was durably committed (D-06). Fired for every
+   * open window watching that thread, not just the one that typed the
+   * letters -- the overlay uses this to retire "Saving…" to "Saved".
+   */
+  onThreadConfirmed: (callback: (treeId: string, nodeId: string, version: number) => void): (() => void) => {
+    const handler = (_event: IpcRendererEvent, treeId: string, nodeId: string, version: number) => {
+      callback(treeId, nodeId, version)
+    }
+    ipcRenderer.on('thread:confirmed', handler)
+    return () => ipcRenderer.removeListener('thread:confirmed', handler)
+  },
+
+  /**
+   * A thread's flush was refused (T-02.3-02-06): the batch stays pending and
+   * keeps retrying, but the overlay must show "Not saved" rather than
+   * implying the letters are safely on disk.
+   */
+  onThreadFlushError: (callback: (treeId: string, nodeId: string, reason: string) => void): (() => void) => {
+    const handler = (_event: IpcRendererEvent, treeId: string, nodeId: string, reason: string) => {
+      callback(treeId, nodeId, reason)
+    }
+    ipcRenderer.on('thread:flush-error', handler)
+    return () => ipcRenderer.removeListener('thread:flush-error', handler)
   },
 }
 

@@ -23,6 +23,7 @@ import type { WorkspaceFileCommands } from './file-tools'
 import { NO_WORKSPACE_MESSAGE } from '../workspace/sandbox'
 import type { WherePlacement } from '../../renderer/layout/placement'
 import { TOOL_DEFINITIONS } from '../mcp/schemas'
+import { runThreadTool, THREAD_NODE_TYPE, THREAD_TOOL_DEFINITIONS, type ThreadToolCommands } from '../threads/thread-tools'
 
 /**
  * The command layer an agent reaches: notes, the connections between them,
@@ -34,6 +35,13 @@ export interface AgentCommands {
   spatial: SpatialCommands
   /** Workspace file tools (02.7); absent means no workspace can be open. */
   files?: WorkspaceFileCommands
+  /**
+   * The five D-20..D-24 thread tools (Plan 08). Optional so a caller that
+   * only needs the base note/connection tools (e.g. a test harness with no
+   * ThreadService) is not forced to wire one in — a thread tool call is then
+   * refused with a clear message rather than this module throwing.
+   */
+  threads?: ThreadToolCommands
 }
 
 /** Flatten a zod failure into one readable line. */
@@ -60,6 +68,16 @@ export function runAgentTool(
 ): CommandResult<unknown> {
   const definition = TOOL_DEFINITIONS.find((d) => d.name === tool)
   if (!definition) {
+    // Not one of the base note/connection tools -- try the D-20..D-24
+    // thread tools before giving up. THREAD_TOOL_DEFINITIONS re-validates
+    // args itself (the same "never trust the shim" discipline this module
+    // applies above), so no schema lookup happens twice here.
+    if (THREAD_TOOL_DEFINITIONS.some((d) => d.name === tool)) {
+      if (!commands.threads) {
+        return { ok: false, error: 'Thread tools are not available' }
+      }
+      return runThreadTool(commands.threads, actor, tool, args)
+    }
     return { ok: false, error: `Unknown tool: ${tool}` }
   }
 
@@ -95,11 +113,29 @@ export function runAgentTool(
         parsed.data as { tree: string; grewFrom: string; title: string; text: string; where?: WherePlacement },
       )
 
-    case 'update_note':
-      return commands.notes.updateNote(
-        actor,
-        parsed.data as { tree: string; note: string; text: string },
-      )
+    case 'update_note': {
+      const updateArgs = parsed.data as { tree: string; note: string; text: string }
+      // T-02.3-08-02: update_note's whole-body rewrite would otherwise
+      // bypass D-22's per-letter rule entirely. Routed to a plain refusal
+      // for a thread node; the thread tools above are the only way to
+      // change a thread's text. Best-effort: an unresolvable tree/note is
+      // left for commands.notes.updateNote's own, better-scoped error.
+      if (commands.threads) {
+        try {
+          const tree = commands.threads.registry.resolveRef(updateArgs.tree)
+          const node = tree.bridge.getNode(updateArgs.note)
+          if (node && node.type === THREAD_NODE_TYPE) {
+            return {
+              ok: false,
+              error: `${updateArgs.note} is a thread; use append_to_thread, insert_into_thread, replace_in_thread or delete_from_thread instead of update_note`,
+            }
+          }
+        } catch {
+          // Fall through to updateNote's own resolution/error handling.
+        }
+      }
+      return commands.notes.updateNote(actor, updateArgs)
+    }
 
     case 'rename_note':
       return commands.notes.renameNote(

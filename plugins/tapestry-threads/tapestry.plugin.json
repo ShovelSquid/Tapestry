@@ -1,0 +1,10 @@
+{
+  "name": "tapestry-threads",
+  "version": "1",
+  "displayName": "Threads",
+  "main": "index.js",
+  "api": "1",
+  "contributions": {
+    "nodeTypes": ["tapestry.threads/thread@1"]
+  }
+}

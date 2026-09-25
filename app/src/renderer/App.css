@@ -1,5 +1,59 @@
 /* Tapestry App -- visual values from UI-SPEC.md */
 
+/* Design tokens (02.3-time-threads UI-SPEC "Theming"): most of this file
+   still uses raw hex per-component, matching the rest of the app; this
+   token is introduced for ThreadNotice.tsx specifically, whose failure
+   copy must never carry a raw hex literal at its own use site. */
+:root {
+  /* #B4232A: 6.00:1 on --tap-paper (#F7F5F0), 6.53:1 on --tap-surface
+     (#FFFFFF) -- AA and AAA for normal text (UI-SPEC TA-20). */
+  --tap-destructive-text: #B4232A;
+  /* UI-SPEC "Secondary (30%)": the surface ThreadNotice's card sits on. */
+  --tap-surface: #FFFFFF;
+  /* UI-SPEC "Non-text contrast audit" (TA-19): 3.16:1 on --tap-paper --
+     passes the 3:1 graphics floor, unlike 02.1's --tap-line (2.06:1), which
+     stays for borders and dashed rules where the 02.2 non-text exemption
+     still holds. The thread line, strands and pause stretches read this
+     token; stage/tokens.ts reads it into a shader uniform. */
+  --tap-thread-line: #8E8A80;
+  /* Read by stage/tokens.ts for stage glyphs, dots and the live camera's
+     near-white text. #2C2C2C matches the app's existing ink colour
+     (App.css body rule below), named here so the stage never repeats the
+     literal. */
+  --tap-ink: #2C2C2C;
+  /* Read by stage/tokens.ts for Label-role, catch-up and stage-build status
+     text. #6B6B6B matches the app's existing muted colour (used throughout
+     this file for Label-role text). */
+  --tap-muted: #6B6B6B;
+  /* UI-SPEC "Dominant (60%)": the canvas background and the thread overlay
+     surface -- read by stage/tokens.ts for the stage's paper background. */
+  --tap-paper: #F7F5F0;
+  /* UI-SPEC "Accent (10%)": the now-head cap and its stage uses. Matches
+     the accent colour already used throughout this file. */
+  --tap-accent: #4A7CFF;
+  /* UI-SPEC "Color" table: the border colour already used as an inline
+     fallback (e.g. ThreadOverlay.tsx's close button) but never declared as
+     a token until now (02.3-06). */
+  --tap-border: #E0DDD7;
+  /* UI-SPEC "Color" table, "Secondary, sunk": a session pill that is
+     currently being read (SessionBridge.tsx, SessionList.tsx). */
+  --tap-surface-sunk: #F0EDE8;
+
+  /* UI-SPEC "Author identity" (D-21, L-4, L-7, 02.3-08): the provenance
+     palette, reused verbatim from 02.1's user text-colour palette so this
+     phase adds no new hues. Ratios computed against --tap-paper (#F7F5F0),
+     not #FFFFFF. Colour is a display mapping derived from the commit's own
+     actor id -- never written to `.tree` (author-palette.ts is the pure
+     mapping; nothing here is document data). */
+  --tap-author-self: #2C2C2C;    /* Kaelen (human.*): 12.82:1 */
+  --tap-author-1: #CD2B74;       /* 1st connected agent: 4.60:1 */
+  --tap-author-2: #18794E;       /* 2nd: 4.96:1 */
+  --tap-author-3: #AD5700;       /* 3rd: 4.66:1 */
+  --tap-author-4: #6E56CF;       /* 4th: 4.95:1 */
+  --tap-author-5: #D13415;       /* 5th: 4.57:1 */
+  --tap-author-unknown: #6B6B6B; /* observed edits, an agent beyond the 5th cycles back to --tap-author-1; this token is only for a truly unattributable author: 4.89:1 */
+}
+
 /* Reset */
 *, *::before, *::after {
   margin: 0;
@@ -575,9 +629,9 @@ html, body, #root {
   border-radius: 2px;
 }
 
-/* ---- Thread center node (D-16/D-17/D-18) ---- */
+/* ---- Knot node (D-16/D-17/D-18) ---- */
 
-.thread-center-node {
+.knot-node {
   background: #ffffff;
   border: 1.5px solid #C8C5BE;
   border-radius: 8px;
@@ -586,19 +640,19 @@ html, body, #root {
   transition: border-color 150ms ease, box-shadow 150ms ease, opacity 150ms ease;
 }
 
-.thread-center-node.ghost {
+.knot-node.ghost {
   opacity: 0;
   pointer-events: none;
 }
 
-.thread-center-node.hovered,
-.thread-center-node.ghost.hovered {
+.knot-node.hovered,
+.knot-node.ghost.hovered {
   opacity: 1;
   pointer-events: auto;
   border-color: #4A7CFF;
 }
 
-.thread-center-node.editing {
+.knot-node.editing {
   opacity: 1;
   pointer-events: auto;
   border-color: #4A7CFF;
@@ -606,18 +660,18 @@ html, body, #root {
   cursor: default;
 }
 
-.thread-center-editor {
+.knot-editor {
   min-height: 28px;
   font-size: 13px;
   line-height: 1.5;
 }
 
-.thread-center-editor .ProseMirror {
+.knot-editor .ProseMirror {
   outline: none;
   min-height: 28px;
 }
 
-.thread-center-editor .ProseMirror p {
+.knot-editor .ProseMirror p {
   margin: 0;
 }
 
@@ -628,24 +682,24 @@ html, body, #root {
  * editor's overflow, so bullets and numbers were invisible. */
 .tapestry-note-editor .ProseMirror ul,
 .tapestry-note-editor .ProseMirror ol,
-.thread-center-editor .ProseMirror ul,
-.thread-center-editor .ProseMirror ol {
+.knot-editor .ProseMirror ul,
+.knot-editor .ProseMirror ol {
   padding-left: 1.5em;
   margin: 0 0 4px 0;
 }
 
 .tapestry-note-editor .ProseMirror ul,
-.thread-center-editor .ProseMirror ul {
+.knot-editor .ProseMirror ul {
   list-style-type: disc;
 }
 
 .tapestry-note-editor .ProseMirror ol,
-.thread-center-editor .ProseMirror ol {
+.knot-editor .ProseMirror ol {
   list-style-type: decimal;
 }
 
 .tapestry-note-editor .ProseMirror li > p,
-.thread-center-editor .ProseMirror li > p {
+.knot-editor .ProseMirror li > p {
   margin: 0;
 }
 
@@ -1727,4 +1781,59 @@ html, body, #root {
 .tapestry-ask-claude-button:focus-visible {
   outline: 2px solid #4A7CFF;
   outline-offset: 2px;
+/* 02.3-07: every new side-view navigation control (the date scrubber, the
+   stage's own focus point) gets the identical 2px accent ring at 2px offset
+   (UI-SPEC "Keyboard map": ":focus-visible rings are 2px accent at 2px
+   offset on every new control"). */
+.tap-thread-scrubber:focus-visible,
+.tap-thread-nav-focusable:focus-visible {
+  outline: 2px solid var(--tap-accent);
+  outline-offset: 2px;
+}
+
+/* 02.3-07: the side view's read-only past stage (D-08, D-18) -- 1px solid
+   --tap-thread-line border, caret hidden. The typer keeps its own surface
+   and Body type; only the border and caret change (UI-SPEC "Side view
+   read-back": "Past stage (read-only) treatment"). */
+.tap-thread-past-stage {
+  border: 1px solid var(--tap-thread-line) !important;
+  caret-color: transparent;
+}
+
+/* 02.3-08 (D-21, UI-SPEC "Revealing the underlay without striping the
+   typer"): the author underlay is always present in the DOM as a
+   `.tap-author-underlay` decoration (use-thread-editor.ts always builds it),
+   but its wash is only ever drawn under one of the three reveal routes --
+   holding Opt (`.tap-reveal-authors`, toggled by a window keydown/keyup
+   listener), hovering the run itself, or a future "always on" settings
+   toggle (not yet wired -- Known Stub). The default state is a plain
+   underline in the author's own pattern (DRAW-04: colour is never the only
+   cue), never a plain reading surface with no cue at all. */
+.tap-author-underlay {
+  text-decoration-color: var(--tap-author-underlay-color);
+  transition: background-color 120ms ease;
+}
+.tap-reveal-authors .tap-author-underlay,
+.tap-author-underlay:hover {
+  background-color: color-mix(in srgb, var(--tap-author-underlay-color) 18%, transparent);
+}
+
+/* 02.3-07: this phase's first prefers-reduced-motion rule (UI-SPEC "Motion
+   and prefers-reduced-motion": "No reduced-motion rule exists in the
+   renderer today ... this phase introduces the first one"). The stage's own
+   per-frame streaming and fly-to interpolation are gated in JS
+   (ThreadOverlay.tsx / navigation.ts's `flyTo` reducedMotion option); this
+   CSS rule covers everything else the renderer draws with a transition or
+   animation -- transient chips, hover/press easing, and any future
+   CSS-driven motion -- with the standard "kill all CSS motion" pattern, so a
+   new component never has to remember to add its own reduced-motion
+   exception (UI-SPEC: "Nothing is removed by reduced motion -- only the
+   movement between states"). */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

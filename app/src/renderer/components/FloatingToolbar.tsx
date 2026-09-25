@@ -3,7 +3,7 @@
  *
  * Hover-expand submenus stay open while pointer is inside, collapse after
  * 300ms delay on leaving (D-25). Works identically in NoteCard and
- * ThreadCenterNode editors (D-26).
+ * KnotNode editors (D-26).
  */
 
 import React, { useCallback, useEffect, useReducer, useRef, useState } from 'react'

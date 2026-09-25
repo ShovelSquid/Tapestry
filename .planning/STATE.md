@@ -23,7 +23,7 @@ progress:
 See: .planning/PROJECT.md (updated 2026-09-08)
 
 **Core value:** Your world of thoughts must remain readable and under your control — in its spatial interface, its editable relationships and behavior, and its files and branching history.
-**Current focus:** ws/mergin, the integration branch (merged 2026-09-24): 02.6 Placement Edges (10/10, human_needed), 02.7 File Windows (6/7, 02.7-07 parked), Data Drawing phase 01 (8/8, human_needed) and mathspace (all 7 phases headless) are in; 02.3 Time Threads follows. Queued human checks live in autonomy/<branch>/REVIEW.md. Workspace trees are forest members (`kind` workspace, `workspace.root.hint`) pending Kaelen's approval of those names
+**Current focus:** ws/mergin, the integration branch (merged 2026-09-24): 02.6 Placement Edges (10/10, human_needed), 02.7 File Windows (6/7, 02.7-07 parked), Data Drawing phase 01 (8/8, human_needed) and mathspace (all 7 phases headless) and 02.3 Time Threads (9/9, phase verification next) are in. Queued human checks live in autonomy/<branch>/REVIEW.md. Workspace trees are forest members (`kind` workspace, `workspace.root.hint`) pending Kaelen's approval of those names
 
 ## Current Position
 
@@ -33,7 +33,7 @@ Status: Ready to execute 02.7-07
 Phase 02.4 (Lock Model): COMPLETE — verified 25/25, 2026-09-16; rebased onto the main line 2026-09-23
 Last activity: 2026-09-24 - Completed 02.7-06 (live watching, watch status, Retry write, scale: import 166 ms, idle reconcile reads 0, reopen 33 ms after 202 commits); 38 files / 681 tests
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [███████░░░] 76%
 
 ## Performance Metrics
 
@@ -167,6 +167,7 @@ Recent decisions affecting current work:
 - [Research] `.tree` framing/readability with real long notes, canonical hashing of unknown extension fields, and durability failure-injection design need deeper research during Phase 1 planning
 - [Research] Phase 2 needs Electron version pinning, per-plugin isolation design, and ProseMirror forge/release verification before install
 - [Research] Rule numeric contract (ranges, rounding, tick interval) needs targeted spikes during Phase 5 planning; prompt-injection boundary and policy precedence semantics during Phase 6 planning
+- [Resolved 2026-09-24] Phase 02.3 Plan 09's precondition block (vault-service.ts missing) was resolved when the orchestrator cherry-picked 02.2 Plans 06-08 onto this branch. Plan 09 then executed and found a second, narrower gap the cherry-pick didn't cover: 02.2 Plan 10 (the vault's live filesystem watcher and its general Tapestry-to-vault write-back path) is still absent from this branch. Plan 09 built a narrowly-scoped writer (VaultService.writeThreadFile) directly rather than halting again -- see 02.3-09-SUMMARY.md's key-decisions and Deviations. Still open for whoever later cherry-picks or executes 02.2 Plan 10: point its author at VaultService.writeThreadFile before adding a second vault-write path of their own.
 
 ### Quick Tasks Completed
 

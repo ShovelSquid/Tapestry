@@ -124,6 +124,20 @@ export interface HistoryIndex {
 }
 
 // ---------------------------------------------------------------------------
+// Property values: every value one key was ever set to (D-06)
+// ---------------------------------------------------------------------------
+
+/** One value a property was ever set to, and the commit that set it
+ * (tapestry/kernel/PropertyValues.hpp `PropertyValueEntry`). */
+export interface PropertyValueEntry {
+  seq: number
+  /** RFC 3339 UTC, whole seconds (the commit's own `recorded` stamp). */
+  recorded: string
+  actor: ActorRef
+  value: { type: string; value: string | number | boolean }
+}
+
+// ---------------------------------------------------------------------------
 // KernelBridge
 // ---------------------------------------------------------------------------
 
@@ -260,6 +274,16 @@ export class KernelBridge {
   getHistoryIndex(): HistoryIndex {
     this.ensureLoaded()
     return this.instance.getHistoryIndex(this.currentSeq)
+  }
+
+  /**
+   * Every value `key` was ever set to on `nodeId`, in commit order
+   * (D-06: a thread's `thread.log` blocks, read back on reopen). A read-only
+   * scan over the journal — adds no verb and no value type.
+   */
+  getPropertyValues(nodeId: string, key: string, fromSeq?: number): PropertyValueEntry[] {
+    this.ensureLoaded()
+    return this.instance.getPropertyValues(nodeId, key, fromSeq)
   }
 
   /**
@@ -442,6 +466,21 @@ export class KernelBridge {
     ipcMain.handle('kernel:getHistoryIndex', (_event: any, treeId: unknown) => {
       return resolveTree(treeId).getHistoryIndex()
     })
+
+    // A generic kernel read capability, not thread-specific (02.3-02's own
+    // conclusion): every value one property key was ever set to, in commit
+    // order. Registered here rather than gated behind any plugin, so a
+    // fallback view can read a checkpoint's own `recorded` stamp even with
+    // the plugin that understands the rest of the node disabled (PLUG-04).
+    ipcMain.handle(
+      'kernel:getPropertyValues',
+      (_event: any, treeId: unknown, nodeId: unknown, key: unknown, fromSeq?: unknown) => {
+        if (typeof nodeId !== 'string' || typeof key !== 'string') {
+          throw new Error('kernel:getPropertyValues expects (treeId, nodeId: string, key: string, fromSeq?: number)')
+        }
+        return resolveTree(treeId).getPropertyValues(nodeId, key, fromSeq as number | undefined)
+      },
+    )
 
     ipcMain.handle('kernel:undo', (_event: any, treeId: unknown) => {
       const bridge = resolveTree(treeId)

@@ -16,6 +16,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { layoutSize, screenDeltaToWorld } from '../layout/camera'
+import { THREAD_TYPE } from '../threads/ThreadCard'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -29,14 +30,17 @@ interface NodeInfo {
 
 interface FallbackNodeViewProps {
   node: NodeInfo
+  /** Needed only to read a thread's checkpoint `recorded` stamp (PLUG-04) —
+   * every other kernel read this view needs is already on `node.props`. */
+  treeId: string
+  isSelected: boolean
+  isHovered: boolean
+  zoom: number
   /**
    * Where a following note is drawn, beside its grew-from parent (D-05). Set
    * only for a following note; every other note keeps its stored position.
    */
   displayPosition?: { x: number; y: number }
-  isSelected: boolean
-  isHovered: boolean
-  zoom: number
   /**
    * The drawn camera roll, in degrees. With zoom, it turns screen deltas into
    * world deltas, so a drag stays under the pointer on a rolled canvas.
@@ -49,6 +53,16 @@ interface FallbackNodeViewProps {
   onRegisterDims: (id: string, width: number, height: number) => void
   /** Called when a property is edited inline (D-35). */
   onPropertyEdit?: (nodeId: string, key: string, type: string, value: string | number | boolean) => void
+}
+
+/** "[date], [time]" per the UI-SPEC no-plugin fallback notice, from an RFC
+ * 3339 `recorded` stamp. */
+function formatRecordedLabel(recorded: string): string {
+  const date = new Date(recorded)
+  if (Number.isNaN(date.getTime())) return recorded
+  const datePart = date.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })
+  const timePart = date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+  return `${datePart}, ${timePart}`
 }
 
 // ---------------------------------------------------------------------------
@@ -163,6 +177,7 @@ function EditableValue({
 export default function FallbackNodeView({
   node,
   displayPosition,
+  treeId,
   isSelected,
   // isHovered is accepted (Canvas passes it) but the fallback view has no
   // hover-only affordance yet, so it is intentionally not destructured.
@@ -181,6 +196,33 @@ export default function FallbackNodeView({
   const px = displayPosition ? displayPosition.x : Number(node.props['position.x']?.value ?? 0)
   const py = displayPosition ? displayPosition.y : Number(node.props['position.y']?.value ?? 0)
   const [localPos, setLocalPos] = useState({ x: px, y: py })
+
+  // PLUG-04 / D-33 / D-35: a thread node whose plugin is disabled still
+  // shows its `body` checkpoint text as the primary content, with a notice
+  // naming when that checkpoint was last saved. The date/time comes from
+  // the checkpoint commit's own `recorded` stamp, not the node's generic
+  // "last changed" history (which would also be bumped by every thread.log
+  // flush and therefore name the wrong moment -- see 02.3-03-PLAN.md Task 3).
+  const isThread = node.type === THREAD_TYPE
+  const [bodyRecorded, setBodyRecorded] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!isThread) return
+    let cancelled = false
+    window.tapestry.kernel
+      .getPropertyValues(treeId, node.id, 'body')
+      .then((entries) => {
+        if (cancelled) return
+        const last = entries[entries.length - 1]
+        setBodyRecorded(last ? last.recorded : null)
+      })
+      .catch(() => {
+        if (!cancelled) setBodyRecorded(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [isThread, treeId, node.id])
 
   // Sync from props when not dragging
   useEffect(() => {
@@ -243,13 +285,21 @@ export default function FallbackNodeView({
     [node.id, onPropertyEdit],
   )
 
-  // Filter out position props from display (they're not useful to show)
+  // Filter out position props from display (they're not useful to show).
+  // A thread's `body` is also pulled out of the generic list: it gets its
+  // own prominent, non-truncated, non-input rendering above the rest (PLUG-04)
+  // instead of the click-to-edit monospace treatment every other value gets.
   const displayProps = Object.entries(node.props).filter(
-    ([key]) => key !== 'position.x' && key !== 'position.y' && key !== 'width',
+    ([key]) =>
+      key !== 'position.x' && key !== 'position.y' && key !== 'width' && !(isThread && key === 'body'),
   )
 
   // Extract plugin name from type (e.g. "example.physics/body@1" -> "example.physics")
   const pluginName = node.type.split('/')[0] || node.type
+  const threadBodyText = isThread ? String(node.props.body?.value ?? '') : ''
+  const threadNotice = bodyRecorded
+    ? `Thread history needs the Threads plugin. The text below is the last saved version of the document, from ${formatRecordedLabel(bodyRecorded)}.`
+    : 'Thread history needs the Threads plugin. The text below is the last saved version of the document.'
 
   const borderColor = isSelected ? '#4A7CFF' : '#E0DDD7'
   const borderWidth = isSelected ? 2 : 1
@@ -311,6 +361,42 @@ export default function FallbackNodeView({
       >
         {node.type}
       </div>
+
+      {/* PLUG-04 / D-33 / D-35: a thread's checkpoint text, above its other
+          typed properties -- never truncated, never rendered inside an
+          input, always selectable and copyable. */}
+      {isThread && (
+        <div style={{ padding: '0 12px 8px' }}>
+          <p
+            style={{
+              margin: '0 0 8px',
+              fontSize: 12,
+              lineHeight: 1.4,
+              color: '#888',
+            }}
+          >
+            {threadNotice}
+          </p>
+          <div
+            className="fallback-thread-body"
+            style={{
+              whiteSpace: 'pre-wrap',
+              userSelect: 'text',
+              cursor: 'text',
+              fontSize: 16,
+              fontWeight: 400,
+              lineHeight: 1.5,
+              color: '#2C2C2C',
+              padding: '8px 0',
+              borderTop: '1px solid #F0F0F0',
+              borderBottom: '1px solid #F0F0F0',
+            }}
+            onPointerDown={(e) => e.stopPropagation()}
+          >
+            {threadBodyText}
+          </div>
+        </div>
+      )}
 
       {/* Properties (D-35: readable and editable) */}
       {displayProps.length > 0 && (
