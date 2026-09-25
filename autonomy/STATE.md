@@ -23,7 +23,11 @@ checklist:
 
 ## In progress
 
-(empty)
+- Plan - Line Lab v2, Part 1. Tasks 1-6 done and ticked (page
+  `~/Tree/Design/Line Lab/line-lab.src.html` rewritten; spec §1/§2a/§2b/§7
+  numbers). Next: Task 7 + 7b spec edits (Kaelen added 7b mid-session:
+  static line weight, circle/dot fixed on screen), then Task 8 build,
+  screenshot, Plugin Map. Check: `autonomy/checks/line-lab-v2/`.
 
 ## Blocked
 
