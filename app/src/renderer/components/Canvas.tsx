@@ -40,7 +40,7 @@ import {
   type FrameRect,
   type PositionedRect,
 } from '../layout/frames'
-import { buildFrameMoveBatch } from '../layout/frame-moves'
+import { buildFrameMoveBatch, originAfterFit } from '../layout/frame-moves'
 import { displayPositions, type DisplaySpot } from '../layout/placement'
 import { isZoomPinchDelta, normalizeWheelDelta, panDelta, zoomFactor } from '../layout/wheel'
 import {
@@ -487,6 +487,11 @@ function Canvas({
    * its notes load, so it measures minimum-size rects at the stored origins.
    * That keeps it deterministic across launches, so a relaunch asks for the
    * spot already stored and writes nothing (RESEARCH Pitfall 7).
+   *
+   * The fitted origin is applied only when main commits it (originAfterFit).
+   * A new renderer session re-runs this for every tree while main's fits are
+   * already spent, so a refused or failed fit leaves the frame where the
+   * forest has it (review WR-05).
    */
   useEffect(() => {
     if (trees.length === 0) return
@@ -512,8 +517,14 @@ function Canvas({
       const spot = placeNewFrame(others)
       const x = tree.frame.x + (spot.x - mine.x)
       const y = tree.frame.y + (spot.y - mine.y)
-      onFrameMove(tree.id, x, y)
-      void window.tapestry.trees.fitFrame(tree.id, x, y)
+      const treeId = tree.id
+      void window.tapestry.trees.fitFrame(treeId, x, y).then(
+        (result) => {
+          const origin = originAfterFit(result, { x, y })
+          if (origin) onFrameMove(treeId, origin.x, origin.y)
+        },
+        (err: unknown) => console.error('Frame fit failed:', err),
+      )
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [trees, onFrameMove])

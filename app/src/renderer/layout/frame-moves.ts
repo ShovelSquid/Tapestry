@@ -52,3 +52,19 @@ export function buildFrameMoveBatch(
   displaced.sort((a, b) => (a.treeId < b.treeId ? -1 : a.treeId > b.treeId ? 1 : 0))
   return [dragged, ...displaced]
 }
+
+/**
+ * The fitted origin to show, or null when main did not commit it (2.6 D-12).
+ *
+ * Main allows one fit per member per main session, and never one over a
+ * frame the person moved, so a new renderer session (a reload, or a window
+ * re-created on macOS) can ask for a fit main refuses. The renderer shows a
+ * fit only once the forest holds it, so the screen and the forest never
+ * silently disagree (review WR-05).
+ */
+export function originAfterFit(
+  result: { ok: boolean; committed?: boolean; error?: string },
+  fitted: FramePosition,
+): FramePosition | null {
+  return result.ok && result.committed === true ? fitted : null
+}
