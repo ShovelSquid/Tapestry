@@ -13,3 +13,10 @@ driver recorded is lost:
 `ws/02.3-time-threads` ran without a driver. To run a driver here again, copy
 one folder's `run.sh`, `watch.py` and `PROTOCOL.md` up to this directory and
 write a fresh `PROMPT.md` naming `ws/mergin`.
+
+## ws/ui
+
+On `ws/ui` (worktree `~/Tapestrees/ui`), the top-level `autonomy/` is a live
+driver again. It works through the plans in `~/Tree/Design` marked
+`status: ready for autonomy`; see `PROTOCOL.md`. The per-branch folders
+above are history.
