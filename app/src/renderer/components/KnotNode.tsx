@@ -23,7 +23,8 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import type { EditorView } from 'prosemirror-view'
 import { useProseMirror } from '../editor/use-prosemirror'
 import { tapestrySchema } from '../editor/schema'
-import FloatingToolbar from './FloatingToolbar'
+import { FormatPill, useTextSelected } from '../look/FormatBar'
+import { seedFromId } from '../look/ink'
 import { layoutSize, screenDeltaToWorld } from '../layout/camera'
 
 interface KnotProps {
@@ -202,6 +203,10 @@ export default function KnotNode({
     [onStartEditing],
   )
 
+  // The format pill (Line Lab v2 wave 3) sits on the knot's top edge while
+  // text in it is selected; a knot has no corner buttons to open it from.
+  const textSelected = useTextSelected(isEditing ? editorView : null)
+
   const isEmpty = !bodyHasText(body)
   const showOnlyOnHover = isEmpty && !isEditing
 
@@ -231,8 +236,10 @@ export default function KnotNode({
       onMouseLeave={() => onHover(false)}
     >
       <div ref={editorRef} className="knot-editor" />
-      {/* Floating formatting toolbar (D-24/D-26) */}
-      {isEditing && <FloatingToolbar view={editorView} containerRef={cardRef} zoom={zoom} roll={roll} />}
+      {/* The format pill (D-24/D-26) */}
+      {isEditing && textSelected && editorView && (
+        <FormatPill view={editorView} seed={seedFromId(nodeId)} x={8} y={-18} minW={KNOT_WIDTH - 16} h={28} />
+      )}
     </div>
   )
 }

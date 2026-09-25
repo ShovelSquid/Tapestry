@@ -54,6 +54,8 @@ export interface LookValues {
     readonly particleCooldownMs: number
     /** Note ↔ circle ↔ dot crossfade. */
     readonly formCrossfadeMs: number
+    /** The note flipping to its settings and back, each way. */
+    readonly noteFlipMs: number
   }
 }
 
@@ -88,5 +90,6 @@ export const LOOK: LookValues = Object.freeze({
     particleKick: 0.45,
     particleCooldownMs: 120,
     formCrossfadeMs: 220,
+    noteFlipMs: 260,
   }),
 })

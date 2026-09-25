@@ -31,6 +31,7 @@ export const MOTION_EFFECTS = [
   'rifling',
   'textBob',
   'buttonSwell',
+  'noteFlip',
 ] as const
 export type MotionEffect = (typeof MOTION_EFFECTS)[number]
 

@@ -27,12 +27,13 @@
 import React, { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { EditorView } from 'prosemirror-view'
 import { useProseMirror } from '../editor/use-prosemirror'
-import FloatingToolbar from './FloatingToolbar'
 import { layoutSize, screenDeltaToWorld, screenToElementLocal } from '../layout/camera'
 import { inkShape, nearestT, seedFromId } from '../look/ink'
 import { InkLine } from '../look/InkLine'
 import { NoteInk, noteShape } from '../look/NoteInk'
 import { CornerCluster } from '../look/CornerCluster'
+import { FormatBar } from '../look/FormatBar'
+import { NoteSettings } from '../look/NoteSettings'
 import { DARK, aimLight, type LightTween } from '../look/bloom'
 import { bobScale, effectStrength, frameScheduler, readMotionSettings } from '../look/motion'
 import { LOOK } from '../look/values'
@@ -229,7 +230,7 @@ export default function NoteCard({
   })
 
   // The EditorView is created inside the hook's effect, so expose it as state
-  // for the FloatingToolbar (D-24). This effect is declared after the hook, so
+  // for the format bar (D-24). This effect is declared after the hook, so
   // it runs after the view exists (and again if node.id recreates it).
   const [editorView, setEditorView] = useState<EditorView | null>(null)
   useEffect(() => {
@@ -364,6 +365,16 @@ export default function NoteCard({
       bobRef.current = 1
       el.style.transform = ''
     }
+  }, [blue])
+
+  // The format bar and the settings face (Line Lab v2 wave 3). The red dot's
+  // hover folds the format pill; settings close when the note loses its blue.
+  const [redHover, setRedHover] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const toggleSettings = useCallback(() => setSettingsOpen((o) => !o), [])
+  const closeSettings = useCallback(() => setSettingsOpen(false), [])
+  useEffect(() => {
+    if (!blue) setSettingsOpen(false)
   }, [blue])
 
   // Hover delay for controls (D-06: controls remain reachable)
@@ -795,7 +806,7 @@ export default function NoteCard({
       />
 
       {/* Editable title, with the chat button beside it (D-19) */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4, paddingRight: blue ? 64 : 0 }}>
         <input
           type="text"
           className="tapestry-note-title-input"
@@ -848,8 +859,22 @@ export default function NoteCard({
           journal rather than from anything stored on the note itself. */}
       {provenanceFooter}
 
-      {/* Floating formatting toolbar near the text selection (D-24) */}
-      {isEditing && <FloatingToolbar view={editorView} containerRef={cardRef} zoom={zoom} roll={roll} />}
+      {/* The back of the note: its settings (Line Lab v2 wave 3) */}
+      <NoteSettings open={settingsOpen} onClose={closeSettings} />
+
+      {/* The format bar: `f`, the settings button and the pill (D-24) */}
+      {blue && box.w > 0 && (
+        <FormatBar
+          view={editorView}
+          w={box.w}
+          seed={seed}
+          editing={isEditing}
+          redHover={redHover}
+          settingsOpen={settingsOpen}
+          onToggleSettings={toggleSettings}
+          onStartEditing={onStartEditing}
+        />
+      )}
 
       {/* Corner cluster (D-06): the red delete dot and the blue connect dot */}
       {showControlsBool && (
@@ -859,6 +884,7 @@ export default function NoteCard({
           hasTextSelection={hasTextSelection}
           seed={seed}
           noteLength={outline ? outline.L : 0}
+          onRedHoverChange={setRedHover}
         />
       )}
 

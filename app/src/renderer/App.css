@@ -841,119 +841,200 @@ html, body, #root {
   margin: 0;
 }
 
-/* ---- Floating formatting toolbar (D-24/D-25) ---- */
+/* ---- The format bar (look/FormatBar.tsx; Line Lab v2 wave 3) ----
+   Pencil circles for `f` and settings in a blue note's top-right corner, and
+   the pill `f i b u ✱` along its top edge. Glyphs are set in a font. */
 
-.floating-toolbar {
+.tapestry-format-bar {
   position: absolute;
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  background: var(--tap-surface);
-  border: 1px solid var(--tap-border);
-  border-radius: 8px;
-  padding: 4px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
-  z-index: 50;
-  transform: translateX(-50%);
-  white-space: nowrap;
+  inset: 0;
+  pointer-events: none;
+  z-index: 4;
 }
 
-.ft-btn {
-  width: 32px;
-  height: 32px;
+.tapestry-format-circle,
+.tapestry-format-pill,
+.tapestry-format-f-anchor {
+  position: absolute;
+  pointer-events: auto;
+}
+
+.tapestry-format-circle {
+  padding: 0;
   border: none;
-  border-radius: 4px;
   background: transparent;
   cursor: pointer;
+  color: var(--tap-pencil);
+  transition: transform 0.15s ease;
+}
+
+.tapestry-format-circle:hover {
+  transform: scale(1.08);
+}
+
+.tapestry-format-paper {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.tapestry-format-paper path {
+  fill: var(--tap-note);
+}
+
+.tapestry-format-circle-glyph {
+  position: absolute;
+  inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--tap-ink);
-  transition: background 100ms ease;
+  font: italic 600 15px Georgia, serif;
+  line-height: 1;
 }
 
-.ft-btn:hover {
-  background: var(--tap-surface-sunk);
+.tapestry-format-spokes {
+  width: 16px;
+  height: 16px;
+  stroke: var(--tap-pencil);
+  stroke-width: 1.1;
+  stroke-linecap: round;
 }
 
-.ft-btn.active {
-  background: var(--tap-accent-wash);
-  color: var(--tap-accent);
+.tapestry-format-circle--settings[aria-pressed='true'] .tapestry-format-spokes {
+  stroke: var(--tap-select);
 }
 
-.ft-sep {
-  width: 1px;
-  height: 20px;
-  background: var(--tap-border);
-  margin: 0 2px;
+.tapestry-format-pill {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 12px;
+  box-sizing: border-box;
+  white-space: nowrap;
 }
 
-.ft-submenu-wrap {
-  position: relative;
+.tapestry-format-icon {
+  position: relative; /* above the pill's paper */
+  min-width: 22px;
+  height: 22px;
+  padding: 0 3px;
+  border: none;
+  border-radius: 11px;
+  background: transparent;
+  cursor: pointer;
+  color: var(--tap-pencil);
+  font: 600 16px Georgia, serif;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.12s ease, background 0.12s ease;
 }
 
-.ft-submenu {
+.tapestry-format-icon:hover:not(:disabled) {
+  transform: scale(1.15);
+}
+
+.tapestry-format-icon.active {
+  color: var(--tap-select);
+}
+
+.tapestry-format-icon:disabled {
+  color: var(--tap-faint);
+  cursor: default;
+}
+
+.tapestry-format-icon[data-glyph='f'] { font-style: italic; }
+.tapestry-format-icon[data-glyph='i'] { font-style: italic; font-weight: 400; }
+.tapestry-format-icon[data-glyph='b'] { font-weight: 800; }
+.tapestry-format-icon[data-glyph='u'] { text-decoration: underline; font-weight: 400; }
+.tapestry-format-icon[data-glyph='s'] { text-decoration: line-through; font-weight: 400; }
+
+.tapestry-format-icon--word {
+  font-size: 12px;
+  font-weight: 500;
+  padding: 0 5px;
+}
+
+.tapestry-format-icon--back {
+  margin-left: auto;
+  color: var(--tap-muted);
+}
+
+.tapestry-format-swatch {
+  display: block;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+}
+
+/* ---- The back of a note: its settings (look/NoteSettings.tsx) ---- */
+
+.tapestry-note-settings {
   position: absolute;
-  top: 100%;
-  left: 50%;
-  transform: translateX(-50%);
-  margin-top: 4px;
-  background: var(--tap-surface);
-  border: 1px solid var(--tap-border);
-  border-radius: 8px;
-  padding: 4px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  inset: 0;
+  z-index: 2;
+  padding: 16px;
+  padding-top: 24px;
+  border-radius: 14px;
+  background: var(--tap-note);
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  z-index: 51;
-  min-width: 80px;
-}
-
-.ft-sub-btn {
-  border: none;
-  background: transparent;
-  border-radius: 4px;
-  padding: 6px 12px;
-  text-align: left;
-  cursor: pointer;
+  gap: 8px;
   font-size: 13px;
   color: var(--tap-ink);
-  white-space: nowrap;
-  transition: background 100ms ease;
+  overflow: hidden;
+  backface-visibility: hidden;
 }
 
-.ft-sub-btn:hover {
-  background: var(--tap-surface-sunk);
+.tapestry-note-settings-title {
+  font: 600 18px Georgia, serif;
+  margin-bottom: 4px;
 }
 
-.ft-sub-btn.active {
-  background: var(--tap-accent-wash);
-  color: var(--tap-accent);
+.tapestry-note-settings-group {
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--tap-muted);
+  margin-top: 4px;
 }
 
-.ft-color-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 4px;
-  min-width: auto;
-  flex-direction: unset;
+.tapestry-note-settings-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
-.ft-color-swatch {
-  width: 24px;
-  height: 24px;
+.tapestry-note-settings-row > span:first-child {
+  min-width: 84px;
+}
+
+.tapestry-note-settings-swatch {
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
-  border: 2px solid transparent;
-  cursor: pointer;
-  transition: border-color 100ms ease, transform 100ms ease;
+  background: var(--tap-note);
+  box-shadow: inset 0 0 0 1px var(--tap-pencil);
 }
 
-.ft-color-swatch:hover {
-  border-color: var(--tap-accent);
-  transform: scale(1.15);
+.tapestry-note-settings-row input {
+  width: 52px;
+  font: inherit;
+  padding: 2px 4px;
+  border: none;
+  border-bottom: 1px solid var(--tap-faint);
+  background: transparent;
+  color: var(--tap-muted);
+}
+
+.tapestry-note-settings-value,
+.tapestry-note-settings-unit {
+  color: var(--tap-muted);
 }
 
 /* ---- Passage chooser (D-15) ---- */

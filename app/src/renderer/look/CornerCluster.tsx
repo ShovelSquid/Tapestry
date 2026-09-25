@@ -35,6 +35,8 @@ export interface CornerClusterProps {
   readonly seed: number
   /** The note outline's length, so the red dot's wave has the same size. */
   readonly noteLength: number
+  /** The red dot's hover, which folds the format pill back to `f`. */
+  readonly onRedHoverChange?: (hover: boolean) => void
 }
 
 /** The red dot's own pencil edge, in its hit box's px. */
@@ -42,7 +44,7 @@ export function redDotShape(seed: number): InkShape {
   return inkShape(circlePts(RED_C, RED_C, RED_DOT.r), true, seed + 5, { step: 1.5, wobbleScale: 0.35 })
 }
 
-function CornerClusterImpl({ onConnect, onDelete, hasTextSelection, seed, noteLength }: CornerClusterProps): React.ReactElement {
+function CornerClusterImpl({ onConnect, onDelete, hasTextSelection, seed, noteLength, onRedHoverChange }: CornerClusterProps): React.ReactElement {
   const [hover, setHover] = useState(false)
   const shape = useMemo(() => redDotShape(seed), [seed])
   const amount = useRef<Amount | null>(null)
@@ -50,6 +52,12 @@ function CornerClusterImpl({ onConnect, onDelete, hasTextSelection, seed, noteLe
   const discRef = useRef<SVGCircleElement>(null)
   const edgeRef = useRef<HTMLDivElement>(null)
   const crossRef = useRef<SVGGElement>(null)
+
+  useEffect(() => {
+    if (!hover) return
+    onRedHoverChange?.(true)
+    return () => onRedHoverChange?.(false)
+  }, [hover, onRedHoverChange])
 
   useEffect(() => {
     const a = amount.current as Amount
