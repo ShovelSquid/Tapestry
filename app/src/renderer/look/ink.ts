@@ -460,3 +460,16 @@ function cap(p: InkPoint, x: number, y: number, r: number, dir: 1 | -1): string 
   }
   return d
 }
+
+/**
+ * The area inside a closed shape, as one polygon `d` through its wobbled
+ * centre line: the note's paper fill and the hover bloom's clip, so both
+ * follow the pencil outline instead of a CSS rounded rectangle.
+ */
+export function fillPath(shape: InkShape): string {
+  let d = ''
+  shape.pts.forEach((p, i) => {
+    d += (i ? 'L' : 'M') + fmt(p.x) + ' ' + fmt(p.y)
+  })
+  return d ? d + 'Z' : ''
+}

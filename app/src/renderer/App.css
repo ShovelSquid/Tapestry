@@ -65,6 +65,7 @@
   --tap-connect-flash: #00FF7F; /* brief flash when a connection lands; to tune */
   --tap-delete: #FC3B02;        /* the red delete dot */
   --tap-line: 1px;              /* every line's weight at 100% zoom; scales with zoom */
+  --tap-note: #FBFAF7;          /* a note's paper, inside the pencil outline */
 
   /* Named in wave 0 from values that were raw hex in rules and inline
      styles. */
@@ -412,6 +413,80 @@ html, body, #root {
 .tapestry-note-card--connect-target {
   border: 2px solid var(--tap-accent);
   box-shadow: 0 0 0 4px rgba(74, 124, 255, 0.20);
+}
+
+/* The note look (Line Lab v2 wave 2): NoteCard draws its own paper and
+   pencil outline (look/NoteInk.tsx), so the CSS box is invisible in every
+   state. The border stays 1px and transparent so no state changes the
+   layout size. `isolation` makes the card its own stacking context, which
+   puts the paper layer (z-index -1) above the canvas and under the text. */
+.tapestry-note-card--ink,
+.tapestry-note-card--ink.tapestry-note-card--selected,
+.tapestry-note-card--ink.tapestry-note-card--editing,
+.tapestry-note-card--ink.tapestry-note-card--connect-target {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 16px;
+  box-shadow: none;
+  isolation: isolate;
+}
+
+.tapestry-note-card--ink .tapestry-note-title-input {
+  font-size: 26px;
+  line-height: 1.2;
+  margin-bottom: 2px;
+  color: var(--tap-pencil);
+}
+
+/* The ink rule under the title: an InkLine in this strip's px. */
+.tapestry-note-rule {
+  position: relative;
+  height: 6px;
+  margin: 0 0 8px;
+  pointer-events: none;
+}
+
+/* The corner cluster (look/CornerCluster.tsx) */
+.tapestry-corner-cluster {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.tapestry-corner-dot {
+  position: absolute;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.tapestry-corner-dot-edge {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.tapestry-corner-dot--connect {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tapestry-corner-dot-blue {
+  display: block;
+  border-radius: 50%;
+  background: var(--tap-select);
+  transition: transform 0.15s ease;
+}
+
+.tapestry-corner-dot--connect:hover .tapestry-corner-dot-blue {
+  transform: scale(1.4);
 }
 
 /* Drag handle -- invisible strip at top of note (D-01) */
