@@ -12,7 +12,7 @@
  * D-16, Plan 15).
  */
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useAnnounce } from './LiveAnnouncer'
 import NoteCard from './NoteCard'
 import VaultNoteCard from './VaultNoteCard'
@@ -51,6 +51,11 @@ import {
   type NestingOp,
   type Size,
 } from '../layout/nesting'
+import { FormFades, formsToDraw, type ShownForm } from '../look/collapse'
+import { CollapsedNote } from '../look/CollapsedNote'
+import { seedFromId } from '../look/ink'
+import { effectStrength, readMotionSettings } from '../look/motion'
+import { LOOK } from '../look/values'
 
 /** Fallback knot size until the node registers its real dims. */
 const KNOT_FALLBACK_WIDTH = 200
@@ -430,9 +435,27 @@ export default function TreeFrame({
 
   const nestedAt = nesting ? nestedPositions(nesting, localSpot) : null
   const containerMins = nesting ? containerMinSizes(nesting, localSpot, sizeOf) : null
+  // Zoomed out, a note too small to read collapses to a circle or a dot
+  // (look/collapse.ts) and its contents are hidden; changes of form crossfade.
   const outlines = nesting
-    ? outlineState(nesting, (id) => sizeOf(id).width, zoom)
-    : { outlined: new Set<string>(), hidden: new Set<string>() }
+    ? outlineState(nesting, (id) => Math.max(sizeOf(id).width, containerMins?.get(id)?.width ?? 0), zoom)
+    : { collapsed: new Map<string, 'circle' | 'dot'>(), hidden: new Set<string>() }
+  const shownForms = new Map<string, ShownForm>()
+  for (const id of nesting?.depthOf.keys() ?? []) {
+    shownForms.set(id, outlines.hidden.has(id) ? 'hidden' : (outlines.collapsed.get(id) ?? 'note'))
+  }
+  const fadeMs = effectStrength(readMotionSettings(), 'collapseFade') > 0 ? LOOK.detail.formCrossfadeMs : 0
+  const formFades = useRef<FormFades | null>(null)
+  if (!formFades.current) formFades.current = new FormFades()
+  const fades = formFades.current.update(shownForms, performance.now(), fadeMs)
+  // Draw once more when the soonest fade ends, to drop the form it left.
+  const [, setFadeTick] = useState(0)
+  const fadeEnd = formFades.current.nextEndMs(fadeMs)
+  useEffect(() => {
+    if (fadeEnd === null) return
+    const t = window.setTimeout(() => setFadeTick((n) => n + 1), Math.max(0, fadeEnd - performance.now()) + 16)
+    return () => window.clearTimeout(t)
+  }, [fadeEnd])
   const containerOf = (nodeId: string): string | null => nesting?.containerOf.get(nodeId) ?? null
 
   /** Where a note is in the frame, following every container it is in. */
@@ -647,7 +670,10 @@ export default function TreeFrame({
         />
       </div>
 
-      <div className="tapestry-tree-frame-content" style={contentStyle}>
+      <div
+        className="tapestry-tree-frame-content"
+        style={{ ...contentStyle, ['--tap-form-fade-ms' as string]: `${LOOK.detail.formCrossfadeMs}ms` }}
+      >
         {/* This tree's connections only (D-16 cross-tree links are Plan 15) */}
         <svg
           className="tapestry-connections-svg"
@@ -762,39 +788,43 @@ export default function TreeFrame({
             In a workspace tree, folders and the cards inside them are drawn by
             their FolderFrame, not here. */}
         {tree.nodes
-          .filter((n) => !isKnot(n) && !isNestedInSubspace(n) && !outlines.hidden.has(n.id))
+          .filter((n) => !isKnot(n) && !isNestedInSubspace(n) && (!outlines.hidden.has(n.id) || fades.has(n.id)))
           .sort(depthOrder)
           .map((node) => {
           const key = keyFor(node.id)
           const view = mappedNodeView(pluginNodeViews[node.type])
 
-          // Zoomed out, a nested note is its outline: its real place and size,
-          // none of its contents. A double-click zooms into it.
-          if (outlines.outlined.has(node.id)) {
-            const rect = drawnRect(node.id)
-            if (!rect) return null
-            return (
-              <div
-                key={node.id}
-                className="tapestry-note-outline"
-                data-node-id={node.id}
-                aria-label={`${String(node.props['title']?.value ?? '') || 'Untitled'} (zoom in to see)`}
-                onDoubleClick={(e) => {
-                  e.stopPropagation()
-                  zoomTo(node.id)
-                }}
-                style={{
-                  position: 'absolute',
-                  left: rect.x,
-                  top: rect.y,
-                  width: rect.width,
-                  height: rect.height,
-                  borderWidth: 1 / zoom,
-                  borderRadius: 8,
-                }}
-              />
-            )
-          }
+          // A note of this tree's nesting is drawn in its form for this zoom:
+          // the card, or a circle or dot at its centre, and while a form
+          // changes, the form it left fading out over the new one fading in.
+          const shown = shownForms.get(node.id)
+          const draws = shown ? formsToDraw(shown, fades.get(node.id)) : [{ form: 'note' as const, fade: null }]
+          const collapsedEls = draws.flatMap((d) => {
+            if (d.form === 'note') return []
+            const at = frameSpot(node.id)
+            const size = sizeOf(node.id)
+            const min = containerMins?.get(node.id)
+            const w = Math.max(size.width, min?.width ?? 0)
+            const h = Math.max(size.height, min?.height ?? 0)
+            return [
+              <CollapsedNote
+                key={`collapsed-${d.form}`}
+                noteId={node.id}
+                form={d.form}
+                title={String(node.props['title']?.value ?? '')}
+                seed={seedFromId(node.id)}
+                x={at.x + w / 2}
+                y={at.y + h / 2}
+                zoom={zoom}
+                selected={selectedKey === key}
+                fade={d.fade}
+                onSelect={() => handlers.onBorderSelect(refFor(node.id))}
+                onZoomTo={() => zoomTo(node.id)}
+              />,
+            ]
+          })
+          const noteDraw = draws.find((d) => d.form === 'note')
+          if (!noteDraw) return <React.Fragment key={node.id}>{collapsedEls}</React.Fragment>
 
           if (view === 'WorkspaceFileCard') return renderWorkspaceCard(node)
 
@@ -965,8 +995,11 @@ export default function TreeFrame({
 
           if (view === 'NoteCard') {
             return (
+              <React.Fragment key={node.id}>
+              {collapsedEls}
               <NoteCard
-                key={node.id}
+                key="note"
+                formFade={noteDraw.fade}
                 treeId={tree.id}
                 node={node}
                 displayPosition={
@@ -1007,6 +1040,7 @@ export default function TreeFrame({
                 onDragMove={dragNote}
                 onDragEnd={(nodeId) => handlers.onDragEnd(refFor(nodeId))}
               />
+              </React.Fragment>
             )
           }
 

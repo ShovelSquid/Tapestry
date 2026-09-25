@@ -112,6 +112,8 @@ interface NoteCardProps {
   onCreateInside?: () => void
   /** "Zoom into note": fit this note to the view. */
   onZoomTo?: () => void
+  /** The zoom-collapse crossfade (look/collapse.ts): fading in, or out to a circle or dot. */
+  formFade?: 'in' | 'out' | null
 }
 
 // ---------------------------------------------------------------------------
@@ -175,6 +177,7 @@ export default function NoteCard({
   minSize,
   onCreateInside,
   onZoomTo,
+  formFade,
 }: NoteCardProps): React.ReactElement {
   const cardRef = useRef<HTMLDivElement>(null)
 
@@ -761,6 +764,7 @@ export default function NoteCard({
   if (isConnectTarget) borderClass += ' tapestry-note-card--connect-target'
   borderClass += ' tapestry-note-card--ink'
   if (faceShown) borderClass += ' tapestry-note-card--flipped'
+  if (formFade) borderClass += ` tap-form-fade-${formFade}`
 
   const cardStyle: React.CSSProperties = {
     left: `${effectiveX}px`,

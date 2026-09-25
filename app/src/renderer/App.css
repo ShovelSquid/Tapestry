@@ -368,20 +368,73 @@ html, body, #root {
 }
 
 /* Note card -- secondary color --tap-surface */
-/* A nested note seen from far away (layout/nesting.ts): its place and size,
-   none of its contents. The border width is set inline to 1 / zoom so it stays
-   one screen pixel. */
-.tapestry-note-outline {
+/* A note too small on screen to read (look/collapse.ts): a circle chip or a
+   node dot at its centre, fixed on screen (scaled by 1 / zoom inline). */
+.tapestry-collapsed {
   position: absolute;
-  box-sizing: border-box;
-  border-style: solid;
-  border-color: var(--tap-outline);
-  background-color: rgba(255, 255, 255, 0.55);
+  width: 0;
+  height: 0;
+  transform-origin: 0 0;
+}
+
+.tapestry-collapsed-hit {
+  position: absolute;
   cursor: zoom-in;
 }
 
-.tapestry-note-outline:hover {
-  border-color: var(--tap-outline-hover);
+.tapestry-collapsed-paper {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  fill: var(--tap-note);
+}
+
+.tapestry-collapsed-letter {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-top: 1px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--tap-pencil);
+  user-select: none;
+}
+
+.tapestry-collapsed-dot {
+  position: absolute;
+  border-radius: 50%;
+  background-color: var(--tap-pencil);
+  transition: background-color 0.3s;
+}
+
+.tapestry-collapsed--selected .tapestry-collapsed-dot {
+  background-color: var(--tap-select);
+}
+
+/* The crossfade between a note's forms (LOOK.detail.formCrossfadeMs; the
+   duration is set on the canvas as --tap-form-fade-ms). */
+.tap-form-fade-in {
+  animation: tap-form-fade-in var(--tap-form-fade-ms, 220ms) ease-out both;
+}
+
+.tap-form-fade-out {
+  animation: tap-form-fade-out var(--tap-form-fade-ms, 220ms) ease-in both;
+  pointer-events: none;
+}
+
+@keyframes tap-form-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes tap-form-fade-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
 }
 
 .tapestry-note-card {
