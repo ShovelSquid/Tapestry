@@ -21,7 +21,8 @@
 
 import { memo, useEffect, useMemo, useRef } from 'react'
 import { blueReach, inkPath, loopWave, type InkShape, type Wave } from './ink'
-import { Amount, easeOutCubic, effectStrength, frameScheduler, readMotionSettings } from './motion'
+import { Amount, easeOutCubic, effectStrength, frameScheduler } from './motion'
+import { useMotionSettings } from './useMotionSettings'
 import { LOOK } from './values'
 
 export type InkTone = 'pencil' | 'select' | 'delete'
@@ -97,6 +98,7 @@ function InkLineImpl(props: InkLineProps): React.ReactElement {
   const fromT = takeover?.fromT ?? 0
   const activeTone = takeover?.tone ?? 'select'
 
+  const motion = useMotionSettings()
   const baseRef = useRef<SVGPathElement>(null)
   const activeRef = useRef<SVGPathElement>(null)
   const grow = useRef<Amount | null>(null)
@@ -125,7 +127,7 @@ function InkLineImpl(props: InkLineProps): React.ReactElement {
   useEffect(() => {
     const amount = grow.current as Amount
     amount.set(on ? 1 : 0)
-    const settings = readMotionSettings()
+    const settings = motion
     const growStrength = effectStrength(settings, 'selectionGrow')
     const waveStrength = effectStrength(settings, 'selectionWave')
     // The selection waves where the blue has reached; `wave` waves it all.
@@ -149,7 +151,8 @@ function InkLineImpl(props: InkLineProps): React.ReactElement {
       if (!moving()) unsubscribe()
     })
     return unsubscribe
-  }, [shape, weight, seed, wave, waveScale, pinEnds, on, fromT])
+    // `motion`: a wave switched off in the motion panel stops at once.
+  }, [shape, weight, seed, wave, waveScale, pinEnds, on, fromT, motion])
 
   const cls = className ? `ink-line ${className}` : 'ink-line'
   const paths = (

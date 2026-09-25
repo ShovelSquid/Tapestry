@@ -34,6 +34,8 @@ import { NoteInk, noteShape } from '../look/NoteInk'
 import { CornerCluster } from '../look/CornerCluster'
 import { FormatBar } from '../look/FormatBar'
 import { NoteSettings } from '../look/NoteSettings'
+import { MoveParticles } from '../look/MoveParticles'
+import { registerRifle } from '../look/rifle'
 import { DARK, aimLight, type LightTween } from '../look/bloom'
 import { bobScale, effectStrength, frameScheduler, readMotionSettings } from '../look/motion'
 import { LOOK } from '../look/values'
@@ -271,6 +273,8 @@ export default function NoteCard({
   const [localWidth, setLocalWidth] = useState<number | null>(null)
   const [localHeight, setLocalHeight] = useState<number | null>(null)
   const isDraggingRef = useRef(false)
+  // The same as the ref, as state, so the move particles run only while dragged.
+  const [dragging, setDragging] = useState(false)
   const isResizingRef = useRef(false)
   const resizeDirRef = useRef<string>('')
   const dragStartRef = useRef({ mouseX: 0, mouseY: 0, startX: 0, startY: 0 })
@@ -369,6 +373,23 @@ export default function NoteCard({
       el.style.transform = ''
     }
   }, [blue])
+
+  // Rifling and text bob (Line Lab v2 wave 6): the card drifts from a
+  // passing cursor and its text shifts a hair. Never while it's in hand or
+  // being written in.
+  const rifleState = useRef({ zoom, roll, editing: isEditing })
+  rifleState.current = { zoom, roll, editing: isEditing }
+  useEffect(() => {
+    const el = cardRef.current
+    if (!el) return undefined
+    return registerRifle({
+      el,
+      text: () => editorRef.current,
+      toLocal: (dx, dy) => screenDeltaToWorld(dx, dy, rifleState.current.zoom, rifleState.current.roll),
+      enabled: () => !isDraggingRef.current && !isResizingRef.current && !rifleState.current.editing,
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // The format bar and the settings face (Line Lab v2 wave 3). The red dot's
   // hover folds the format pill; settings close when the note loses its blue.
@@ -514,6 +535,7 @@ export default function NoteCard({
       e.preventDefault()
 
       isDraggingRef.current = true
+      setDragging(true)
       dragStartRef.current = {
         mouseX: e.clientX,
         mouseY: e.clientY,
@@ -537,6 +559,7 @@ export default function NoteCard({
 
       const onUp = () => {
         isDraggingRef.current = false
+        setDragging(false)
         document.removeEventListener('pointermove', onMove, true)
         document.removeEventListener('pointerup', onUp, true)
         onDragEnd?.(node.id)
@@ -802,6 +825,11 @@ export default function NoteCard({
           blue={blue}
           blueFromT={blueFromTRef.current}
         />
+      )}
+
+      {/* Move particles while dragged (Line Lab v2 wave 6) */}
+      {box.w > 0 && (
+        <MoveParticles x={effectiveX} y={effectiveY} w={box.w} h={box.h} zoom={zoom} dragging={dragging} />
       )}
 
       {/* Drag handle area -- the top border strip */}

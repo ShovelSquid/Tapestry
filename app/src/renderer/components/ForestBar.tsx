@@ -5,9 +5,10 @@
  * holds several trees, so each frame's header carries its own status and this
  * corner holds only what is true of the whole space.
  *
- * Three controls: the Add tree menu, the Agents button (whose label is itself
- * the bridge's status), and the name button, which shows the actor id every
- * change of Kaelen's is signed with.
+ * Four controls: the Add tree menu, the Agents button (whose label is itself
+ * the bridge's status), the name button, which shows the actor id every
+ * change of Kaelen's is signed with, and the Motion button (per-person
+ * motion settings, Line Lab v2 wave 6).
  *
  * The bar deliberately shows no tree names: a name belongs to its frame, so a
  * forest bar listing them would say the same thing twice and would be the one
@@ -17,6 +18,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import AgentsPanel from './AgentsPanel'
 import NamePromptDialog from './NamePromptDialog'
+import { MotionButton } from '../look/MotionPanel'
 
 interface ForestBarProps {
   agents: TapestryAgentSummary[]
@@ -220,6 +222,9 @@ export default function ForestBar({
           {`user.${userName}`}
         </button>
       )}
+
+      {/* Motion settings (Line Lab v2 wave 6): per person, never in a tree */}
+      <MotionButton />
 
       {isNameOpen && userName !== null && (
         <NamePromptDialog

@@ -35,6 +35,31 @@ export const MOTION_EFFECTS = [
 ] as const
 export type MotionEffect = (typeof MOTION_EFFECTS)[number]
 
+/** What the motion panel calls each effect, in the order it lists them. */
+export const MOTION_LABELS: Readonly<Record<MotionEffect, string>> = {
+  hoverBloom: 'Hover light',
+  selectionGrow: 'Selection grow',
+  selectionWave: 'Selection waves',
+  bob: 'Select bob',
+  deleteDot: 'Delete dot',
+  particles: 'Move particles',
+  collapseFade: 'Zoom crossfade',
+  rifling: 'Rifling',
+  textBob: 'Text bob',
+  buttonSwell: 'Button swell',
+  noteFlip: 'Settings flip',
+}
+
+/** Effects the stylesheet runs, as the CSS variables that scale them. */
+export function motionCssVars(settings: MotionSettings): Record<string, string> {
+  return { '--tap-motion-swell': String(Math.round(effectStrength(settings, 'buttonSwell') * 1000) / 1000) }
+}
+
+/** True when every effect is off (or at strength 0): a still app. */
+export function allStill(settings: MotionSettings): boolean {
+  return MOTION_EFFECTS.every((e) => effectStrength(settings, e) === 0)
+}
+
 export interface EffectSetting {
   readonly on: boolean
   /** 0..1, scales the effect's size (not its duration). */
@@ -104,11 +129,62 @@ export function saveMotionSettings(storage: StorageLike | null, settings: Motion
   }
 }
 
-/** The renderer's own settings, read once from localStorage and the OS. */
+/**
+ * The renderer's own settings: read once from localStorage and the OS, then
+ * held here so the motion panel (wave 6) can change them live. Every
+ * animation reads them when it starts; a running one that has to stop when
+ * its effect goes off listens through `subscribeMotionSettings`.
+ */
+let current: MotionSettings | null = null
+const listeners = new Set<() => void>()
+
+function browserStorage(): StorageLike | null {
+  try {
+    return typeof window === 'undefined' ? null : window.localStorage
+  } catch {
+    return null
+  }
+}
+
 export function readMotionSettings(): MotionSettings {
+  if (current) return current
   if (typeof window === 'undefined') return defaultMotionSettings(false)
   const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
-  return loadMotionSettings(window.localStorage, reduce)
+  current = loadMotionSettings(browserStorage(), reduce)
+  return current
+}
+
+/** Change the settings for this person: saved, then every listener told. */
+export function setMotionSettings(next: MotionSettings, storage: StorageLike | null = browserStorage()): void {
+  current = next
+  saveMotionSettings(storage, next)
+  for (const cb of [...listeners]) cb()
+}
+
+/** One effect's switch or strength changed; the rest kept. */
+export function withEffect(settings: MotionSettings, effect: MotionEffect, change: Partial<EffectSetting>): MotionSettings {
+  const prev = settings[effect]
+  return {
+    ...settings,
+    [effect]: {
+      on: change.on ?? prev.on,
+      strength: change.strength === undefined ? prev.strength : clamp01(change.strength),
+    },
+  }
+}
+
+/** Every effect on or off at once, strengths kept. */
+export function withAll(settings: MotionSettings, on: boolean): MotionSettings {
+  const out = { ...settings } as Record<MotionEffect, EffectSetting>
+  for (const e of MOTION_EFFECTS) out[e] = { ...settings[e], on }
+  return out
+}
+
+export function subscribeMotionSettings(cb: () => void): () => void {
+  listeners.add(cb)
+  return () => {
+    listeners.delete(cb)
+  }
 }
 
 // ---------- easing ----------
