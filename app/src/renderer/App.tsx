@@ -1215,7 +1215,14 @@ export default function App(): React.ReactElement {
             {/* Plugin surfaces (CANV-04): one launcher per registered surface */}
             <SurfaceLauncher
               surfaces={pluginSurfaces}
-              onOpen={(surface) => surfaceWindowActions.open(surface, selectedTreeId ?? '')}
+              onOpen={(surface) =>
+                // The selected tree, else the first one that opened cleanly:
+                // a surface opened for no tree can read nothing.
+                surfaceWindowActions.open(
+                  surface,
+                  selectedTreeId ?? trees.find((tree) => tree.status === 'ok')?.id ?? '',
+                )
+              }
             />
 
             {/* An agent write ended a rewound state (UA-14) */}
