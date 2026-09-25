@@ -35,18 +35,16 @@ are recorded in app/src/main/space/shapes.ts and 02.6-02-SUMMARY.
 
 ## In progress
 
-All six plans have SUMMARYs, but phase verification ended **gaps_found**
-(3/7; `02.6-VERIFICATION.md`, gaps in its frontmatter). There are no wave
-plans left for PROTOCOL step 3 to find, so the next session does gap closure:
-1. Invoke `gsd-plan-phase` with args `02.6 --gaps` (one session). It reads
-   VERIFICATION.md and writes `gap_closure: true` plans. Must cover CR-01
-   (unparseable settings.json overwritten at launch: tell missing from
-   unreadable, refuse to write), CR-02 + WR-01 (unavailable records keyed by
-   path only: clear in `registry.adopt()`, key by path+digest), and, if
-   cheap, WR-02..05 from `02.6-REVIEW.md`.
-2. Then one session per wave: `gsd-execute-phase 02.6 --gaps-only --wave N`.
-3. Re-run phase verification. `passed`/`human_needed` -> PROTOCOL step 7
-   (DONE). Do not write DONE before that.
+Gap-closure plans are written and checked (plan-checker PASSED):
+- wave 1: 02.6-07 (CR-01 settings unreadable -> refuse to write, setup-failed),
+  02.6-08 (CR-02 + WR-01: adopt clears path record, records keyed by digest,
+  removeMember guard), 02.6-09 (WR-03/04/05 renderer); no shared files.
+- wave 2: 02.6-10 (WR-02 add rollback; depends on 08).
+Next sessions: `gsd-execute-phase 02.6 --gaps-only --wave 1`, then
+`--wave 2`, then re-run phase verification. `passed`/`human_needed` ->
+PROTOCOL step 7 (DONE). Do not write DONE before that. Plan 09's SUMMARY
+must record WR-04's commit-message wording as an open question (queue it in
+REVIEW.md: new wording needs Kaelen's approval).
 
 ## Log
 
@@ -86,6 +84,9 @@ plans left for PROTOCOL step 3 to find, so the next session does gap closure:
   clean. REVIEW item 5 (end-of-phase check) queued. Phase gate: code review
   (02.6-REVIEW.md, 2 critical / 5 warning / 6 info), verification
   gaps_found 3/7. Next: plan gap closure (see In progress).
+- 2026-09-24 17:10 gap planning (`gsd-plan-phase 02.6 --gaps`): planner
+  wrote 02.6-07..10 (~27 min), checker passed first try; 48a0fb1 plans,
+  then docs state commit. No code touched. Next: execute gaps wave 1.
 
 ## Learned
 
@@ -117,3 +118,8 @@ plans left for PROTOCOL step 3 to find, so the next session does gap closure:
 - 2026-09-24 16:08: the verifier found gaps. Fix now or ship with them? Took:
   gap closure through GSD (`--gaps`) before DONE, not an inline fix. The
   review's findings are advisory, but CR-01 loses data.
+- 2026-09-24 17:10: plan-phase's UI gate (no UI-SPEC, frontend detected)
+  would have exited. Took: skipped it for gap closure (as `--skip-ui`);
+  the fixes are backend plus small renderer changes using approved wording.
+  Planner chose to key unavailable records by digest (reversible, in-memory
+  only) over rewriting the replaced stand-in.
