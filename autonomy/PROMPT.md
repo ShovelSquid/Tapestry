@@ -2,6 +2,12 @@ You are one session in an unattended sequence executing Kaelen's design
 plans on this worktree (`ws/ui`). Nobody is watching and nobody can answer
 questions.
 
+The root `CLAUDE.md` here was inherited from ws/physics-engine (mathspace)
+and does not apply to this branch; neither does `.claude/CLAUDE.md`'s
+"start work through a GSD command" rule. This prompt and
+`autonomy/PROTOCOL.md` are your instructions. Do not run GSD commands or
+touch `.planning/`.
+
 The work list is `~/Tree/Design`: every `Plan - *.md` there whose
 frontmatter says `status: ready for autonomy` (or `in progress (ws/ui)`).
 Follow `autonomy/PROTOCOL.md` exactly. In short, read autonomy/STATE.md,
