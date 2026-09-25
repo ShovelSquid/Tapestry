@@ -371,6 +371,62 @@ describe('case J: a malformed trees entry', () => {
 })
 
 // ---------------------------------------------------------------------------
+// An unreadable settings.json (2.6 gap 1, CR-01)
+// ---------------------------------------------------------------------------
+
+/**
+ * The rig's settings text with a trailing comma before the final brace: it
+ * still holds `userName` and `trees`, and it does not parse.
+ */
+function withTrailingComma(r: Rig): string {
+  const text = JSON.stringify(r.raw, null, 2)
+  const close = text.lastIndexOf('}')
+  return `${text.slice(0, close).trimEnd()},\n}`
+}
+
+describe('an unreadable settings.json (gap 1, CR-01)', () => {
+  it('a first launch leaves it byte-identical, creates no forest or Tapestry tree, and imports once it is fixed', async () => {
+    const r = rig()
+    writeFileSync(r.settings.path, withTrailingComma(r), 'utf-8')
+    const settingsBefore = readFileSync(r.settings.path)
+
+    const first = launch(r)
+    const { problem, restored } = await first.service.start()
+
+    expect(problem?.kind).toBe('setup-failed')
+    expect(problem?.reason).toContain(r.settings.path)
+    expect(problem?.reason).toContain('left untouched')
+    expect(restored).toBe(0)
+    expect(first.service.ready).toBe(false)
+    expect(readFileSync(r.settings.path).equals(settingsBefore)).toBe(true)
+    expect(existsSync(r.paths.forest)).toBe(false)
+    expect(existsSync(r.paths.home)).toBe(false)
+    expect(existsSync(`${r.settings.path}.tmp`)).toBe(false)
+    expect(first.service.problemNotice()).toContain('Nothing in settings.json was changed.')
+
+    first.service.close()
+    first.registry.closeAll()
+
+    // Once the person fixes the file, the next launch is an ordinary case A.
+    writeFileSync(r.settings.path, JSON.stringify(r.raw, null, 2), 'utf-8')
+    const before = readJson(r.settings.path)
+    const second = launch(r)
+    const fixed = await second.service.start()
+
+    expect(fixed.problem).toBeNull()
+    expect(second.service.problemNotice()).toBeNull()
+    expect(existsSync(r.paths.forest)).toBe(true)
+    const after = readJson(r.settings.path)
+    expect(after.version).toBe(2)
+    expect(after[SETTINGS_POINTER_KEY]).toEqual({ path: r.paths.home })
+    expect(after.trees).toEqual(before.trees)
+    expect(readFileSync(r.paths.forest, 'utf-8')).toContain(
+      'import 3 trees and their frames from settings.json; skipped 1 unreadable entries',
+    )
+  })
+})
+
+// ---------------------------------------------------------------------------
 // Wording
 // ---------------------------------------------------------------------------
 

@@ -159,11 +159,21 @@ function forestProblem(problem: OpenProblem, path: string): SpaceProblem {
  * The pointer is written last, and `trees` is never written (D-10). If any
  * step throws, what this call created is removed and `setup-failed` is
  * returned with settings.json untouched.
+ *
+ * A settings.json that exists but is not a readable JSON object stops the
+ * import before anything is created, so the next launch imports once the
+ * file is fixed (2.6 gap 1, CR-01).
  */
 export function importFromSettings(
   settings: SettingsStore,
   paths: SpacePaths,
 ): { home: TapestryHome; forest: ForestStore } | SpaceProblem {
+  try {
+    settings.assertReadable()
+  } catch (err) {
+    return { kind: 'setup-failed', path: dirname(paths.forest), reason: errorMessage(err) }
+  }
+
   const { trees, skipped } = settings.readLegacyTrees()
 
   const seeds: MemberSeed[] = trees.map((tree) => ({

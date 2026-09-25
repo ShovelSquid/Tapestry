@@ -24,6 +24,13 @@
  * untouched backup (2.6 D-10), and a file written by a newer or older build
  * sharing this userData is not damaged by this one (2.6 RESEARCH Pitfall 6).
  * `version` is read from the file and never lowered.
+ *
+ * A file that exists but is not a readable JSON object (a trailing comma from
+ * a hand edit, an array, a directory at the path) is never written over. Every
+ * writer throws `SettingsUnreadableError` before anything reaches the disk and
+ * leaves the file's bytes exactly as they are, so its `trees` backup and user
+ * name survive until the person fixes it (2.6 gap 1, CR-01). Reading such a
+ * file still yields defaults: it never stops the app from starting.
  */
 
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'fs'
@@ -180,6 +187,36 @@ export function readLastOpenedTree(lastOpenedFile: string): string | null {
 // SettingsStore
 // ---------------------------------------------------------------------------
 
+/**
+ * What is at the settings path: nothing to lose (`missing`, including an
+ * empty or whitespace-only file), something that must not be written over
+ * (`unreadable`), or a top-level JSON object (`ok`).
+ */
+type RawSettings =
+  | { state: 'missing' }
+  | { state: 'unreadable'; error: string }
+  | { state: 'ok'; value: Record<string, unknown> }
+
+/**
+ * settings.json exists but is not a readable JSON object, so it was not
+ * written (2.6 gap 1, CR-01). The message names the file and the reason.
+ */
+export class SettingsUnreadableError extends Error {
+  readonly path: string
+  readonly detail: string
+
+  constructor(path: string, detail: string) {
+    super(`${path} could not be read, so it was left untouched: ${detail}`)
+    this.name = 'SettingsUnreadableError'
+    this.path = path
+    this.detail = detail
+  }
+}
+
+function errorText(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
+}
+
 export class SettingsStore {
   private readonly dir: string
 
@@ -193,19 +230,60 @@ export class SettingsStore {
   }
 
   /**
-   * Parse the file once, returning its top-level object, or null for a
-   * missing, unreadable, unparseable or non-object file.
+   * Parse the file once into one of three states.
+   *
+   * No file, or one that is empty or only whitespace, is `missing`: there is
+   * nothing in it to lose. A file that cannot be read, does not parse, or
+   * parses to something other than a plain object is `unreadable`, and no
+   * writer may replace it (CR-01).
    */
-  private readRaw(): Record<string, unknown> | null {
-    let raw: unknown
+  private readRaw(): RawSettings {
+    if (!existsSync(this.path)) return { state: 'missing' }
+
+    let text: string
     try {
-      if (!existsSync(this.path)) return null
-      raw = JSON.parse(readFileSync(this.path, 'utf-8'))
-    } catch {
-      return null
+      text = readFileSync(this.path, 'utf-8')
+    } catch (err) {
+      return { state: 'unreadable', error: errorText(err) }
     }
-    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
-    return raw as Record<string, unknown>
+    if (text.trim().length === 0) return { state: 'missing' }
+
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(text)
+    } catch (err) {
+      return { state: 'unreadable', error: errorText(err) }
+    }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return { state: 'unreadable', error: 'it is not a JSON object' }
+    }
+    return { state: 'ok', value: parsed as Record<string, unknown> }
+  }
+
+  /** The parsed object, or null when the file is missing or unreadable. */
+  private readObject(): Record<string, unknown> | null {
+    const raw = this.readRaw()
+    return raw.state === 'ok' ? raw.value : null
+  }
+
+  /**
+   * The object a writer merges over: the parsed file, or an empty object when
+   * there is none. An unreadable file throws before anything is written.
+   */
+  private writableBase(): Record<string, unknown> {
+    const raw = this.readRaw()
+    if (raw.state === 'unreadable') throw new SettingsUnreadableError(this.path, raw.error)
+    return raw.state === 'ok' ? raw.value : {}
+  }
+
+  /**
+   * Throw `SettingsUnreadableError` when the file exists but is not a readable
+   * JSON object. Launch calls this before creating or opening anything, so a
+   * broken file stops setup instead of being replaced (2.6 gap 1, CR-01).
+   */
+  assertReadable(): void {
+    const raw = this.readRaw()
+    if (raw.state === 'unreadable') throw new SettingsUnreadableError(this.path, raw.error)
   }
 
   /**
@@ -215,7 +293,7 @@ export class SettingsStore {
    * preferences file is an inconvenience, never a failure to start.
    */
   read(): AppSettings {
-    return validateSettings(this.readRaw())
+    return validateSettings(this.readObject())
   }
 
   /**
@@ -226,7 +304,7 @@ export class SettingsStore {
    * file: this reads, it never cleans.
    */
   readLegacyTrees(): { trees: TreeSetting[]; skipped: number } {
-    const raw = this.readRaw()
+    const raw = this.readObject()
     const trees = validateSettings(raw).trees
     const rawTrees = raw?.trees
     const skipped = Array.isArray(rawTrees) ? rawTrees.length - trees.length : 0
@@ -241,7 +319,7 @@ export class SettingsStore {
    * (T-2.6-03). Anything else reads as no pointer at all.
    */
   getTapestryPointer(): string | null {
-    const pointer = this.readRaw()?.[SETTINGS_POINTER_KEY]
+    const pointer = this.readObject()?.[SETTINGS_POINTER_KEY]
     if (!pointer || typeof pointer !== 'object' || Array.isArray(pointer)) return null
     const path = (pointer as Record<string, unknown>).path
     return isSafeTreePath(path) ? path : null
@@ -253,12 +331,13 @@ export class SettingsStore {
    * This is the last step of the first-launch import (answer 2.4), so a crash
    * before it leaves settings.json exactly as it was. `trees` and every other
    * key are written back raw (D-10); `version` is never lowered (case I).
+   * An unreadable file throws `SettingsUnreadableError` and is not written.
    */
   setTapestryPointer(path: string): void {
     if (!isSafeTreePath(path)) {
       throw new Error('Invalid Tapestry tree path')
     }
-    const raw = this.readRaw() ?? {}
+    const raw = this.writableBase()
     const fileVersion = validVersion(raw.version) ?? DEFAULT_SETTINGS.version
     this.writeRaw({
       ...raw,
@@ -304,10 +383,11 @@ export class SettingsStore {
    * valid version already in the file.
    *
    * Failures propagate. Silently swallowing them would let the app report a
-   * saved name that was never written.
+   * saved name that was never written. An unreadable file throws
+   * `SettingsUnreadableError` before any merge, and is not written (CR-01).
    */
   private write(settings: AppSettings): void {
-    const raw = this.readRaw() ?? {}
+    const raw = this.writableBase()
     const merged: Record<string, unknown> = { ...raw }
 
     for (const [key, value] of Object.entries(settings)) {
