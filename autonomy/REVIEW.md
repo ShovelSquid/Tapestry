@@ -97,6 +97,32 @@ Done on `ws/ui` in aa12cda. Nothing in the app draws with it yet (wave 2 wires i
 Answer `item 4: approved` or the issues in `autonomy/RESPONSE`.
 If no: `git revert aa12cda` on ws/ui, and untick wave 1 in the plan.
 
+### 5. Wave 2 (the note restyle): merge into mergin, and a look at the notes (Plan - Line Lab v2, Part 2)
+
+Done on `ws/ui` in f31d66c (code), with screenshots in a1094a8.
+- `NoteCard` now draws its own paper, hover bloom and pencil outline (`look/NoteInk.tsx`), seeded by the note id and
+  built once per size, never per zoom. The CSS box is invisible in every state (a `tapestry-note-card--ink` modifier;
+  vault, workspace and thread cards keep the old look). Title at 26 px in a font, then an ink rule, then the body.
+- Hover bloom comes in from the entry point and drains toward the exit point (`look/bloom.ts`, tested). A blue note
+  keeps its light.
+- Selected, editing or connect-target: the blue grows from the last pointer point and replaces the pencil, then the
+  bob (a transform on the card; the dims reported for connections divide it back out). Deselecting reverses.
+- `look/CornerCluster.tsx` replaces the two bubbles on note cards: the red dot on the top-left corner (grows, whitens,
+  waves, shows ✕, eases back; delete on press as before) and the small blue dot on the top edge (starts the
+  connection as before). They still show only on hover or selection, as the old controls did.
+- **Choices to check:** the rest fill is Line Lab's paper `#FBFAF7` (new token `--tap-note`), not the spec's grey;
+  the bloom lightens to `--tap-surface` white. The line is your tuned 1 px, so it reads much lighter than the thick
+  sketch strokes. Resize still uses the same invisible edge strips; the only change to it is the look.
+- Checks: 10 new tests, full suite 1174 green, typecheck and build clean. Screenshots:
+  `autonomy/checks/line-lab-v2/wave2-side-by-side-2026-09-25.png` (sketches 0-2 above, the app below: rest, selected,
+  hovered; then a selection mid-grow with the red dot hovered).
+- **To check in the dev app:** hover across a note (light in and out), click a note's top strip and a note's text (the
+  blue grows from the click, then the bob), hover and leave the red dot, drag the blue dot to another note, resize.
+- **Merge `ws/ui` wave 2 into `ws/mergin`** (sessions can't merge there).
+
+Answer `item 5: approved` or the issues in `autonomy/RESPONSE`.
+If no: `git revert f31d66c` on ws/ui, and untick wave 2 in the plan.
+
 ## Closed
 
 (none)

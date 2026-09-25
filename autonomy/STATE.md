@@ -23,12 +23,13 @@ checklist:
 
 ## In progress
 
-Wave 2 (the note restyle), session started 2026-09-25 13:20. ws/mergin had
-nothing new. Plan: `look/bloom.ts` (light tween, tested), `look/NoteInk.tsx`
-(fill + bloom + outline behind the card content), `look/CornerCluster.tsx`
-(red delete dot, blue connect dot), NoteCard uses them with a
-`tapestry-note-card--ink` modifier (other cards share `.tapestry-note-card`,
-so the base class keeps its border).
+(empty) Wave 2 is done (REVIEW #5). Next session: **Part 2, Wave 3 (the format bar
+and note settings)**. Start with `git merge ws/mergin`. The `f` and settings
+buttons go top-right on a selected note (Line Lab `drawNote`: pencil circles at
+(w-62, 22) and (w-28, 22), r 13, `wobbleScale` 0.35); `f` expands into the
+`f i b u ✱` pill replacing `FloatingToolbar`. Underline and strikethrough stay
+disabled (gate 1). Screenshots: `autonomy/checks/line-lab-v2/wave2-*.js` show how
+to get notes on screen.
 
 ## Blocked
 
@@ -46,9 +47,11 @@ so the base class keeps its border).
 
 - The worktree had no node_modules; `npm install` at the root (real
   install, not the shared symlink) took a few minutes and built the addon.
-- App screenshots: `autonomy/checks/line-lab-v2/app-shot.cjs` runs the built
-  app on temp folders. A synthetic dblclick doesn't create a note; to get
-  notes on screen, find the real create path (maybe `window.tapestry` IPC).
+- App screenshots: `autonomy/checks/line-lab-v2/app-shot.cjs`. Notes get on
+  screen through `window.tapestry` (setUserName, trees.create, kernel.submit,
+  then reload); see `wave2-setup.js`. Main only accepts `.tree` paths under
+  home, and finds plugins beside `app.getAppPath()`, which the script points
+  at `app/` (otherwise every note shows as "unavailable").
 - macOS has no `timeout`; background long commands instead.
 
 - ~/Tree is not a git repo; `autonomy/snapshots/` is the only undo for it.
@@ -81,3 +84,6 @@ so the base class keeps its border).
 - 2026-09-25 13:12: Line Lab v2 Part 2 Wave 1 done and ticked (look/ink.ts,
   <InkLine>, 16 tests, 1164 green; the Electron bench holds 60 fps with 200 notes
   and 3 selected). Commit aa12cda. REVIEW #4 queued.
+- 2026-09-25 13:50: Line Lab v2 Part 2 Wave 2 done and ticked (NoteInk, bloom,
+  CornerCluster, NoteCard restyle; 10 tests, 1174 green; side-by-side with sketches
+  0-2). Commits f31d66c, a1094a8. REVIEW #5 queued.
