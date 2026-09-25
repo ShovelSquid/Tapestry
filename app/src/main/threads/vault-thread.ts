@@ -21,11 +21,10 @@
  */
 
 import type { Actor } from '../commands/actor'
-import type { NodeData } from '../kernel-bridge'
+import type { KernelBridge, NodeData } from '../kernel-bridge'
 import { VAULT_NOTE_TYPE } from '../obsidian/shapes'
 import type { VaultService } from '../obsidian/vault-service'
-import type { KernelBridge } from '../kernel-bridge'
-import type { ThreadService } from './thread-service'
+import type { FlatDocText, ThreadService } from './thread-service'
 
 // ---------------------------------------------------------------------------
 // isVaultThread
@@ -49,6 +48,95 @@ const THREAD_MARKER_KEY = 'thread.format'
  */
 export function isVaultThread(node: Pick<NodeData, 'type' | 'props'>): boolean {
   return node.type === VAULT_NOTE_TYPE && THREAD_MARKER_KEY in node.props
+}
+
+// ---------------------------------------------------------------------------
+// diffFlatText — the single-cluster diff every D-25 reconciliation uses
+// ---------------------------------------------------------------------------
+
+/** A single replace: remove `[from, to)` of the old text, insert `insertText`. */
+export interface FlatTextDiff {
+  from: number
+  to: number
+  insertText: string
+}
+
+/**
+ * The smallest single replace that turns `oldText` into `newText`, expressed
+ * as a common-prefix/common-suffix diff over UTF-16 code units. Returns
+ * `null` when the two texts are identical — the "a no-op rewrite records
+ * nothing" rule (D-20-style: a whole write is one tight cluster, never
+ * spread out, and never invented when nothing actually changed).
+ *
+ * This is deliberately not a general multi-hunk diff: an edit made outside
+ * Tapestry "arrives on the line as one observed cluster, like a paste"
+ * (D-25) — one replace is exactly that shape, not an attempt to find the
+ * minimal edit script across several separate changes.
+ */
+export function diffFlatText(oldText: string, newText: string): FlatTextDiff | null {
+  if (oldText === newText) return null
+
+  const maxPrefix = Math.min(oldText.length, newText.length)
+  let start = 0
+  while (start < maxPrefix && oldText[start] === newText[start]) start++
+
+  let oldEnd = oldText.length
+  let newEnd = newText.length
+  while (oldEnd > start && newEnd > start && oldText[oldEnd - 1] === newText[newEnd - 1]) {
+    oldEnd--
+    newEnd--
+  }
+
+  return { from: start, to: oldEnd, insertText: newText.slice(start, newEnd) }
+}
+
+/** Maps a 0-based index into a `FlatDocText`'s `text` to the real ProseMirror
+ * document position immediately before that character — or `endPos` for an
+ * index at (or past) the end of the text, matching `flatTextOf`'s own
+ * convention (RESEARCH Pattern 2, `thread-service.ts`). */
+function posAt(flat: FlatDocText, index: number): number {
+  return index < flat.positions.length ? flat.positions[index] : flat.endPos
+}
+
+// ---------------------------------------------------------------------------
+// observeVaultEdit — an external file edit arrives as one observed cluster
+// ---------------------------------------------------------------------------
+
+export type ObserveVaultEditResult = { changed: boolean } | { error: string }
+
+/**
+ * Reconciles a `.md` file's on-disk text (`observedText`, already read by
+ * the caller — the vault watcher, once one exists) against the thread's
+ * current authoritative document, recording the difference as **one**
+ * `observed`-caused cluster (D-25) rather than replaying it as fake typing
+ * or silently overwriting either side.
+ *
+ * `actor` is the attribution for the resulting commit: `OBSIDIAN_BRIDGE_ACTOR`
+ * unless the caller has independently proven — from 02.2's agent sign-in log
+ * — that a specific agent wrote exactly this content (02.2 D-21). This
+ * module never guesses; it records whatever actor its caller supplies.
+ */
+export function observeVaultEdit(
+  threadService: ThreadService,
+  bridge: KernelBridge,
+  actor: Actor,
+  treeId: string,
+  nodeId: string,
+  observedText: string,
+): ObserveVaultEditResult {
+  const flat = threadService.readFlatText(bridge, actor, treeId, nodeId)
+  if ('error' in flat) return flat
+
+  const diff = diffFlatText(flat.text, observedText)
+  if (!diff) return { changed: false }
+
+  const result = threadService.applyObservedEdit(bridge, actor, treeId, nodeId, {
+    from: posAt(flat, diff.from),
+    to: posAt(flat, diff.to),
+    insertText: diff.insertText,
+  })
+  if (!result.ok) return { error: result.error }
+  return { changed: true }
 }
 
 // ---------------------------------------------------------------------------

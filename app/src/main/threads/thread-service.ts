@@ -43,6 +43,7 @@ import { deriveSessions, detectTimeout, type AuthoredThreadRecord } from '../../
 import { parseThreadSettings } from '../../shared/threads/settings'
 import type { Actor } from '../commands/actor'
 import type { KernelBridge } from '../kernel-bridge'
+import { diffFlatText } from './vault-thread'
 
 // ---------------------------------------------------------------------------
 // Cadence
@@ -482,7 +483,37 @@ export class ThreadService {
       this.scheduleTimeout(handle)
     }
 
-    return { version, doc: doc.toJSON(), totalChanges: entries.length }
+    // D-25 (Task 2): a `body` checkpoint that disagrees with what replay just
+    // produced -- for instance because something wrote to `body` outside
+    // this service's own close()/flush path -- is reconciled as one
+    // `observed` cluster rather than silently letting either side win. A
+    // fresh thread's checkpoint is the empty string (not valid ProseMirror
+    // JSON), which the guard below skips entirely: there is nothing to
+    // reconcile against yet.
+    const checkpointJson = typeof node?.props.body?.value === 'string' ? node.props.body.value : ''
+    if (checkpointJson.length > 0) {
+      try {
+        const checkpointDoc = tapestrySchema.nodeFromJSON(JSON.parse(checkpointJson))
+        const checkpointText = flatTextOf(checkpointDoc).text
+        const replayedFlat = flatTextOf(doc)
+        const diff = diffFlatText(replayedFlat.text, checkpointText)
+        if (diff) {
+          this.applyObservedEdit(bridge, actor, treeId, nodeId, {
+            from: diff.from < replayedFlat.positions.length ? replayedFlat.positions[diff.from] : replayedFlat.endPos,
+            to: diff.to < replayedFlat.positions.length ? replayedFlat.positions[diff.to] : replayedFlat.endPos,
+            insertText: diff.insertText,
+          })
+        }
+      } catch (err) {
+        // A `body` that is not valid ProseMirror JSON is not a divergence to
+        // reconcile -- replay's own text remains authoritative and nothing
+        // here is overwritten. Logged rather than thrown: open() must still
+        // succeed with the replayed document.
+        console.error('[ThreadService] body checkpoint reconciliation skipped:', errorMessage(err))
+      }
+    }
+
+    return { version: handle.version, doc: handle.doc.toJSON(), totalChanges: entries.length }
   }
 
   /**
@@ -701,6 +732,44 @@ export class ThreadService {
       }
     }
 
+    return this.applyEditToHandle(handle, actor, edit, null)
+  }
+
+  /**
+   * Reconciles a divergence between the authoritative document and some
+   * externally observed text (D-25): an edit made to a vault thread's `.md`
+   * file outside Tapestry, or a `body` checkpoint that no longer matches
+   * what replay produces. Unlike `applyAgentEdit`, this carries no D-22
+   * authorship restriction — the range being replaced was not necessarily
+   * written by `actor` at all, which is exactly why it is recorded as
+   * `observed` rather than as a plain typed edit (D-25's "attributed per
+   * 02.2 D-21", never guessed as the user or an agent).
+   */
+  applyObservedEdit(
+    bridge: KernelBridge,
+    actor: Actor,
+    treeId: string,
+    nodeId: string,
+    edit: { from: number; to: number; insertText: string },
+  ): { ok: true } | { ok: false; error: string } {
+    const resolved = this.ensureHandle(bridge, actor, treeId, nodeId)
+    if ('error' in resolved) return { ok: false, error: resolved.error }
+    return this.applyEditToHandle(resolved.handle, actor, edit, 'observed')
+  }
+
+  /**
+   * Shared tail of `applyAgentEdit`/`applyObservedEdit`: build one
+   * `ReplaceStep` from `edit`, apply it to the handle's authoritative
+   * document, and — only once that has fully succeeded — advance
+   * `doc`/`version`/`letterIndex` together and queue the resulting record for
+   * the next flush (D-06's all-or-nothing ordering, same as `push()`).
+   */
+  private applyEditToHandle(
+    handle: ThreadHandle,
+    actor: Actor,
+    edit: { from: number; to: number; insertText: string },
+    cause: ThreadCause | null,
+  ): { ok: true } | { ok: false; error: string } {
     const slice =
       edit.insertText.length > 0
         ? new Slice(Fragment.from(tapestrySchema.text(edit.insertText)), 0, 0)
@@ -738,7 +807,7 @@ export class ThreadService {
       }
     }
     const offsetMs = Math.max(0, nowMs - anchorMs)
-    const record = deriveRecord(step, before, offsetMs, null)
+    const record = deriveRecord(step, before, offsetMs, cause)
 
     // Same all-or-nothing ordering as push(): the document and the version
     // only move once the step has actually applied, and the LetterIndex

@@ -26,9 +26,21 @@ export interface StageFallbackPanelProps {
    * which case the explanatory notice still renders on its own. */
   treeId?: string
   nodeId?: string
+  /** True for a vault thread (D-25) -- adds one sentence naming the extra
+   * guarantee a vault note carries that an ordinary thread does not: its
+   * current text also reaches a real file on disk, kept in sync the same
+   * way as every other flush. Callers that don't yet know (no wiring exists
+   * today that reads a node's own thread/vault properties from here) simply
+   * omit this prop; the panel remains fully correct either way. */
+  isVaultThread?: boolean
 }
 
-export default function StageFallbackPanel({ reason, treeId, nodeId }: StageFallbackPanelProps): React.ReactElement {
+export default function StageFallbackPanel({
+  reason,
+  treeId,
+  nodeId,
+  isVaultThread,
+}: StageFallbackPanelProps): React.ReactElement {
   return (
     <div
       role="status"
@@ -51,6 +63,12 @@ export default function StageFallbackPanel({ reason, treeId, nodeId }: StageFall
       {reason && (
         <p style={{ fontSize: 13, lineHeight: 1.4, color: 'var(--tap-muted)', margin: 0, textAlign: 'center' }}>
           {reason}
+        </p>
+      )}
+      {isVaultThread && (
+        <p style={{ fontSize: 13, lineHeight: 1.4, color: 'var(--tap-muted)', margin: 0, textAlign: 'center' }}>
+          This is a vault note. Its current text also stays mirrored to the file on disk; timings, deleted letters
+          and authors stay here in Tapestry, not in that file.
         </p>
       )}
       {treeId && nodeId && <SessionList treeId={treeId} nodeId={nodeId} />}
