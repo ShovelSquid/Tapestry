@@ -2087,6 +2087,8 @@ html, body, #root {
 .tapestry-ask-claude-button:focus-visible {
   outline: 2px solid var(--tap-accent);
   outline-offset: 2px;
+}
+
 /* 02.3-07: every new side-view navigation control (the date scrubber, the
    stage's own focus point) gets the identical 2px accent ring at 2px offset
    (UI-SPEC "Keyboard map": ":focus-visible rings are 2px accent at 2px
@@ -2281,9 +2283,12 @@ html, body, #root {
   gap: 8px;
 }
 
+.tap-motion-row input {
+  accent-color: var(--tap-select);
+}
+
 .tap-motion-row input[type='range'] {
   width: 110px;
-  accent-color: var(--tap-select);
 }
 
 .tap-motion-row input[type='range']:disabled {

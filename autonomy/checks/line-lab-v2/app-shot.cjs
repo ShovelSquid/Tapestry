@@ -22,6 +22,8 @@ fs.mkdirSync(process.env.TAPESTRY_SPACE_DIR, { recursive: true })
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms))
 app.on('browser-window-created', (_e, win) => {
+  // A hidden window clamps timers to 1 s; poses that step at 16 ms need real time.
+  win.webContents.setBackgroundThrottling(false)
   win.webContents.once('did-finish-load', async () => {
     await wait(2500)
     const run = async (src) => {
@@ -55,7 +57,7 @@ app.on('browser-window-created', (_e, win) => {
     done(0)
   })
 })
-setTimeout(() => { console.error('[shot] timed out'); done(2) }, 60000)
+setTimeout(() => { console.error("[shot] timed out"); done(2) }, Number(process.env.SHOT_TIMEOUT_MS || 60000))
 // Main finds plugins beside its app path; launched from this script that
 // would be autonomy/checks, where there are none, so point it at app/.
 const appDir = path.resolve(__dirname, '../../../app')

@@ -64,3 +64,10 @@ before the capture (wave 0 used it to click "Save my name").
   zoom 29% → 392%, Beds a note again. `app-wave5-forms-2026-09-25.png`,
   `app-wave5-after-dblclick-2026-09-25.png` and `wave5-side-by-side-2026-09-25.png` (Line Lab's circle
   form at 30%, the app at 29%). `wave5-ref.js` is the Line Lab pose (`python3 mk.py wave5-ref.js …`).
+
+- Wave 6: `SHOT_SCRIPT="$(cat wave2-setup.js)" SHOT_AFTER_RELOAD="$(cat wave6-pose.js)" SHOT_SETTLE_MS=60`
+  drags, riffles and bobs with motion on, then with the Motion panel's "All off", and prints
+  what moved. `app-shot.cjs` now turns off background throttling (a hidden window clamps
+  timers to 1 s) and takes `SHOT_TIMEOUT_MS`. Result on 2026-09-25: on, 3 specks,
+  rifle 0.62 px, text 0.22 px, both settled; all off, 0 specks, no nudge, **0 animation
+  frames** over the whole sequence. `app-wave6-2026-09-25.png` shows the panel open.
