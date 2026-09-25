@@ -1,0 +1,19 @@
+# Line Lab v2 behaviour check
+
+Headless check for Part 1 tasks 1, 2, 4, 5 and 6 of `Plan - Line Lab v2`.
+`mk.py` wraps `~/Tree/Design/Line Lab/line-lab.src.html` into a test page
+with a debug hook (`window.__ll`), a no-op `setPointerCapture` and a
+timer-driven `requestAnimationFrame`. Headless Chrome doesn't tick rAF
+under `--virtual-time-budget`. `test.js` drives synthetic pointer events and
+prints its results into `<pre id="result">`. The hook exists only in the
+test page, never in the published file.
+
+    python3 mk.py test.js /tmp/h.html
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new \
+      --disable-gpu --window-size=1280,1400 --virtual-time-budget=20000 \
+      --dump-dom file:///tmp/h.html | sed -n '/id="result"/,/<\/pre>/p'
+
+Result on 2026-09-25: defaults show Kaelen's values; the red dot eases back
+at most 0.094 per frame; the light drains to the exit point; the pencil band
+goes 971 → 682 (early grow) → 1 → 0 pixels as the blue takes over; particles:
+start 2, steady 0, gentle curve 0, sharp turn 2 toward (-0.7, 0.7).
