@@ -123,6 +123,41 @@ Done on `ws/ui` in f31d66c (code), with screenshots in a1094a8.
 Answer `item 5: approved` or the issues in `autonomy/RESPONSE`.
 If no: `git revert f31d66c` on ws/ui, and untick wave 2 in the plan.
 
+### 6. Wave 3 (format bar and note settings): gate 1, merge into mergin, and a look (Plan - Line Lab v2, Part 2)
+
+Done on `ws/ui` in b720a75.
+- A blue note shows two pencil circles top-right, Line Lab's `f` at (w-62, 22) and settings at (w-28, 22).
+  `look/FormatBar.tsx` replaces `FloatingToolbar` (deleted) on notes and knots. While editing, a text selection
+  or the pointer on the `f` opens the pill `f i b u ✱` on the note's top edge (sketch 3). `i` and `b` toggle.
+  `f` opens the fonts, `u` opens underline and strikethrough, and `✱` opens headings, lists, alignment and
+  colour, which covers everything the old toolbar did. A section opens in place when pressed or after the
+  pointer rests on it for 250 ms, and the `‹` at the end goes back. Hovering the red dot folds the pill back
+  to `f`. Pressing `f` on a selected note that isn't being edited starts editing it.
+- **⚠ Gate 1: underline and strikethrough mark names.** The buttons are shown disabled. The marks are **not**
+  in the schema yet, because a paste of `<u>`/`<s>` would otherwise write them into a `.tree`. Proposed
+  names: `underline` and `strikethrough` (ProseMirror mark names with no attrs, parsed from
+  `<u>`/`text-decoration: underline` and `<s>`/`<del>`/`<strike>`). Answer with the names, or `approved`
+  to use these. On approval the next session adds the two marks to `editor/schema.ts` and enables the two items in
+  `look/format-bar.ts`.
+- **Settings face:** the settings button flips the note (a 260 ms turn, the new `noteFlip` motion effect)
+  to show its colour (Paper) and its collapse thresholds (110 / 28 px). Both are **read-only**. Storing
+  either on the note is a new record shape (gate 2 for the thresholds). I treated the note's colour the same
+  way, because no colour prop exists on notes yet. Suggested names, if you want them: `look.color`,
+  `look.collapse.circle`, `look.collapse.dot`. Escape or the button flips it back, and so does deselecting.
+- Also: text selected in notes and knots now uses `--tap-select-fill` (it was the OS highlight, which showed pink).
+- Checks: 14 model tests and a round-trip test through the real kernel. In that test, italic, bold, font,
+  colour, heading, list and alignment are written to a temp `.tree`, the tree is closed and reopened, and the
+  doc comes back identical. Full suite 1189 green, typecheck and build clean. In the app: bold was pressed in
+  the pill and the kernel body held `strong`. Screenshots:
+  `autonomy/checks/line-lab-v2/wave3-side-by-side-2026-09-25.png` (sketch 3, the pill, the settings face).
+- **To check in the dev app:** select text in a note (pill opens), rest on `✱` then `H`, press `‹`, bold some
+  text, then reload and see it's still bold. Hover the red dot (the pill folds). Press the settings circle
+  and press it again.
+- **Merge `ws/ui` wave 3 into `ws/mergin`** (sessions can't merge there).
+
+Answer `item 6: approved` (with or without mark names) or the issues in `autonomy/RESPONSE`.
+If no: `git revert b720a75 2bea1d6` on ws/ui, and untick wave 3 in the plan.
+
 ## Closed
 
 (none)

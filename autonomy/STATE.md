@@ -23,14 +23,13 @@ checklist:
 
 ## In progress
 
-Wave 3 (format bar and note settings) started 13:40 on 2026-09-25; mergin
-already merged (07aeaa4). Plan: `look/format-bar.ts` (pill model + tests),
-`look/FormatBar.tsx` (f and settings circles at (w-62,22)/(w-28,22); pill on the
-top edge x 44..w-44 when editing with text selected or f hovered; red-dot hover
-collapses it), `look/NoteSettings.tsx` (flip face; colour and thresholds
-read-only), FloatingToolbar deleted, KnotNode gets the pill alone. Underline and
-strikethrough: not in the schema (paste would write them); buttons disabled.
-Round-trip test through the real kernel in `editor/format-roundtrip.test.ts`.
+(empty) Wave 3 is done (REVIEW #6). Next session: **Part 2, Wave 4 (connections
+and knots)**. Start with `git merge ws/mergin`. Hook: `Canvas.tsx` passes the drag
+state and a "landed" event to `ConnectionLine` (41 lines, grey 1.5 px SVG). Draw
+connections as blue waving `InkLine`s (open shape, `wave` prop), a live drag line
+ending in a blue dot, a green `--tap-connect-flash` on landing; restyle `KnotNode`
+(it already hosts `FormatPill` on its top edge); UI copy "connection"/"knot", never
+"thread". Screenshot scripts: `autonomy/checks/line-lab-v2/wave3-*.js`.
 
 ## Blocked
 
@@ -41,10 +40,18 @@ Round-trip test through the real kernel in `editor/format-roundtrip.test.ts`.
 
 - Line Lab publish needs the Artifact tool, which unattended sessions don't
   have. Queued as REVIEW #1; Task 8 stays unticked (parked) until approved.
+- Wave 3: the note's colour setting is read-only, like the thresholds (gate 2):
+  notes have no colour prop, so storing one is a new record shape. In REVIEW #6.
 - Particle direction ("in the direction of change") read literally: specks
   fly along Δv from the corners facing it. Queued in REVIEW #2.
 
 ## Learned
+
+- Renderer tests are typechecked by `tsconfig.web.json` (rootDir `src`), so a test
+  that needs the real kernel (`test/helpers/temp-tree`) belongs in `src/main/`
+  (`tsconfig.node.json`, rootDir `..`), even when it imports renderer modules.
+- Inline `style={{ display: … }}` beats a stylesheet `display: none`; put layout in
+  CSS classes when a state class needs to hide the element.
 
 - The worktree had no node_modules; `npm install` at the root (real
   install, not the shared symlink) took a few minutes and built the addon.
@@ -88,3 +95,6 @@ Round-trip test through the real kernel in `editor/format-roundtrip.test.ts`.
 - 2026-09-25 13:50: Line Lab v2 Part 2 Wave 2 done and ticked (NoteInk, bloom,
   CornerCluster, NoteCard restyle; 10 tests, 1174 green; side-by-side with sketches
   0-2). Commits f31d66c, a1094a8. REVIEW #5 queued.
+- 2026-09-25 13:55: Line Lab v2 Part 2 Wave 3 done and ticked (FormatBar, format pill,
+  NoteSettings flip face, kernel round-trip test; 15 tests, 1189 green; side-by-side
+  with sketch 3). Commits 2bea1d6, b720a75. REVIEW #6 queued (gate 1 open).
