@@ -23,15 +23,19 @@ checklist:
 
 ## In progress
 
-- Plan - Line Lab v2, Part 1. Tasks 1-6 done and ticked (page
-  `~/Tree/Design/Line Lab/line-lab.src.html` rewritten; spec §1/§2a/§2b/§7
-  numbers). Next: Task 7 + 7b spec edits (Kaelen added 7b mid-session:
-  static line weight, circle/dot fixed on screen), then Task 8 build,
-  screenshot, Plugin Map. Check: `autonomy/checks/line-lab-v2/`.
+(empty) Part 1 is finished apart from Task 8's publish (parked, REVIEW #1).
+Next session: **Part 2, Wave 0 (Foundations)**, the first unchecked box
+under "Part 2" in the plan's Progress list. Start with `git merge ws/mergin`.
+Note Kaelen's Task 7b change before building: line weight is **static**
+(built once in world units, 1 px at 100% zoom, scales with the card), not
+constant on screen. Waves 1 and 5 in the plan already say so.
 
 ## Blocked
 
-(empty)
+- Line Lab publish needs the Artifact tool, which unattended sessions don't
+  have. Queued as REVIEW #1; Task 8 stays unticked (parked) until approved.
+- Particle direction ("in the direction of change") read literally: specks
+  fly along Δv from the corners facing it. Queued in REVIEW #2.
 
 ## Learned
 
@@ -43,7 +47,16 @@ checklist:
 - The plan's pre-driver text is snapshotted at
   `autonomy/snapshots/line-lab-v2/Design/Plan - Line Lab v2.md`. It was
   taken right before the Progress checklist was added.
+- Kaelen may edit a plan while a session runs. Re-read it (or diff it
+  against the snapshot) before ticking boxes.
+- Headless Chrome doesn't tick `requestAnimationFrame` under
+  `--virtual-time-budget`. Test pages must shim it with a timer; see
+  `autonomy/checks/line-lab-v2/`.
+- No Artifact tool in unattended sessions, so publish steps go to REVIEW.
 
 ## Log
 
-(one line per session)
+- 2026-09-25 01:27: Line Lab v2 Part 1 tasks 1-7b done and ticked; Task 8
+  built, screenshotted, Plugin Map updated, publish parked (REVIEW #1).
+  Commits d76dd62, cf584e4, 771250f. Kaelen edited the plan mid-session
+  (added Task 7b, static weight); picked up and done.
