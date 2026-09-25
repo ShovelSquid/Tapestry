@@ -7,11 +7,15 @@ environment lessons.
 
 ## Current target
 
-Next ready plan in `~/Tree/Design`. At setup (2026-09-25) that is
-`Plan - Line Lab v2.md`: 8 tasks on the Line Lab tuning page
-(`Design/Line Lab/line-lab.src.html`) and `Spec - Notes, Lines and
-Motion.md`, ending in a publish to the existing Line Lab artifact and a
-Plugin Map update. It says not to start app work.
+`~/Tree/Design/Plan - Line Lab v2.md`, worked from its `## Progress`
+checklist:
+- Part 1 (tasks 1-8): the Line Lab tuning page
+  (`Design/Line Lab/line-lab.src.html`) and `Spec - Notes, Lines and
+  Motion.md`, ending in a publish to the existing Line Lab artifact and a
+  Plugin Map update. It can take one session or a few.
+- Part 2 (waves 0-8): the note look built into `app/` on this branch, one
+  wave per session, without GSD. Five ⚠ gates for Kaelen are listed in the
+  plan; take the reversible option and queue each in REVIEW.md.
 
 ## Plans
 
@@ -29,6 +33,9 @@ Plugin Map update. It says not to start app work.
 
 - ~/Tree is not a git repo; `autonomy/snapshots/` is the only undo for it.
 - Branch forked from ws/mergin at 07aeaa4 on 2026-09-25.
+- The plan's pre-driver text is snapshotted at
+  `autonomy/snapshots/line-lab-v2/Design/Plan - Line Lab v2.md`. It was
+  taken right before the Progress checklist was added.
 
 ## Log
 

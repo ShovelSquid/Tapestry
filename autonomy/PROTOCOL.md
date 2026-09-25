@@ -15,10 +15,15 @@ vault.
 - Anything else, whether `draft`, `done …`, `parked …` or a missing status,
   is not yours. Specs (`Spec - *.md`) are inputs, not plans; edit them only
   where a plan's task says to.
-- The plan's own "Rules for the session running this" section wins over
-  this protocol wherever the two differ. That covers read-only files, build
-  and publish steps, the one screenshot, and "stop at the end, don't start
-  app work".
+- **The `## Progress` checklist in the plan is the unit of work.** Work
+  the first unchecked, unparked box, top to bottom. If a plan has no
+  Progress checklist, add one first, with one box per task or feature in
+  the plan's own order, and commit its snapshot (step 3) before you do.
+- The plan's own rules (read-only files, build and publish steps, the one
+  screenshot) win over this protocol wherever the two differ, with one
+  exception: the driver runs every part of a plan. A plan's "stop at the
+  end of Part N", "started separately" or "runs as a GSD phase" does not
+  stop the loop. Move on to the next unchecked box, without GSD.
 
 ## Each session
 
@@ -40,16 +45,36 @@ vault.
 
 3. **Work the plan.** Take the first plan on the work list.
    - When you start a plan, change its frontmatter `status:` line to
-     `status: in progress (ws/ui)`. That line is the only edit you make
-     to the plan file.
+     `status: in progress (ws/ui)`. The status line and the Progress
+     checklist are the only parts of the plan file you edit.
+   - **How much per session:** Part 1-style work on the vault (small
+     tasks on one page or spec) can do as many tasks as fit, with any
+     publish or report task last. An app wave (Part 2) is one wave per
+     session.
    - **Snapshot before editing ~/Tree.** ~/Tree is not under git. Before
      you first change any file under `~/Tree` in this session, copy it to
      `autonomy/snapshots/<plan slug>/<path relative to ~/Tree>`, keeping a
      copy that already exists, since that is the pre-plan original.
      Commit the snapshot before editing. This is the undo.
-   - Work the tasks in order. After each task, record it under "In
+   - Work the boxes in order. After each task, record it under "In
      progress" in STATE.md (task number, files touched, what is left) and
      commit that together with any repo changes.
+   - **Tick the box before you exit.** When an item's "Done when" holds,
+     change its `- [ ]` to `- [x]` and append ` — <YYYY-MM-DD>, <short
+     sha>`. Tick a wave's own box when all its sub-boxes are ticked or
+     parked. Never tick a box whose check you skipped. A ⚠ gated item is
+     ticked once its reversible version (as the plan describes it) is
+     built, with ` (gate open: REVIEW #n)` appended. Something that
+     can't be built at all stays `- [ ]` with ` — parked, REVIEW #n`
+     appended. Something half-done stays unticked and goes under "In
+     progress".
+   - **App waves:** at the start of each wave, bring in the canvas work
+     with `git merge ws/mergin`. Don't rebase, because this branch is pushed.
+     If a canvas-owned file conflicts, keep mergin's side and re-apply the
+     wave's named hook. End each wave with tests green and one screenshot
+     of the dev app next to the matching sketch. You can't merge into
+     `ws/mergin` from here, so queue "merge ws/ui wave N into mergin" in
+     REVIEW.md for Kaelen instead.
    - Work that belongs in the app (`app/`, `src/`, …) happens only when a
      plan's task asks for it, on this branch. Before committing anything
      under `app/`, run `npm --prefix app run build:js`, then
@@ -74,7 +99,7 @@ vault.
      check it, and what to undo (the snapshot path) if the answer is no.
      Tell the human to answer in `autonomy/RESPONSE`.
 
-5. **Plan done.** When every task of the plan is done or parked, do the
+5. **Plan done.** When every Progress box is ticked or parked, do the
    plan's own report step, then change its `status:` line to
    `status: done (ws/ui, <YYYY-MM-DD>)`, or to
    `status: parked (ws/ui, <YYYY-MM-DD>) — see autonomy/REVIEW.md` if a task

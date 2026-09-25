@@ -13,18 +13,21 @@ frontmatter says `status: ready for autonomy` (or `in progress (ws/ui)`).
 Follow `autonomy/PROTOCOL.md` exactly. In short, read autonomy/STATE.md,
 then do one of these:
 - act on the human's review answers in autonomy/RESPONSE, then
-- continue the plan that is in progress, or start the next ready one.
+- work the next unchecked box in that plan's `## Progress` checklist,
+  and tick each box (`- [x] … — date, sha`) as soon as its "Done when"
+  holds, before you exit.
 
-Each plan's own "Rules for the session running this" section overrides
-this prompt wherever they differ, including what is read-only and where
-the plan's scope ends. Never edit Kaelen's own notes in ~/Tree.
+The plan's own rules (read-only files, build and publish steps) override
+this prompt, but the driver runs every part of the plan. "Stop after Part
+1" or "runs as a GSD phase" does not stop you; see PROTOCOL.md. Never
+edit Kaelen's own notes in ~/Tree.
 
 Never stop at a human checkpoint: do what a machine can, queue the rest in
 autonomy/REVIEW.md, and keep going. Update autonomy/STATE.md, commit, and
 exit with a clean tree.
 
-Scope discipline matters more than speed: one plan per session at most,
-fewer tasks if the plan is large. ~/Tree is not under git, so snapshot
+Scope discipline matters more than speed. Small vault tasks can share a
+session, but an app wave gets a session to itself. ~/Tree is not under git, so snapshot
 any ~/Tree file into this repo before you first change it (PROTOCOL step
 3), and keep "In progress" in autonomy/STATE.md current. The driver
 appends a TIME LIMIT line below; treat it as real.
