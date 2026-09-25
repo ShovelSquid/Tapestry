@@ -13,7 +13,7 @@
 
 import { afterEach, describe, expect, it } from 'vitest'
 import { rmSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { makeTempDir } from '../../../test/helpers/temp-tree'
 import { KernelBridge } from '../kernel-bridge'
 import { TreeRegistry } from '../trees/registry'
@@ -102,5 +102,126 @@ describe('openWithRollback (2.6 WR-02, T-2.6-24)', () => {
     expect(recorded).toBe(false)
     expect(ids(registry)).toEqual(before)
     expect(registry.get(existing.id)).toBe(existing)
+  })
+
+  it('a failed catch-up after adoption closes the tree and releases its journal lock', async () => {
+    const { dir, registry, existing } = withExisting('rollback-catchup')
+    const before = ids(registry)
+    const path = makeWorld(dir, 'adopted.tree')
+    const failure = new Error('catch-up failed')
+    let adoptedId: string | undefined
+
+    const add = openWithRollback(registry, {
+      open: async () => {
+        adoptedId = registry.open(path, { kind: 'vault', vaultRoot: dir, name: 'Adopted' }).id
+        throw failure
+      },
+      record: () => {
+        throw new Error('record must not run')
+      },
+      isMember: () => false,
+    })
+
+    await expect(add).rejects.toBe(failure)
+    expect(adoptedId).toBeDefined()
+    expect(registry.entry(adoptedId!)).toBeNull()
+    expect(ids(registry)).toEqual(before)
+    expect(registry.get(existing.id)).toBe(existing)
+
+    // The real proof: a fresh bridge can take the exclusive lock (T-2.6-41).
+    const reopened = new KernelBridge()
+    expect(() => reopened.open(path)).not.toThrow()
+    reopened.close()
+  })
+
+  it('a forest write failure in record closes the newly adopted tree and rethrows unchanged', async () => {
+    const { dir, registry, existing } = withExisting('rollback-record')
+    const before = ids(registry)
+    const path = makeWorld(dir, 'fresh.tree')
+    const failure = new Error('forest write failed')
+    let recordedId: string | undefined
+
+    const add = openWithRollback(registry, {
+      open: () => registry.open(path, { kind: 'native' }),
+      record: (entry) => {
+        recordedId = entry.id
+        throw failure
+      },
+      isMember: () => false,
+    })
+
+    await expect(add).rejects.toBe(failure)
+    expect(failure.message).toBe('forest write failed')
+    expect(recordedId).toBeDefined()
+    expect(registry.entry(recordedId!)).toBeNull()
+    expect(ids(registry)).toEqual(before)
+    expect(registry.get(existing.id)).toBe(existing)
+
+    const reopened = new KernelBridge()
+    expect(() => reopened.open(path)).not.toThrow()
+    reopened.close()
+  })
+
+  it('keeps an entry that existed before the call, even when open() returns it', async () => {
+    const { registry, existing } = withExisting('rollback-existing')
+    const before = ids(registry)
+    const failure = new Error('forest write failed')
+
+    const add = openWithRollback(registry, {
+      // The path is already open, so the registry returns the same entry.
+      open: () => registry.open(existing.path, { kind: 'native' }),
+      record: (entry) => {
+        expect(entry).toBe(existing)
+        throw failure
+      },
+      isMember: () => false,
+    })
+
+    await expect(add).rejects.toBe(failure)
+    expect(ids(registry)).toEqual(before)
+    expect(registry.get(existing.id)).toBe(existing)
+    expect(() => existing.bridge.status()).not.toThrow()
+  })
+
+  it('keeps an entry the forest holds (a concurrent add that succeeded) and closes its own', async () => {
+    const { dir, registry, existing } = withExisting('rollback-concurrent')
+    const w1Path = makeWorld(dir, 'w1.tree')
+    const w2Path = makeWorld(dir, 'w2.tree')
+    const failure = new Error('catch-up failed')
+    let w1Id: string | undefined
+    let w2Id: string | undefined
+    const asked: string[] = []
+
+    const add = openWithRollback(registry, {
+      open: async () => {
+        // This call's own world, then another add's world that reached the
+        // forest while this one was still catching up.
+        w1Id = registry.open(w1Path, { kind: 'vault', vaultRoot: dir, name: 'W1' }).id
+        w2Id = registry.open(w2Path, { kind: 'native' }).id
+        throw failure
+      },
+      record: () => {
+        throw new Error('record must not run')
+      },
+      isMember: (id) => {
+        asked.push(id)
+        return id === w2Id
+      },
+    })
+
+    await expect(add).rejects.toBe(failure)
+    expect(w1Id).toBeDefined()
+    expect(w2Id).toBeDefined()
+    expect(w1Id).not.toBe(w2Id)
+    expect(registry.entry(w1Id!)).toBeNull()
+    expect(registry.get(w2Id!)?.path).toBe(resolve(w2Path))
+    expect(registry.get(existing.id)).toBe(existing)
+    expect(ids(registry)).toEqual([existing.id, w2Id!].sort())
+    // Only the call's new entries are asked about; the pre-existing one is not.
+    expect(asked.sort()).toEqual([w1Id!, w2Id!].sort())
+
+    const reopened = new KernelBridge()
+    expect(() => reopened.open(w1Path)).not.toThrow()
+    reopened.close()
   })
 })

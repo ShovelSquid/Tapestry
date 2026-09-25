@@ -377,6 +377,39 @@ describe('a world created at a missing member path (gap 2, CR-02)', () => {
 })
 
 // ---------------------------------------------------------------------------
+// Whether an entry joins a stand-in (what an add's rollback asks)
+// ---------------------------------------------------------------------------
+
+describe('SpaceService.isMember (2.6 WR-02)', () => {
+  it('follows the join through add and remove, and is false once the space is closed', async () => {
+    const r = await launched()
+    const alpha = listed(r.service, r.alpha)
+    expect(alpha?.status).toBe('ok')
+    expect(r.service.isMember(alpha!.id)).toBe(true)
+
+    expect(r.service.isMember('sha256:' + '0'.repeat(64))).toBe(false)
+    expect(r.service.isMember('no-such-tree')).toBe(false)
+
+    const gamma = r.registry.create(join(r.worlds, 'gamma.tree'), uniqueWorld('gamma'), {
+      kind: 'native',
+    })
+    expect(r.service.isMember(gamma.id)).toBe(false)
+
+    expect(r.service.addMember(gamma, KAELEN)).toEqual({ committed: true })
+    expect(r.service.isMember(gamma.id)).toBe(true)
+
+    expect(r.service.removeMember(gamma.id, KAELEN)).toEqual({ committed: true })
+    expect(r.registry.get(gamma.id)).toBe(gamma)
+    expect(r.service.isMember(gamma.id)).toBe(false)
+
+    r.service.close()
+    expect(r.service.ready).toBe(false)
+    expect(() => r.service.isMember(alpha!.id)).not.toThrow()
+    expect(r.service.isMember(alpha!.id)).toBe(false)
+  })
+})
+
+// ---------------------------------------------------------------------------
 // Vault members
 // ---------------------------------------------------------------------------
 
