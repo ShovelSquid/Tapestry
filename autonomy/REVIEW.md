@@ -53,6 +53,28 @@ If no: the snapshot above undoes the page, and
 `autonomy/snapshots/line-lab-v2/Design/Spec - Notes, Lines and Motion.md` the spec.
 
 
+### 3. Wave 0 (Foundations): merge into mergin, and a look with notes on screen (Plan - Line Lab v2, Part 2)
+
+Done on `ws/ui` in 70f1436 and cc76bb7 (`git merge ws/mergin` was already up to date at 07aeaa4).
+- **Token pass.** Every hex colour in `App.css` rules and renderer inline styles now reads a `--tap-*` token
+  from the `:root` block. The spec's six tokens are added (`--tap-pencil`, `--tap-select`, `--tap-select-fill`,
+  `--tap-connect-flash` = `#00FF7F` to tune, `--tap-delete`, `--tap-line: 1px`), but nothing uses them yet:
+  the pencil only has somewhere to go once wave 2 draws the outline, so "no visual change except the pencil
+  colour" came out as no visual change at all. Near-duplicate greys kept their own tokens rather than being
+  merged, so the app stays pixel-identical.
+- **One exception:** the text-colour palette in `editor/schema.ts` keeps its hex values, because those strings
+  are written into the `.tree` as mark attributes. They're data, not styling.
+- `renderer/look/values.ts` (your JSON key for key, plus Line Lab's untuned constants) and `renderer/look/motion.ts`
+  (scheduler, eased amounts, bob, per-effect strength and off switch, reduce motion starts everything at off,
+  and a saved choice wins after that), with 16 unit tests. The full suite passes: 1148 tests.
+- Check: the empty-state screenshot `autonomy/checks/line-lab-v2/app-wave0-2026-09-25.png` is pixel-identical
+  to the same build from 379c07f. The headless run couldn't create a note, so **please open the dev app with a few
+  notes, a selection, the toolbar and a plugin error, and check nothing changed colour.**
+- **Merge `ws/ui` wave 0 into `ws/mergin`** (sessions can't merge there).
+
+Answer `item 3: approved` or the issues in `autonomy/RESPONSE`.
+If no: `git revert cc76bb7 70f1436` on ws/ui.
+
 ## Closed
 
 (none)

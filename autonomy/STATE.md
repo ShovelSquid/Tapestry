@@ -23,14 +23,19 @@ checklist:
 
 ## In progress
 
-(empty) Part 1 is finished apart from Task 8's publish (parked, REVIEW #1).
-Next session: **Part 2, Wave 0 (Foundations)**, the first unchecked box
-under "Part 2" in the plan's Progress list. Start with `git merge ws/mergin`.
-Note Kaelen's Task 7b change before building: line weight is **static**
-(built once in world units, 1 px at 100% zoom, scales with the card), not
-constant on screen. Waves 1 and 5 in the plan already say so.
+(empty) Part 2 Wave 0 is done (REVIEW #3). Next session: **Part 2, Wave 1
+(the ink line renderer)**. Start with `git merge ws/mergin`. Port Line Lab's
+outline algorithm (`~/Tree/Design/Line Lab/line-lab.src.html`, around
+`widthAt`/`drawLoop`/`loopWave`) to `app/src/renderer/look/ink.ts`, reading
+every number from `look/values.ts` and animating through `look/motion.ts`.
+Output a filled SVG outline path in world units; build once, never on zoom.
 
 ## Blocked
+
+- Wave 0 "no visual change except the pencil colour": nothing draws in
+  pencil until wave 2, so the pencil token is defined but unused and the
+  app is pixel-identical. The `editor/schema.ts` text-colour palette keeps
+  its hex because it's `.tree` data. Both in REVIEW #3.
 
 - Line Lab publish needs the Artifact tool, which unattended sessions don't
   have. Queued as REVIEW #1; Task 8 stays unticked (parked) until approved.
@@ -38,6 +43,13 @@ constant on screen. Waves 1 and 5 in the plan already say so.
   fly along Δv from the corners facing it. Queued in REVIEW #2.
 
 ## Learned
+
+- The worktree had no node_modules; `npm install` at the root (real
+  install, not the shared symlink) took a few minutes and built the addon.
+- App screenshots: `autonomy/checks/line-lab-v2/app-shot.cjs` runs the built
+  app on temp folders. A synthetic dblclick doesn't create a note; to get
+  notes on screen, find the real create path (maybe `window.tapestry` IPC).
+- macOS has no `timeout`; background long commands instead.
 
 - ~/Tree is not a git repo; `autonomy/snapshots/` is the only undo for it.
 - Tuned look values: Kaelen's JSON in `~/Tree/Design/Index First Pass Notes.md`
@@ -60,3 +72,6 @@ constant on screen. Waves 1 and 5 in the plan already say so.
   built, screenshotted, Plugin Map updated, publish parked (REVIEW #1).
   Commits d76dd62, cf584e4, 771250f. Kaelen edited the plan mid-session
   (added Task 7b, static weight); picked up and done.
+- 2026-09-25 10:03: Line Lab v2 Part 2 Wave 0 done and ticked (token pass,
+  look/values.ts, look/motion.ts + tests; 1148 tests green; screenshot
+  pixel-identical to 379c07f). Commits 70f1436, cc76bb7. REVIEW #3 queued.
