@@ -332,11 +332,20 @@ function openReferencedForest(
  *
  * A file that is not a Tapestry tree is `home-foreign` (4.7) and is never
  * written to; no forest is created beside it (T-2.6-18).
+ *
+ * An unreadable settings.json returns `setup-failed` before either file is
+ * opened, and nothing is written (2.6 gap 1, CR-01).
  */
 export function recoverHome(
   settings: SettingsStore,
   paths: SpacePaths,
 ): { home: TapestryHome; forest: ForestStore } | SpaceProblem {
+  try {
+    settings.assertReadable()
+  } catch (err) {
+    return { kind: 'setup-failed', path: dirname(paths.home), reason: errorMessage(err) }
+  }
+
   const opened = reopenFromPointer(paths.home)
   if ('kind' in opened) return opened
 
@@ -366,11 +375,20 @@ export function recoverHome(
  * A file that is not a forest is `forest-foreign` (4.7) and is never written
  * to. If the pointer cannot be written, the Tapestry tree this call created
  * is removed again, so the next launch is case C once more.
+ *
+ * An unreadable settings.json returns `setup-failed` before the forest is
+ * opened, so no Tapestry tree is created (2.6 gap 1, CR-01).
  */
 export function recoverForest(
   settings: SettingsStore,
   paths: SpacePaths,
 ): { home: TapestryHome; forest: ForestStore } | SpaceProblem {
+  try {
+    settings.assertReadable()
+  } catch (err) {
+    return { kind: 'setup-failed', path: dirname(paths.home), reason: errorMessage(err) }
+  }
+
   const forest = ForestStore.open(paths.forest)
   if (!(forest instanceof ForestStore)) return forestProblem(forest, paths.forest)
 

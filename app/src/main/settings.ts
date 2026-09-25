@@ -62,7 +62,7 @@ export interface TreeSetting {
 export interface AppSettings {
   /**
    * The file's own version when it is a positive safe integer, otherwise 1.
-   * Written back as found; this build never raises it.
+   * Raised only to 2, by the pointer write; never lowered.
    */
   version: number
   /** The `<name>` in `actor human user.<name>`, or null before first run. */
