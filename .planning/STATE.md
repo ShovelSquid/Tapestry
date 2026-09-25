@@ -4,16 +4,16 @@ milestone: v1.0
 current_phase: "02.6"
 current_phase_name: Placement Edges & Forest Tree
 status: executing
-stopped_at: Completed 02.6-06-PLAN.md (phase 2.6 plans complete; Kaelen's end-of-phase check pending in autonomy/REVIEW.md)
-last_updated: "2026-09-25T00:07:30.160Z"
+stopped_at: Completed 02.6-07-PLAN.md
+last_updated: "2026-09-25T00:13:32.850Z"
 last_activity: 2026-09-24
 last_activity_desc: Phase 02.6 execution started
-state_head: 48a0fb1df047e4a9a2879b6f9d1f795b2db33890
+state_head: d7247a1f067e358857d453bd19e22d8c3b3ff6d7
 progress:
   total_phases: 13
   completed_phases: 0
   total_plans: 55
-  completed_plans: 33
+  completed_plans: 34
 ---
 
 # Project State
@@ -80,6 +80,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 02.6 P04 | 12min | 2 tasks | 8 files |
 | Phase 02.6 P05 | 8min | 2 tasks | 9 files |
 | Phase 02.6 P06 | 10min | 2 tasks | 10 files |
+| Phase 02.6 P07 | 4min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -149,6 +150,8 @@ Recent decisions affecting current work:
 - [Phase 02.6]: 02.6-05: FRAME_UNDO_REACH stays 'run'; frame undo/redo are compensating forest commits read from the forest, never a rewind
 - [Phase 02.6]: 02.6-05: fitFrame is system-signed, once per member per session, spent even when nothing moves, never after the person moved the frame; trees:setFrame removed
 - [Phase 02.6]: 02.6-06: cases B and C implemented as B(i)/C(i) (reuse, pointer last, no re-import); not-set-up kind removed; settings tree writers deleted (2.2) and trees never written; a file without trees keeps none
+- [Phase 02.6]: 02.6-07: an empty or whitespace-only settings.json counts as missing (nothing to lose); a present-but-unparseable one is never written over and launch returns setup-failed
+- [Phase 02.6]: 02.6-07: agents:setEnabled now rejects its IPC call over an unreadable settings.json instead of overwriting it; index.ts unchanged
 
 ### Pending Todos
 
@@ -203,6 +206,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-24T23:20:01.553Z
-Stopped at: Completed 02.6-06-PLAN.md (phase 2.6 plans complete; Kaelen's end-of-phase check pending in autonomy/REVIEW.md)
+Last session: 2026-09-25T00:13:32.785Z
+Stopped at: Completed 02.6-07-PLAN.md
 Resume file: None
