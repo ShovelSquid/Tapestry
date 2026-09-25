@@ -8,9 +8,9 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { existsSync, readFileSync, rmSync, writeFileSync } from 'fs'
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'fs'
 import { join } from 'path'
-import { SettingsStore, suggestUserName } from './settings'
+import { SettingsStore, SettingsUnreadableError, suggestUserName } from './settings'
 import { makeTempDir } from '../../test/helpers/temp-tree'
 
 /** Run `body` with a fresh temp userData directory, then delete it. */
@@ -472,6 +472,126 @@ describe('SettingsStore Tapestry pointer (2.6 D-02)', () => {
       })
     },
   )
+})
+
+describe('SettingsStore with an unreadable file (2.6 gap 1, CR-01)', () => {
+  const TRAILING_COMMA = '{\n  "userName": "kaelen",\n  "trees": [],\n}\n'
+  const POINTER = '/Users/you/Documents/Tapestry/Tapestry.tree'
+
+  it('a trailing comma: every writer throws, the bytes stay, and no temp file is left', () => {
+    withTempDir((dir) => {
+      const settings = new SettingsStore(dir)
+      writeFileSync(settings.path, TRAILING_COMMA, 'utf-8')
+      const before = readFileSync(settings.path)
+
+      expect(() => settings.assertReadable()).toThrow(SettingsUnreadableError)
+      expect(() => settings.setTapestryPointer(POINTER)).toThrow(SettingsUnreadableError)
+      expect(readFileSync(settings.path).equals(before)).toBe(true)
+      expect(() => settings.setUserName('someone')).toThrow(SettingsUnreadableError)
+      expect(readFileSync(settings.path).equals(before)).toBe(true)
+      expect(() =>
+        settings.update((current) => ({ ...current, agentsEnabled: false })),
+      ).toThrow(SettingsUnreadableError)
+      expect(readFileSync(settings.path).equals(before)).toBe(true)
+      expect(existsSync(`${settings.path}.tmp`)).toBe(false)
+    })
+  })
+
+  it('a trailing comma still reads as defaults and as no pointer', () => {
+    withTempDir((dir) => {
+      const settings = new SettingsStore(dir)
+      writeFileSync(settings.path, TRAILING_COMMA, 'utf-8')
+
+      expect(settings.read().userName).toBeNull()
+      expect(settings.read().agentsEnabled).toBe(true)
+      expect(settings.getTapestryPointer()).toBeNull()
+      expect(settings.readLegacyTrees()).toEqual({ trees: [], skipped: 0 })
+    })
+  })
+
+  it('names the file and the reason, and says it was left untouched', () => {
+    withTempDir((dir) => {
+      const settings = new SettingsStore(dir)
+      writeFileSync(settings.path, TRAILING_COMMA, 'utf-8')
+
+      let caught: unknown
+      try {
+        settings.setTapestryPointer(POINTER)
+      } catch (err) {
+        caught = err
+      }
+      expect(caught).toBeInstanceOf(SettingsUnreadableError)
+      const error = caught as SettingsUnreadableError
+      expect(error.name).toBe('SettingsUnreadableError')
+      expect(error.path).toBe(settings.path)
+      expect(error.detail.length).toBeGreaterThan(0)
+      expect(error.message).toBe(
+        `${settings.path} could not be read, so it was left untouched: ${error.detail}`,
+      )
+    })
+  })
+
+  it.each([
+    ['an array', '[]'],
+    ['null', 'null'],
+    ['a string', '"text"'],
+    ['a number', '42'],
+  ])('%s is not a JSON object, and the pointer write leaves it byte-identical', (_label, text) => {
+    withTempDir((dir) => {
+      const settings = new SettingsStore(dir)
+      writeFileSync(settings.path, text, 'utf-8')
+      const before = readFileSync(settings.path)
+
+      expect(() => settings.assertReadable()).toThrow('it is not a JSON object')
+      expect(() => settings.setTapestryPointer(POINTER)).toThrow(SettingsUnreadableError)
+      expect(() => settings.setUserName('someone')).toThrow(SettingsUnreadableError)
+      expect(readFileSync(settings.path).equals(before)).toBe(true)
+      expect(existsSync(`${settings.path}.tmp`)).toBe(false)
+    })
+  })
+
+  it('a directory at the path cannot be read, so the pointer write throws and the directory stays', () => {
+    withTempDir((dir) => {
+      const settings = new SettingsStore(dir)
+      mkdirSync(settings.path)
+
+      expect(() => settings.assertReadable()).toThrow(SettingsUnreadableError)
+      expect(() => settings.setTapestryPointer(POINTER)).toThrow(SettingsUnreadableError)
+      expect(statSync(settings.path).isDirectory()).toBe(true)
+      expect(existsSync(`${settings.path}.tmp`)).toBe(false)
+    })
+  })
+
+  it.each([
+    ['empty', ''],
+    ['whitespace-only', '  \n\t\n'],
+  ])('an %s file counts as missing: the pointer write gives version 2 and the pointer', (_label, text) => {
+    withTempDir((dir) => {
+      const settings = new SettingsStore(dir)
+      writeFileSync(settings.path, text, 'utf-8')
+
+      expect(() => settings.assertReadable()).not.toThrow()
+      settings.setTapestryPointer(POINTER)
+
+      const written = JSON.parse(readFileSync(settings.path, 'utf-8'))
+      expect(written.version).toBe(2)
+      expect(settings.getTapestryPointer()).toBe(POINTER)
+    })
+  })
+
+  it('a missing file behaves as before: the pointer write creates it with version 2', () => {
+    withTempDir((dir) => {
+      const settings = new SettingsStore(dir)
+
+      expect(existsSync(settings.path)).toBe(false)
+      expect(() => settings.assertReadable()).not.toThrow()
+      settings.setTapestryPointer(POINTER)
+
+      const written = JSON.parse(readFileSync(settings.path, 'utf-8'))
+      expect(written.version).toBe(2)
+      expect(settings.getTapestryPointer()).toBe(POINTER)
+    })
+  })
 })
 
 describe('suggestUserName', () => {

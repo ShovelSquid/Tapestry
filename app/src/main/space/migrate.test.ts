@@ -15,7 +15,7 @@
  * no journal lock outlives it.
  */
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, truncateSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { makeTempDir } from '../../../test/helpers/temp-tree'
@@ -41,6 +41,7 @@ const registries: TreeRegistry[] = []
 const services: SpaceService[] = []
 
 afterEach(() => {
+  vi.restoreAllMocks()
   while (services.length > 0) services.pop()!.close()
   while (registries.length > 0) {
     try {
@@ -423,6 +424,61 @@ describe('an unreadable settings.json (gap 1, CR-01)', () => {
     expect(readFileSync(r.paths.forest, 'utf-8')).toContain(
       'import 3 trees and their frames from settings.json; skipped 1 unreadable entries',
     )
+  })
+
+  it('case B: a relaunch returns setup-failed before opening anything, and every file keeps its bytes', async () => {
+    const r = rig()
+    await importedThenQuit(r)
+    writeFileSync(r.settings.path, '{ "version": 2, ', 'utf-8')
+    const settingsBefore = readFileSync(r.settings.path)
+    const forestBefore = readFileSync(r.paths.forest)
+    const homeBefore = readFileSync(r.paths.home)
+    const homeOpen = vi.spyOn(TapestryHome, 'open')
+    const forestOpen = vi.spyOn(ForestStore, 'open')
+
+    const { service, registry } = launch(r)
+    const { problem, restored } = await service.start()
+
+    expect(problem).toEqual(
+      expect.objectContaining({ kind: 'setup-failed', path: join(r.dir, 'space') }),
+    )
+    expect(problem?.reason).toContain(r.settings.path)
+    expect(restored).toBe(0)
+    expect(service.ready).toBe(false)
+    expect(registry.summary()).toEqual([])
+    expect(homeOpen).not.toHaveBeenCalled()
+    expect(forestOpen).not.toHaveBeenCalled()
+    expect(readFileSync(r.settings.path).equals(settingsBefore)).toBe(true)
+    expect(readFileSync(r.paths.forest).equals(forestBefore)).toBe(true)
+    expect(readFileSync(r.paths.home).equals(homeBefore)).toBe(true)
+    expect(existsSync(`${r.settings.path}.tmp`)).toBe(false)
+  })
+
+  it('case C: a relaunch returns setup-failed before opening the forest, and no Tapestry tree is created', async () => {
+    const r = rig()
+    await importedThenQuit(r)
+    rmSync(r.paths.home)
+    writeFileSync(r.settings.path, '{ "version": 2, ', 'utf-8')
+    const settingsBefore = readFileSync(r.settings.path)
+    const forestBefore = readFileSync(r.paths.forest)
+    const forestOpen = vi.spyOn(ForestStore, 'open')
+    const homeCreate = vi.spyOn(TapestryHome, 'createReferencing')
+
+    const { service } = launch(r)
+    const { problem, restored } = await service.start()
+
+    expect(problem).toEqual(
+      expect.objectContaining({ kind: 'setup-failed', path: join(r.dir, 'space') }),
+    )
+    expect(problem?.reason).toContain(r.settings.path)
+    expect(restored).toBe(0)
+    expect(service.ready).toBe(false)
+    expect(forestOpen).not.toHaveBeenCalled()
+    expect(homeCreate).not.toHaveBeenCalled()
+    expect(existsSync(r.paths.home)).toBe(false)
+    expect(readFileSync(r.paths.forest).equals(forestBefore)).toBe(true)
+    expect(readFileSync(r.settings.path).equals(settingsBefore)).toBe(true)
+    expect(existsSync(`${r.settings.path}.tmp`)).toBe(false)
   })
 })
 
