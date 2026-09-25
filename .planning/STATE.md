@@ -1,19 +1,19 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0
-current_phase: "02.6"
-current_phase_name: Placement Edges & Forest Tree
-status: verifying
-stopped_at: Completed 02.6-10-PLAN.md
-last_updated: "2026-09-25T00:30:02.075Z"
+current_phase: "02.7"
+current_phase_name: File Windows & Workspace Sandbox
+status: executing
+stopped_at: Completed 02.7-06-PLAN.md
+last_updated: "2026-09-24T23:16:00.000Z"
 last_activity: 2026-09-24
-last_activity_desc: Phase 02.6 execution started
-state_head: 487ca4b0004f3d8983809b50e199b19e4e8d25c3
+last_activity_desc: 02.7-06 live watching, watch status, Retry write and scale complete (hands-on check deferred); next 02.7-07 (wave 7)
+state_head: 10bf2224bd66f01675688b3a7cf2194f1156a0b1
 progress:
   total_phases: 13
   completed_phases: 0
-  total_plans: 55
-  completed_plans: 37
+  total_plans: 52
+  completed_plans: 33
 ---
 
 # Project State
@@ -23,15 +23,15 @@ progress:
 See: .planning/PROJECT.md (updated 2026-09-08)
 
 **Core value:** Your world of thoughts must remain readable and under your control — in its spatial interface, its editable relationships and behavior, and its files and branching history.
-**Current focus:** Phase 02.6 — Placement Edges & Forest Tree
+**Current focus:** ws/mergin, the integration branch (merged 2026-09-24): 02.6 Placement Edges (10/10, human_needed), 02.7 File Windows (6/7, 02.7-07 parked), Data Drawing phase 01 (8/8, human_needed) and mathspace (all 7 phases headless) are in; 02.3 Time Threads follows. Queued human checks live in autonomy/<branch>/REVIEW.md. Workspace trees are forest members (`kind` workspace, `workspace.root.hint`) pending Kaelen's approval of those names
 
 ## Current Position
 
-Phase: 02.6 (Placement Edges & Forest Tree) — READY TO EXECUTE
-Plan: 6 of 6
-Status: Phase complete — ready for verification
-Main line (phase-2-implementation-v1) at merge: 02.2 executing (8 of 16), 02.4 complete, 02.5 5/5
-Last activity: 2026-09-24 — Phase 02.6 execution started
+Phase: 02.7 (File Windows & Workspace Sandbox) — EXECUTING
+Plan: 02.7-06 of 7 complete (live watching with recursive fs.watch and 750 ms moments signed workspace.watcher, stat-cached reconcileNow with the seq guard, self-healing watch status in the frame header, the author-unknown badge, Retry write, memoised file cards and scale measures; its hands-on check is deferred); next is 02.7-07 (wave 7)
+Status: Ready to execute 02.7-07
+Phase 02.4 (Lock Model): COMPLETE — verified 25/25, 2026-09-16; rebased onto the main line 2026-09-23
+Last activity: 2026-09-24 - Completed 02.7-06 (live watching, watch status, Retry write, scale: import 166 ms, idle reconcile reads 0, reopen 33 ms after 202 commits); 38 files / 681 tests
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -74,16 +74,12 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 02.2 P07 | 35 min | 1 tasks | 26 files |
 | Phase 02.4 P01 | 14 min | 2 tasks | 4 files |
 | Phase 02.4 P02 | 8 min | 2 tasks | 5 files |
-| Phase 02.6 P01 | 6 min | 3 tasks | 8 files |
-| Phase 02.6 P02 | 9min | 1 tasks | 8 files |
-| Phase 02.6 P03 | 6min | 2 tasks | 5 files |
-| Phase 02.6 P04 | 12min | 2 tasks | 8 files |
-| Phase 02.6 P05 | 8min | 2 tasks | 9 files |
-| Phase 02.6 P06 | 10min | 2 tasks | 10 files |
-| Phase 02.6 P07 | 4min | 2 tasks | 4 files |
-| Phase 02.6 P08 | 6min | 2 tasks | 5 files |
-| Phase 02.6 P09 | 3min | 3 tasks | 8 files |
-| Phase 02.6 P10 | 4min | 2 tasks | 5 files |
+| Phase 02.7 P01 | 16 min | 4 tasks | 36 files |
+| Phase 02.7 P02 | 29 min | 4 tasks | 29 files |
+| Phase 02.7 P03 | 20 min | 3 tasks | 15 files |
+| Phase 02.7 P04 | 10 min | 2 tasks | 13 files |
+| Phase 02.7 P05 | 16 min | 3 tasks | 23 files |
+| Phase 02.7 P06 | 18 min | 3 tasks | 17 files |
 
 ## Accumulated Context
 
@@ -142,22 +138,21 @@ Recent decisions affecting current work:
 - [Phase 02.4]: 02.4-01: malformed lock values fail closed; only exact 'open' unlocks; blank owner shown as (unknown); allow list read in Plan 02
 - [Phase 02.4]: 02.4-02: lock.<aspect>.allow is read for explicit and derived locks; only a text value counts, whitespace-split, exact match
 - [Phase 02.4]: 02.4-02: agent tool text states the lock rule and that refusals name the owner, without publishing lock.* key names
-- [Phase 02.6]: 02.6-01: settings writes are a passthrough (unknown keys, raw trees, version never lowered); FRAME_UNDO_REACH defaults to 'run' pending Plan 02 checkpoint; registry reserved paths compared resolved + real (folder-real for unborn files)
-- [Phase 02.6]: 02.6-02 checkpoint resolved 'recommended' autonomously (pending Kaelen review, autonomy/REVIEW.md item 1): Option A names, absolute path hints, origin.x/origin.y only, settings pointer key 'tapestry' {path}, version 2, pointer written last
-- [Phase 02.6]: 02.6-02: a failed import removes only files the same call created, so the next launch retries case A; cases B/C return not-set-up until Plan 06
-- [Phase 02.6]: 02.6-03: No restoreVault hook at launch; this branch has no vault launch-restore branch (2.2 Plan 08 not landed), so vault members stay in the forest unopened
-- [Phase 02.6]: 02.6-03: Note landing/resize pushes use the same one-batch trees:moveFrames call as a frame drop (settleFrames removed)
-- [Phase 02.6]: 02.6-03: Forest identity is its header (name + creation second); two forests made in the same second cannot be told apart by the case H digest check
-- [Phase 02.6]: 02.6-04: vault:locate absent on this branch; relocateMember built and tested with no caller until 2.2 Plan 08
-- [Phase 02.6]: 02.6-04: setReserved runs before member restore; restoreVault requests carry expect; relocate and re-identify use the approved add message
-- [Phase 02.6]: 02.6-05: FRAME_UNDO_REACH stays 'run'; frame undo/redo are compensating forest commits read from the forest, never a rewind
-- [Phase 02.6]: 02.6-05: fitFrame is system-signed, once per member per session, spent even when nothing moves, never after the person moved the frame; trees:setFrame removed
-- [Phase 02.6]: 02.6-06: cases B and C implemented as B(i)/C(i) (reuse, pointer last, no re-import); not-set-up kind removed; settings tree writers deleted (2.2) and trees never written; a file without trees keeps none
-- [Phase 02.6]: 02.6-07: an empty or whitespace-only settings.json counts as missing (nothing to lose); a present-but-unparseable one is never written over and launch returns setup-failed
-- [Phase 02.6]: 02.6-07: agents:setEnabled now rejects its IPC call over an unreadable settings.json instead of overwriting it; index.ts unchanged
-- [Phase 02.6]: 02.6-08: Gap 3 (WR-01) fixed with option (b): unavailable records keyed by the member's recorded digest, path: only for never-read trees; adopt() retires both the path: record and the adopted id's record; memberFor is one-to-one and removeMember refuses a shared stand-in
-- [Phase 02.6]: 02.6-09: WR-04 closed on the renderer side only (a growth push no longer arms frame undo); the growth-push forest commit message and the new 'Close tree failed: <error>' banner are queued for Kaelen as wording questions
-- [Phase 02.6]: 02.6-10: add rollback lives in openWithRollback; it closes only new registry entries with no stand-in (SpaceService.isMember), so a concurrent add is never undone (WR-02, T-2.6-24/40)
+- [Phase 02.7]: Workspace trees live at <userData>/workspaces/<name>-<hash8>.tree outside the folder (reversible); node types tapestry.workspace/{text,file,folder}@1 with file.* keys; observer actor plugin workspace.watcher
+- [Phase 02.7]: Agent file tools reach exactly git's view of the workspace; git-ignored paths, symlinks, .git, '..' and outside paths are refused with nothing written
+- [Phase 02.7]: 02.7-02: the in-app chat signs as agent.claude-chat, its token re-issued each launch into a 0600 MCP config file under <userData>/chat
+- [Phase 02.7]: 02.7-02: the chat CLI runs with --setting-sources user, so a workspace's own .claude settings and hooks are not loaded in the panel
+- [Phase 02.7]: 02.7-02: agents show Connected now from the shim's startup hello (60 s keep-alive), not only after a tool call (D-20)
+- [Phase 02.7]: 02.7-03: workspace note positions are folder-local; folders carry the Tapestry keys subspace (bool true) and collapsed (bool), never file.* (D-21)
+- [Phase 02.7]: 02.7-03: an existing workspace tree is re-laid out once on open in one system tapestry commit 'arrange workspace <name> into folder subspaces'; every folder starts collapsed
+- [Phase 02.7]: 02.7-04: Shell-on tool set is exactly Bash,Read,Edit,Write,Glob,Grep (one --tools element); --allowedTools mcp__tapestry plus the same; no --restricted
+- [Phase 02.7]: 02.7-04: The Allow shell switch resets to off on every relaunch and for New chat; chats.json keeps shell {on, changedAt} only to say it was reset
+- [Phase 02.7]: 02.7-04: A shell-on turn's done is held until WorkspaceService.catchUp records its file changes as plugin workspace.watcher; shell-off turns never trigger it
+- [Phase 02.7]: 02.7-05: workspace file notes are open to every agent unless an explicit lock.<aspect> says otherwise (WORKSPACE_LOCK_POLICY); native/vault keep 2.4 defaults
+- [Phase 02.7]: 02.7-05: main refuses createNode/deleteNode/file.* submits and undo/redo on workspace trees; note tools refuse workspace trees
+- [Phase 02.7]: 02.7-06: workspaces are watched with recursive fs.watch (FSEvents), not chokidar; events are hints, the stat-cached reconcileNow decides, and 'all' also trusts the stat cache
+- [Phase 02.7]: 02.7-06: watch errors restart after 5 s with a full catch-up; a missing folder commits nothing, shows folder-missing, and heals by itself when it returns
+- [Phase 02.7]: 02.7-06: an agent file edit costs ~40 ms of main time on an 800-file tree (whole-tree getNodes per call); reopen does not grow measurably over 200 commits
 
 ### Pending Todos
 
@@ -192,7 +187,7 @@ Recent decisions affecting current work:
 - Phase 2.3 inserted after Phase 2.2: Time Threads: live z-axis writing threads split out of the 2.2 discussion (Kaelen, 2026-09-15); discuss with Kaelen before planning
 - Phase 2.2 edited: goal reworded to cover the agent MCP bridge plus the Obsidian bridge (02.2-CONTEXT D-01)
 - Phase 2.4 inserted after Phase 2.3: Lock Model: allow unless locked; lock aspects replace the D-05 authorship gate (Kaelen, 2026-09-16)
-- Phase 2.6 inserted after Phase 2.3: Placement Edges & Forest Tree — Tapestry tree, forest tree with placement edges, digest identity (Decision Register #2 C, #4, #5 A, #6, #7, #13 B; one-way doors #17/#18 gated at a blocking checkpoint). Numbered 2.6 by the orchestrator; note-position migration excluded (later phase after 2.3).
+- Phase 2.7 inserted after Phase 2.5: File Windows & Workspace Sandbox: workspace folder, file windows, agent file tools confined to the root; dogfood on this repo (ws/windows)
 
 ## Deferred Items
 
@@ -209,9 +204,11 @@ Items acknowledged and deferred at milestone close, most recent first:
 | 1 | verification_deferred_human | /gsd-verify-work 1 |
 | 2 | verification_deferred_human | /gsd-verify-work 2 |
 | 2.1 | verification_deferred_human | /gsd-verify-work 2.1 |
+| 02.7 (02.7-02 + 02.7-03 combined checkpoint) | verification_deferred_human | autonomy/REVIEW.md item 1 |
+| 02.7-06 (live watch, Retry write, feel on ~/Tapestrees/windows) | verification_deferred_human | 02.7-06-SUMMARY.md "Hands-on checks for later" |
 
 ## Session Continuity
 
-Last session: 2026-09-25T00:30:02.011Z
-Stopped at: Completed 02.6-10-PLAN.md
+Last session: 2026-09-24T23:16:00.000Z
+Stopped at: Completed 02.7-06-PLAN.md
 Resume file: None

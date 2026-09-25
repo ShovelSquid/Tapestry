@@ -95,6 +95,7 @@ export const RESERVED_PLUGIN_ID_PREFIXES: readonly string[] = Object.freeze([
   'agent.',
   'user.',
   'obsidian.',
+  'workspace.',
 ])
 
 /** Reserved exactly: the id the host uses for its own system commits. */
@@ -127,6 +128,12 @@ export function pluginActor(pluginId: string): Actor {
 export const OBSIDIAN_BRIDGE_ACTOR: Actor = Object.freeze({
   kind: 'plugin',
   id: 'obsidian.bridge',
+} as const)
+
+/** Changes a workspace mirror observed on disk but cannot attribute (02.7 D-06). */
+export const WORKSPACE_WATCHER_ACTOR: Actor = Object.freeze({
+  kind: 'plugin',
+  id: 'workspace.watcher',
 } as const)
 
 /** Tapestry's own recorded events (plugin enabled/disabled, crashes). */

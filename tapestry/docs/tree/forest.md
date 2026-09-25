@@ -95,9 +95,10 @@ it.
 
 | Key | Type | Meaning |
 |---|---|---|
-| `kind` | `text` | `"native"` for a Tapestry world, `"vault"` for the mirror of an Obsidian vault |
+| `kind` | `text` | `"native"` for a Tapestry world, `"vault"` for the mirror of an Obsidian vault, `"workspace"` for the mirror of a workspace folder (2.7) |
 | `path.hint` | `text` | The absolute path where the tree's `.tree` file was last seen |
 | `vault.root.hint` | `text` | Vault members only: the vault folder it mirrors |
+| `workspace.root.hint` | `text` | Workspace members only: the folder it mirrors. Its `.tree` lives in app data, so this is the fact a reader needs |
 | `digest` | `text` | The tree's identity, `sha256:` of its header record. Written the first time the tree opens (section 4) |
 
 Paths are written in full, exactly as the file system gave them.

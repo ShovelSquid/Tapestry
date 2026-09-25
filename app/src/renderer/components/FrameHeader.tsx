@@ -10,16 +10,26 @@
  * The header is also the frame's drag handle. Pointer events that started on a
  * button or inside the open menu are left alone, so Tree options can be used
  * without dragging the frame out from under the pointer.
+ *
+ * A workspace folder's frame uses the same header (02.7 D-21), variant
+ * 'folder': the same two rows and styles, with the folder's name and a
+ * Collapse folder / Expand folder button in row 1, and "Folder · <n> files" in
+ * row 2. It has no Tree options and no Chat with Claude.
+ *
+ * A workspace tree's status slot says whether its outside changes are being
+ * recorded (02.7 D-06): "Watching", or in the destructive color why not.
  */
 
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import React, { useCallback, useContext, useEffect, useRef, useState } from 'react'
 import type { TreeSaveState } from '../state/use-forest'
+import { ChatContext } from '../state/chat'
+import { useWorkspaceStatus, workspaceStatusLine } from '../state/workspace-status'
 
 interface FrameHeaderProps {
   /** The tree this header belongs to; Tree options acts on it by id. */
   treeId: string
   name: string
-  kind: 'native' | 'vault'
+  kind: 'native' | 'vault' | 'workspace'
   saveState: TreeSaveState
   /** The canvas zoom, which decides whether the name has to counter-scale. */
   zoom: number
@@ -28,7 +38,15 @@ interface FrameHeaderProps {
    * Close this tree. App waits for main's answer and shows a refusal, so
    * the header never drops it (review WR-03).
    */
-  onClose: () => void
+  onClose?: () => void
+  /** 'tree' (the default) or a workspace folder's frame. */
+  variant?: 'tree' | 'folder'
+  /** Folder variant: whether the folder is drawn as its header only. */
+  collapsed?: boolean
+  /** Folder variant: the collapse/expand button. */
+  onToggleCollapsed?: () => void
+  /** Folder variant: how many files the folder holds, at any depth. */
+  fileCount?: number
 }
 
 /**
@@ -42,9 +60,10 @@ interface FrameHeaderProps {
 const NAME_MIN_LEGIBLE_ZOOM = 0.72
 
 /** What kind of tree this is, in the person's words rather than the code's. */
-const kindLabels: Record<'native' | 'vault', string> = {
+const kindLabels: Record<'native' | 'vault' | 'workspace', string> = {
   native: 'Tapestry world',
   vault: 'Obsidian vault',
+  workspace: 'Workspace folder',
 }
 
 /** Carried from SaveIndicator: the three states a native tree can be in. */
@@ -52,6 +71,27 @@ const statusText: Record<TreeSaveState, string> = {
   saved: 'Saved',
   saving: 'Saving...',
   error: 'Not saved',
+}
+
+/** Chevron for the folder toggle: pointing down when open, right when collapsed. */
+function ChevronGlyph({ open }: { open: boolean }): React.ReactElement {
+  return (
+    <svg
+      width={16}
+      height={16}
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.6}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      focusable="false"
+      style={{ transform: open ? undefined : 'rotate(-90deg)' }}
+    >
+      <path d="M4 6l4 4 4-4" />
+    </svg>
+  )
 }
 
 /** Three-dot overflow glyph. The button's label carries the meaning. */
@@ -73,8 +113,14 @@ export default function FrameHeader({
   zoom,
   onPointerDown,
   onClose,
+  variant = 'tree',
+  collapsed = false,
+  onToggleCollapsed,
+  fileCount = 0,
 }: FrameHeaderProps): React.ReactElement {
+  const isFolder = variant === 'folder'
   const [isMenuOpen, setIsMenuOpen] = useState(false)
+  const { openChat } = useContext(ChatContext)
 
   const buttonRef = useRef<HTMLButtonElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -97,7 +143,7 @@ export default function FrameHeader({
       label: 'Close tree',
       title: 'Removes the tree from this space. Files and history stay on disk.',
       run: () => {
-        onClose()
+        onClose?.()
       },
     },
   ]
@@ -154,7 +200,16 @@ export default function FrameHeader({
     onPointerDown(e)
   }
 
-  const status = statusText[saveState]
+  const status = isFolder ? `${fileCount} ${fileCount === 1 ? 'file' : 'files'}` : statusText[saveState]
+  const workspaceStatus = useWorkspaceStatus(treeId)
+  const watchLine = !isFolder && kind === 'workspace' ? workspaceStatusLine(workspaceStatus) : null
+  // Not recording outside changes outranks the save state; a save error
+  // outranks "Watching". Before main has said anything, the save state shows.
+  const slot =
+    watchLine && (watchLine.tone === 'destructive' || saveState !== 'error')
+      ? { text: watchLine.text, error: watchLine.tone === 'destructive' }
+      : { text: status, error: saveState === 'error' }
+  const toggleLabel = collapsed ? 'Expand folder' : 'Collapse folder'
 
   return (
     <div className="tapestry-frame-header" onPointerDown={handlePointerDown}>
@@ -177,6 +232,31 @@ export default function FrameHeader({
           {name}
         </span>
 
+        {isFolder && (
+          <button
+            type="button"
+            className="tapestry-icon-button tapestry-frame-folder-toggle"
+            aria-label={`${toggleLabel} ${name}`}
+            aria-expanded={!collapsed}
+            title={toggleLabel}
+            onClick={() => onToggleCollapsed?.()}
+          >
+            <ChevronGlyph open={!collapsed} />
+          </button>
+        )}
+
+        {!isFolder && kind === 'workspace' && (
+          <button
+            type="button"
+            className="tapestry-frame-chat-button"
+            title="Talk to Claude in this workspace, beside the canvas"
+            onClick={() => openChat({ treeId })}
+          >
+            Chat with Claude
+          </button>
+        )}
+
+        {!isFolder && (
         <span className="tapestry-frame-menu-wrap">
           <button
             ref={buttonRef}
@@ -220,20 +300,28 @@ export default function FrameHeader({
             </div>
           )}
         </span>
+        )}
       </div>
 
       <div className="tapestry-frame-header-row">
-        <span className="tapestry-frame-kind">{kindLabels[kind]}</span>
-        <span
-          className={
-            saveState === 'error'
-              ? 'tapestry-frame-status tapestry-frame-status--error'
-              : 'tapestry-frame-status'
-          }
-          title={status}
-        >
-          {status}
-        </span>
+        {isFolder ? (
+          <span className="tapestry-frame-kind" title={`Folder · ${status}`}>
+            Folder · {status}
+          </span>
+        ) : (
+          <>
+            <span className="tapestry-frame-kind">{kindLabels[kind]}</span>
+            <span
+              className={
+                slot.error ? 'tapestry-frame-status tapestry-frame-status--error' : 'tapestry-frame-status'
+              }
+              title={slot.text}
+              role={slot.error ? 'status' : undefined}
+            >
+              {slot.text}
+            </span>
+          </>
+        )}
       </div>
     </div>
   )

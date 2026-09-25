@@ -26,6 +26,8 @@ import TransientNotice from './components/TransientNotice'
 import PluginErrorNotification from './components/PluginErrorNotification'
 import PluginSurfaceLayer, { SurfaceLauncher, type SurfaceInfo } from './components/PluginSurfaceLayer'
 import NamePromptDialog from './components/NamePromptDialog'
+import ChatPanel, { type ChatPanelState } from './components/ChatPanel'
+import { ContextMenuProvider } from './components/ContextMenu'
 import { useForest, type NodeRef } from './state/use-forest'
 import {
   EMPTY_FRAME_RUN,
@@ -35,6 +37,8 @@ import {
   type FrameRun,
   type FrameRunEvent,
 } from './state/undo-target'
+import { ChatContext, chatWorkspaceFor, type ChatContextValue, type ChatTarget } from './state/chat'
+import { COLLAPSED_KEY, revealExpanded, settleSubspace, type DimsOf, type Point } from './layout/subspaces'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -58,6 +62,10 @@ function fileNameOf(filePath: string): string {
 // ---------------------------------------------------------------------------
 // App
 // ---------------------------------------------------------------------------
+
+/** Main's WORKSPACE_REPLAY_REFUSAL, shown before asking (02.7 D-03). */
+const WORKSPACE_UNDO_NOTICE =
+  "Undo isn't available in a workspace window; the files are the record. Use git to undo a file change."
 
 export default function App(): React.ReactElement {
   const {
@@ -84,6 +92,16 @@ export default function App(): React.ReactElement {
   /** A tree that has just been added and is waiting to be panned to. */
   const [pendingPanTreeId, setPendingPanTreeId] = useState<string | null>(null)
 
+  // open_file (02.7 SC2): the note an agent asked to show, its ancestor
+  // folders drawn open for this view only (never committed), and the one
+  // file window to open.
+  const [pendingReveal, setPendingReveal] = useState<{ treeId: string; noteId: string } | null>(null)
+  const [revealedFolders, setRevealedFolders] = useState<ReadonlyMap<string, ReadonlySet<string>>>(
+    () => new Map(),
+  )
+  const [openRequest, setOpenRequest] = useState<{ key: string; nonce: number } | null>(null)
+  const revealNonceRef = useRef(0)
+
   // The name every change is signed with (D-07). Null means "not chosen yet",
   // which is what makes the first-run prompt appear; nameLoaded keeps the
   // prompt from flashing before settings have been read.
@@ -95,6 +113,53 @@ export default function App(): React.ReactElement {
   // the forest bar's label and the panel's rows can never disagree.
   const [agents, setAgents] = useState<TapestryAgentSummary[]>([])
   const [agentsEnabled, setAgentsEnabled] = useState(true)
+
+  // The chat panel (02.7 D-12, D-19): a workspace's chat, a chooser when
+  // several workspaces could be meant, or a note that none is open.
+  const [chatPanel, setChatPanel] = useState<ChatPanelState | null>(null)
+  // The last workspace chatted in, so a click that names none goes back there.
+  const [lastChatTreeId, setLastChatTreeId] = useState<string | null>(null)
+  const chatTreeId = chatPanel?.kind === 'chat' ? chatPanel.treeId : null
+
+  const openChat = useCallback(
+    (target: ChatTarget = {}) => {
+      const openTrees = trees
+        .filter((tree) => tree.status === 'ok')
+        .map((tree) => ({ id: tree.id, name: tree.name, kind: tree.kind }))
+      const choice = chatWorkspaceFor(target, openTrees, lastChatTreeId)
+      const attachment = target.attachment ?? null
+      if ('treeId' in choice) {
+        setLastChatTreeId(choice.treeId)
+        setChatPanel((previous) => ({
+          kind: 'chat',
+          treeId: choice.treeId,
+          attachment,
+          // A new attachment replaces the chip even when this chat is open.
+          seq: (previous?.kind === 'chat' ? previous.seq : 0) + 1,
+        }))
+      } else if ('choose' in choice) {
+        setChatPanel({ kind: 'choose', options: choice.choose, attachment })
+      } else {
+        setChatPanel({ kind: 'none' })
+      }
+    },
+    [trees, lastChatTreeId],
+  )
+
+  const chatContext = React.useMemo<ChatContextValue>(
+    () => ({
+      openTreeId: chatTreeId,
+      openChat,
+      // Closing the panel stops the chat's process; its session is kept, so
+      // the next message continues the conversation.
+      closeChat: () => {
+        if (chatTreeId !== null) void window.tapestry.chat.stop(chatTreeId)
+        setChatPanel(null)
+      },
+      treeName: (treeId: string) => trees.find((tree) => tree.id === treeId)?.name ?? '',
+    }),
+    [chatTreeId, openChat, trees],
+  )
 
   // A passing message about something that already happened (UA-14).
   const [notice, setNotice] = useState<string | null>(null)
@@ -246,11 +311,42 @@ export default function App(): React.ReactElement {
       setNotice(`agent.${name} added a change to ${treeName}, so redo is no longer available.`)
     })
 
+    // An agent asked to show a workspace file (open_file). The note may have
+    // just been recorded, so the tree is refreshed first; the reveal itself
+    // waits for the refreshed tree to reach the canvas.
+    const removeRevealNote = window.tapestry.onRevealNote(({ treeId, noteId }) => {
+      void refreshTree(treeId).then(() => setPendingReveal({ treeId, noteId }))
+    })
+
     return () => {
       removeAgentsChanged()
       removeRedoDiscarded()
+      removeRevealNote()
     }
   }, [refreshAgents, refreshTree])
+
+  useEffect(() => {
+    if (!pendingReveal) return undefined
+    const tree = trees.find((t) => t.id === pendingReveal.treeId)
+    if (!tree || !tree.nodes.some((node) => node.id === pendingReveal.noteId)) return undefined
+
+    const { treeId, noteId } = pendingReveal
+    const ancestors = revealExpanded(tree.nodes, noteId)
+    if (ancestors.length > 0) {
+      setRevealedFolders((prev) => {
+        const next = new Map(prev)
+        next.set(treeId, new Set([...(prev.get(treeId) ?? []), ...ancestors]))
+        return next
+      })
+    }
+    revealNonceRef.current += 1
+    setOpenRequest({ key: `${treeId}:${noteId}`, nonce: revealNonceRef.current })
+    setPendingReveal(null)
+    const handle = requestAnimationFrame(() => {
+      canvasRef.current?.panToNote(treeId, noteId)
+    })
+    return () => cancelAnimationFrame(handle)
+  }, [pendingReveal, trees])
 
   // -----------------------------------------------------------------------
   // Space problem (2.6 D-14, answers 4.1-4.8)
@@ -410,6 +506,24 @@ export default function App(): React.ReactElement {
     setPendingPanTreeId(added.treeId)
   }, [refreshAll])
 
+  /** Add a workspace folder as a tree (02.7 D-01); mirrors handleAddVault. */
+  const handleAddWorkspace = useCallback(async () => {
+    const picked = await window.tapestry.dialog.showOpenWorkspaceFolder()
+    if (picked.canceled || !picked.folderPath) return
+
+    const added = await window.tapestry.workspace.add(picked.folderPath)
+    if (!added.ok || !added.treeId) {
+      setNotice(
+        `Could not add ${fileNameOf(picked.folderPath)} as a workspace -- ` +
+          `${added.error ?? 'unknown error'} Nothing in the folder was changed.`,
+      )
+      return
+    }
+
+    await refreshAll()
+    setPendingPanTreeId(added.treeId)
+  }, [refreshAll])
+
   /**
    * Pan to a newly added frame once the space knows about it.
    *
@@ -436,6 +550,14 @@ export default function App(): React.ReactElement {
 
   const createNote = useCallback(
     async (treeId: string, x: number, y: number) => {
+      // A workspace tree's notes are its files (02.7 D-03); main refuses the
+      // commit too, this only says why.
+      if (trees.find((tree) => tree.id === treeId)?.kind === 'workspace') {
+        setNotice(
+          "Workspace windows hold files. Create a file with an agent's write_file or in your editor.",
+        )
+        return
+      }
       try {
         const commitResult = await submitChange(treeId, 'Create note', [
           {
@@ -459,7 +581,7 @@ export default function App(): React.ReactElement {
         reportSaveError('Failed to create note', err)
       }
     },
-    [submitChange, refreshTree, reportSaveError],
+    [trees, submitChange, refreshTree, reportSaveError],
   )
 
   const handleCanvasDoubleClick = useCallback(
@@ -638,6 +760,15 @@ export default function App(): React.ReactElement {
 
   const handleDeleteNote = useCallback(
     async (ref: NodeRef) => {
+      // A workspace note is what a file says (02.7 D-03): removing it from the
+      // canvas would record a file as gone while it is still on disk.
+      const target = trees
+        .find((tree) => tree.id === ref.treeId)
+        ?.nodes.find((node) => node.id === ref.nodeId)
+      if (target?.type.startsWith('tapestry.workspace/')) {
+        setNotice('Workspace files are deleted in their folder, not on the canvas. Nothing was changed.')
+        return
+      }
       try {
         await submitChange(ref.treeId, 'Delete note', [{ op: 'deleteNode', id: ref.nodeId }])
 
@@ -652,7 +783,83 @@ export default function App(): React.ReactElement {
         reportSaveError('Failed to delete note', err)
       }
     },
-    [submitChange, refreshTree, reportSaveError],
+    [trees, submitChange, refreshTree, reportSaveError],
+  )
+
+  // -----------------------------------------------------------------------
+  // Workspace folder frames (02.7 D-21). Layout only: `collapsed` and
+  // positions are Tapestry's keys, so nothing here reaches a file.
+  // -----------------------------------------------------------------------
+
+  /** The folder's path, for the commit message a person reads in history. */
+  const folderPathOf = useCallback(
+    (treeId: string, folderId: string): string => {
+      const node = trees.find((tree) => tree.id === treeId)?.nodes.find((n) => n.id === folderId)
+      const path = node?.props['file.path']?.value
+      return typeof path === 'string' ? path : folderId
+    },
+    [trees],
+  )
+
+  /**
+   * Collapse or expand a folder frame, as one commit by the person. Expanding
+   * also moves whatever the grown frame now covers (settleSubspace), up to the
+   * workspace frame; collapsing moves nothing.
+   */
+  const handleToggleFolder = useCallback(
+    async (treeId: string, folderId: string, collapsed: boolean, dimsOf: DimsOf) => {
+      const tree = trees.find((t) => t.id === treeId)
+      if (!tree) return
+      const path = folderPathOf(treeId, folderId)
+      // Collapsing a folder open_file drew open ends that view-only reveal.
+      if (collapsed && revealedFolders.get(treeId)?.has(folderId)) {
+        setRevealedFolders((prev) => {
+          const next = new Map(prev)
+          next.delete(treeId)
+          return next
+        })
+      }
+      const toggle = { op: 'setProperty', target: folderId, key: COLLAPSED_KEY, type: 'bool', value: collapsed }
+      const ops = collapsed
+        ? [toggle]
+        : [toggle, ...settleSubspace(tree.nodes, dimsOf, folderId, { expanded: new Set([folderId]) })]
+      try {
+        await submitChange(treeId, `${collapsed ? 'Collapse' : 'Expand'} folder ${path}`, ops)
+        await refreshTree(treeId)
+      } catch (err) {
+        reportSaveError(`Failed to ${collapsed ? 'collapse' : 'expand'} folder`, err)
+      }
+    },
+    [trees, folderPathOf, revealedFolders, submitChange, refreshTree, reportSaveError],
+  )
+
+  /**
+   * A folder frame dropped at `local` (its parent's space): one commit by the
+   * person writing the folder's position and the positions of whatever yields
+   * (settleSubspace, up to the workspace frame). The folder's files keep their
+   * local positions, so none of them is named.
+   */
+  const handleFolderDrop = useCallback(
+    async (treeId: string, folderId: string, local: Point, dimsOf: DimsOf) => {
+      const tree = trees.find((t) => t.id === treeId)
+      if (!tree) return
+      const path = folderPathOf(treeId, folderId)
+      const displaced = settleSubspace(tree.nodes, dimsOf, folderId, {
+        positions: new Map([[folderId, local]]),
+      }).filter((op) => op.target !== folderId)
+      const ops = [
+        { op: 'setProperty', target: folderId, key: 'position.x', type: 'real', value: local.x },
+        { op: 'setProperty', target: folderId, key: 'position.y', type: 'real', value: local.y },
+        ...displaced,
+      ]
+      try {
+        await submitChange(treeId, `Move folder ${path}`, ops)
+        await refreshTree(treeId)
+      } catch (err) {
+        reportSaveError('Failed to move folder', err)
+      }
+    },
+    [trees, folderPathOf, submitChange, refreshTree, reportSaveError],
   )
 
   // -----------------------------------------------------------------------
@@ -783,6 +990,11 @@ export default function App(): React.ReactElement {
 
   const handleUndo = useCallback(
     async (treeId: string) => {
+      // Main refuses replay on a workspace tree (02.7 D-03); say why up front.
+      if (trees.find((tree) => tree.id === treeId)?.kind === 'workspace') {
+        setNotice(WORKSPACE_UNDO_NOTICE)
+        return
+      }
       try {
         const result = await window.tapestry.kernel.undo(treeId)
         if (result.ok) {
@@ -795,11 +1007,16 @@ export default function App(): React.ReactElement {
       }
       noteFrameEvent('tree-undo')
     },
-    [refreshTree, showAppError, noteFrameEvent],
+    [trees, refreshTree, showAppError, noteFrameEvent],
   )
 
   const handleRedo = useCallback(
     async (treeId: string) => {
+      // Main refuses replay on a workspace tree (02.7 D-03); say why up front.
+      if (trees.find((tree) => tree.id === treeId)?.kind === 'workspace') {
+        setNotice(WORKSPACE_UNDO_NOTICE)
+        return
+      }
       try {
         const result = await window.tapestry.kernel.redo(treeId)
         if (result.ok) {
@@ -812,7 +1029,7 @@ export default function App(): React.ReactElement {
       }
       noteFrameEvent('tree-redo')
     },
-    [refreshTree, showAppError, noteFrameEvent],
+    [trees, refreshTree, showAppError, noteFrameEvent],
   )
 
   useEffect(() => {
@@ -873,6 +1090,14 @@ export default function App(): React.ReactElement {
     trees,
   ])
 
+  // A chat panel belongs to an open workspace: when that tree leaves the
+  // space (Close tree), its panel goes too.
+  useEffect(() => {
+    if (chatTreeId === null) return
+    const tree = trees.find((t) => t.id === chatTreeId)
+    if (!tree || tree.kind !== 'workspace' || tree.status !== 'ok') setChatPanel(null)
+  }, [trees, chatTreeId])
+
   // -----------------------------------------------------------------------
   // Render
   // -----------------------------------------------------------------------
@@ -885,86 +1110,98 @@ export default function App(): React.ReactElement {
     // One pair of live regions for the whole space, mounted above everything
     // that announces into them (UI-SPEC screen-reader announcements).
     <LiveAnnouncer>
-      <div className="tapestry-app">
-        {/* Top-left chrome: add a tree, agents, and the name changes are
-            signed with. Save state lives in each frame's header now. */}
-        <ForestBar
-          agents={agents}
-          agentsEnabled={agentsEnabled}
-          userName={userName}
-          onSaveUserName={handleSaveUserName}
-          onAgentsRefresh={refreshAgents}
-          onAddVault={handleAddVault}
-          onOpenWorld={handleOpenWorld}
-          onNewWorld={handleNewWorld}
-        />
+      <ChatContext.Provider value={chatContext}>
+        <ContextMenuProvider>
+          <div className="tapestry-app">
+            {/* Top-left chrome: add a tree, agents, and the name changes are
+                signed with. Save state lives in each frame's header now. */}
+            <ForestBar
+              agents={agents}
+              agentsEnabled={agentsEnabled}
+              userName={userName}
+              onSaveUserName={handleSaveUserName}
+              onAgentsRefresh={refreshAgents}
+              onAddVault={handleAddVault}
+              onAddWorkspace={handleAddWorkspace}
+              onOpenWorld={handleOpenWorld}
+              onNewWorld={handleNewWorld}
+            />
 
-        {/* Plugin surfaces (CANV-04): one launcher per registered surface */}
-        <SurfaceLauncher surfaces={pluginSurfaces} onOpen={setOpenSurface} />
+            {/* Plugin surfaces (CANV-04): one launcher per registered surface */}
+            <SurfaceLauncher surfaces={pluginSurfaces} onOpen={setOpenSurface} />
 
-        {/* An agent write ended a rewound state (UA-14) */}
-        {notice && <TransientNotice message={notice} onHide={() => setNotice(null)} />}
+            {/* An agent write ended a rewound state (UA-14) */}
+            {notice && <TransientNotice message={notice} onHide={() => setNotice(null)} />}
 
-        {/* Plugin error notification (D-34) */}
-        {pluginError && (
-          <PluginErrorNotification
-            pluginName={pluginError.pluginName}
-            displayName={pluginError.displayName}
-            message={pluginError.message}
-            canRestart={pluginError.canRestart}
-            onRestart={handlePluginRestart}
-            onDismiss={handlePluginErrorDismiss}
-          />
-        )}
+            {/* Plugin error notification (D-34) */}
+            {pluginError && (
+              <PluginErrorNotification
+                pluginName={pluginError.pluginName}
+                displayName={pluginError.displayName}
+                message={pluginError.message}
+                canRestart={pluginError.canRestart}
+                onRestart={handlePluginRestart}
+                onDismiss={handlePluginErrorDismiss}
+              />
+            )}
 
-        {/* First-run name prompt (D-07). Its overlay covers the canvas, so no
-            change can be made before a name exists to sign it with. */}
-        {nameLoaded && userName === null && (
-          <NamePromptDialog
-            mode="first-run"
-            initialName={suggestedName}
-            onSave={handleSaveUserName}
-          />
-        )}
+            {/* First-run name prompt (D-07). Its overlay covers the canvas, so no
+                change can be made before a name exists to sign it with. */}
+            {nameLoaded && userName === null && (
+              <NamePromptDialog
+                mode="first-run"
+                initialName={suggestedName}
+                onSave={handleSaveUserName}
+              />
+            )}
 
-        {/* An open plugin surface: full-window layer over the canvas (CANV-04) */}
-        {openSurface && (
-          <PluginSurfaceLayer
-            surface={openSurface}
-            treeId={selectedTreeId ?? ''}
-            onClose={() => setOpenSurface(null)}
-          />
-        )}
+            {/* An open plugin surface: full-window layer over the canvas (CANV-04) */}
+            {openSurface && (
+              <PluginSurfaceLayer
+                surface={openSurface}
+                treeId={selectedTreeId ?? ''}
+                onClose={() => setOpenSurface(null)}
+              />
+            )}
 
-        {/* The space: one frame per open tree, with pan/zoom and connections */}
-        <Canvas
-          ref={canvasRef}
-          trees={trees}
-          editingRef={editingRef}
-          pluginNodeViews={pluginNodeViews}
-          currentUserActorId={currentUserActorId}
-          selectedTreeId={selectedTreeId}
-          onSelectTree={setSelectedTreeId}
-          onStartEditing={(ref) => setEditingRef(ref)}
-          onStopEditing={() => setEditingRef(null)}
-          onCanvasDoubleClick={handleCanvasDoubleClick}
-          onSelectedNoteChange={setSelectedRef}
-          onSave={handleNoteSave}
-          onMarkDirty={markDirty}
-          onMarkClean={markClean}
-          onPositionChange={handlePositionChange}
-          onTakeOverPosition={handleTakeOverPosition}
-          onWidthChange={handleWidthChange}
-          onHeightChange={handleHeightChange}
-          onPinnedPositionChange={handlePinnedPositionChange}
-          onEdgeCreate={handleEdgeCreate}
-          onDeleteNote={handleDeleteNote}
-          onPropertyEdit={handlePropertyEdit}
-          onFrameMove={setFrameLocal}
-          onFramesMoved={handleFramesMoved}
-          onCloseTree={(treeId) => void handleCloseTree(treeId)}
-        />
-      </div>
+            {/* The space: one frame per open tree, with pan/zoom and connections */}
+            <Canvas
+              ref={canvasRef}
+              trees={trees}
+              editingRef={editingRef}
+              pluginNodeViews={pluginNodeViews}
+              currentUserActorId={currentUserActorId}
+              selectedTreeId={selectedTreeId}
+              onSelectTree={setSelectedTreeId}
+              onStartEditing={(ref) => setEditingRef(ref)}
+              onStopEditing={() => setEditingRef(null)}
+              onCanvasDoubleClick={handleCanvasDoubleClick}
+              onSelectedNoteChange={setSelectedRef}
+              onSave={handleNoteSave}
+              onMarkDirty={markDirty}
+              onMarkClean={markClean}
+              onPositionChange={handlePositionChange}
+              onTakeOverPosition={handleTakeOverPosition}
+              onWidthChange={handleWidthChange}
+              onHeightChange={handleHeightChange}
+              onPinnedPositionChange={handlePinnedPositionChange}
+              onEdgeCreate={handleEdgeCreate}
+              onDeleteNote={handleDeleteNote}
+              onPropertyEdit={handlePropertyEdit}
+              onFrameMove={setFrameLocal}
+              onFramesMoved={handleFramesMoved}
+              onCloseTree={(treeId) => void handleCloseTree(treeId)}
+              onToggleFolder={handleToggleFolder}
+              onFolderDrop={handleFolderDrop}
+              revealedFolders={revealedFolders}
+              openRequest={openRequest}
+            />
+
+            {/* Claude beside the canvas, for one workspace (02.7 D-12) */}
+            {chatPanel !== null && <ChatPanel state={chatPanel} />}
+          </div>
+        </ContextMenuProvider>
+      </ChatContext.Provider>
     </LiveAnnouncer>
   )
 }

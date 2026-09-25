@@ -212,6 +212,46 @@ describe('AgentSocketServer', () => {
   })
 })
 
+describe('AgentSocketServer hello (D-20)', () => {
+  it('marks a known agent connected on hello without dispatching anything', async () => {
+    const h = await startHarness('sock-hello')
+    expect(h.server.connectionStates().find((a) => a.name === 'claude')?.connected).toBe(false)
+
+    const response = await sendJson(h.socketPath, { id: 3, token: h.token, type: 'hello' })
+
+    expect(response).toEqual({ id: 3, ok: true, value: { agent: 'agent.claude' } })
+    const state = h.server.connectionStates().find((a) => a.name === 'claude')
+    expect(state?.connected).toBe(true)
+    expect(state?.lastConnectedAt).not.toBeNull()
+    expect(h.calls).toHaveLength(0)
+  })
+
+  it('refuses a hello with an unknown token and marks nobody connected', async () => {
+    const h = await startHarness('sock-hello-bad')
+
+    const response = await sendJson(h.socketPath, { id: 4, token: 'not-the-token', type: 'hello' })
+
+    expect(response).toEqual({ id: 4, ok: false, error: 'Unknown agent token' })
+    expect(h.server.connectionStates().some((a) => a.connected)).toBe(false)
+    expect(h.calls).toHaveLength(0)
+  })
+
+  it('treats a hello that also names a tool as only a hello', async () => {
+    const h = await startHarness('sock-hello-tool')
+
+    const response = await sendJson(h.socketPath, {
+      id: 5,
+      token: h.token,
+      type: 'hello',
+      tool: 'delete_note',
+      args: { tree: 'notes', note: 'n1' },
+    })
+
+    expect(response).toEqual({ id: 5, ok: true, value: { agent: 'agent.claude' } })
+    expect(h.calls).toHaveLength(0)
+  })
+})
+
 describe('AgentRegistry', () => {
   it('stores only a sha256 digest, never the token', () => {
     const dir = tempDir('agents-store')

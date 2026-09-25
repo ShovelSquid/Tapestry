@@ -1,0 +1,16 @@
+Phase 02.7 (File Windows & Workspace Sandbox): done except the parked plan. Written 2026-09-24 16:35.
+
+- Plans 01-06 complete with SUMMARYs; 38 test files / 681 tests green, typecheck clean.
+- Phase verification: .planning/phases/02.7-file-windows-workspace-sandbox/02.7-VERIFICATION.md
+  (65da872), status human_needed. 7 of 7 applicable success criteria verified; SC8 parked.
+- Parked: 02.7-07 (API-key chat engine), all 3 tasks. Its Task 1 is the blocking-human legitimacy
+  check for @anthropic-ai/sdk@0.128.0 and where to install it (REVIEW item 5).
+- Open REVIEW.md items:
+  1. 02.7-02/03 combined hands-on check (deferred)
+  2. 02.7-04 Allow shell switch (deferred)
+  3. 02.7-05 open_file and workspace-window guards (deferred)
+  4. 02.7-06 live watching, watch status, Retry write (deferred)
+  5. 02.7-07 SDK approval (parked)
+
+To finish 02.7: answer item 5 in autonomy/RESPONSE (approved-own recommended), delete this file,
+and restart the driver; it will run wave 7. Otherwise point .planning/STATE.md at the next phase.

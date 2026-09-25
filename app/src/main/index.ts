@@ -29,8 +29,12 @@ import { NoteCommands, type CommandHooks } from './commands/notes'
 import { ConnectionCommands } from './commands/connections'
 import { SpatialCommands } from './commands/spatial'
 import { runAgentTool, type AgentCommands } from './commands/agent-tools'
+import { WorkspaceFileCommands } from './commands/file-tools'
+import { WorkspaceService } from './workspace/workspace-service'
+import { WORKSPACE_REPLAY_REFUSAL, workspaceSubmitRefusal } from './workspace/guards'
 import { AgentRegistry, agentSocketPath } from './agents/registry'
 import { AgentSocketServer } from './agents/socket-server'
+import { ChatService } from './chat/chat-service'
 import { SpaceRefusal, SpaceService } from './space/space-service'
 import { openWithRollback } from './space/open-into-space'
 import { SPACE_NOT_OPEN, type SpacePaths } from './space/migrate'
@@ -163,6 +167,16 @@ function validateTreePath(filePath: string): boolean {
  */
 const approvedVaultRoots = new Set<string>()
 
+/**
+ * Workspace folders chosen through the folder dialog this session, or
+ * restored from settings (T-02.7-08). `workspace:add` accepts no other root.
+ */
+const approvedWorkspaceRoots = new Set<string>()
+
+/** Node ids the kernel issues: `n1`, `n2`, ... */
+const NODE_ID_PATTERN = /^n[1-9][0-9]*$/
+const SHA256_PATTERN = /^[0-9a-f]{64}$/
+
 /** Absolute, non-empty, no `..` segment. The shape check before the dialog check. */
 function isWellFormedVaultRoot(folderPath: unknown): folderPath is string {
   if (!folderPath || typeof folderPath !== 'string') return false
@@ -185,6 +199,10 @@ let space: SpaceService | null = null
 
 let pluginHost: PluginHost
 let agentServer: AgentSocketServer | null = null
+/** The in-app chat panel (02.7 D-12), one chat per open workspace. */
+let chatService: ChatService | null = null
+/** Kept at module level so will-quit can stop every workspace watcher. */
+let workspaceServiceRef: WorkspaceService | null = null
 
 /** A tree id is exactly what the registry mints: `sha256:` + 64 hex digits. */
 const TREE_ID_PATTERN = /^sha256:[0-9a-f]{64}$/
@@ -277,7 +295,14 @@ app.whenReady().then(async () => {
   }
 
   // Register kernel IPC handlers. Every channel names its tree first (D-15).
-  KernelBridge.registerHandlers(ipcMain, resolveTree, getHumanActor)
+  // Workspace trees (02.7 D-03): the window may move and resize cards and
+  // connect notes, never create or delete notes, set file.* keys or rewind.
+  const isWorkspaceTree = (treeId: unknown): boolean =>
+    typeof treeId === 'string' && registry.get(treeId)?.kind === 'workspace'
+  KernelBridge.registerHandlers(ipcMain, resolveTree, getHumanActor, {
+    beforeSubmit: (treeId, ops) => (isWorkspaceTree(treeId) ? workspaceSubmitRefusal(ops) : null),
+    beforeReplay: (treeId) => (isWorkspaceTree(treeId) ? WORKSPACE_REPLAY_REFUSAL : null),
+  })
 
   // Discover and load plugins
   const pluginsDir = join(app.getAppPath(), '..', 'plugins')
@@ -334,10 +359,31 @@ app.whenReady().then(async () => {
     },
   }
 
+  // Workspace trees (02.7): folders mirrored into trees kept in app data,
+  // never inside the folder, so a git worktree stays clean.
+  const workspaceService = new WorkspaceService(registry, {
+    treesDir: join(app.getPath('userData'), 'workspaces'),
+    hooks: commandHooks,
+    // Watching, not watching, or folder missing: the frame header says which.
+    onStatus: (treeId, status) => {
+      mainWindow?.webContents.send('workspace-status', { treeId, ...status })
+    },
+  })
+  workspaceServiceRef = workspaceService
+
   const agentCommands: AgentCommands = {
     notes: new NoteCommands(registry, commandHooks),
     connections: new ConnectionCommands(registry, commandHooks),
     spatial: new SpatialCommands(registry, commandHooks),
+    files: new WorkspaceFileCommands(workspaceService, {
+      // open_file (02.7 SC2): pan the canvas to the file's note and open its
+      // window. Returns whether there was a window to show it in.
+      onReveal: (treeId, noteId) => {
+        if (!mainWindow) return false
+        mainWindow.webContents.send('reveal-note', { treeId, noteId })
+        return true
+      },
+    }),
   }
 
   agentServer = new AgentSocketServer({
@@ -371,6 +417,84 @@ app.whenReady().then(async () => {
   if (settings.read().agentsEnabled) {
     await startAgentBridgeSafely()
   }
+
+  // -------------------------------------------------------------------------
+  // In-app chat (02.7 D-12..D-16): the person's own claude, confined to
+  // Tapestry's workspace tools, signing as agent.claude-chat
+  // -------------------------------------------------------------------------
+
+  const chat = new ChatService({
+    userDataDir: app.getPath('userData'),
+    agents,
+    workspaces: workspaceService,
+    launch: {
+      isPackaged: app.isPackaged,
+      appPath: app.getAppPath(),
+      execPath: process.execPath,
+      resourcesPath: process.resourcesPath,
+    },
+    isBridgeEnabled: () => settings.read().agentsEnabled,
+    emit: (treeId, event) => mainWindow?.webContents.send('chat-event', { treeId, event }),
+  })
+  chatService = chat
+
+  /** A chat is addressed by its workspace tree's id, checked like every tree id. */
+  function chatTreeId(treeId: unknown): string {
+    if (typeof treeId !== 'string' || !TREE_ID_PATTERN.test(treeId)) {
+      throw new Error(`Unknown tree ${String(treeId)}`)
+    }
+    return treeId
+  }
+
+  ipcMain.handle('chat:open', (_event, treeId: unknown) => {
+    try {
+      return { ok: true, value: chat.open(chatTreeId(treeId)) }
+    } catch (err) {
+      return { ok: false, error: errorMessage(err) }
+    }
+  })
+
+  ipcMain.handle('chat:send', async (_event, treeId: unknown, text: unknown) => {
+    try {
+      const id = chatTreeId(treeId)
+      if (typeof text !== 'string') return { ok: false, error: 'A message must be text' }
+      await chat.send(id, text)
+      return { ok: true, value: null }
+    } catch (err) {
+      return { ok: false, error: errorMessage(err) }
+    }
+  })
+
+  ipcMain.handle('chat:stop', async (_event, treeId: unknown) => {
+    try {
+      await chat.stop(chatTreeId(treeId))
+      return { ok: true, value: null }
+    } catch (err) {
+      return { ok: false, error: errorMessage(err) }
+    }
+  })
+
+  // The shell switch (D-15). The panel asks for confirmation before `on`; a
+  // non-boolean is refused rather than read as either state.
+  ipcMain.handle('chat:setAllowShell', async (_event, treeId: unknown, on: unknown) => {
+    try {
+      const id = chatTreeId(treeId)
+      if (typeof on !== 'boolean') return { ok: false, error: 'The shell switch must be on or off' }
+      await chat.setAllowShell(id, on)
+      return { ok: true, value: null }
+    } catch (err) {
+      return { ok: false, error: errorMessage(err) }
+    }
+  })
+
+  ipcMain.handle('chat:new', async (_event, treeId: unknown) => {
+    try {
+      await chat.newChat(chatTreeId(treeId))
+      return { ok: true, value: null }
+    } catch (err) {
+      return { ok: false, error: errorMessage(err) }
+    }
+  })
 
   // -------------------------------------------------------------------------
   // Agents IPC — connect, list, remove, and the bridge switch
@@ -447,6 +571,8 @@ app.whenReady().then(async () => {
       // Closing removes the socket file, so an agent cannot reach the command
       // layer at all while the switch is off.
       await agentServer?.close()
+      // The chat's tools would fail from here on, so its turns stop too.
+      await chatService?.stopAll()
     }
 
     notifyAgentsChanged()
@@ -507,6 +633,14 @@ app.whenReady().then(async () => {
       // Members were chosen by the person in an earlier session.
       approvePath: (path) => {
         approvedPaths.add(resolve(path))
+      },
+      // A workspace member (02.7) is restored through the workspace service:
+      // its folder is approved again, its tree in app data opened or rebuilt,
+      // and its watcher started. Its frame and membership are the forest's.
+      restoreWorkspace: async ({ treePath, workspaceRoot, expect }) => {
+        approvedWorkspaceRoots.add(resolve(workspaceRoot))
+        const entry = await workspaceService.openWorkspace(workspaceRoot, treePath, expect)
+        if ('bridge' in entry) startWatchingSafely(entry.id)
       },
     },
   })
@@ -664,7 +798,18 @@ app.whenReady().then(async () => {
     try {
       const actor = getHumanActor()
       if (!space || !space.ready) throw new SpaceRefusal()
-      if (!registry.entry(treeId)) return { ok: false, error: `Unknown tree ${treeId}` }
+      const entry = registry.entry(treeId)
+      if (!entry) return { ok: false, error: `Unknown tree ${treeId}` }
+
+      // A workspace's chat goes with it: its process group is stopped and its
+      // MCP config file (which holds the panel agent's token) is deleted, and
+      // watching ends with the frame (02.7 D-06).
+      if (entry.kind === 'workspace') {
+        void chatService?.closeWorkspace(treeId).catch((err) => {
+          console.error('[Main] could not close the workspace chat:', err)
+        })
+        workspaceServiceRef?.stopWatching(treeId)
+      }
 
       // The forest first, while the registry entry still joins to its
       // stand-in. Deleting the stand-in deletes its placement, so the tree's
@@ -788,6 +933,77 @@ app.whenReady().then(async () => {
     return openIntoSpace(() => vaultService.addVault(target))
   })
 
+  /** A watcher that cannot start must never fail adding or restoring a workspace. */
+  function startWatchingSafely(treeId: string): void {
+    try {
+      workspaceService.startWatching(treeId)
+    } catch (err) {
+      console.error('[Main] could not watch the workspace:', err)
+    }
+  }
+
+  ipcMain.handle('dialog:showOpenWorkspaceFolder', async () => {
+    if (!mainWindow) return { canceled: true, folderPath: undefined }
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Choose a workspace folder',
+      properties: ['openDirectory'],
+    })
+    if (result.canceled || result.filePaths.length === 0) {
+      return { canceled: true, folderPath: undefined }
+    }
+    const folderPath = resolve(result.filePaths[0])
+    approvedWorkspaceRoots.add(folderPath)
+    return { canceled: false, folderPath }
+  })
+
+  /** Add a workspace folder as a tree (02.7 D-01). */
+  ipcMain.handle('workspace:add', async (_event, root: unknown) => {
+    if (!isWellFormedVaultRoot(root)) {
+      return { ok: false, error: 'Invalid workspace folder path' }
+    }
+    const target = resolve(root)
+    if (!approvedWorkspaceRoots.has(target)) {
+      return { ok: false, error: 'Choose the folder with Add Workspace Folder... first.' }
+    }
+    // Recorded in the forest like any other member (2.6 D-01); its frame is
+    // a placement edge there, never a settings entry.
+    const result = await openIntoSpace(() => workspaceService.addWorkspace(target))
+    // From now on, outside changes are recorded within moments (D-06).
+    if (result.ok) startWatchingSafely(result.treeId)
+    return result
+  })
+
+  /**
+   * A person's edit in a file window (02.7 D-04, D-05). The renderer sends
+   * only ids, the text and the hash it started from; the path comes from the
+   * note, and the actor is main's (T-02.7-07).
+   */
+  ipcMain.handle(
+    'workspace:saveFile',
+    async (_event, treeId: unknown, nodeId: unknown, text: unknown, baseSha256: unknown) => {
+      if (typeof treeId !== 'string' || !TREE_ID_PATTERN.test(treeId)) {
+        return { ok: false, error: 'Invalid tree id' }
+      }
+      if (typeof nodeId !== 'string' || !NODE_ID_PATTERN.test(nodeId)) {
+        return { ok: false, error: 'Invalid note id' }
+      }
+      if (typeof text !== 'string') return { ok: false, error: 'text must be a string' }
+      if (baseSha256 !== null && (typeof baseSha256 !== 'string' || !SHA256_PATTERN.test(baseSha256))) {
+        return { ok: false, error: 'Invalid base hash' }
+      }
+      let actor: Actor
+      try {
+        actor = getHumanActor()
+      } catch (err) {
+        return { ok: false, error: errorMessage(err) }
+      }
+      return workspaceService.saveFile(actor, treeId, nodeId, text, baseSha256)
+    },
+  )
+
+  /** Current watching statuses, for a renderer that loaded after they were sent. */
+  ipcMain.handle('workspace:statuses', () => workspaceService.allStatuses())
+
   // Save dialog for creating new .tree files
   ipcMain.handle('dialog:showSave', async () => {
     if (!mainWindow) return { canceled: true, filePath: undefined }
@@ -879,10 +1095,22 @@ app.on('window-all-closed', () => {
 // relaunched instance can reopen the same world immediately, and remove the
 // agent socket so a stale file does not outlive the app.
 app.on('will-quit', () => {
+  // No chat process may outlive Tapestry. disposeAll sends SIGTERM to each
+  // chat's process group at once, but will-quit cannot wait for it, so every
+  // group is then killed synchronously as the last resort, and the MCP config
+  // files holding the panel's token are deleted.
+  if (chatService) {
+    void chatService.disposeAll()
+    chatService.killAllNow()
+    chatService = null
+  }
   if (agentServer) {
     void agentServer.close()
     agentServer = null
   }
+  // No watcher may fire into a kernel that is being closed.
+  workspaceServiceRef?.stopAll()
+  workspaceServiceRef = null
   // The forest and the Tapestry tree first, so every journal lock is released
   // and the next launch can open the space.
   space?.close()

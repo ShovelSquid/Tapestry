@@ -53,9 +53,11 @@ export interface TreeSetting {
   /** Absolute path of the `.tree` file. */
   path: string
   /** A Tapestry-native world, or the mirror of an Obsidian vault. */
-  kind: 'native' | 'vault'
+  kind: 'native' | 'vault' | 'workspace'
   /** For `vault` trees, the absolute path of the vault folder. */
   vaultRoot?: string
+  /** For `workspace` trees, the absolute path of the workspace folder (02.7). */
+  workspaceRoot?: string
   frame: TreeFrameSetting
 }
 
@@ -109,9 +111,12 @@ function validateTree(raw: unknown): TreeSetting | null {
 
   if (!isSafeTreePath(entry.path)) return null
 
-  if (entry.kind !== 'native' && entry.kind !== 'vault') return null
+  if (entry.kind !== 'native' && entry.kind !== 'vault' && entry.kind !== 'workspace') return null
 
   if (entry.vaultRoot !== undefined && !isSafeAbsolutePath(entry.vaultRoot)) return null
+  if (entry.workspaceRoot !== undefined && !isSafeAbsolutePath(entry.workspaceRoot)) return null
+  // A workspace tree is meaningless without the folder it mirrors.
+  if (entry.kind === 'workspace' && entry.workspaceRoot === undefined) return null
 
   const frame = entry.frame
   if (!frame || typeof frame !== 'object' || Array.isArray(frame)) return null
@@ -125,6 +130,9 @@ function validateTree(raw: unknown): TreeSetting | null {
   }
   if (typeof entry.vaultRoot === 'string') {
     validated.vaultRoot = entry.vaultRoot
+  }
+  if (typeof entry.workspaceRoot === 'string') {
+    validated.workspaceRoot = entry.workspaceRoot
   }
   return validated
 }

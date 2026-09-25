@@ -36,6 +36,7 @@
  */
 
 import type { NodeData } from '../kernel-bridge'
+import type { TreeKind } from '../trees/registry'
 
 // ---------------------------------------------------------------------------
 // Aspects and policy constants
@@ -95,6 +96,13 @@ export interface ActorLike {
 export interface LockPolicy {
   readonly agentNotesOpenToAgents: boolean
   readonly nonAgentNotesDeleteLocked: boolean
+  /**
+   * Whether a note no agent created starts locked to its creator (text and
+   * layout; delete follows nonAgentNotesDeleteLocked). Undefined means true,
+   * the 2.4 default, so every existing policy literal keeps its meaning.
+   * Only an explicit `false` opens such notes (02.7 D-09, workspace trees).
+   */
+  readonly nonAgentNotesLockedByDefault?: boolean
 }
 
 /** The policy the application runs with, built from the constants above. */
@@ -102,6 +110,27 @@ export const DEFAULT_LOCK_POLICY: LockPolicy = Object.freeze({
   agentNotesOpenToAgents: AGENT_NOTES_OPEN_TO_AGENTS,
   nonAgentNotesDeleteLocked: NON_AGENT_NOTES_DELETE_LOCKED,
 })
+
+/**
+ * The policy for workspace trees (02.7 D-09): "Agents may edit any workspace
+ * file that is not locked, whoever wrote it." A file note is open to every
+ * agent unless an explicit `lock.<aspect>` says otherwise, whoever created
+ * it: a person typing in a window, workspace.watcher or another agent.
+ * Explicit locks, allow lists and the literal `open` work exactly as in 2.4.
+ */
+export const WORKSPACE_LOCK_POLICY: LockPolicy = Object.freeze({
+  agentNotesOpenToAgents: true,
+  nonAgentNotesDeleteLocked: false,
+  nonAgentNotesLockedByDefault: false,
+})
+
+/**
+ * The lock policy a tree of this kind runs with: WORKSPACE_LOCK_POLICY for a
+ * workspace tree, DEFAULT_LOCK_POLICY for native and vault trees.
+ */
+export function lockPolicyForTree(kind: TreeKind): LockPolicy {
+  return kind === 'workspace' ? WORKSPACE_LOCK_POLICY : DEFAULT_LOCK_POLICY
+}
 
 /** A note's property map, exactly as the bridge returns it. */
 export type LockProps = NodeData['props']
@@ -184,6 +213,9 @@ export function resolveLock(
   if (isAgentActor(createdBy)) {
     return policy.agentNotesOpenToAgents ? { locked: false } : lockedToCreator
   }
+
+  // Workspace trees: no explicit lock means open, whoever created the note.
+  if (policy.nonAgentNotesLockedByDefault === false) return { locked: false }
 
   // Text and layout share the unconditional locked-to-creator default;
   // only delete has a policy switch.

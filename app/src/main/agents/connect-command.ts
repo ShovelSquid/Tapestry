@@ -99,3 +99,41 @@ export function buildConnectCommand(options: ConnectCommandOptions): string {
 
   return parts.join(' ')
 }
+
+export interface ChatShimLaunchOptions {
+  isPackaged: boolean
+  appPath: string
+  execPath: string
+  resourcesPath: string
+  /** The chat panel agent's token; goes only into the 0600 MCP config file. */
+  token: string
+  userDataDir: string
+}
+
+/**
+ * How the in-app chat's `claude` starts Tapestry's MCP shim: the
+ * `mcpServers.tapestry` entry of the chat's MCP config file.
+ *
+ * Unlike buildConnectCommand this is no shell line: the command and each
+ * argument are separate values. The shim always runs on Electron's own Node
+ * (`ELECTRON_RUN_AS_NODE=1`), so a Finder-launched Tapestry needs no `node` on
+ * its PATH, in development as well as packaged.
+ */
+export function chatShimLaunch(options: ChatShimLaunchOptions): {
+  command: string
+  args: string[]
+  env: Record<string, string>
+} {
+  const shim = options.isPackaged
+    ? join(options.resourcesPath, 'app.asar', SHIM_RELATIVE)
+    : join(options.appPath, SHIM_RELATIVE)
+  return {
+    command: options.execPath,
+    args: [shim],
+    env: {
+      ELECTRON_RUN_AS_NODE: '1',
+      TAPESTRY_AGENT_TOKEN: options.token,
+      TAPESTRY_USER_DATA: options.userDataDir,
+    },
+  }
+}

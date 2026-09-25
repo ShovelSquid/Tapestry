@@ -16,6 +16,8 @@ import React, { useEffect } from 'react'
 import { useAnnounce } from './LiveAnnouncer'
 import NoteCard from './NoteCard'
 import VaultNoteCard from './VaultNoteCard'
+import WorkspaceFileCard from './WorkspaceFileCard'
+import FolderFrame from './FolderFrame'
 import FallbackNodeView from './FallbackNodeView'
 import ConnectionLine from './ConnectionLine'
 import ThreadCenterNode from './ThreadCenterNode'
@@ -24,6 +26,13 @@ import type { ForestTree, NodeRef } from '../state/use-forest'
 import { nodeKey } from '../state/use-forest'
 import type { FrameRect } from '../layout/frames'
 import type { DisplaySpot } from '../layout/placement'
+import {
+  absolutePositions,
+  isFolderNode,
+  storedPosition,
+  type Point,
+  type SubspaceLayout,
+} from '../layout/subspaces'
 import type { NodeInfo } from './Canvas'
 
 /** Fallback thread-center size until the node registers its real dims. */
@@ -46,10 +55,15 @@ function isThreadCenter(node: NodeInfo): boolean {
  * A name with no component here is not an error: it falls through to
  * FallbackNodeView, which is how `FolderGroup`, `FileNote` and
  * `PlaceholderNote` stay readable until Plan 09 draws them (D-33/D-35).
+ *
+ * The workspace-files plugin still registers `WorkspaceFolderLabel` for folder
+ * nodes; it maps to nothing now, and is never reached for a workspace tree,
+ * whose folders are drawn as FolderFrames from the hierarchy (02.7 D-21).
  */
 const NODE_VIEW_COMPONENTS = {
   NoteCard,
   VaultNoteCard,
+  WorkspaceFileCard,
 } as const
 
 type NodeViewComponentName = keyof typeof NODE_VIEW_COMPONENTS
@@ -160,6 +174,19 @@ export interface TreeFrameHandlers {
    * waits for main and shows a refusal or failure (review WR-03).
    */
   onCloseTree: (treeId: string) => void
+  /** A folder frame's collapse/expand button; `collapsed` is the state wanted (D-21). */
+  onToggleFolder: (ref: NodeRef, collapsed: boolean) => void
+  /** Pointer down on a folder frame's header: the start of a folder drag (D-21). */
+  onFolderHeaderPointerDown: (ref: NodeRef, e: React.PointerEvent<HTMLDivElement>) => void
+}
+
+/** A workspace tree's folder subspaces, computed once in Canvas (02.7 D-21). */
+export interface TreeSubspaces {
+  layout: SubspaceLayout
+  /** Live local positions (drags) the layout was computed with. */
+  positions: ReadonlyMap<string, Point>
+  /** The folder being dragged, if any. */
+  draggingFolderId: string | null
 }
 
 interface TreeFrameProps {
@@ -198,6 +225,10 @@ interface TreeFrameProps {
   onHeaderPointerDown: (e: React.PointerEvent<HTMLDivElement>) => void
   onFrameHover: (hovered: boolean) => void
   handlers: TreeFrameHandlers
+  /** Set for a workspace tree: its folders are drawn as nested frames. */
+  subspaces?: TreeSubspaces
+  /** open_file's request to open one file window, keyed `<treeId>:<noteId>` (02.7 SC2). */
+  openRequest?: { key: string; nonce: number } | null
 }
 
 export default function TreeFrame({
@@ -221,6 +252,8 @@ export default function TreeFrame({
   onHeaderPointerDown,
   onFrameHover,
   handlers,
+  subspaces,
+  openRequest,
 }: TreeFrameProps): React.ReactElement {
   const announce = useAnnounce()
 
@@ -314,10 +347,33 @@ export default function TreeFrame({
     }
   }
 
+  // A workspace tree stores folder-local positions (D-21): edges are drawn
+  // between absolute (tree-frame) centres, and an edge whose end sits inside a
+  // collapsed folder is hidden rather than rerouted.
+  const hierarchy = subspaces?.layout.hierarchy ?? null
+  const absolute = subspaces
+    ? absolutePositions(tree.nodes, subspaces.positions, subspaces.layout.hierarchy)
+    : null
+  const isInsideCollapsed = (nodeId: string): boolean => {
+    if (!subspaces || !hierarchy) return false
+    let parent = hierarchy.parentOf.get(nodeId) ?? null
+    for (let depth = 0; parent !== null && depth < 256; depth += 1) {
+      if (!subspaces.layout.expanded.has(parent)) return true
+      parent = hierarchy.parentOf.get(parent) ?? null
+    }
+    return false
+  }
+
   /** A note's center in this tree's local coordinates. */
   const getNodeCenter = (nodeId: string): { x: number; y: number } | null => {
     const node = tree.nodes.find((n) => n.id === nodeId)
     if (!node) return null
+    const inSubspace = absolute !== null && hierarchy !== null && hierarchy.parentOf.has(nodeId)
+    if (inSubspace) {
+      const at = absolute.get(nodeId) ?? storedPosition(node)
+      const dims = getDims(keyFor(nodeId))
+      return { x: at.x + (dims?.width ?? 240) / 2, y: at.y + (dims?.height ?? 80) / 2 }
+    }
     const drag = dragPositions[keyFor(nodeId)]
     const spot = displayPositions.get(nodeId)
     const px = spot ? spot.x : drag ? drag.x : Number(node.props['position.x']?.value ?? 0)
@@ -370,6 +426,42 @@ export default function TreeFrame({
     return getNodeCenter(nodeId)
   }
 
+  const nodesById = new Map(tree.nodes.map((node) => [node.id, node]))
+
+  /** A node's local position, honouring a live drag (subspace trees). */
+  const localOf = (nodeId: string): Point => {
+    const live = subspaces?.positions.get(nodeId)
+    if (live) return live
+    const node = nodesById.get(nodeId)
+    return node ? storedPosition(node) : { x: 0, y: 0 }
+  }
+
+  /** Folder nodes, and anything inside a folder, belong to a FolderFrame. */
+  const isNestedInSubspace = (node: NodeInfo): boolean => {
+    if (!hierarchy) return false
+    if (isFolderNode(node)) return true
+    return (hierarchy.parentOf.get(node.id) ?? null) !== null
+  }
+
+  /** One workspace file card, wherever it sits (the root or a folder). */
+  const renderWorkspaceCard = (node: NodeInfo): React.ReactElement => (
+    <WorkspaceFileCard
+      key={node.id}
+      treeId={tree.id}
+      node={node}
+      isSelected={selectedKey === keyFor(node.id)}
+      zoom={zoom}
+      provenance={tree.history?.nodes[node.id]}
+      onBorderSelect={() => handlers.onBorderSelect(refFor(node.id))}
+      onHover={(hovered) => handlers.onHover(refFor(node.id), hovered)}
+      onPositionChange={(nodeId, x, y) => handlers.onPositionChange(refFor(nodeId), x, y)}
+      onRegisterDims={(nodeId, w, h) => handlers.onRegisterDims(refFor(nodeId), w, h)}
+      onDragMove={(nodeId, x, y) => handlers.onDragMove(refFor(nodeId), x, y)}
+      onDragEnd={(nodeId) => handlers.onDragEnd(refFor(nodeId))}
+      openNonce={openRequest?.key === `${tree.id}:${node.id}` ? openRequest.nonce : undefined}
+    />
+  )
+
   // The content layer translates local (0, 0) to the frame origin. It is
   // offset from the frame rect, not the world, because it is a child of the
   // rect-positioned container.
@@ -414,6 +506,7 @@ export default function TreeFrame({
           }}
         >
           {tree.edges.map((edge) => {
+            if (isInsideCollapsed(edge.from) || isInsideCollapsed(edge.to)) return null
             const from = resolveNodeCenter(edge.from)
             const to = resolveNodeCenter(edge.to)
             if (!from || !to) return null
@@ -473,15 +566,45 @@ export default function TreeFrame({
           )
         })}
 
-        {/* Note cards — the component a plugin registered, or the fallback */}
-        {tree.nodes.filter((n) => !isThreadCenter(n)).map((node) => {
+        {/* Top-level folder frames of a workspace tree (D-21); each nests its own */}
+        {subspaces &&
+          (subspaces.layout.hierarchy.childrenOf.get(null) ?? [])
+            .filter((id) => subspaces.layout.hierarchy.folders.has(id))
+            .map((folderId) => {
+              const folder = nodesById.get(folderId)
+              if (!folder) return null
+              return (
+                <FolderFrame
+                  key={folderId}
+                  treeId={tree.id}
+                  folder={folder}
+                  nodesById={nodesById}
+                  layout={subspaces.layout}
+                  localOf={localOf}
+                  saveState={tree.saveState}
+                  zoom={zoom}
+                  renderCard={renderWorkspaceCard}
+                  onToggleFolder={(id, collapsed) => handlers.onToggleFolder(refFor(id), collapsed)}
+                  onHeaderPointerDown={(id, e) => handlers.onFolderHeaderPointerDown(refFor(id), e)}
+                  draggingFolderId={subspaces.draggingFolderId}
+                />
+              )
+            })}
+
+        {/* Note cards — the component a plugin registered, or the fallback.
+            In a workspace tree, folders and the cards inside them are drawn by
+            their FolderFrame, not here. */}
+        {tree.nodes.filter((n) => !isThreadCenter(n) && !isNestedInSubspace(n)).map((node) => {
           const key = keyFor(node.id)
           const view = mappedNodeView(pluginNodeViews[node.type])
+
+          if (view === 'WorkspaceFileCard') return renderWorkspaceCard(node)
 
           if (view === 'VaultNoteCard') {
             return (
               <VaultNoteCard
                 key={node.id}
+                treeId={tree.id}
                 node={node}
                 isSelected={selectedKey === key}
                 zoom={zoom}
@@ -503,6 +626,7 @@ export default function TreeFrame({
             return (
               <NoteCard
                 key={node.id}
+                treeId={tree.id}
                 node={node}
                 displayPosition={displayPositions.get(node.id)?.followSpot ?? undefined}
                 isEditing={editingKey === key}

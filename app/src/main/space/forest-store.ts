@@ -35,8 +35,10 @@ import {
   KEY_PATH_HINT,
   KEY_TITLE,
   KEY_VAULT_ROOT_HINT,
+  KEY_WORKSPACE_ROOT_HINT,
   MEMBER_KIND_NATIVE,
   MEMBER_KIND_VAULT,
+  MEMBER_KIND_WORKSPACE,
   MEMBER_TYPE,
   PLACEMENT_LABEL,
   SPACE_KIND_CANVAS,
@@ -53,13 +55,14 @@ export interface OpenProblem {
   reason: string
 }
 
-export type MemberKind = 'native' | 'vault'
+export type MemberKind = 'native' | 'vault' | 'workspace'
 
 /** One member to write when the forest is created. */
 export interface MemberSeed {
   kind: MemberKind
   pathHint: string
   vaultRootHint?: string
+  workspaceRootHint?: string
   /** Written only when known; a first open records it later (D-03). */
   digest?: string
   origin: { x: number; y: number }
@@ -71,6 +74,7 @@ export interface ForestMember {
   kind: MemberKind
   pathHint: string
   vaultRootHint?: string
+  workspaceRootHint?: string
   digest?: string
   /** The placement edge from the space node, or null when there is none. */
   placement: { edgeId: string; x: number; y: number } | null
@@ -259,6 +263,9 @@ export class ForestStore {
         if (seed.kind === 'vault' && seed.vaultRootHint !== undefined) {
           props[KEY_VAULT_ROOT_HINT] = { type: 'text', value: seed.vaultRootHint }
         }
+        if (seed.kind === 'workspace' && seed.workspaceRootHint !== undefined) {
+          props[KEY_WORKSPACE_ROOT_HINT] = { type: 'text', value: seed.workspaceRootHint }
+        }
         if (seed.digest !== undefined) {
           props[KEY_DIGEST] = { type: 'text', value: seed.digest }
         }
@@ -338,9 +345,15 @@ export class ForestStore {
       .flatMap((node): ForestMember[] => {
         const pathHint = textProp(node.props, KEY_PATH_HINT)
         if (pathHint === undefined) return []
+        const kindText = textProp(node.props, KEY_KIND)
         const kind: MemberKind =
-          textProp(node.props, KEY_KIND) === MEMBER_KIND_VAULT ? 'vault' : MEMBER_KIND_NATIVE
+          kindText === MEMBER_KIND_VAULT
+            ? 'vault'
+            : kindText === MEMBER_KIND_WORKSPACE
+              ? 'workspace'
+              : MEMBER_KIND_NATIVE
         const vaultRootHint = textProp(node.props, KEY_VAULT_ROOT_HINT)
+        const workspaceRootHint = textProp(node.props, KEY_WORKSPACE_ROOT_HINT)
         const digest = textProp(node.props, KEY_DIGEST)
         const edge = placements.get(node.id)
         return [
@@ -349,6 +362,7 @@ export class ForestStore {
             kind,
             pathHint,
             ...(vaultRootHint !== undefined ? { vaultRootHint } : {}),
+            ...(workspaceRootHint !== undefined ? { workspaceRootHint } : {}),
             ...(digest !== undefined ? { digest } : {}),
             placement: edge
               ? {
@@ -400,6 +414,9 @@ export class ForestStore {
     if (seed.kind === 'vault' && seed.vaultRootHint !== undefined) {
       props[KEY_VAULT_ROOT_HINT] = { type: 'text', value: seed.vaultRootHint }
     }
+    if (seed.kind === 'workspace' && seed.workspaceRootHint !== undefined) {
+      props[KEY_WORKSPACE_ROOT_HINT] = { type: 'text', value: seed.workspaceRootHint }
+    }
 
     const result = this.bridge.submitAs(actor, message, [
       { op: 'createNode', type: MEMBER_TYPE, props },
@@ -435,7 +452,13 @@ export class ForestStore {
    * found at a new path, and folding a duplicate stand-in away.
    */
   writeMemberFacts(
-    changes: Array<{ nodeId: string; pathHint?: string; vaultRootHint?: string; digest?: string }>,
+    changes: Array<{
+      nodeId: string
+      pathHint?: string
+      vaultRootHint?: string
+      workspaceRootHint?: string
+      digest?: string
+    }>,
     deletions: string[],
     actor: Actor,
     message: string,
@@ -453,6 +476,9 @@ export class ForestStore {
       if (change.pathHint !== undefined) ops.push(text(change.nodeId, KEY_PATH_HINT, change.pathHint))
       if (change.vaultRootHint !== undefined) {
         ops.push(text(change.nodeId, KEY_VAULT_ROOT_HINT, change.vaultRootHint))
+      }
+      if (change.workspaceRootHint !== undefined) {
+        ops.push(text(change.nodeId, KEY_WORKSPACE_ROOT_HINT, change.workspaceRootHint))
       }
       if (change.digest !== undefined) ops.push(text(change.nodeId, KEY_DIGEST, change.digest))
     }

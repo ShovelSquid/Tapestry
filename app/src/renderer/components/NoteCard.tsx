@@ -24,13 +24,15 @@
  * editor/use-prosemirror.ts (D-26 universal editing).
  */
 
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import React, { useCallback, useContext, useEffect, useRef, useState } from 'react'
 import type { EditorView } from 'prosemirror-view'
 import { useProseMirror } from '../editor/use-prosemirror'
 import NoteControls from './NoteControls'
 import FloatingToolbar from './FloatingToolbar'
 import { layoutSize, screenDeltaToWorld } from '../layout/camera'
 import ProvenanceBadge, { actorSpokenText } from './ProvenanceBadge'
+import { AskClaudeButton, useContextMenu } from './ContextMenu'
+import { ChatContext } from '../state/chat'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -44,6 +46,8 @@ interface NodeInfo {
 
 interface NoteCardProps {
   node: NodeInfo
+  /** The tree this note is in, for Ask Claude… (D-19). */
+  treeId?: string
   /**
    * Where a following note is drawn, beside its grew-from parent (D-05). Set
    * only for a following note; every other note keeps its stored position.
@@ -116,6 +120,7 @@ const MIN_HEIGHT = 60
 
 export default function NoteCard({
   node,
+  treeId,
   displayPosition,
   isEditing,
   isHovered,
@@ -576,6 +581,42 @@ export default function NoteCard({
     )
   }
 
+  // ----- Ask Claude… about this note (D-19) -----
+  //
+  // Notes live in trees, not workspaces, so the chat opens for the workspace
+  // under the pointer or the last one used, and Claude reads the note through
+  // the tapestry tools it already has (read_note).
+  const { openChat, treeName } = useContext(ChatContext)
+  const openContextMenu = useContextMenu()
+  const askClaude = useCallback(() => {
+    if (!treeId) {
+      openChat({})
+      return
+    }
+    openChat({
+      treeId,
+      attachment: {
+        kind: 'note',
+        treeId,
+        treeName: treeName(treeId),
+        noteId: node.id,
+        title: localTitle.trim().length > 0 ? localTitle : 'Untitled',
+      },
+    })
+  }, [openChat, treeName, treeId, node.id, localTitle])
+
+  const handleContextMenu = useCallback(
+    (e: React.MouseEvent) => {
+      // While the note is being edited, its text keeps the native menu.
+      const target = e.target as HTMLElement
+      if (isEditing && (target.closest('.ProseMirror') || target.closest('input'))) return
+      openContextMenu(e, [{ label: 'Ask Claude…', run: askClaude }])
+    },
+    [isEditing, openContextMenu, askClaude],
+  )
+
+  const askLabel = `Ask Claude about ${localTitle.trim().length > 0 ? localTitle : 'Untitled'}`
+
   let borderClass = 'tapestry-note-card'
   if (isHighlighted) borderClass += ' tapestry-note-card--selected'
   if (isEditing) borderClass += ' tapestry-note-card--editing'
@@ -595,6 +636,7 @@ export default function NoteCard({
       style={cardStyle}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
+      onContextMenu={handleContextMenu}
     >
       {/* Drag handle area -- the top border strip */}
       <div
@@ -603,39 +645,43 @@ export default function NoteCard({
         onClick={handleBorderClick}
       />
 
-      {/* Editable title */}
-      <input
-        type="text"
-        className="tapestry-note-title-input"
-        value={localTitle}
-        placeholder="Untitled"
-        readOnly={!isEditing}
-        onChange={(e) => {
-          const newTitle = e.target.value
-          setLocalTitle(newTitle)
-          onMarkDirty(node.id)
-          if (titleDebounceRef.current) clearTimeout(titleDebounceRef.current)
-          titleDebounceRef.current = setTimeout(() => {
-            titleDebounceRef.current = null
-            onMarkClean(node.id)
-            const view = viewRef.current
-            if (view) {
-              const b = JSON.stringify(view.state.doc.toJSON())
-              onSaveRef.current(node.id, b, newTitle)
+      {/* Editable title, with the chat button beside it (D-19) */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+        <input
+          type="text"
+          className="tapestry-note-title-input"
+          style={{ flex: 1, minWidth: 0 }}
+          value={localTitle}
+          placeholder="Untitled"
+          readOnly={!isEditing}
+          onChange={(e) => {
+            const newTitle = e.target.value
+            setLocalTitle(newTitle)
+            onMarkDirty(node.id)
+            if (titleDebounceRef.current) clearTimeout(titleDebounceRef.current)
+            titleDebounceRef.current = setTimeout(() => {
+              titleDebounceRef.current = null
+              onMarkClean(node.id)
+              const view = viewRef.current
+              if (view) {
+                const b = JSON.stringify(view.state.doc.toJSON())
+                onSaveRef.current(node.id, b, newTitle)
+              }
+            }, 300)
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              viewRef.current?.focus()
             }
-          }, 300)
-        }}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') {
-            e.preventDefault()
-            viewRef.current?.focus()
-          }
-        }}
-        onClick={(e) => {
-          e.stopPropagation()
-          if (!isEditing) onStartEditing()
-        }}
-      />
+          }}
+          onClick={(e) => {
+            e.stopPropagation()
+            if (!isEditing) onStartEditing()
+          }}
+        />
+        <AskClaudeButton label={askLabel} onAsk={askClaude} />
+      </div>
 
       {/* ProseMirror body editor */}
       <div

@@ -115,6 +115,36 @@ export class AgentRegistry {
     return { name, token }
   }
 
+  /**
+   * Give an agent a fresh token, creating the agent when it is missing.
+   *
+   * An existing agent's stored digest is replaced, so its previous token stops
+   * verifying at once. The in-app chat panel uses this on every launch (its
+   * token is written only to a 0600 MCP config file), so a config file left
+   * over from an earlier run grants nothing. Returns the plaintext token,
+   * which is never stored.
+   */
+  issueToken(name: string): string {
+    if (!isValidActorName(name)) {
+      throw new Error('Agent name must match ^[a-z0-9][a-z0-9_-]{0,31}$')
+    }
+    const token = randomBytes(32).toString('base64url')
+    const agents = this.list()
+    const existing = agents.find((a) => a.name === name)
+    if (existing) {
+      existing.tokenSha256 = sha256Hex(token)
+    } else {
+      agents.push({
+        name,
+        tokenSha256: sha256Hex(token),
+        createdAt: new Date().toISOString(),
+        lastConnectedAt: null,
+      })
+    }
+    this.write(agents)
+    return token
+  }
+
   remove(name: string): boolean {
     const agents = this.list()
     const remaining = agents.filter((a) => a.name !== name)

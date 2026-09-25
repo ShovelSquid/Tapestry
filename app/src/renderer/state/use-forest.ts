@@ -45,9 +45,11 @@ export type TreeSaveState = 'saved' | 'saving' | 'error'
 export interface ForestTree {
   id: string
   name: string
-  kind: 'native' | 'vault'
+  kind: 'native' | 'vault' | 'workspace'
   path: string
   vaultRoot?: string
+  /** For a workspace tree, the folder it mirrors (02.7). */
+  workspaceRoot?: string
   /** Where the frame's local origin sits in world space. */
   frame: { x: number; y: number }
   nodes: NodeInfo[]
@@ -196,6 +198,7 @@ export function useForest() {
             kind: summary.kind,
             path: summary.path,
             vaultRoot: summary.vaultRoot,
+            workspaceRoot: summary.workspaceRoot,
             frame: summary.frame,
             status: summary.status ?? 'ok',
             reason: summary.reason,
@@ -207,6 +210,7 @@ export function useForest() {
           kind: summary.kind,
           path: summary.path,
           vaultRoot: summary.vaultRoot,
+          workspaceRoot: summary.workspaceRoot,
           frame: summary.frame,
           nodes: [],
           edges: [],

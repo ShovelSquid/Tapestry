@@ -11,8 +11,9 @@
  * 2. **The literal id, always.** The badge shows what a person would find on
  *    the commit's `actor` line, so what the app says and what the file says
  *    are the same string. The only additions are for ids that would otherwise
- *    mislead: `obsidian.bridge` gains "author unknown" because an observed
- *    file change names the watcher, not whoever actually typed (D-21).
+ *    mislead: `obsidian.bridge` and `workspace.watcher` gain "author
+ *    unknown" because an observed file change names the watcher, not whoever
+ *    actually typed (02.2 D-21, 02.7 D-06).
  *
  * Glyphs are 16px inline SVG and `aria-hidden`; the text carries the meaning.
  */
@@ -22,6 +23,13 @@ import React from 'react'
 // ---------------------------------------------------------------------------
 // Text
 // ---------------------------------------------------------------------------
+
+/** Actors that record what they saw on disk, never who wrote it. */
+const OBSERVER_IDS = new Set(['obsidian.bridge', 'workspace.watcher'])
+
+function isObserver(actor: TapestryActorRef): boolean {
+  return actor.kind === 'plugin' && OBSERVER_IDS.has(actor.id)
+}
 
 /**
  * What the badge shows on screen.
@@ -38,6 +46,9 @@ export function actorBadgeText(actor: TapestryActorRef): string {
   }
   if (actor.kind === 'plugin' && actor.id === 'obsidian.bridge') {
     return 'obsidian.bridge · author unknown'
+  }
+  if (actor.kind === 'plugin' && actor.id === 'workspace.watcher') {
+    return 'workspace.watcher · author unknown'
   }
   return actor.id
 }
@@ -60,7 +71,7 @@ function glyphKindFor(actor: TapestryActorRef): GlyphKind {
   if (actor.kind === 'system') return 'system'
   if (actor.kind === 'human') return 'human'
   if (actor.id.startsWith('agent.')) return 'agent'
-  if (actor.id === 'obsidian.bridge') return 'observer'
+  if (isObserver(actor)) return 'observer'
   return 'plugin'
 }
 

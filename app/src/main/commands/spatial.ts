@@ -28,13 +28,20 @@
  * `place` writes only `position.x`, `position.y` and `pinned` (D-08). It never
  * reads or writes an `md.` key and never calls a vault service, so placing a
  * vault note never moves its file (D-13).
+ *
+ * In a workspace tree (02.7 D-21) a note's position is local to its folder, so
+ * two notes in different folders cannot be compared by their stored numbers.
+ * There, `look` and `place` reason in workspace-frame coordinates through the
+ * shared `absolutePositions`, and `place` writes the note's folder-local spot
+ * through `toLocalPosition`. Native and vault trees take exactly the path
+ * they always have.
  */
 
 import type { OpenTree, TreeRegistry } from '../trees/registry'
 import type { Actor } from './actor'
 import type { CommandHooks, CommandResult } from './notes'
 import { prepareWriteFor } from './notes'
-import { checkLock } from './locks'
+import { checkLock, lockPolicyForTree } from './locks'
 import type { NodeData, OpObject } from '../kernel-bridge'
 import {
   displayPositions,
@@ -53,6 +60,7 @@ import {
   type WhereRefusal,
   type WhereRole,
 } from '../../renderer/layout/placement'
+import { absolutePositions, toLocalPosition } from '../../renderer/layout/subspaces'
 
 /**
  * Node ids the kernel issues: `n1`, `n2`, ... (never `n0`). Re-declared here
@@ -63,6 +71,26 @@ const NODE_ID_RE = /^n[1-9][0-9]*$/
 /** The error convention used across the main process (as in connections.ts). */
 function errorText(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
+}
+
+/**
+ * The nodes as `look` and `place` measure them. A workspace tree's positions
+ * are folder-local (02.7 D-21), so every placed node is given its absolute
+ * (workspace-frame) position; any other tree's nodes are returned unchanged.
+ */
+function inFrameCoordinates(tree: OpenTree, nodes: NodeData[]): NodeData[] {
+  if (tree.kind !== 'workspace') return nodes
+  const absolute = absolutePositions(nodes)
+  return nodes.map((node) => {
+    const x = node.props['position.x']
+    const y = node.props['position.y']
+    const at = absolute.get(node.id)
+    if (x === undefined || y === undefined || at === undefined) return node
+    return {
+      ...node,
+      props: { ...node.props, 'position.x': { ...x, value: at.x }, 'position.y': { ...y, value: at.y } },
+    }
+  })
 }
 
 /** How many neighbours `look` returns when no limit is given (the search_notes precedent). */
@@ -202,7 +230,7 @@ export class SpatialCommands {
     }
 
     try {
-      const nodes = tree.bridge.getNodes()
+      const nodes = inFrameCoordinates(tree, tree.bridge.getNodes())
       const edges = tree.bridge.getEdges()
       const byId = new Map<string, NodeData>()
       for (const node of nodes) byId.set(node.id, node)
@@ -335,7 +363,8 @@ export class SpatialCommands {
       prepareWriteFor(tree, actor, this.hooks)
 
       // (4) The note, in the world the commit will be appended to.
-      const nodes = tree.bridge.getNodes()
+      const stored = tree.bridge.getNodes()
+      const nodes = inFrameCoordinates(tree, stored)
       const edges = tree.bridge.getEdges()
       const note = nodes.find((node) => node.id === noteId)
       if (!note) return { ok: false, error: notLive }
@@ -345,7 +374,7 @@ export class SpatialCommands {
       // the commit that created the note, read from the history index.
       const entry = tree.bridge.getHistoryIndex().nodes[noteId]
       if (!entry) return { ok: false, error: notLive }
-      const locked = checkLock(noteId, note.props, entry.createdBy, actor, 'layout')
+      const locked = checkLock(noteId, note.props, entry.createdBy, actor, 'layout', lockPolicyForTree(tree.kind))
       if (locked) return { ok: false, error: locked }
 
       // (5b) A person's takeover is never turned back into following (D-17).
@@ -368,8 +397,14 @@ export class SpatialCommands {
         return { ok: false, error: `no finite spot for ${noteId} in ${tree.name}` }
       }
 
+      // A workspace note stores its spot relative to its folder (02.7 D-21).
+      const spot =
+        tree.kind === 'workspace'
+          ? { ...outcome, ...toLocalPosition(stored, noteId, { x: outcome.x, y: outcome.y }) }
+          : outcome
+
       // (8) One commit, signed by the socket's actor.
-      const result = tree.bridge.submitAs(actor, placeMessage(noteId, where), placeOps(note, outcome))
+      const result = tree.bridge.submitAs(actor, placeMessage(noteId, where), placeOps(note, spot))
       this.hooks.onCommitted?.(tree.id, actor, result)
 
       return { ok: true, value: { tree: tree.id, note: noteId, seq: result.seq, follows: outcome.follows } }

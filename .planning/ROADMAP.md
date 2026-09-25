@@ -21,6 +21,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 2.4: Lock Model** - Allow unless locked: lock aspects replace the D-05 authorship gate for agent note commands (INSERTED) (completed 2026-09-16)
 - [ ] **Phase 2.5: Agent Spatial Verbs** - Task-space `look` and `place` for agents: relations in, relations out, refused by `lock.layout` (INSERTED; depends on 2.4)
 - [ ] **Phase 2.6: Placement Edges & Forest Tree** - An always-open Tapestry tree, the arrangement of trees as a forest tree with placement edges, and trees named by header digest (INSERTED; depends on 2.2)
+- [ ] **Phase 2.7: File Windows & Workspace Sandbox** - Open a workspace folder, edit its files in canvas windows, and give agents file tools confined to that folder, with an in-app Claude chat panel on the Claude Code CLI; then dogfood Tapestry on its own repo (INSERTED; depends on 2.5)
 - [ ] **Phase 3: Branching History & Deterministic Replay** - History navigation, fork-preserving branches, snapshots, and replay from recorded inputs
 - [ ] **Phase 4: Spatial Notebook** - Bundled note, drawing, property, and provenance-display plugins delivering the usable spatial workspace
 - [ ] **Phase 5: Deterministic Rule Engine** - Typed rule inputs/outputs, fixed-step simulation, forces, and explicit failure semantics
@@ -381,6 +382,57 @@ Plans:
 **Gap closure, Wave 2** *(blocked on 02.6-08: shares space-service.ts and membership.test.ts)*
 
 - [x] 02.6-10-PLAN.md — WR-02 (T-2.6-24): `openWithRollback` closes every entry a failed add introduced that the forest does not hold
+
+**UI hint**: yes
+
+### Phase 2.7: File Windows & Workspace Sandbox (INSERTED)
+
+**Goal**: A person opens a workspace folder in Tapestry and edits its files in windows on the canvas; agents connected over the MCP bridge can list, read, open and write files, but only inside that folder. Tapestry is then used to do its own development: the workspace is pointed at this repository and this branch's work is done from inside it.
+**Mode:** mvp
+**Depends on**: Phase 2.5 (agent actions: MCP bridge, lock model, `look`/`place`)
+**Branch**: `ws/windows` (worktree `Tapestrees/windows`; 2.6 is taken on `ws/spatial-canvas`)
+**Requirements**: TBD
+**Success Criteria** (what must be TRUE):
+
+  1. A person can choose a workspace folder; it is remembered across restarts, and files under it can be opened as editable windows on the canvas that save back to disk
+  2. Agents get file tools (list, read, open-in-window, write) over the existing MCP bridge, attributed as `actor plugin agent.<name>`
+  3. Every agent file path resolves inside the workspace root: `..`, absolute paths outside the root, and symlinks that escape the root are refused with a clear message, and a refusal writes nothing
+  4. With no workspace open, agent file tools refuse rather than falling back to any default directory
+  5. Dogfood: with the workspace set to this repo, Claude Code connected over MCP can open and edit a real source file in a Tapestry window, and the edit shows up in `git diff`
+  6. A chat panel inside Tapestry runs Claude through the user's own Claude Code CLI login, in the workspace folder. By default it has only the sandboxed workspace tools; its edits appear in the file windows as `agent.<name>`
+  7. A per-chat "Allow shell" switch, off by default and labelled not sandboxed, enables Claude Code's shell and built-in file tools in the workspace; edits made that way are recorded as observed changes
+  8. The panel talks to a `ChatEngine` interface, so a later API-key engine (Anthropic SDK over the same sandboxed tools) plugs in without changing the panel
+
+**Plans**: 6/7 plans executed
+
+Plans:
+**Wave 1**
+
+- [x] 02.7-01-PLAN.md — Dogfood tracer: generic mirror core, workspace trees in app data, sandboxed read_file/edit_file over MCP as agent.<name>, file windows with the human save and file-wins rule, restore across restarts, D-11 checkpoint
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 02.7-02-PLAN.md — Connect-on-start for agents (D-20), then the in-app chat panel on the Claude Code CLI (D-12..D-14) behind the ChatEngine seam (D-16) with only Tapestry's sandboxed tools as agent.claude-chat, and Ask Claude… from the canvas, file cards and notes (D-19)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [x] 02.7-03-PLAN.md — Folders as subspaces (D-21): nested, collapsible, draggable folder frames in the tree-frame design with push-apart and folder-local positions; the combined hands-on checkpoint for 02 and 03
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [x] 02.7-04-PLAN.md — Per-chat "Allow shell (not sandboxed)" switch (D-15): off by default and after every relaunch, confirmed, recorded in the chat, shell edits caught up as observed changes after each turn
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
+- [x] 02.7-05-PLAN.md — Full agent file tools (list_files, write_file, open_file), the D-08 refusal matrix, file locks (D-09), and guards that keep workspace trees from diverging
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
+- [x] 02.7-06-PLAN.md — Live watching of outside changes, grouped per moment and signed workspace.watcher, with self-healing watch errors, Retry write and scale measures
+
+**Wave 7** *(blocked on Wave 6 completion)*
+
+- [ ] 02.7-07-PLAN.md — API-key chat engine (D-16): @anthropic-ai/sdk tool runner over the same sandboxed tools in-process, engine picker, encrypted key storage; blocking package-legitimacy check first
 
 **UI hint**: yes
 

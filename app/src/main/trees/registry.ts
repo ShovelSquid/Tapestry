@@ -41,7 +41,7 @@ export interface PrimaryBridgeProxy {
 }
 
 /** Where a tree's content comes from: Tapestry itself, or a mirrored source. */
-export type TreeKind = 'native' | 'vault'
+export type TreeKind = 'native' | 'vault' | 'workspace'
 
 /** An open tree and the bridge holding its journal lock. */
 export interface OpenTree {
@@ -54,6 +54,8 @@ export interface OpenTree {
   readonly name: string
   /** For a vault tree, the folder it mirrors (D-13). */
   readonly vaultRoot?: string
+  /** For a workspace tree, the folder it mirrors (02.7 D-01). */
+  readonly workspaceRoot?: string
   readonly bridge: KernelBridge
 }
 
@@ -81,6 +83,7 @@ export interface UnavailableTree {
   readonly kind: TreeKind
   readonly name: string
   readonly vaultRoot?: string
+  readonly workspaceRoot?: string
   readonly status: UnavailableStatus
   /** The kernel's own words, so the frame can say what is actually wrong. */
   readonly reason: string
@@ -101,6 +104,7 @@ export interface TreeSummary {
   kind: TreeKind
   path: string
   vaultRoot?: string
+  workspaceRoot?: string
   status: 'ok' | UnavailableStatus
   reason?: string
 }
@@ -119,6 +123,7 @@ export interface ExpectedTree {
 export interface OpenTreeOptions {
   kind?: TreeKind
   vaultRoot?: string
+  workspaceRoot?: string
   name?: string
   /**
    * Refuse to adopt a world whose header digest is not this one (2.6 D-03,
@@ -419,6 +424,7 @@ export class TreeRegistry {
       name: entry.name,
       ...(entry.vaultRoot !== undefined ? { vaultRoot: entry.vaultRoot } : {}),
       ...(entry.expect !== undefined ? { expect: entry.expect } : {}),
+      ...(entry.workspaceRoot !== undefined ? { workspaceRoot: entry.workspaceRoot } : {}),
     })
   }
 
@@ -435,6 +441,7 @@ export class TreeRegistry {
       kind: opts.kind ?? 'native',
       name: opts.name ?? defaultName(target),
       ...(opts.vaultRoot !== undefined ? { vaultRoot: opts.vaultRoot } : {}),
+      ...(opts.workspaceRoot !== undefined ? { workspaceRoot: opts.workspaceRoot } : {}),
       status,
       reason,
       ...(opts.expect !== undefined ? { expect: opts.expect } : {}),
@@ -479,6 +486,7 @@ export class TreeRegistry {
       kind: opts.kind ?? 'native',
       name: opts.name ?? defaultName(target),
       ...(opts.vaultRoot !== undefined ? { vaultRoot: opts.vaultRoot } : {}),
+      ...(opts.workspaceRoot !== undefined ? { workspaceRoot: opts.workspaceRoot } : {}),
       bridge,
     }
 
@@ -611,6 +619,7 @@ export class TreeRegistry {
       kind: tree.kind,
       path: tree.path,
       ...(tree.vaultRoot !== undefined ? { vaultRoot: tree.vaultRoot } : {}),
+      ...(tree.workspaceRoot !== undefined ? { workspaceRoot: tree.workspaceRoot } : {}),
       status: 'ok' as const,
     }))
 
@@ -622,6 +631,7 @@ export class TreeRegistry {
       kind: tree.kind,
       path: tree.path,
       ...(tree.vaultRoot !== undefined ? { vaultRoot: tree.vaultRoot } : {}),
+      ...(tree.workspaceRoot !== undefined ? { workspaceRoot: tree.workspaceRoot } : {}),
       status: tree.status,
       reason: tree.reason,
     }))

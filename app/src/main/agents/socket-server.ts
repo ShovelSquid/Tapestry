@@ -13,6 +13,7 @@
  *
  * Wire protocol, one JSON object per line:
  *   in   { id, token, tool, args }
+ *        { id, token, type: 'hello' }   (D-20: marks the agent seen, runs nothing)
  *   out  { id, ok: true, value } | { id, ok: false, error }
  *
  * Tokens are never logged.
@@ -217,7 +218,7 @@ export class AgentSocketServer {
   private async handleLine(socket: Socket, line: string): Promise<void> {
     if (line.trim().length === 0) return
 
-    let request: { id?: unknown; token?: unknown; tool?: unknown; args?: unknown }
+    let request: { id?: unknown; token?: unknown; type?: unknown; tool?: unknown; args?: unknown }
     try {
       request = JSON.parse(line)
     } catch {
@@ -226,6 +227,25 @@ export class AgentSocketServer {
     }
 
     const id = typeof request?.id === 'number' || typeof request?.id === 'string' ? request.id : null
+
+    // D-20: a hello says "this agent's MCP client is running". It is handled
+    // before the tool-request checks and returns before dispatch, so a hello
+    // can mark an agent as seen but can never run a tool, whatever else it
+    // carries.
+    if (request && typeof request === 'object' && request.type === 'hello') {
+      if (typeof request.token !== 'string') {
+        this.writeLine(socket, { id, ok: false, error: 'Malformed request' })
+        return
+      }
+      const helloAgent = this.agents.verify(request.token)
+      if (!helloAgent) {
+        this.writeLine(socket, { id, ok: false, error: 'Unknown agent token' })
+        return
+      }
+      this.recordSeen(helloAgent.name)
+      this.writeLine(socket, { id, ok: true, value: { agent: `agent.${helloAgent.name}` } })
+      return
+    }
 
     if (
       !request ||
@@ -247,14 +267,7 @@ export class AgentSocketServer {
     }
 
     // Only a request that passed identity counts as this agent being here.
-    this.noteSeen(agent.name)
-
-    try {
-      this.agents.markConnected(agent.name, new Date())
-    } catch (err) {
-      // Bookkeeping only — a failure here must not refuse a valid request.
-      console.error('[AgentSocketServer] could not record connection time:', err)
-    }
+    this.recordSeen(agent.name)
 
     try {
       const result = await this.dispatch(agent.name, request.tool, request.args)
@@ -265,6 +278,17 @@ export class AgentSocketServer {
         ok: false,
         error: err instanceof Error ? err.message : String(err),
       })
+    }
+  }
+
+  /** The bookkeeping a verified request (tool call or hello) earns. */
+  private recordSeen(name: string): void {
+    this.noteSeen(name)
+    try {
+      this.agents.markConnected(name, new Date())
+    } catch (err) {
+      // Bookkeeping only — a failure here must not refuse a valid request.
+      console.error('[AgentSocketServer] could not record connection time:', err)
     }
   }
 

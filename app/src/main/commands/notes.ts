@@ -219,6 +219,17 @@ function validateText(raw: unknown): CommandResult<string> {
 // NoteCommands
 // ---------------------------------------------------------------------------
 
+/**
+ * A workspace tree's notes are its files (02.7 D-03): the note tools would
+ * write `title`/`body` keys, or free notes, that no file contains, so they
+ * refuse it before anything is prepared or written. Reading, searching,
+ * looking, placing and connecting are unaffected.
+ */
+function workspaceRefusal(tree: OpenTree): string | null {
+  if (tree.kind !== 'workspace') return null
+  return `${tree.name} is a workspace; its notes are files. Use write_file or edit_file`
+}
+
 export class NoteCommands {
   constructor(
     private readonly registry: TreeRegistry,
@@ -250,6 +261,8 @@ export class NoteCommands {
     } catch (err) {
       return { ok: false, error: errorText(err) }
     }
+    const workspace = workspaceRefusal(tree)
+    if (workspace) return { ok: false, error: workspace }
 
     const titleResult = validateTitle(args.title)
     if (!titleResult.ok) return titleResult
@@ -651,6 +664,8 @@ export class NoteCommands {
     } catch (err) {
       return { ok: false, error: errorText(err) }
     }
+    const workspace = workspaceRefusal(tree)
+    if (workspace) return { ok: false, error: workspace }
 
     try {
       this.prepareWrite(tree, actor)

@@ -22,13 +22,14 @@
 import React, {
   forwardRef,
   useCallback,
+  useContext,
   useEffect,
   useImperativeHandle,
   useRef,
   useState,
 } from 'react'
 import ConnectionLine from './ConnectionLine'
-import TreeFrame, { type TreeFrameHandlers } from './TreeFrame'
+import TreeFrame, { type TreeFrameHandlers, type TreeSubspaces } from './TreeFrame'
 import type { ForestTree, NodeRef } from '../state/use-forest'
 import { nodeKey } from '../state/use-forest'
 import {
@@ -58,6 +59,9 @@ import {
   zoomAbout,
   type Camera,
 } from '../layout/camera'
+import { absolutePositions, isWorkspaceNode, subspaceRects, type DimsOf, type Point } from '../layout/subspaces'
+import { useContextMenu } from './ContextMenu'
+import { ChatContext } from '../state/chat'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -86,7 +90,16 @@ export interface EdgeInfo {
 export interface CanvasHandle {
   /** Center a tree's frame in the viewport at the current zoom. */
   panToFrame(treeId: string): void
+  /**
+   * Center one note in the viewport at the current zoom (open_file, 02.7
+   * SC2). A workspace note's position is folder-local, so its world centre is
+   * the frame origin plus its absolute position plus half its size.
+   */
+  panToNote(treeId: string, nodeId: string): void
 }
+
+/** The size a note is centred with before it has been measured. */
+const PAN_TO_NOTE_FALLBACK = Object.freeze({ width: 280, height: 200 })
 
 /** Where a double-click landed: inside a frame, or nowhere in particular. */
 export interface DoubleClickTarget {
@@ -155,9 +168,28 @@ interface CanvasProps {
    * so a close never fails silently (review WR-03).
    */
   onCloseTree: (treeId: string) => void
+  /**
+   * Collapse or expand a workspace folder frame (02.7 D-21); `collapsed` is the
+   * state wanted. Resolves once the commit is in and the tree refreshed, so the
+   * space can settle around the frame's new size.
+   */
+  onToggleFolder: (treeId: string, folderId: string, collapsed: boolean, dimsOf: DimsOf) => Promise<void>
+  /**
+   * A folder frame was dropped at `local` (in its parent's space): one commit
+   * moving it, and whatever it displaced (02.7 D-21). Resolves once the tree
+   * has been refreshed, so the live drag position can be let go without a jump.
+   */
+  onFolderDrop: (treeId: string, folderId: string, local: Point, dimsOf: DimsOf) => Promise<void>
   /** The selected frame, which is the space's focal point and undo target. */
   selectedTreeId: string | null
   onSelectTree: (treeId: string | null) => void
+  /**
+   * Workspace folders drawn open for this view only, per tree, whatever their
+   * stored `collapsed` says (open_file's reveal; never committed).
+   */
+  revealedFolders?: ReadonlyMap<string, ReadonlySet<string>>
+  /** open_file's request to open one file window (02.7 SC2). */
+  openRequest?: { key: string; nonce: number } | null
 }
 
 // ---------------------------------------------------------------------------
@@ -237,8 +269,12 @@ function Canvas({
   onFrameMove,
   onFramesMoved,
   onCloseTree,
+  onToggleFolder,
+  onFolderDrop,
   selectedTreeId,
   onSelectTree,
+  revealedFolders,
+  openRequest,
 }: CanvasProps, ref: React.ForwardedRef<CanvasHandle>): React.ReactElement {
   const viewportRef = useRef<HTMLDivElement>(null)
   // The drawn camera: what the screen shows and what hit tests invert.
@@ -305,6 +341,12 @@ function Canvas({
   const [hoveredTreeId, setHoveredTreeId] = useState<string | null>(null)
   const frameDragRef = useRef({ startX: 0, startY: 0, originX: 0, originY: 0, moved: false })
 
+  // A folder frame dragged by its header (02.7 D-21). Its live local position
+  // rides in dragPositions, like a card's, so the frame, its contents and the
+  // workspace frame's bounds all follow the pointer together.
+  const [draggingFolder, setDraggingFolder] = useState<NodeRef | null>(null)
+  const folderDragRef = useRef({ startX: 0, startY: 0, originX: 0, originY: 0, moved: false })
+
   // Trees the renderer has already placed with real bounds, so a frame is
   // repositioned once when it appears and not on every later render.
   const placedRef = useRef(new Set<string>())
@@ -319,6 +361,24 @@ function Canvas({
 
   const registerNodeDims = useCallback((ref: NodeRef, width: number, height: number) => {
     nodeDimsRef.current.set(nodeKey(ref), { width, height })
+  }, [])
+
+  /** One tree's measured card sizes, by bare node id, for subspace geometry. */
+  const dimsOfTree = useCallback(
+    (treeId: string): DimsOf =>
+      (nodeId: string) =>
+        nodeDimsRef.current.get(nodeKey({ treeId, nodeId })),
+    [],
+  )
+
+  // Trees whose frame changed size in a commit that has just landed: they are
+  // settled among the other frames on the next render, once the refreshed
+  // nodes are what the rects are computed from.
+  const pendingSettleRef = useRef(new Set<string>())
+  const [settleTick, setSettleTick] = useState(0)
+  const requestSettle = useCallback((treeId: string) => {
+    pendingSettleRef.current.add(treeId)
+    setSettleTick((tick) => tick + 1)
   }, [])
 
   const handleDragMove = useCallback((ref: NodeRef, x: number, y: number) => {
@@ -349,6 +409,9 @@ function Canvas({
   // D-05: where every note is drawn, computed once per tree so frame bounds,
   // edges, knot midpoints and cards all agree on a following note's spot.
   const treeSpots = new Map<string, ReadonlyMap<string, DisplaySpot>>()
+  // 02.7 D-21: a workspace tree's folder frames, computed once per render and
+  // shared by the tree frame's bounds and its nested FolderFrames.
+  const treeSubspaces = new Map<string, TreeSubspaces>()
   for (const tree of trees) {
     const overrides = new Map<string, { x: number; y: number }>()
     for (const node of tree.nodes) {
@@ -357,6 +420,33 @@ function Canvas({
     }
     const spots = displayPositions(tree.nodes, tree.edges, overrides)
     treeSpots.set(tree.id, spots)
+
+    if (tree.kind === 'workspace') {
+      const positions: ReadonlyMap<string, Point> = overrides
+      const layout = subspaceRects(tree.nodes, dimsOfTree(tree.id), revealedFolders?.get(tree.id), positions)
+      treeSubspaces.set(tree.id, {
+        layout,
+        positions,
+        draggingFolderId: draggingFolder?.treeId === tree.id ? draggingFolder.nodeId : null,
+      })
+      // The workspace root's cards and top-level folder frames, plus any note
+      // made in the workspace tree that is not a workspace file.
+      const others: ContentBox[] = tree.nodes
+        .filter((node) => !isWorkspaceNode(node))
+        .map((node) => {
+          const dims = nodeDimsRef.current.get(nodeKey({ treeId: tree.id, nodeId: node.id }))
+          const at = overrides.get(node.id)
+          return {
+            x: at ? at.x : Number(node.props['position.x']?.value ?? 0),
+            y: at ? at.y : Number(node.props['position.y']?.value ?? 0),
+            width: dims?.width ?? DEFAULT_NODE_WIDTH,
+            height: dims?.height ?? DEFAULT_NODE_HEIGHT,
+          }
+        })
+      frameRects.set(tree.id, computeFrameBounds(tree.frame, [...layout.rootBoxes, ...others]))
+      continue
+    }
+
     const boxes: ContentBox[] = tree.nodes.map((node) => {
       const key = nodeKey({ treeId: tree.id, nodeId: node.id })
       const drag = dragPositions[key]
@@ -403,7 +493,34 @@ function Canvas({
     [rig, kick],
   )
 
-  useImperativeHandle(ref, () => ({ panToFrame }), [panToFrame])
+  const treesRef = useRef(trees)
+  treesRef.current = trees
+
+  const panToNote = useCallback((treeId: string, nodeId: string) => {
+    const viewport = viewportRef.current
+    const tree = treesRef.current.find((t) => t.id === treeId)
+    if (!viewport || !tree) return
+    const node = tree.nodes.find((n) => n.id === nodeId)
+    if (!node) return
+
+    const local =
+      tree.kind === 'workspace'
+        ? absolutePositions(tree.nodes).get(nodeId)
+        : { x: Number(node.props['position.x']?.value ?? 0), y: Number(node.props['position.y']?.value ?? 0) }
+    if (!local) return
+    const dims = nodeDimsRef.current.get(nodeKey({ treeId, nodeId })) ?? PAN_TO_NOTE_FALLBACK
+    const cx = tree.frame.x + local.x + dims.width / 2
+    const cy = tree.frame.y + local.y + dims.height / 2
+
+    const { clientWidth, clientHeight } = viewport
+    setView((prev) => ({
+      ...prev,
+      panX: clientWidth / 2 - cx * prev.zoom,
+      panY: clientHeight / 2 - cy * prev.zoom,
+    }))
+  }, [])
+
+  useImperativeHandle(ref, () => ({ panToFrame, panToNote }), [panToFrame, panToNote])
 
   /** The tree whose frame contains a world point, if any. */
   const treeAt = useCallback(
@@ -478,6 +595,18 @@ function Canvas({
     const tree = trees.find((t) => t.id === treeId)
     if (tree) recordFrameMoves(treeId, { x: tree.frame.x, y: tree.frame.y }, false)
   }
+
+  useEffect(() => {
+    if (pendingSettleRef.current.size === 0) return
+    const pending = [...pendingSettleRef.current]
+    pendingSettleRef.current.clear()
+    // A folder opened or closed grew or shrank its workspace frame (02.7
+    // D-21): recorded as growth (2.6 D-08), which never arms frame undo.
+    for (const treeId of pending) {
+      if (trees.some((tree) => tree.id === treeId)) recordFrameGrowth(treeId)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settleTick, trees])
 
   /**
    * A tree the renderer has not placed yet gets a real spot.
@@ -581,6 +710,17 @@ function Canvas({
 
   const handlePointerMove = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
+      // A folder drag moves the folder's local origin; its contents follow.
+      if (draggingFolder) {
+        const dx = (e.clientX - folderDragRef.current.startX) / view.zoom
+        const dy = (e.clientY - folderDragRef.current.startY) / view.zoom
+        if (Math.abs(dx) > 2 || Math.abs(dy) > 2) folderDragRef.current.moved = true
+        if (folderDragRef.current.moved) {
+          handleDragMove(draggingFolder, folderDragRef.current.originX + dx, folderDragRef.current.originY + dy)
+        }
+        return
+      }
+
       // A frame drag moves the whole tree with its notes and connections, so
       // it is applied to the frame origin rather than to any note.
       if (draggingTreeId) {
@@ -612,7 +752,18 @@ function Canvas({
       rig.direct((c) => panBy(c, dx, dy))
       showDrawn()
     },
-    [connectingFrom, pointerWorld, draggingTreeId, onFrameMove, view.zoom, view.roll, rig, showDrawn],
+    [
+      connectingFrom,
+      pointerWorld,
+      draggingTreeId,
+      draggingFolder,
+      handleDragMove,
+      onFrameMove,
+      view.zoom,
+      view.roll,
+      rig,
+      showDrawn,
+    ],
   )
 
   // Not memoised: the drop needs this render's frame rects, and a stale
@@ -622,6 +773,23 @@ function Canvas({
       if (isPanningRef.current) {
         isPanningRef.current = false
         ;(e.target as HTMLElement).releasePointerCapture(e.pointerId)
+      }
+
+      if (draggingFolder) {
+        const folderRef = draggingFolder
+        const local = dragPositions[nodeKey(folderRef)]
+        setDraggingFolder(null)
+        if (folderDragRef.current.moved && local) {
+          void onFolderDrop(folderRef.treeId, folderRef.nodeId, local, dimsOfTree(folderRef.treeId))
+            .catch(() => undefined)
+            .then(() => {
+              handleDragEnd(folderRef)
+              requestSettle(folderRef.treeId)
+            })
+        } else {
+          handleDragEnd(folderRef)
+        }
+        return
       }
 
       if (draggingTreeId) {
@@ -714,6 +882,29 @@ function Canvas({
       onSelectTree(null)
     },
     [onStopEditing, selectNote, onSelectTree],
+  )
+
+  // -----------------------------------------------------------------------
+  // Right-click on the space itself: Ask Claude… (D-19). Cards and notes
+  // open their own menu, carrying what was clicked.
+  // -----------------------------------------------------------------------
+
+  const openContextMenu = useContextMenu()
+  const { openChat } = useContext(ChatContext)
+
+  const handleContextMenu = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      if (!isBackground(e.target as HTMLElement, viewportRef.current)) return
+      const world = pointerWorld(e.clientX, e.clientY)
+      const tree = world ? treeAt(world.x, world.y) : null
+      openContextMenu(e, [
+        {
+          label: 'Ask Claude…',
+          run: () => openChat(tree && tree.kind === 'workspace' ? { treeId: tree.id } : {}),
+        },
+      ])
+    },
+    [pointerWorld, treeAt, openContextMenu, openChat],
   )
 
   const handleDoubleClick = useCallback(
@@ -878,6 +1069,31 @@ function Canvas({
     onDragMove: handleDragMove,
     onDragEnd: handleDragEnd,
     onCloseTree,
+    // D-21: expanding a folder can grow the workspace frame into a neighbour.
+    onToggleFolder: (folderRef, collapsed) => {
+      void onToggleFolder(folderRef.treeId, folderRef.nodeId, collapsed, dimsOfTree(folderRef.treeId))
+        .then(() => requestSettle(folderRef.treeId))
+        .catch(() => undefined)
+    },
+    onFolderHeaderPointerDown: (folderRef, e) => {
+      if (e.button !== 0) return
+      // A folder header is not canvas background: dragging it must not pan.
+      e.stopPropagation()
+      e.preventDefault()
+      const tree = trees.find((t) => t.id === folderRef.treeId)
+      const node = tree?.nodes.find((n) => n.id === folderRef.nodeId)
+      if (!node) return
+      const live = dragPositions[nodeKey(folderRef)]
+      folderDragRef.current = {
+        startX: e.clientX,
+        startY: e.clientY,
+        originX: live ? live.x : Number(node.props['position.x']?.value ?? 0),
+        originY: live ? live.y : Number(node.props['position.y']?.value ?? 0),
+        moved: false,
+      }
+      setDraggingFolder(folderRef)
+      e.currentTarget.setPointerCapture(e.pointerId)
+    },
   }
 
   // The in-progress connection line is drawn in world space, above the frames,
@@ -911,6 +1127,7 @@ function Canvas({
       onPointerUp={handlePointerUp}
       onClick={handleClick}
       onDoubleClick={handleDoubleClick}
+      onContextMenu={handleContextMenu}
     >
       {/* Empty state (UI-SPEC copywriting) */}
       {trees.length === 0 && (
@@ -948,6 +1165,8 @@ function Canvas({
               onHeaderPointerDown={(e) => handleFrameHeaderPointerDown(tree.id, e)}
               onFrameHover={(hovered) => setHoveredTreeId(hovered ? tree.id : null)}
               handlers={handlers}
+              subspaces={treeSubspaces.get(tree.id)}
+              openRequest={openRequest}
             />
           )
         })}

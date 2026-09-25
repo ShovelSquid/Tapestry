@@ -44,6 +44,14 @@ export interface FrameRect {
   height: number
 }
 
+/** Sizes a frame other than a tree frame may use (02.7 D-21). */
+export interface FrameBoundsOptions {
+  minWidth?: number
+  minHeight?: number
+  headerHeight?: number
+  padding?: number
+}
+
 /** A frame's world rect together with the tree id that owns it. */
 export interface PositionedRect extends FrameRect {
   id: string
@@ -62,8 +70,21 @@ const MAX_PUSH_STEPS = 200
  *
  * An empty frame is a minimum-size rect at its origin, so a tree that has just
  * been opened is still a visible, draggable target.
+ *
+ * `options` lets a lighter frame (a workspace folder, 02.7 D-21) reuse the same
+ * arithmetic with its own sizes; every field defaults to the tree-frame
+ * constant, so a call without options returns exactly what it always has.
  */
-export function computeFrameBounds(frame: FramePosition, boxes: ContentBox[]): FrameRect {
+export function computeFrameBounds(
+  frame: FramePosition,
+  boxes: ContentBox[],
+  options: FrameBoundsOptions = {},
+): FrameRect {
+  const minWidth = options.minWidth ?? FRAME_MIN_WIDTH
+  const minHeight = options.minHeight ?? FRAME_MIN_HEIGHT
+  const headerHeight = options.headerHeight ?? FRAME_HEADER_HEIGHT
+  const padding = options.padding ?? FRAME_PADDING
+
   let minX = 0
   let minY = 0
   let maxX = 0
@@ -86,10 +107,10 @@ export function computeFrameBounds(frame: FramePosition, boxes: ContentBox[]): F
   const contentHeight = maxY - minY
 
   return {
-    x: frame.x + minX - FRAME_PADDING,
-    y: frame.y + minY - FRAME_PADDING - FRAME_HEADER_HEIGHT,
-    width: Math.max(FRAME_MIN_WIDTH, contentWidth + FRAME_PADDING * 2),
-    height: Math.max(FRAME_MIN_HEIGHT, contentHeight + FRAME_PADDING * 2 + FRAME_HEADER_HEIGHT),
+    x: frame.x + minX - padding,
+    y: frame.y + minY - padding - headerHeight,
+    width: Math.max(minWidth, contentWidth + padding * 2),
+    height: Math.max(minHeight, contentHeight + padding * 2 + headerHeight),
   }
 }
 

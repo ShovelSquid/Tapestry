@@ -186,6 +186,52 @@ export const ConnectNotesArgs = z
   })
   .strict()
 
+// Workspace file tools (02.7 D-07, D-08)
+const WorkspaceRef = z.string().min(1).max(200)
+const WorkspacePath = z.string().min(1).max(4096)
+
+export const ReadFileArgs = z
+  .object({
+    workspace: WorkspaceRef.optional(),
+    path: WorkspacePath,
+    offset: z.number().int().min(1).optional(),
+    limit: z.number().int().min(1).max(10000).optional(),
+  })
+  .strict()
+
+export const EditFileArgs = z
+  .object({
+    workspace: WorkspaceRef.optional(),
+    path: WorkspacePath,
+    old_string: z.string().min(1).max(4194304),
+    new_string: z.string().max(4194304),
+    replace_all: z.boolean().optional(),
+  })
+  .strict()
+
+export const ListFilesArgs = z
+  .object({
+    workspace: WorkspaceRef.optional(),
+    path: z.string().min(0).max(4096).optional(),
+    limit: z.number().int().min(1).max(5000).optional(),
+  })
+  .strict()
+
+export const WriteFileArgs = z
+  .object({
+    workspace: WorkspaceRef.optional(),
+    path: WorkspacePath,
+    text: z.string().max(4194304),
+  })
+  .strict()
+
+export const OpenFileArgs = z
+  .object({
+    workspace: WorkspaceRef.optional(),
+    path: WorkspacePath,
+  })
+  .strict()
+
 // ---------------------------------------------------------------------------
 // Tool table
 // ---------------------------------------------------------------------------
@@ -273,5 +319,45 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = Object.freeze([
       'Connects two notes in the same tree, optionally with a short label. Connections may join any notes, including notes you did not create.',
     schema: ConnectNotesArgs,
     annotations: {},
+  },
+  {
+    name: 'list_files',
+    title: 'List the files in a workspace',
+    description:
+      "Lists the files a workspace folder open in Tapestry shows in its window (git's view of the folder), optionally only those under one folder `path`. Each file comes with its size in bytes, whether it is text, and the note that shows it. It never lists .git or files ignored by git. `limit` caps the list (default 1000); `truncated` says whether more files exist.",
+    schema: ListFilesArgs,
+    annotations: { readOnlyHint: true },
+  },
+  {
+    name: 'read_file',
+    title: 'Read a file in a workspace',
+    description:
+      'Reads a text file in a workspace folder open in Tapestry. `path` is relative to the workspace root, or an absolute path inside it; `workspace` may be left out when one workspace is open or the path is absolute. Returns the exact text, the line count and the note that shows the file. Use `offset` (first line, from 1) and `limit` (lines) to page long files. Paths that leave the workspace, pass through a symbolic link, point into .git or are ignored by git are refused.',
+    schema: ReadFileArgs,
+    annotations: { readOnlyHint: true },
+  },
+  {
+    name: 'edit_file',
+    title: 'Replace an exact string in a workspace file',
+    description:
+      "Replaces `old_string` with `new_string` in a text file in a workspace folder open in Tapestry. The file is saved to disk at once and the workspace's tree records the change as yours. `old_string` must match exactly, including whitespace and line endings, and must occur once unless `replace_all` is true. Paths follow the same rules as read_file. A refusal writes nothing. Refused, and nothing is written, when the file's text is locked against you; the error names the lock's owner.",
+    schema: EditFileArgs,
+    annotations: { destructiveHint: false },
+  },
+  {
+    name: 'write_file',
+    title: 'Create or replace a text file in a workspace',
+    description:
+      "Creates a text file (and any missing folders) in a workspace folder open in Tapestry, or replaces a text file's whole text. The file is saved to disk at once and the workspace's tree records the change as yours. Paths follow the same rules as read_file. It is refused, with nothing written, for paths outside the workspace, symbolic links, .git, paths ignored by git and non-text files. Writing the text a file already has changes nothing. Refused, and nothing is written, when the file's text is locked against you; the error names the lock's owner.",
+    schema: WriteFileArgs,
+    annotations: { destructiveHint: true },
+  },
+  {
+    name: 'open_file',
+    title: 'Show a workspace file in its window',
+    description:
+      "Shows a workspace file in its window on the Tapestry canvas: the canvas pans to the file's note and opens it for reading and editing. Returns the note id. Paths follow the same rules as read_file.",
+    schema: OpenFileArgs,
+    annotations: { readOnlyHint: true },
   },
 ])

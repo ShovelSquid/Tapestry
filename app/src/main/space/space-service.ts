@@ -105,6 +105,16 @@ export interface SpaceServiceHooks {
     name: string
     expect?: ExpectedTree
   }): Promise<void>
+  /**
+   * Restore a workspace member (02.7); without it, workspace members stay in
+   * the forest unopened. The workspace service opens or rebuilds the tree in
+   * app data and starts its watcher; `expect` is as for `restoreVault`.
+   */
+  restoreWorkspace?(req: {
+    treePath: string
+    workspaceRoot: string
+    expect?: ExpectedTree
+  }): Promise<void>
 }
 
 export interface SpaceServiceOptions {
@@ -298,6 +308,38 @@ export class SpaceService {
             this.foldQuietly(member, err)
           } else {
             console.error(`[SpaceService] could not restore vault ${hint}:`, err)
+          }
+          continue
+        }
+        const tree = this.registry.list().find((t) => samePath(t.path, hint))
+        if (tree && (member.digest === undefined || member.digest === tree.id)) {
+          this.settleIdentityQuietly(member.nodeId, tree)
+        }
+        continue
+      }
+
+      if (member.kind === 'workspace') {
+        // As for a vault: kept in the forest either way, restored only when
+        // main supplies the workspace launch path (02.7).
+        if (!this.hooks.restoreWorkspace) continue
+        const workspaceRoot = member.workspaceRootHint
+        if (workspaceRoot === undefined) {
+          console.error(`[SpaceService] skipped workspace ${member.nodeId}: no workspace.root.hint`)
+          continue
+        }
+        this.approve(hint)
+        try {
+          await this.hooks.restoreWorkspace({
+            treePath: hint,
+            workspaceRoot,
+            ...(expect ? { expect } : {}),
+          })
+          restored += 1
+        } catch (err) {
+          if (err instanceof TreeIdentityClash && member.digest === undefined) {
+            this.foldQuietly(member, err)
+          } else {
+            console.error(`[SpaceService] could not restore workspace ${hint}:`, err)
           }
           continue
         }
@@ -616,6 +658,9 @@ export class SpaceService {
       ...(entry.kind === 'vault' && entry.vaultRoot !== undefined
         ? { vaultRootHint: entry.vaultRoot }
         : {}),
+      ...(entry.kind === 'workspace' && entry.workspaceRoot !== undefined
+        ? { workspaceRootHint: entry.workspaceRoot }
+        : {}),
       origin: nextFrameOrigin(members),
     }
     const { nodeId } = forest.addMember(seed, actor, addTreeMessage(entry.name))
@@ -867,11 +912,18 @@ function samePath(a: string, b: string): boolean {
 }
 
 /** The facts a stand-in keeps about where an entry lives. */
-function hintsOf(entry: TreeEntry): { pathHint: string; vaultRootHint?: string } {
+function hintsOf(entry: TreeEntry): {
+  pathHint: string
+  vaultRootHint?: string
+  workspaceRootHint?: string
+} {
   return {
     pathHint: entry.path,
     ...(entry.kind === 'vault' && entry.vaultRoot !== undefined
       ? { vaultRootHint: entry.vaultRoot }
+      : {}),
+    ...(entry.kind === 'workspace' && entry.workspaceRoot !== undefined
+      ? { workspaceRootHint: entry.workspaceRoot }
       : {}),
   }
 }
@@ -879,6 +931,9 @@ function hintsOf(entry: TreeEntry): { pathHint: string; vaultRootHint?: string }
 /** A stand-in's readable name, as the registry would name its tree. */
 function memberName(member: ForestMember): string {
   if (member.kind === 'vault') return basename(member.vaultRootHint ?? dirname(member.pathHint))
+  if (member.kind === 'workspace' && member.workspaceRootHint !== undefined) {
+    return basename(member.workspaceRootHint)
+  }
   return basename(member.pathHint).replace(/\.tree$/i, '')
 }
 

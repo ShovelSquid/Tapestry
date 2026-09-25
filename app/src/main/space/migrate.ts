@@ -182,6 +182,9 @@ export function importFromSettings(
     ...(tree.kind === 'vault' && tree.vaultRoot !== undefined
       ? { vaultRootHint: tree.vaultRoot }
       : {}),
+    ...(tree.kind === 'workspace' && tree.workspaceRoot !== undefined
+      ? { workspaceRootHint: tree.workspaceRoot }
+      : {}),
     origin: { x: tree.frame.x, y: tree.frame.y },
   }))
 

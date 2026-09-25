@@ -8,6 +8,20 @@
 
 import { contextBridge, ipcRenderer } from 'electron'
 import type { IpcRendererEvent } from 'electron'
+import type { ChatEvent } from '../main/chat/engine'
+
+/** Every chat call answers like this. */
+type ChatResult<T> = { ok: true; value: T } | { ok: false; error: string }
+
+/** What the panel needs to show a workspace's chat. */
+interface ChatOpenState {
+  workspace: string
+  sessionId: string | null
+  transcript: ChatEvent[]
+  busy: boolean
+  resumed: boolean
+  allowShell: boolean
+}
 
 // ---------------------------------------------------------------------------
 // Tapestry API exposed to the renderer
@@ -64,9 +78,10 @@ const tapestryAPI = {
       Array<{
         id: string
         name: string
-        kind: 'native' | 'vault'
+        kind: 'native' | 'vault' | 'workspace'
         path: string
         vaultRoot?: string
+        workspaceRoot?: string
         frame: { x: number; y: number }
       }>
     > => ipcRenderer.invoke('trees:list'),
@@ -170,6 +185,9 @@ const tapestryAPI = {
     /** Pick an Obsidian vault folder to mirror as a tree (D-10, D-13). */
     showOpenVaultFolder: (): Promise<{ canceled: boolean; folderPath?: string }> =>
       ipcRenderer.invoke('dialog:showOpenVaultFolder'),
+    /** Pick a workspace folder to mirror as a tree (02.7 D-01). */
+    showOpenWorkspaceFolder: (): Promise<{ canceled: boolean; folderPath?: string }> =>
+      ipcRenderer.invoke('dialog:showOpenWorkspaceFolder'),
   },
 
   /**
@@ -183,6 +201,42 @@ const tapestryAPI = {
       root: string,
     ): Promise<{ ok: boolean; treeId?: string; error?: string; notice?: string }> =>
       ipcRenderer.invoke('vault:add', root),
+  },
+
+  /**
+   * Workspace folders (02.7): add one the user just picked, and save a
+   * person's edit from a file window. Main takes the path from the note.
+   */
+  workspace: {
+    add: (root: string): Promise<{ ok: boolean; treeId?: string; error?: string }> =>
+      ipcRenderer.invoke('workspace:add', root),
+    saveFile: (
+      treeId: string,
+      nodeId: string,
+      text: string,
+      baseSha256: string | null,
+    ): Promise<
+      | {
+          ok: true
+          value: {
+            note: string
+            path: string
+            written: boolean
+            fileWins: boolean
+            sha256: string | null
+            seq: number
+          }
+        }
+      | { ok: false; error: string }
+    > => ipcRenderer.invoke('workspace:saveFile', treeId, nodeId, text, baseSha256),
+    /** Every open workspace's current watching status, for a renderer that loaded late. */
+    statuses: (): Promise<
+      Array<
+        | { treeId: string; kind: 'watching' }
+        | { treeId: string; kind: 'not-watching'; reason: string }
+        | { treeId: string; kind: 'folder-missing' }
+      >
+    > => ipcRenderer.invoke('workspace:statuses'),
   },
 
   settings: {
@@ -223,6 +277,31 @@ const tapestryAPI = {
 
     setEnabled: (enabled: boolean): Promise<{ ok: boolean; error?: string }> =>
       ipcRenderer.invoke('agents:setEnabled', enabled),
+  },
+
+  /**
+   * The in-app chat for a workspace (02.7 D-12). Every call names the
+   * workspace's tree; main owns the process, the token and the config file,
+   * none of which ever reach the renderer.
+   */
+  chat: {
+    open: (treeId: string): Promise<ChatResult<ChatOpenState>> => ipcRenderer.invoke('chat:open', treeId),
+    send: (treeId: string, text: string): Promise<ChatResult<null>> =>
+      ipcRenderer.invoke('chat:send', treeId, text),
+    stop: (treeId: string): Promise<ChatResult<null>> => ipcRenderer.invoke('chat:stop', treeId),
+    newChat: (treeId: string): Promise<ChatResult<null>> => ipcRenderer.invoke('chat:new', treeId),
+    /** The chat's Allow shell (not sandboxed) switch (D-15), from the next message. */
+    setAllowShell: (treeId: string, on: boolean): Promise<ChatResult<null>> =>
+      ipcRenderer.invoke('chat:setAllowShell', treeId, on),
+  },
+
+  /** Something happened in a workspace's chat. */
+  onChatEvent: (callback: (payload: { treeId: string; event: ChatEvent }) => void): (() => void) => {
+    const handler = (_event: IpcRendererEvent, payload: { treeId: string; event: ChatEvent }) => {
+      callback(payload)
+    }
+    ipcRenderer.on('chat-event', handler)
+    return () => ipcRenderer.removeListener('chat-event', handler)
   },
 
   /**
@@ -281,6 +360,31 @@ const tapestryAPI = {
   },
 
   /**
+   * A workspace started or stopped recording outside changes, or its folder
+   * went missing (02.7 D-06). The frame header says which.
+   */
+  onWorkspaceStatus: (
+    callback: (
+      status:
+        | { treeId: string; kind: 'watching' }
+        | { treeId: string; kind: 'not-watching'; reason: string }
+        | { treeId: string; kind: 'folder-missing' },
+    ) => void,
+  ): (() => void) => {
+    const handler = (
+      _event: IpcRendererEvent,
+      payload:
+        | { treeId: string; kind: 'watching' }
+        | { treeId: string; kind: 'not-watching'; reason: string }
+        | { treeId: string; kind: 'folder-missing' },
+    ) => {
+      callback(payload)
+    }
+    ipcRenderer.on('workspace-status', handler)
+    return () => ipcRenderer.removeListener('workspace-status', handler)
+  },
+
+  /**
    * Listen for changes to the agent list or their connection status, so the
    * Agents panel updates live without polling.
    */
@@ -290,6 +394,18 @@ const tapestryAPI = {
     }
     ipcRenderer.on('agents-changed', handler)
     return () => ipcRenderer.removeListener('agents-changed', handler)
+  },
+
+  /**
+   * An agent asked to show a workspace file (open_file, 02.7 SC2): pan to its
+   * note and open its window.
+   */
+  onRevealNote: (callback: (payload: { treeId: string; noteId: string }) => void): (() => void) => {
+    const handler = (_event: IpcRendererEvent, payload: { treeId: string; noteId: string }) => {
+      callback(payload)
+    }
+    ipcRenderer.on('reveal-note', handler)
+    return () => ipcRenderer.removeListener('reveal-note', handler)
   },
 
   /**

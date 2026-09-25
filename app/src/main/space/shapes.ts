@@ -84,6 +84,14 @@ export const KEY_PATH_HINT = 'path.hint'
 /** For a vault member, the vault folder it mirrors (`text`, answer 1.5). */
 export const KEY_VAULT_ROOT_HINT = 'vault.root.hint'
 
+/**
+ * For a workspace member, the folder it mirrors (`text`, 02.7). Mirrors
+ * `vault.root.hint`: the tree itself lives in app data, so the folder is the
+ * fact a reader needs. Proposed at the 2.6/2.7 merge (ws/mergin), pending
+ * Kaelen's approval like every other name in this file.
+ */
+export const KEY_WORKSPACE_ROOT_HINT = 'workspace.root.hint'
+
 /** A frame's origin on the placement edge (`real`, D-04). */
 export const KEY_ORIGIN_X = 'origin.x'
 export const KEY_ORIGIN_Y = 'origin.y'
@@ -95,6 +103,7 @@ export const KEY_ORIGIN_Y = 'origin.y'
 export const SPACE_KIND_CANVAS = 'canvas'
 export const MEMBER_KIND_NATIVE = 'native'
 export const MEMBER_KIND_VAULT = 'vault'
+export const MEMBER_KIND_WORKSPACE = 'workspace'
 
 export const FOREST_TITLE = 'Forest'
 export const HOME_TITLE = 'Tapestry'

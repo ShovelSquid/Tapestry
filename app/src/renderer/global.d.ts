@@ -82,10 +82,13 @@ type TapestryTreeStatus = 'ok' | 'damaged' | 'locked' | 'missing'
 interface TapestryTreeSummary {
   id: string
   name: string
-  kind: 'native' | 'vault'
+  kind: 'native' | 'vault' | 'workspace'
   path: string
   vaultRoot?: string
   /** Where the tree's frame origin sits in world space, read from its placement edge in the forest tree (2.6 D-04). */
+  /** For a workspace tree, the folder it mirrors (02.7). */
+  workspaceRoot?: string
+  /** Where the tree's frame origin sits in world space (D-18). */
   frame: { x: number; y: number }
   /** A tree that would not open stays in the space with its reason. */
   status: TapestryTreeStatus
@@ -210,6 +213,8 @@ interface TapestryDialogAPI {
   showOpenTree(): Promise<{ canceled: boolean; filePath?: string }>
   /** Pick an Obsidian vault folder to mirror as a tree (D-10, D-13). */
   showOpenVaultFolder(): Promise<{ canceled: boolean; folderPath?: string }>
+  /** Pick a workspace folder to mirror as a tree (02.7 D-01). */
+  showOpenWorkspaceFolder(): Promise<{ canceled: boolean; folderPath?: string }>
 }
 
 /** Where a vault import has got to (D-20). */
@@ -223,6 +228,39 @@ interface TapestryVaultStatus {
 interface TapestryVaultAPI {
   /** Mirror the vault folder as its own tree. Main refuses an unpicked root. */
   add(root: string): Promise<{ ok: boolean; treeId?: string; error?: string; notice?: string }>
+}
+
+/** What a window save did (02.7 D-04, D-05). */
+interface TapestryWorkspaceSaveValue {
+  note: string
+  path: string
+  written: boolean
+  /** The file changed before the edit was written; the file's text won. */
+  fileWins: boolean
+  sha256: string | null
+  seq: number
+}
+
+/** Whether a workspace's outside changes are being recorded (02.7 D-06). */
+type TapestryWorkspaceStatusValue =
+  | { kind: 'watching' }
+  | { kind: 'not-watching'; reason: string }
+  | { kind: 'folder-missing' }
+
+type TapestryWorkspaceStatus = { treeId: string } & TapestryWorkspaceStatusValue
+
+interface TapestryWorkspaceAPI {
+  /** Mirror a workspace folder as its own tree. Main refuses an unpicked root. */
+  add(root: string): Promise<{ ok: boolean; treeId?: string; error?: string }>
+  /** Save a person's edit to the file a workspace note shows. */
+  saveFile(
+    treeId: string,
+    nodeId: string,
+    text: string,
+    baseSha256: string | null,
+  ): Promise<{ ok: true; value: TapestryWorkspaceSaveValue } | { ok: false; error: string }>
+  /** Every open workspace's current watching status. */
+  statuses(): Promise<TapestryWorkspaceStatus[]>
 }
 
 interface TapestrySettingsAPI {
@@ -259,22 +297,79 @@ interface TapestryRedoDiscarded {
   actorId: string
 }
 
+/** Why a chat turn failed (main/chat/engine.ts ChatErrorKind). */
+type TapestryChatErrorKind =
+  | 'not-installed'
+  | 'signed-out'
+  | 'crashed'
+  | 'protocol'
+  | 'bridge-off'
+  | 'tools-unavailable'
+  | 'session-lost'
+  | 'timeout'
+  | 'no-key'
+  | 'refused'
+
+/** One thing that happened in a chat (main/chat/engine.ts ChatEvent). */
+type TapestryChatEvent =
+  | { type: 'session'; sessionId: string }
+  | { type: 'user'; text: string }
+  | { type: 'text-delta'; text: string }
+  | { type: 'text'; text: string }
+  | { type: 'tool-call'; id: string; name: string; input: unknown }
+  | { type: 'tool-result'; id: string; isError: boolean; text: string }
+  | { type: 'notice'; text: string }
+  | { type: 'error'; kind: TapestryChatErrorKind; message: string }
+  | { type: 'done'; ok: boolean; reason?: string }
+
+type TapestryChatResult<T> = { ok: true; value: T } | { ok: false; error: string }
+
+interface TapestryChatOpenState {
+  /** The workspace's name. */
+  workspace: string
+  sessionId: string | null
+  transcript: TapestryChatEvent[]
+  busy: boolean
+  /** The conversation continues one from an earlier launch. */
+  resumed: boolean
+  /** The chat's Allow shell (not sandboxed) switch (D-15); off after every relaunch. */
+  allowShell: boolean
+}
+
+/** The in-app chat (02.7 D-12). No token or file path ever comes back. */
+interface TapestryChatAPI {
+  open(treeId: string): Promise<TapestryChatResult<TapestryChatOpenState>>
+  send(treeId: string, text: string): Promise<TapestryChatResult<null>>
+  stop(treeId: string): Promise<TapestryChatResult<null>>
+  newChat(treeId: string): Promise<TapestryChatResult<null>>
+  /** Turn the chat's shell on or off from the next message on (D-15). */
+  setAllowShell(treeId: string, on: boolean): Promise<TapestryChatResult<null>>
+}
+
 interface TapestryAPI {
   kernel: TapestryKernelAPI
   trees: TapestryTreesAPI
   vault: TapestryVaultAPI
+  workspace: TapestryWorkspaceAPI
   plugins: TapestryPluginsAPI
   dialog: TapestryDialogAPI
   settings: TapestrySettingsAPI
   agents: TapestryAgentsAPI
+  chat: TapestryChatAPI
+  /** Something happened in a workspace's chat. */
+  onChatEvent(callback: (payload: { treeId: string; event: TapestryChatEvent }) => void): () => void
   /** The set of open trees changed: one opened, one closed, or the space restored. */
   onTreesChanged(callback: () => void): () => void
   /** A commit landed in a tree from outside the renderer (an agent, a plugin). */
   onTreeChanged(callback: (treeId: string) => void): () => void
   /** A vault is being read, is catching up, or is up to date (D-20). */
   onVaultStatus(callback: (status: TapestryVaultStatus) => void): () => void
+  /** A workspace's watching status changed (D-06). */
+  onWorkspaceStatus(callback: (status: TapestryWorkspaceStatus) => void): () => void
   /** The agent list or a connection status changed. */
   onAgentsChanged(callback: () => void): () => void
+  /** An agent asked to show a workspace file's note in its window (open_file). */
+  onRevealNote(callback: (payload: { treeId: string; noteId: string }) => void): () => void
   /** An agent write ended a rewound state, discarding redo (UA-14). */
   onRedoDiscarded(callback: (event: TapestryRedoDiscarded) => void): () => void
   onPluginError(
