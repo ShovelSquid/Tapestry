@@ -23,12 +23,12 @@ checklist:
 
 ## In progress
 
-(empty) Part 2 Wave 0 is done (REVIEW #3). Next session: **Part 2, Wave 1
-(the ink line renderer)**. Start with `git merge ws/mergin`. Port Line Lab's
-outline algorithm (`~/Tree/Design/Line Lab/line-lab.src.html`, around
-`widthAt`/`drawLoop`/`loopWave`) to `app/src/renderer/look/ink.ts`, reading
-every number from `look/values.ts` and animating through `look/motion.ts`.
-Output a filled SVG outline path in world units; build once, never on zoom.
+Session 2026-09-25 13:12: **Part 2, Wave 1** (ink line renderer). `git merge
+ws/mergin` was up to date. Plan: `look/ink.ts` (pure port: noise, resample,
+shape, loopWave, blueReach, filled-outline SVG path in world units),
+`look/InkLine.tsx` (static path memoised; animated lines rebuild per frame
+through the shared scheduler), `look/ink.test.ts` (seed determinism, no
+seam, zoom never rebuilds, per-frame cost budget).
 
 ## Blocked
 
