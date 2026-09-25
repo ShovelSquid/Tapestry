@@ -17,7 +17,7 @@ The first phase must prove an actual plugin-authored interaction and readable sa
 - [ ] **PLUG-01**: Developer can create and locally load a plugin from a documented starter without modifying or rebuilding the core.
 - [ ] **PLUG-02**: Developer can register node schemas, commands and property/UI contributions through a versioned public API.
 - [x] **PLUG-03**: Bundled feature plugins use the same public API and lifecycle as third-party plugins.
-- [ ] **PLUG-04**: User can enable or disable a plugin and still inspect its persisted content through a readable fallback.
+- [x] **PLUG-04**: User can enable or disable a plugin and still inspect its persisted content through a readable fallback.
 - [ ] **PLUG-05**: User receives a clear compatibility result when a plugin/API/schema version is unavailable; no silent behavior substitution occurs.
 - [x] **PLUG-06**: Plugin-originated durable changes pass through validated, recorded core transactions; failed transactions leave the prior state intact.
 - [ ] **PLUG-07**: A failing or unloaded plugin releases its handlers and cannot prevent the base world from being opened.
@@ -157,7 +157,7 @@ Each v1 requirement has one owning phase; later phases may exercise it through i
 | PLUG-01 | Phase 2 | Pending |
 | PLUG-02 | Phase 2 | Pending |
 | PLUG-03 | Phase 2 | Complete |
-| PLUG-04 | Phase 2 | Pending |
+| PLUG-04 | Phase 2 | Complete |
 | PLUG-05 | Phase 2 | Pending |
 | PLUG-06 | Phase 2 | Complete |
 | PLUG-07 | Phase 2 | Pending |

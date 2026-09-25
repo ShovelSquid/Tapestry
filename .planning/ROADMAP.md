@@ -220,7 +220,7 @@ Plans:
   5. No `thread-center` / `thread-arm` occurrences remain in tracked source under `app/`, `plugins/` or `sdk/`; 2.1's feature works as `knot` / `knot-tie` (D-26)
   6. Each thread stores its own readable frame — `origin.x/y/z`, `direction.x/y/z` and `roll` — and both the live and side views derive their camera from it rather than a hardcoded axis (D-27)
 
-**Plans**: 8/9 plans executed in 8 waves
+**Plans**: 9/9 plans executed in 8 waves
 
 Plans:
 **Wave 1**
@@ -254,7 +254,7 @@ Plans:
 
 **Wave 8** *(blocked on Wave 7)*
 
-- [ ] 02.3-09-PLAN.md — Vault threads: `.md` keeps only current text, timings live in the vault tree, Obsidian edits arrive as observed clusters (D-25)
+- [x] 02.3-09-PLAN.md — Vault threads: `.md` keeps only current text, timings live in the vault tree, Obsidian edits arrive as observed clusters (D-25)
 
 **UI hint**: yes
 

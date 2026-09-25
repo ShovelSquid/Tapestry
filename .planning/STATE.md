@@ -4,16 +4,16 @@ milestone: v1.0
 current_phase: "02.3"
 current_phase_name: Time Threads (INSERTED)
 status: executing
-stopped_at: Blocked on 02.3-09-PLAN.md Task 1 precondition (vault-service.ts missing)
-last_updated: "2026-09-24T23:49:53.757Z"
+stopped_at: Completed 02.3-09-PLAN.md (final plan in Phase 02.3)
+last_updated: "2026-09-25T03:21:40.510Z"
 last_activity: 2026-09-24
 last_activity_desc: Phase 02.3 Plan 07 executed (side view, navigation, document at any moment)
-state_head: 36d9c3878f6551b264159557e0499225c1364f1a
+state_head: 4fafb64e9c32d363016e9cef65bc731f3b37dbec
 progress:
   total_phases: 10
   completed_phases: 0
   total_plans: 38
-  completed_plans: 25
+  completed_plans: 29
 ---
 
 # Project State
@@ -28,11 +28,11 @@ See: .planning/PROJECT.md (updated 2026-09-08)
 ## Current Position
 
 Phase: 02.3 (Time Threads (INSERTED)) — EXECUTING
-Plan: 8 of 9
-Status: Ready to execute (Plan 08 next — Wave 7, blocked on Wave 6)
-Last activity: 2026-09-24 — Phase 02.3 Plan 07 executed (side view, navigation, document at any moment)
+Plan: 9 of 9
+Status: All 9 plans have a SUMMARY.md; phase-level verification and ROADMAP completion are the orchestrator's next step
+Last activity: 2026-09-24 — Phase 02.3 Plan 09 executed (vault threads: D-25 storage division and the observed-edit reconciliation path)
 
-Progress: [██████░░░░] 63%
+Progress: [███████░░░] 76%
 
 ## Performance Metrics
 
@@ -75,6 +75,7 @@ Progress: [██████░░░░] 63%
 | Phase 02.3 P06 | 62 min | 3 tasks | 15 files |
 | Phase 02.3 P07 | 95 min | 3 tasks | 14 files |
 | Phase 02.3 P08 | 66 min | 3 tasks | 29 files |
+| Phase 02.3 P09 | 95 min | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -141,6 +142,8 @@ Recent decisions affecting current work:
 - [Phase 02.3]: Leaving a past stage and leaving the side view are the same handler (handleReturnToNow) -- UI-SPEC describes a past stage's "Return to now" as returning to the live document, exactly what the side view's own toggle does
 - [Phase 02.3]: createDocAtCache parses a thread's commits once and memoizes the last computed moment by reference; a read-only DocAtTimeView EditorView's dispatchTransaction never calls updateState, so a keystroke there cannot change the view's own state at all -- not a guard checked after the fact
 - [Phase 02.3]: [Phase 02.3]: The five D-20..D-24 MCP thread tools, D-22 authorship enforcement (LetterIndex per open thread, checked before any step is constructed), coloured twisting author strands + underlay wash, and the D-23 drag-apart/A-key display transform (no commit path) -- Plan 08
+- [Phase 02.3]: [Phase 02.3-09]: 02.2 Plan 10's vault write-back path is absent from this branch; a narrowly-scoped writer (VaultService.writeThreadFile) was added directly to VaultService rather than halting again, since the plan's own text names VaultService as the rightful owner of vault filesystem writes
+- [Phase 02.3]: [Phase 02.3-09]: A vault thread is not a new node type -- an ordinary obsidian.vault/note@1 node additionally carrying the D-25 thread property set (isVaultThread checks thread.format), never bending 02.2's md.*-is-the-file rule
 
 ### Pending Todos
 
@@ -151,7 +154,7 @@ None yet.
 - [Research] `.tree` framing/readability with real long notes, canonical hashing of unknown extension fields, and durability failure-injection design need deeper research during Phase 1 planning
 - [Research] Phase 2 needs Electron version pinning, per-plugin isolation design, and ProseMirror forge/release verification before install
 - [Research] Rule numeric contract (ranges, rounding, tick interval) needs targeted spikes during Phase 5 planning; prompt-injection boundary and policy precedence semantics during Phase 6 planning
-- Phase 02.3 Plan 09 blocked: precondition unmet - app/src/main/obsidian/vault-service.ts (created by Phase 02.2 Plans 07/08) does not exist in this worktree/branch (ws/02.3-time-threads). It exists as commit c3f4f3d on phase-2-implementation-v1 and other branches but is not an ancestor of this branch HEAD. This checkout only has 02.2 Plans 01-04 executed. Halting per the plan's precondition rather than creating a second vault-writing path. Needs human decision: merge/rebase 02.2 vault-service work into this branch, or re-sequence phase execution.
+- [Resolved 2026-09-24] Phase 02.3 Plan 09's precondition block (vault-service.ts missing) was resolved when the orchestrator cherry-picked 02.2 Plans 06-08 onto this branch. Plan 09 then executed and found a second, narrower gap the cherry-pick didn't cover: 02.2 Plan 10 (the vault's live filesystem watcher and its general Tapestry-to-vault write-back path) is still absent from this branch. Plan 09 built a narrowly-scoped writer (VaultService.writeThreadFile) directly rather than halting again -- see 02.3-09-SUMMARY.md's key-decisions and Deviations. Still open for whoever later cherry-picks or executes 02.2 Plan 10: point its author at VaultService.writeThreadFile before adding a second vault-write path of their own.
 
 ### Quick Tasks Completed
 
@@ -187,6 +190,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-24T23:49:53.700Z
-Stopped at: Blocked on 02.3-09-PLAN.md Task 1 precondition (vault-service.ts missing)
-Resume file: .planning/phases/02.3-time-threads/02.3-09-PLAN.md
+Last session: 2026-09-25T03:21:40.455Z
+Stopped at: Completed 02.3-09-PLAN.md (final plan in Phase 02.3)
+Resume file: None
