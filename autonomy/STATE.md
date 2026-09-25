@@ -35,12 +35,12 @@ are recorded in app/src/main/space/shapes.ts and 02.6-02-SUMMARY.
 
 ## In progress
 
-Gap-closure wave 1 is done (02.6-07, 08, 09 have SUMMARYs). Remaining:
-- wave 2: 02.6-10 (WR-02 add rollback; depends on 08, which is done).
-Next session: `gsd-execute-phase 02.6 --gaps-only --wave 2`. With no plans
-left, the workflow then runs the phase gates (code review, regression,
-verification). `passed`/`human_needed` -> PROTOCOL step 7 (DONE). Do not
-write DONE before that. REVIEW item 6 holds 09's wording questions.
+All 10 plans have SUMMARYs (02.6-10 done: cb75ba1 487ca4b 139d4ac).
+Now running the phase gates of `gsd-execute-phase 02.6 --gaps-only --wave 2`
+(code review, regression, re-verification). If cut off: rerun
+`gsd-execute-phase 02.6` with no flags; it resumes at the phase gates
+(#2868) when VERIFICATION is stale/missing, else re-run the verifier.
+`passed`/`human_needed` -> PROTOCOL step 7 (DONE).
 
 ## Log
 
