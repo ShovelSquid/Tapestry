@@ -1,0 +1,18 @@
+mathspace: every phase of mathspace_plan.md is done headlessly (2026-09-24).
+
+1 engine over the kernel   836a4da   store, hash, actions, C ABI, Wasm, plugin, goldens
+2 expressions              c5d134e   parser, bytecode, VM, BindField, ms_compile, golden plot
+3 force rules              e1e30a5   unary/pair/global scope, select, pinned, set.<f>, presets
+4 constraints              60c8346   XPBD over symbolic gradients, goldens rod and contact
+5 views                    b27808a   ms_project, stage surface, presets view-2d/3d/4d
+6 metrics                  9d47eaf   diagonal metric, geodesic step, identify, embed, poincare
+7 fold ddsim in            a7ee49c   brush body rule, bridge, emission, Worker switch, ddsim deleted
+
+Verified this session: native-debug, native-release and native-ubsan
+156/156 (doctest, forbidden-token gate, nine two-process goldens);
+plugins/data-drawing 113 tests, typecheck and build; plugins/mathspace 98.
+
+Open for a human (autonomy/STATE.md, Blocked): looking at each phase in
+the Electron app, the Q32.32 rounding of dragged positions, and whether
+one engine step per tick (last pen sample wins) feels right with a fast
+pen. Nothing else is planned; do not start another plan from here.

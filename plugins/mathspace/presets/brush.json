@@ -1,0 +1,72 @@
+{
+  "name": "Brush body",
+  "description": "The data-drawing pen body as a rule: a mass on a spring toward its target with critical-ish damping, ddsim's brush body bit for bit. k is 1 / brush mass; here 1/64, a heavy brush that overshoots visibly. Edit target.x and target.y to move the pen; the body follows with momentum.",
+  "nodes": [
+    {
+      "type": "mathspace/rule@1",
+      "props": {
+        "title": {
+          "type": "text",
+          "value": "Brush body"
+        },
+        "position.x": {
+          "type": "real",
+          "value": 0
+        },
+        "position.y": {
+          "type": "real",
+          "value": -160
+        },
+        "scope": {
+          "type": "text",
+          "value": "unary"
+        },
+        "force.expr": {
+          "type": "text",
+          "value": "self.k * (self.target - self.position) - sqrt(self.k) * self.velocity"
+        }
+      }
+    },
+    {
+      "type": "tapestry.notes/note@1",
+      "props": {
+        "title": {
+          "type": "text",
+          "value": "Pen"
+        },
+        "body": {
+          "type": "text",
+          "value": ""
+        },
+        "position.x": {
+          "type": "real",
+          "value": 0
+        },
+        "position.y": {
+          "type": "real",
+          "value": 0
+        },
+        "velocity.x": {
+          "type": "real",
+          "value": 0
+        },
+        "velocity.y": {
+          "type": "real",
+          "value": 0
+        },
+        "k": {
+          "type": "real",
+          "value": 0.015625
+        },
+        "target.x": {
+          "type": "real",
+          "value": 120
+        },
+        "target.y": {
+          "type": "real",
+          "value": 0
+        }
+      }
+    }
+  ]
+}

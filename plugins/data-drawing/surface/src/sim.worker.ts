@@ -1,17 +1,18 @@
 /**
- * sim.worker.ts — the Wasm sim in a module Worker, driven at a fixed 60 Hz.
+ * sim.worker.ts — the mathspace Wasm engine in a module Worker, driven at a
+ * fixed 60 Hz.
  *
  * A thin message shell around SimDriver (sim-driver.ts), which owns the
  * accumulator, the stamping recorder, the hash ring and replay-from-zero;
  * the main-thread transport wraps the very same driver. The wall clock is
- * read here and only decides HOW MANY dd_step() calls run; it never
- * crosses the ABI. Messages are handled between loop iterations, so every
+ * read here and only decides HOW MANY steps run; it never crosses the
+ * ABI. Messages are handled between loop iterations, so every
  * apply, hash, log and replay happens at a tick boundary. Snapshots are
  * the driver's HEAPU8.slice() copies posted in a transfer list; the heap
  * itself is never exposed.
  */
-import createDdsim from '../wasm/ddsim.mjs'
-import wasmUrl from '../wasm/ddsim.wasm?url'
+import createMathspace from '../wasm/mathspace.mjs'
+import wasmUrl from '../wasm/mathspace.wasm?url'
 
 /**
  * The .wasm URL made absolute against this module's own URL. This worker is
@@ -71,7 +72,7 @@ function loop(): void {
 }
 
 async function init(seed: bigint, restore: RestorePoint | undefined): Promise<void> {
-  const m = await createDdsim({
+  const m = await createMathspace({
     locateFile: (path: string, prefix: string) => (path.endsWith('.wasm') ? WASM_URL : prefix + path),
   })
   const d = new SimDriver(m, seed)

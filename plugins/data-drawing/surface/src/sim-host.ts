@@ -4,7 +4,7 @@
  * WorkerTransport (the default) runs the Wasm sim in a module Worker; the
  * renderer only ever receives copies: every snapshot buffer is a
  * HEAPU8.slice() the worker transferred, never a view of the Wasm heap.
- * MainThreadTransport (01-08) loads the same ddsim.mjs on the main thread
+ * MainThreadTransport (01-08) loads the same mathspace.mjs on the main thread
  * and drives the same SimDriver on requestAnimationFrame — for the
  * pen-to-ink latency comparison and tests only; it implements the identical
  * interface, so the surface cannot tell them apart. Either way the main
@@ -25,7 +25,7 @@ import { TICK_HZ, type BrushVersionSpec } from './ddsim-abi'
 import type { RawSample } from './input'
 import { SimDriver, type LogEntry, type Outcome, type ReplayReport, type RestorePoint, type Snapshot } from './sim-driver'
 import simWorkerUrl from './sim.worker?worker&url'
-import wasmUrl from '../wasm/ddsim.wasm?url'
+import wasmUrl from '../wasm/mathspace.wasm?url'
 import { spawnSameOriginModuleWorker } from './worker-spawn'
 
 export type { LogEntry, ReplayReport, RestorePoint, Snapshot } from './sim-driver'
@@ -382,8 +382,8 @@ export class MainThreadTransport implements SimHost {
   }
 
   private async init(seed: bigint, restore: RestorePoint | undefined): Promise<{ version: number; tickHz: number }> {
-    const { default: createDdsim } = await import('../wasm/ddsim.mjs')
-    const m = await createDdsim({
+    const { default: createMathspace } = await import('../wasm/mathspace.mjs')
+    const m = await createMathspace({
       locateFile: (path: string, prefix: string) => (path.endsWith('.wasm') ? MAIN_WASM_URL : prefix + path),
     })
     if (this.disposed) throw new Error('sim host disposed')

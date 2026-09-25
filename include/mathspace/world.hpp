@@ -1,0 +1,228 @@
+// mathspace/world.hpp — the store: every note of every space, in id order.
+//
+// World is the engine image of the kernel's nodes. Notes live in one
+// vector sorted by id (a lower_bound insert, exactly as ddsim's
+// state.nodes), so the hash walk, serialize and every rule iterate in id
+// order without a map. Ids are the kernel's (ids.hpp): the caller of
+// create_space/create_note supplies them, and the store only refuses zero
+// and a duplicate. Spaces are notes of kind Space.
+//
+// A space's dimension is the dim of its own `pos` field: create_space
+// gives the space note a zero `pos` of that dim, and `pos` on any note in
+// the space must have the same dim. `pos` is the one field name the store
+// knows, because "a note's pos has exactly its space's dimension" is a
+// structural invariant (plan, Foundational decisions), not a preset.
+//
+// Every mutator validates everything first and only then writes, so a
+// rejected call leaves the world byte-identical; the tests check this by
+// comparing the whole World before and after. Mutators return an Error
+// rather than throwing because World::apply (the action decoder) needs
+// to turn the same outcomes into a replayable result code.
+#pragma once
+
+#include <cstdint>
+#include <string_view>
+#include <vector>
+
+#include "mathspace/ids.hpp"
+#include "mathspace/note.hpp"
+
+namespace mathspace {
+
+enum class Error : std::uint8_t {
+    Ok = 0,
+    BadDim,          // dim outside 1..8
+    BadName,         // field name outside the valid_field_name rule
+    BadKind,         // create_note asked for kind Space (use create_space)
+    NoSuchSpace,     // space id unassigned, missing, or not a Space note
+    NoSuchNote,      // note id unassigned or missing
+    NoSuchField,     // delete_field of a name the note does not have
+    PosDimMismatch,  // `pos` dim differs from the note's space dim
+    SpaceNotEmpty,   // delete_note of a Space that still holds notes
+    LockedField,     // delete_field `pos` on a Space note
+    DuplicateId,     // create_* with id zero or an id already in the store
+    TooManyFields,   // set_field of a new name on a note that already has MAX_FIELDS
+    BadBytes,        // restore: bytes are not a canonical walk of a well-formed world
+    BadAction,       // apply: header, kind, or payload bytes malformed (action.hpp)
+    BadBytecode,     // a bound field whose bytecode does not decode, or whose dim differs
+                     // from the program's; unbind of a field that is not there
+};
+
+const char* error_name(Error e);
+
+// RULE-07: why step() skipped a rule, or one visit of it. Values below
+// 16 are expr::VmError codes (vm.hpp): the rule's force, select or
+// set.<f> program failed on that visit. The rest are whole-rule skips
+// (one count each). skip_name (step.cpp) names either kind.
+enum class Skip : std::uint8_t {
+    None = 0,
+    NoScope = 16,   // `scope` bound, a vector, or outside 0..2
+    NoSpace,        // the rule's space has no dim (not a Space note)
+    BadSelect,      // a bound `select` that is not a scalar program
+    WrongDim,       // the force program does not yield the space dim
+    NoTargetField,  // set.<f>: the target lacks `f`, or holds it at another dim
+    BadGradient,    // constraint: its program does not lift, differentiate or compile per pos lane
+    BadMetric,      // a Space's `metric` is not a program of the space dim, or has no gradient
+    BadIdentify,    // a Space's `identify` is not of the space dim
+};
+const char* skip_name(std::uint8_t reason);
+
+// One Rule note's skips in the last step() (or a Space note's, for its
+// `metric`): how many visits (or the whole rule, counted once) were
+// skipped and the reason of the last skip, in step()'s deterministic
+// order. Diagnostics only: never hashed,
+// serialized or compared, so a report is not state and the plugin's
+// `mathspace.error` text stays out of the walk.
+struct RuleReport {
+    NoteId rule{};
+    std::uint32_t skipped = 0;
+    std::uint8_t reason = 0;
+};
+
+struct World {
+    std::uint64_t seed = 0;
+    std::uint64_t tick = 0;
+    std::vector<Note> notes; // sorted by id, unique
+
+    World() = default;
+    explicit World(std::uint64_t seed_) : seed(seed_) {}
+
+    // Position of `id` in notes, or the insertion point.
+    std::size_t note_lower_bound(NoteId id) const;
+    const Note* find(NoteId id) const;
+    Note* find(NoteId id);
+    // The Space note for `space`, or nullptr when it is not a Space.
+    const Note* find_space(SpaceId space) const;
+    // Dimension of a space (dim of its `pos`), 0 when not a Space.
+    std::uint8_t space_dim(SpaceId space) const;
+    // Count of notes whose space is `space` (the space itself excluded).
+    std::size_t notes_in(SpaceId space) const;
+
+    Error create_space(NoteId id, std::uint8_t dim);
+    Error create_note(NoteId id, SpaceId space, NoteKind kind);
+    // A bound field must carry bytecode that expr::decode accepts at the
+    // field's dim, and an unbound one none (Error::BadBytecode otherwise).
+    Error set_field(NoteId note, Field field);
+    // Binds `name` on `note` to `bytecode` (the encoded Program): the field
+    // takes the program's dim, keeps its lanes when the dim is unchanged
+    // and starts at zero otherwise. Empty bytecode unbinds, keeping the
+    // lanes and the dim (NoSuchField when there is nothing to unbind).
+    Error bind_field(NoteId note, std::string_view name, std::vector<std::uint8_t> bytecode);
+    Error delete_note(NoteId note);
+    Error delete_field(NoteId note, std::string_view name);
+
+    // Decodes one action (action.hpp) and calls the mutator it names.
+    // Any outcome other than Ok leaves the world byte-identical.
+    Error apply(const std::uint8_t* bytes, std::size_t len);
+    Error apply(const std::vector<std::uint8_t>& bytes) { return apply(bytes.data(), bytes.size()); }
+
+    // One tick (step.cpp): force rules, the integrator, the constraint
+    // passes, velocity from the position change, set rules, then every
+    // bound field of every non-Rule note evaluated in id then name
+    // order, then ++tick.
+    void step();
+    // The last step()'s skips, per Rule note that skipped anything, in id
+    // order; empty after a step that skipped nothing, a restore, or before
+    // the first step. Excluded from operator== and the walk (see RuleReport).
+    std::vector<RuleReport> reports;
+
+    // Sorted, unique ids and well-formed fields; the tests' invariant check.
+    bool well_formed() const;
+
+    // The snapshot (snapshot.cpp): what the plugin diffs against the
+    // kernel after a step. Per note in id order:
+    //   u64 id | u8 field_count | per field in name order:
+    //     u8 name_len | name | u8 dim | dim x i64 (raw fx64)
+    // No seed, tick, space id, kind, bound flag or bytecode: the kernel
+    // already holds those, or they are not state a step can change.
+    // Rebuilt lazily, so mutators pay nothing and a rejected apply never
+    // touches it. Both cache members are excluded from operator== and
+    // from the hash walk: they are a view of the notes, not state.
+    const std::vector<std::uint8_t>& notes_bytes() const;
+    mutable bool notes_dirty = true;
+    mutable std::vector<std::uint8_t> notes_cache;
+
+    friend bool operator==(const World& a, const World& b) {
+        return a.seed == b.seed && a.tick == b.tick && a.notes == b.notes;
+    }
+    friend bool operator!=(const World& a, const World& b) { return !(a == b); }
+};
+
+// The one field name the store knows; see the header comment.
+inline constexpr std::string_view POS_FIELD = "pos";
+// The field names the integrator and the rule pass know (step.cpp,
+// version.hpp). They are conventions of step(), not of the store.
+inline constexpr std::string_view VELOCITY_FIELD = "velocity";
+inline constexpr std::string_view MASS_FIELD = "mass";
+// A nonzero scalar `pinned` holds a note still: the integrator skips it
+// (RULE-08; the plugin maps the app's `pinned bool true` to 1).
+inline constexpr std::string_view PINNED_FIELD = "pinned";
+// On a Rule note: `force` is the bound contribution, `select` the bound
+// scalar predicate over a target (absent selects all), `scope` a scalar
+// 0 unary (the default when absent), 1 pair, 2 global.
+inline constexpr std::string_view FORCE_FIELD = "force";
+inline constexpr std::string_view SELECT_FIELD = "select";
+inline constexpr std::string_view SCOPE_FIELD = "scope";
+// A bound `set.<f>` on a Rule note assigns `f` on each target (step.cpp):
+// the field name after the prefix is the target's field, kept dotted on
+// the rule because field names allow dots.
+inline constexpr std::string_view SET_PREFIX = "set.";
+// A bound scalar `constraint` on a Rule note is C(self, other) solved to
+// zero by the XPBD passes (step.cpp, version.hpp MS_CONSTRAINT_*); the
+// rule's scalar `compliance` (0 when absent) is XPBD's alpha, h = 1.
+inline constexpr std::string_view CONSTRAINT_FIELD = "constraint";
+inline constexpr std::string_view COMPLIANCE_FIELD = "compliance";
+// On a View note: `project` is the bound dim-2 map from a note of the
+// view's space (as `self`, so it is written in terms of `self.pos`) to
+// the page plane. step() never evaluates it; the renderer asks through
+// ms_project (mathspace_c.h). Views are neither targets nor evaluated.
+inline constexpr std::string_view PROJECT_FIELD = "project";
+inline constexpr std::uint8_t PROJECT_DIM = 2;
+// On a Space note: a bound `metric` of the space dim is the diagonal of
+// the chart's metric tensor, g_kk(x), written in terms of `self.pos` and
+// evaluated at each moving note of the space as `self` (like a rule's
+// law, never against the space itself). The integrator then takes one
+// geodesic step (step.cpp, version.hpp): only diagonal metrics for now,
+// which covers the plan's Poincaré and sphere charts without a matrix
+// inverse; a full tensor would be a later `metric.<row>` set. Absent or
+// unbound, the chart is Euclidean.
+inline constexpr std::string_view METRIC_FIELD = "metric";
+
+// On a Space note: a dim-N `identify` of half-widths L_k (plain lanes, or
+// bound and evaluated on the space at the end of each step like any of
+// its values) glues the chart to itself: lane k of every Note-kind
+// note's `pos` in the space is wrapped into [-L_k, L_k) after each step's
+// motion (step.cpp). L_k of 0 (or negative) leaves that lane open. Wrap
+// one lane of a plane for a cylinder, both for a torus; the sphere's phi
+// lane is the use case. Topology enters here without a mesh.
+inline constexpr std::string_view IDENTIFY_FIELD = "identify";
+
+// On a Space note: a bound dim-3 `embed`, a map from the chart (in terms
+// of `self.pos`) into Euclidean 3-space, for drawing a curved chart
+// convincingly and never for physics. Like a View's `project` it is
+// evaluated only on demand by ms_project: when the view's space holds a
+// bound `embed`, the note is embedded first and its `project` runs
+// against a copy of the note carrying the plain dim-3 field `embed`, so
+// `project.expr` may read `self.embed.x` (RuleDims resolves it for a
+// View). step() leaves the space's `embed` alone as it leaves `metric`.
+inline constexpr std::string_view EMBED_FIELD = "embed";
+inline constexpr std::uint8_t EMBED_DIM = 3;
+
+// Bumped whenever the canonical walk (hash.cpp) changes shape. Pinned in
+// the walk itself so old bytes are rejected instead of misread.
+//   1: initial walk. 2: next_group dropped, the step version pin added
+//   (named MS_RULE_INTEGRATE_VERSION then, MS_STEP_VERSION now, same slot).
+inline constexpr std::uint32_t FORMAT_VERSION = 2u;
+
+// The canonical walk (hash.cpp): serialize() is exactly the bytes that
+// hash() digests, restore() is their strict inverse. restore decodes into
+// a local World, checks well_formed(), and swaps only on success, so a
+// failed restore leaves `world` byte-identical.
+void hash(const World& world, std::uint8_t out[32]);
+std::vector<std::uint8_t> serialize(const World& world);
+Error restore(World& world, const std::uint8_t* bytes, std::size_t len);
+inline Error restore(World& world, const std::vector<std::uint8_t>& bytes) {
+    return restore(world, bytes.data(), bytes.size());
+}
+
+} // namespace mathspace

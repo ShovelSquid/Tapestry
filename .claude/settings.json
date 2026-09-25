@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(**)", "Edit(**)", "Write(**)",
+      "Bash(cmake *)", "Bash(ctest *)", "Bash(git *)", "Bash(gh *)",
+      "Bash(brew install *)", "Bash(python3 *)", "Bash(node *)", "Bash(npm *)",
+      "Bash(./build/*)", "Bash(build/*)", "Bash(rm -rf build/*)",
+      "Bash(autonomy/*)", "Bash(caffeinate *)"
+    ],
+    "deny": [
+      "Bash(rm -rf /*)", "Bash(rm -rf ~*)",
+      "Bash(git push --force*)", "Bash(git push -f*)"
+    ]
+  }
+}

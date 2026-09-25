@@ -1,0 +1,89 @@
+{
+  "name": "Gold accumulator",
+  "description": "Roadmap example: a unary set rule adds each note's income to its gold every tick. Any note with gold and income takes part; edit income to change the rate.",
+  "nodes": [
+    {
+      "type": "mathspace/rule@1",
+      "props": {
+        "title": {
+          "type": "text",
+          "value": "Income"
+        },
+        "position.x": {
+          "type": "real",
+          "value": 0
+        },
+        "position.y": {
+          "type": "real",
+          "value": -120
+        },
+        "scope": {
+          "type": "text",
+          "value": "unary"
+        },
+        "set.gold.expr": {
+          "type": "text",
+          "value": "self.gold + self.income"
+        }
+      }
+    },
+    {
+      "type": "tapestry.notes/note@1",
+      "props": {
+        "title": {
+          "type": "text",
+          "value": "Treasury"
+        },
+        "body": {
+          "type": "text",
+          "value": ""
+        },
+        "position.x": {
+          "type": "real",
+          "value": 0
+        },
+        "position.y": {
+          "type": "real",
+          "value": 0
+        },
+        "gold": {
+          "type": "real",
+          "value": 100
+        },
+        "income": {
+          "type": "real",
+          "value": 1
+        }
+      }
+    },
+    {
+      "type": "tapestry.notes/note@1",
+      "props": {
+        "title": {
+          "type": "text",
+          "value": "Mine"
+        },
+        "body": {
+          "type": "text",
+          "value": ""
+        },
+        "position.x": {
+          "type": "real",
+          "value": 120
+        },
+        "position.y": {
+          "type": "real",
+          "value": 0
+        },
+        "gold": {
+          "type": "real",
+          "value": 0
+        },
+        "income": {
+          "type": "real",
+          "value": 0.25
+        }
+      }
+    }
+  ]
+}

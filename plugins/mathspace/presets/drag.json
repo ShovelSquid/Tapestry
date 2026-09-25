@@ -1,0 +1,105 @@
+{
+  "name": "Drag",
+  "description": "A unary force rule opposes each body's velocity in proportion to it, so a moving body slows to a stop. Bodies carry a drag coefficient of their own.",
+  "nodes": [
+    {
+      "type": "mathspace/rule@1",
+      "props": {
+        "title": {
+          "type": "text",
+          "value": "Drag"
+        },
+        "position.x": {
+          "type": "real",
+          "value": 0
+        },
+        "position.y": {
+          "type": "real",
+          "value": -120
+        },
+        "scope": {
+          "type": "text",
+          "value": "unary"
+        },
+        "force.expr": {
+          "type": "text",
+          "value": "self.velocity * (0 - self.drag)"
+        }
+      }
+    },
+    {
+      "type": "tapestry.notes/note@1",
+      "props": {
+        "title": {
+          "type": "text",
+          "value": "Puck"
+        },
+        "body": {
+          "type": "text",
+          "value": ""
+        },
+        "position.x": {
+          "type": "real",
+          "value": 0
+        },
+        "position.y": {
+          "type": "real",
+          "value": 0
+        },
+        "velocity.x": {
+          "type": "real",
+          "value": 8
+        },
+        "velocity.y": {
+          "type": "real",
+          "value": 0
+        },
+        "mass": {
+          "type": "real",
+          "value": 1
+        },
+        "drag": {
+          "type": "real",
+          "value": 0.125
+        }
+      }
+    },
+    {
+      "type": "tapestry.notes/note@1",
+      "props": {
+        "title": {
+          "type": "text",
+          "value": "Stone"
+        },
+        "body": {
+          "type": "text",
+          "value": ""
+        },
+        "position.x": {
+          "type": "real",
+          "value": 0
+        },
+        "position.y": {
+          "type": "real",
+          "value": 60
+        },
+        "velocity.x": {
+          "type": "real",
+          "value": 8
+        },
+        "velocity.y": {
+          "type": "real",
+          "value": 0
+        },
+        "mass": {
+          "type": "real",
+          "value": 4
+        },
+        "drag": {
+          "type": "real",
+          "value": 0.125
+        }
+      }
+    }
+  ]
+}

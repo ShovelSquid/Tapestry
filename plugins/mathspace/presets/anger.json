@@ -1,0 +1,89 @@
+{
+  "name": "Anger near chips",
+  "description": "Roadmap example: proximity to chips raises a character's anger. A pair rule visits every (character, other) pair whose other has chips, and each tick adds to anger when they are within reach. Move the chips away and the anger stops rising; edit reach or rate on the rule.",
+  "nodes": [
+    {
+      "type": "mathspace/rule@1",
+      "props": {
+        "title": {
+          "type": "text",
+          "value": "Chips make Sam angry"
+        },
+        "position.x": {
+          "type": "real",
+          "value": 0
+        },
+        "position.y": {
+          "type": "real",
+          "value": -120
+        },
+        "scope": {
+          "type": "text",
+          "value": "pair"
+        },
+        "select.expr": {
+          "type": "text",
+          "value": "other.chips > 0"
+        },
+        "set.anger.expr": {
+          "type": "text",
+          "value": "self.anger + (norm(other.position - self.position) < 100) * 0.0625"
+        }
+      }
+    },
+    {
+      "type": "tapestry.notes/note@1",
+      "props": {
+        "title": {
+          "type": "text",
+          "value": "Sam"
+        },
+        "body": {
+          "type": "text",
+          "value": ""
+        },
+        "position.x": {
+          "type": "real",
+          "value": 0
+        },
+        "position.y": {
+          "type": "real",
+          "value": 0
+        },
+        "anger": {
+          "type": "real",
+          "value": 0
+        },
+        "chips": {
+          "type": "real",
+          "value": 0
+        }
+      }
+    },
+    {
+      "type": "tapestry.notes/note@1",
+      "props": {
+        "title": {
+          "type": "text",
+          "value": "Chips"
+        },
+        "body": {
+          "type": "text",
+          "value": ""
+        },
+        "position.x": {
+          "type": "real",
+          "value": 60
+        },
+        "position.y": {
+          "type": "real",
+          "value": 0
+        },
+        "chips": {
+          "type": "real",
+          "value": 1
+        }
+      }
+    }
+  ]
+}

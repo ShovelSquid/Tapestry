@@ -1,0 +1,130 @@
+{
+  "name": "N-body attraction",
+  "description": "A pair force rule: each body is pulled toward every other with strength mass * mass / (distance + 1)^2. Three bodies orbit and tumble; the +1 keeps a coincident pair from dividing by zero.",
+  "nodes": [
+    {
+      "type": "mathspace/rule@1",
+      "props": {
+        "title": {
+          "type": "text",
+          "value": "Attraction"
+        },
+        "position.x": {
+          "type": "real",
+          "value": 0
+        },
+        "position.y": {
+          "type": "real",
+          "value": -160
+        },
+        "scope": {
+          "type": "text",
+          "value": "pair"
+        },
+        "force.expr": {
+          "type": "text",
+          "value": "(other.position - self.position) * (self.mass * other.mass / pow(norm(other.position - self.position) + 1, 3))"
+        }
+      }
+    },
+    {
+      "type": "tapestry.notes/note@1",
+      "props": {
+        "title": {
+          "type": "text",
+          "value": "A"
+        },
+        "body": {
+          "type": "text",
+          "value": ""
+        },
+        "position.x": {
+          "type": "real",
+          "value": -80
+        },
+        "position.y": {
+          "type": "real",
+          "value": 0
+        },
+        "velocity.x": {
+          "type": "real",
+          "value": 0
+        },
+        "velocity.y": {
+          "type": "real",
+          "value": -1
+        },
+        "mass": {
+          "type": "real",
+          "value": 40
+        }
+      }
+    },
+    {
+      "type": "tapestry.notes/note@1",
+      "props": {
+        "title": {
+          "type": "text",
+          "value": "B"
+        },
+        "body": {
+          "type": "text",
+          "value": ""
+        },
+        "position.x": {
+          "type": "real",
+          "value": 80
+        },
+        "position.y": {
+          "type": "real",
+          "value": 0
+        },
+        "velocity.x": {
+          "type": "real",
+          "value": 0
+        },
+        "velocity.y": {
+          "type": "real",
+          "value": 1
+        },
+        "mass": {
+          "type": "real",
+          "value": 40
+        }
+      }
+    },
+    {
+      "type": "tapestry.notes/note@1",
+      "props": {
+        "title": {
+          "type": "text",
+          "value": "C"
+        },
+        "body": {
+          "type": "text",
+          "value": ""
+        },
+        "position.x": {
+          "type": "real",
+          "value": 0
+        },
+        "position.y": {
+          "type": "real",
+          "value": 60
+        },
+        "velocity.x": {
+          "type": "real",
+          "value": 1
+        },
+        "velocity.y": {
+          "type": "real",
+          "value": 0
+        },
+        "mass": {
+          "type": "real",
+          "value": 10
+        }
+      }
+    }
+  ]
+}

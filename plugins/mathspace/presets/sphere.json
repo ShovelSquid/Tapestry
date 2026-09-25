@@ -1,0 +1,118 @@
+{
+  "name": "Metric: sphere",
+  "description": "A 2-space whose chart is (theta, phi) on the unit sphere, theta from the north pole, with metric.expr [1, pow(sin(self.position.x), 2)]. Two notes move along +phi at the same rate: the one near the equator (theta 1.5) rides a great circle that stays within 0.07 of the equator, while the one near the pole (theta 0.25) leaves its small circle toward the equator, since only great circles are geodesics. The space's embed.expr maps the chart onto the unit sphere in 3-space, [sin(theta) * cos(phi), sin(theta) * sin(phi), cos(theta)], and the Side view looks at that from the side, [100 * self.embed.x, 100 * self.embed.z]. Plan phase 6's second chart.",
+  "nodes": [
+    {
+      "type": "mathspace/space@1",
+      "props": {
+        "title": {
+          "type": "text",
+          "value": "Sphere (theta, phi)"
+        },
+        "dim": {
+          "type": "int",
+          "value": 2
+        },
+        "metric.expr": {
+          "type": "text",
+          "value": "[1, pow(sin(self.position.x), 2)]"
+        },
+        "embed.expr": {
+          "type": "text",
+          "value": "[sin(self.position.x) * cos(self.position.y), sin(self.position.x) * sin(self.position.y), cos(self.position.x)]"
+        }
+      }
+    },
+    {
+      "type": "tapestry.notes/note@1",
+      "props": {
+        "title": {
+          "type": "text",
+          "value": "Equator"
+        },
+        "body": {
+          "type": "text",
+          "value": ""
+        },
+        "space": {
+          "type": "ref",
+          "value": "$0"
+        },
+        "position.x": {
+          "type": "real",
+          "value": 1.5
+        },
+        "position.y": {
+          "type": "real",
+          "value": 0
+        },
+        "velocity.x": {
+          "type": "real",
+          "value": 0
+        },
+        "velocity.y": {
+          "type": "real",
+          "value": 0.015625
+        }
+      }
+    },
+    {
+      "type": "tapestry.notes/note@1",
+      "props": {
+        "title": {
+          "type": "text",
+          "value": "Pole"
+        },
+        "body": {
+          "type": "text",
+          "value": ""
+        },
+        "space": {
+          "type": "ref",
+          "value": "$0"
+        },
+        "position.x": {
+          "type": "real",
+          "value": 0.25
+        },
+        "position.y": {
+          "type": "real",
+          "value": 0
+        },
+        "velocity.x": {
+          "type": "real",
+          "value": 0
+        },
+        "velocity.y": {
+          "type": "real",
+          "value": 0.015625
+        }
+      }
+    },
+    {
+      "type": "mathspace/view@1",
+      "props": {
+        "title": {
+          "type": "text",
+          "value": "Side"
+        },
+        "space": {
+          "type": "ref",
+          "value": "$0"
+        },
+        "position.x": {
+          "type": "real",
+          "value": -240
+        },
+        "position.y": {
+          "type": "real",
+          "value": -120
+        },
+        "project.expr": {
+          "type": "text",
+          "value": "[100 * self.embed.x, 100 * self.embed.z]"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,114 @@
+{
+  "name": "Contact",
+  "description": "A ball falls under gravity onto a round bumper (a rule sitting at the bumper's centre, constraint.expr max(0, 60 - norm(self.position - [0, 100]))), slides off it and comes to rest on a floor at y = 200 (constraint.expr max(0, self.position.y - 200)). Contact is a constraint that is zero until the ball is inside the shape; edit the shapes' expressions to change them.",
+  "nodes": [
+    {
+      "type": "mathspace/rule@1",
+      "props": {
+        "title": {
+          "type": "text",
+          "value": "Gravity"
+        },
+        "position.x": {
+          "type": "real",
+          "value": 0
+        },
+        "position.y": {
+          "type": "real",
+          "value": -120
+        },
+        "scope": {
+          "type": "text",
+          "value": "unary"
+        },
+        "force.expr": {
+          "type": "text",
+          "value": "[0, self.mass]"
+        }
+      }
+    },
+    {
+      "type": "mathspace/rule@1",
+      "props": {
+        "title": {
+          "type": "text",
+          "value": "Bumper"
+        },
+        "position.x": {
+          "type": "real",
+          "value": 0
+        },
+        "position.y": {
+          "type": "real",
+          "value": 100
+        },
+        "scope": {
+          "type": "text",
+          "value": "unary"
+        },
+        "constraint.expr": {
+          "type": "text",
+          "value": "max(0, 60 - norm(self.position - [0, 100]))"
+        }
+      }
+    },
+    {
+      "type": "mathspace/rule@1",
+      "props": {
+        "title": {
+          "type": "text",
+          "value": "Floor"
+        },
+        "position.x": {
+          "type": "real",
+          "value": -160
+        },
+        "position.y": {
+          "type": "real",
+          "value": 200
+        },
+        "scope": {
+          "type": "text",
+          "value": "unary"
+        },
+        "constraint.expr": {
+          "type": "text",
+          "value": "max(0, self.position.y - 200)"
+        }
+      }
+    },
+    {
+      "type": "tapestry.notes/note@1",
+      "props": {
+        "title": {
+          "type": "text",
+          "value": "Ball"
+        },
+        "body": {
+          "type": "text",
+          "value": ""
+        },
+        "position.x": {
+          "type": "real",
+          "value": 10
+        },
+        "position.y": {
+          "type": "real",
+          "value": 0
+        },
+        "velocity.x": {
+          "type": "real",
+          "value": 0
+        },
+        "velocity.y": {
+          "type": "real",
+          "value": 0
+        },
+        "mass": {
+          "type": "real",
+          "value": 1
+        }
+      }
+    }
+  ]
+}

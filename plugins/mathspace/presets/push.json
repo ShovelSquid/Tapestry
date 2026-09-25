@@ -1,0 +1,105 @@
+{
+  "name": "Push",
+  "description": "Roadmap example: a movement rule. A unary force pushes each body along +x by its own push strength, so a note at rest starts moving and keeps accelerating. Set push to 0 to leave a body alone.",
+  "nodes": [
+    {
+      "type": "mathspace/rule@1",
+      "props": {
+        "title": {
+          "type": "text",
+          "value": "Push right"
+        },
+        "position.x": {
+          "type": "real",
+          "value": 0
+        },
+        "position.y": {
+          "type": "real",
+          "value": -120
+        },
+        "scope": {
+          "type": "text",
+          "value": "unary"
+        },
+        "force.expr": {
+          "type": "text",
+          "value": "[self.push, 0]"
+        }
+      }
+    },
+    {
+      "type": "tapestry.notes/note@1",
+      "props": {
+        "title": {
+          "type": "text",
+          "value": "Cart"
+        },
+        "body": {
+          "type": "text",
+          "value": ""
+        },
+        "position.x": {
+          "type": "real",
+          "value": 0
+        },
+        "position.y": {
+          "type": "real",
+          "value": 0
+        },
+        "velocity.x": {
+          "type": "real",
+          "value": 0
+        },
+        "velocity.y": {
+          "type": "real",
+          "value": 0
+        },
+        "mass": {
+          "type": "real",
+          "value": 1
+        },
+        "push": {
+          "type": "real",
+          "value": 0.25
+        }
+      }
+    },
+    {
+      "type": "tapestry.notes/note@1",
+      "props": {
+        "title": {
+          "type": "text",
+          "value": "Rock"
+        },
+        "body": {
+          "type": "text",
+          "value": ""
+        },
+        "position.x": {
+          "type": "real",
+          "value": 0
+        },
+        "position.y": {
+          "type": "real",
+          "value": 60
+        },
+        "velocity.x": {
+          "type": "real",
+          "value": 0
+        },
+        "velocity.y": {
+          "type": "real",
+          "value": 0
+        },
+        "mass": {
+          "type": "real",
+          "value": 1
+        },
+        "push": {
+          "type": "real",
+          "value": 0
+        }
+      }
+    }
+  ]
+}

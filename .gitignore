@@ -2,15 +2,23 @@
 node_modules/
 
 # Build output
+build/
 app/native/build/
 app/dist/
 app/out/
 app/forge-out/
 sdk/dist/
 tapestry/build-kernel/
-data-drawing/sim/build/
+
 plugins/data-drawing/surface/wasm/
 plugins/data-drawing/surface/dist/
+plugins/mathspace/wasm/
+plugins/mathspace/surface/dist/
+
+# Autonomous driver session logs
+autonomy/logs/
+# Operator's gentle stop for the driver (autonomy/run.sh)
+autonomy/STOP
 
 # OS files
 .DS_Store

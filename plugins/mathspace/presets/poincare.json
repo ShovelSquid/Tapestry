@@ -1,0 +1,114 @@
+{
+  "name": "Metric: Poincaré disk",
+  "description": "A 2-space whose metric.expr is the Poincaré disk of chart radius 100: 4 / pow(1 - dot(self.position, self.position) / 10000, 2) * [1, 1]. Two notes start moving straight; the geodesic step bends each path toward the rim, which they never reach, and every straight step is shorter in chart units the nearer the rim they get. The Disk view is the identity, so the stage panel shows the chart as drawn. Plan phase 6's first chart.",
+  "nodes": [
+    {
+      "type": "mathspace/space@1",
+      "props": {
+        "title": {
+          "type": "text",
+          "value": "Poincaré disk"
+        },
+        "dim": {
+          "type": "int",
+          "value": 2
+        },
+        "metric.expr": {
+          "type": "text",
+          "value": "4 / pow(1 - dot(self.position, self.position) / 10000, 2) * [1, 1]"
+        }
+      }
+    },
+    {
+      "type": "tapestry.notes/note@1",
+      "props": {
+        "title": {
+          "type": "text",
+          "value": "Upward"
+        },
+        "body": {
+          "type": "text",
+          "value": ""
+        },
+        "space": {
+          "type": "ref",
+          "value": "$0"
+        },
+        "position.x": {
+          "type": "real",
+          "value": 30
+        },
+        "position.y": {
+          "type": "real",
+          "value": 0
+        },
+        "velocity.x": {
+          "type": "real",
+          "value": 0
+        },
+        "velocity.y": {
+          "type": "real",
+          "value": 1
+        }
+      }
+    },
+    {
+      "type": "tapestry.notes/note@1",
+      "props": {
+        "title": {
+          "type": "text",
+          "value": "Leftward"
+        },
+        "body": {
+          "type": "text",
+          "value": ""
+        },
+        "space": {
+          "type": "ref",
+          "value": "$0"
+        },
+        "position.x": {
+          "type": "real",
+          "value": 0
+        },
+        "position.y": {
+          "type": "real",
+          "value": 60
+        },
+        "velocity.x": {
+          "type": "real",
+          "value": -1
+        },
+        "velocity.y": {
+          "type": "real",
+          "value": 0
+        }
+      }
+    },
+    {
+      "type": "mathspace/view@1",
+      "props": {
+        "title": {
+          "type": "text",
+          "value": "Disk"
+        },
+        "space": {
+          "type": "ref",
+          "value": "$0"
+        },
+        "position.x": {
+          "type": "real",
+          "value": -240
+        },
+        "position.y": {
+          "type": "real",
+          "value": -120
+        },
+        "project.expr": {
+          "type": "text",
+          "value": "[self.position.x, self.position.y]"
+        }
+      }
+    }
+  ]
+}

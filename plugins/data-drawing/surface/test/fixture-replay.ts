@@ -1,13 +1,17 @@
 /**
  * fixture-replay.ts — the golden fixture text formats and the replay rule,
- * shared by the Vitest golden test. Same rule as sim/tests/golden_support.hpp
- * and sim/tools/wasm-hash-check.mjs:
+ * shared by the Vitest golden test. Same rule as the engine's
+ * tests/golden/ms fixtures and ddsim's golden_support.hpp before it:
  *
  *   for t = 0..max: apply every action stamped t (in file order); if t is a
  *   checkpoint, record the hash (after those applies, before the step); step.
+ *
+ * The hashes are mathspace's (ms_hash of the bridged world), recorded in
+ * surface/test/golden/*.sha256 by `MS_WRITE_FIXTURES=1 npm test`.
  */
-import type { DdsimModule } from '../src/ddsim-abi'
 import { hexOf } from '../src/ddsim-abi'
+import type { MathspaceModule } from '../src/ms-abi'
+import { MsSim } from '../src/ms-sim'
 
 export interface FixtureAction {
   tick: number
@@ -65,10 +69,9 @@ export function parseSha256(text: string): GoldenLine[] {
   return out
 }
 
-/** Replays through the flat C ABI; returns the checkpoint hashes in order. */
-export function replay(mod: DdsimModule, fixture: Fixture): GoldenLine[] {
-  const sim = mod._dd_create(fixture.seed)
-  if (sim === 0) throw new Error('dd_create returned null')
+/** Replays through an MsSim (engine + bridge); returns the checkpoint hashes in order. */
+export function replay(mod: MathspaceModule, fixture: Fixture): GoldenLine[] {
+  const sim = new MsSim(mod, fixture.seed)
   const out: GoldenLine[] = []
   try {
     let max = 0
@@ -78,29 +81,21 @@ export function replay(mod: DdsimModule, fixture: Fixture): GoldenLine[] {
     for (let t = 0; t <= max; t++) {
       for (const a of fixture.actions) {
         if (a.tick !== t) continue
-        const ptr = mod._malloc(a.bytes.length)
-        try {
-          mod.HEAPU8.set(a.bytes, ptr)
-          const rc = mod._dd_apply(sim, ptr, a.bytes.length)
-          if (rc !== 0) throw new Error(`dd_apply rejected action at tick ${t} with code ${rc}`)
-        } finally {
-          mod._free(ptr)
-        }
+        const rc = sim.apply(a.bytes)
+        if (rc !== 0) throw new Error(`the bridge rejected action at tick ${t} with code ${rc}`)
       }
       if (next < fixture.checkpoints.length && fixture.checkpoints[next] === t) {
-        const hp = mod._malloc(32)
-        try {
-          mod._dd_hash(sim, hp)
-          out.push({ tick: t, hex: hexOf(mod.HEAPU8.slice(hp, hp + 32)) })
-        } finally {
-          mod._free(hp)
-        }
+        out.push({ tick: t, hex: hexOf(sim.hash()) })
         next++
       }
-      mod._dd_step(sim)
+      sim.step()
     }
   } finally {
-    mod._dd_destroy(sim)
+    sim.destroy()
   }
   return out
+}
+
+export function formatSha256(lines: readonly GoldenLine[]): string {
+  return lines.map((l) => `${l.tick} ${l.hex}\n`).join('')
 }
