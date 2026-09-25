@@ -32,6 +32,9 @@ checklist:
 ## Learned
 
 - ~/Tree is not a git repo; `autonomy/snapshots/` is the only undo for it.
+- Tuned look values: Kaelen's JSON in `~/Tree/Design/Index First Pass Notes.md`
+  is the source of truth (1 px line, 1.4 px wobble, 2 waves at 0.35, 670 ms grow).
+  If it and the plan's table differ, the notes win.
 - Branch forked from ws/mergin at 07aeaa4 on 2026-09-25.
 - The plan's pre-driver text is snapshotted at
   `autonomy/snapshots/line-lab-v2/Design/Plan - Line Lab v2.md`. It was
