@@ -3,17 +3,17 @@ gsd_state_version: "1.0"
 milestone: v1.0
 current_phase: "02.6"
 current_phase_name: Placement Edges & Forest Tree
-status: executing
-stopped_at: Completed 02.6-09-PLAN.md
-last_updated: "2026-09-25T00:24:13.474Z"
+status: verifying
+stopped_at: Completed 02.6-10-PLAN.md
+last_updated: "2026-09-25T00:30:02.075Z"
 last_activity: 2026-09-24
 last_activity_desc: Phase 02.6 execution started
-state_head: a36a5df0feaa4aa5c5382c426cfcec8a8a44f2e6
+state_head: 487ca4b0004f3d8983809b50e199b19e4e8d25c3
 progress:
   total_phases: 13
   completed_phases: 0
   total_plans: 55
-  completed_plans: 36
+  completed_plans: 37
 ---
 
 # Project State
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-09-08)
 
 Phase: 02.6 (Placement Edges & Forest Tree) — READY TO EXECUTE
 Plan: 6 of 6
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Main line (phase-2-implementation-v1) at merge: 02.2 executing (8 of 16), 02.4 complete, 02.5 5/5
 Last activity: 2026-09-24 — Phase 02.6 execution started
 
@@ -83,6 +83,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 02.6 P07 | 4min | 2 tasks | 4 files |
 | Phase 02.6 P08 | 6min | 2 tasks | 5 files |
 | Phase 02.6 P09 | 3min | 3 tasks | 8 files |
+| Phase 02.6 P10 | 4min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -156,6 +157,7 @@ Recent decisions affecting current work:
 - [Phase 02.6]: 02.6-07: agents:setEnabled now rejects its IPC call over an unreadable settings.json instead of overwriting it; index.ts unchanged
 - [Phase 02.6]: 02.6-08: Gap 3 (WR-01) fixed with option (b): unavailable records keyed by the member's recorded digest, path: only for never-read trees; adopt() retires both the path: record and the adopted id's record; memberFor is one-to-one and removeMember refuses a shared stand-in
 - [Phase 02.6]: 02.6-09: WR-04 closed on the renderer side only (a growth push no longer arms frame undo); the growth-push forest commit message and the new 'Close tree failed: <error>' banner are queued for Kaelen as wording questions
+- [Phase 02.6]: 02.6-10: add rollback lives in openWithRollback; it closes only new registry entries with no stand-in (SpaceService.isMember), so a concurrent add is never undone (WR-02, T-2.6-24/40)
 
 ### Pending Todos
 
@@ -210,6 +212,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-25T00:24:13.408Z
-Stopped at: Completed 02.6-09-PLAN.md
+Last session: 2026-09-25T00:30:02.011Z
+Stopped at: Completed 02.6-10-PLAN.md
 Resume file: None

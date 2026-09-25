@@ -345,7 +345,7 @@ Plans:
   6. Note positions are untouched: `position.x/y` stay node properties and D-27's thread frame is not moved — that migration is a later phase after 2.3 (#4)
   7. No code writes the Tapestry-tree or forest-tree record shape, or migrates `settings.json`, until Kaelen has approved the exact type strings, keys and labels and the migration at a blocking checkpoint (#17, #18)
 
-**Plans:** 9/10 plans executed (4 gap-closure plans added 2026-09-24)
+**Plans:** 10/10 plans executed (4 gap-closure plans added 2026-09-24)
 
 Plans:
 **Wave 1**
@@ -380,7 +380,7 @@ Plans:
 
 **Gap closure, Wave 2** *(blocked on 02.6-08: shares space-service.ts and membership.test.ts)*
 
-- [ ] 02.6-10-PLAN.md — WR-02 (T-2.6-24): `openWithRollback` closes every entry a failed add introduced that the forest does not hold
+- [x] 02.6-10-PLAN.md — WR-02 (T-2.6-24): `openWithRollback` closes every entry a failed add introduced that the forest does not hold
 
 **UI hint**: yes
 
