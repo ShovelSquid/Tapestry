@@ -380,10 +380,7 @@ export class TreeRegistry {
       }
     }
 
-    const tree = this.adopt(bridge, target, opts)
-    // It opened, so any earlier record of it failing to is no longer true.
-    this.unavailable.delete(unavailableId(target))
-    return tree
+    return this.adopt(bridge, target, opts)
   }
 
   /**
@@ -468,6 +465,12 @@ export class TreeRegistry {
 
     this.trees.set(id, tree)
     if (tree.kind === 'native') this.primaryId = id
+    // It opened, so any earlier record of it failing to is no longer true.
+    // `open`, `create` and `tryOpen` all come through here, so a world read
+    // at a path ends that path's never-read record (2.6 SC-4, CR-02), and a
+    // member found again ends its own record wherever it was last seen.
+    this.unavailable.delete(unavailableId(target))
+    this.unavailable.delete(id)
     this.emit()
     return tree
   }

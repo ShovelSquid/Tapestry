@@ -412,6 +412,48 @@ describe('TreeRegistry: trees that will not open', () => {
   })
 })
 
+describe('TreeRegistry: a world read at a path ends its never-read record (2.6 gap 2, CR-02)', () => {
+  function pathIds(registry: TreeRegistry): string[] {
+    return registry
+      .summary()
+      .map((t) => t.id)
+      .filter((id) => id.startsWith('path:'))
+  }
+
+  it('create at a path with a never-read record clears it', () => {
+    const dir = tempDir('reg-create-clears')
+    const missingPath = join(dir, 'later.tree')
+    const registry = newRegistry()
+
+    const missing = registry.tryOpen(missingPath) as UnavailableTree
+    expect(missing.id).toBe(`path:${resolve(missingPath)}`)
+
+    const created = registry.create(missingPath, 'create-clears')
+
+    expect(pathIds(registry)).toEqual([])
+    expect(registry.entry(missing.id)).toBeNull()
+    expect(registry.summary()).toEqual([expect.objectContaining({ id: created.id, status: 'ok' })])
+  })
+
+  it('open at a path with a never-read record clears it', () => {
+    const dir = tempDir('reg-open-clears')
+    const missingPath = join(dir, 'later.tree')
+    const registry = newRegistry()
+
+    registry.tryOpen(missingPath)
+    expect(pathIds(registry)).toEqual([`path:${resolve(missingPath)}`])
+
+    const maker = new KernelBridge()
+    maker.create(missingPath, 'open-clears')
+    maker.close()
+
+    const opened = registry.open(missingPath)
+
+    expect(pathIds(registry)).toEqual([])
+    expect(registry.summary()).toEqual([expect.objectContaining({ id: opened.id, status: 'ok' })])
+  })
+})
+
 describe('TreeRegistry: identity clash by type (2.6 Pitfall 10)', () => {
   it('throws a TreeIdentityClash naming the open tree, with the same message', () => {
     const dir = tempDir('reg-clash-type')

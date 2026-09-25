@@ -12,7 +12,7 @@
  * second share an id.
  */
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { rmSync } from 'node:fs'
 import { join, resolve } from 'node:path'
@@ -20,7 +20,7 @@ import { makeTempDir } from '../../../test/helpers/temp-tree'
 import { humanActor } from '../commands/actor'
 import { KernelBridge } from '../kernel-bridge'
 import { SettingsStore } from '../settings'
-import { TreeRegistry } from '../trees/registry'
+import { TreeRegistry, type UnavailableTree } from '../trees/registry'
 import { SPACE_NOT_OPEN, type SpacePaths } from './migrate'
 import { SpaceService, type SpaceServiceHooks } from './space-service'
 import { MEMBER_TYPE } from './shapes'
@@ -288,6 +288,91 @@ describe('SpaceService.removeMember', () => {
     await second.service.start()
     expect(listed(second.service, gammaPath)).toBeUndefined()
     expect(second.service.list().map((t) => t.path)).toEqual([resolve(r.alpha)])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// A world created where a missing member was (gap 2, CR-02)
+// ---------------------------------------------------------------------------
+
+describe('a world created at a missing member path (gap 2, CR-02)', () => {
+  it('keeps one frame on one stand-in, moves, and survives a relaunch', async () => {
+    const r = await launched()
+    const gone = join(r.worlds, 'gone.tree')
+    const missing = r.registry.tryOpen(gone, { kind: 'native' })
+    expect(missing.id.startsWith('path:')).toBe(true)
+    expect(r.service.addMember(missing, KAELEN)).toEqual({ committed: true })
+    const frame = listed(r.service, gone)!.frame
+
+    const created = r.registry.create(gone, uniqueWorld('gone'), { kind: 'native' })
+    expect(r.service.addMember(created, KAELEN)).toEqual({ committed: true })
+
+    // Its world has now been read, so the never-read record is gone (SC-4).
+    expect(r.registry.entry('path:' + resolve(gone))).toBeNull()
+    expect(r.registry.summary().filter((t) => t.id.startsWith('path:'))).toEqual([])
+    const atGone = r.service.list().filter((t) => t.path === resolve(gone))
+    expect(atGone).toHaveLength(1)
+    expect(atGone[0]).toEqual(expect.objectContaining({ id: created.id, status: 'ok', frame }))
+    const last = commits(forestText(r)).at(-1)!
+    expect(last).toContain('actor system tapestry')
+    expect(last).toContain(created.id)
+    expect(forestText(r)).not.toContain('path:')
+
+    expect(r.service.moveFrames([{ treeId: created.id, x: 10, y: 20 }], KAELEN)).toEqual({
+      committed: true,
+    })
+
+    r.service.close()
+    r.registry.closeAll()
+    const second = relaunch(r.settings, r.paths)
+    await second.service.start()
+    expect(listed(second.service, gone)).toEqual(
+      expect.objectContaining({ id: created.id, status: 'ok', frame: { x: 10, y: 20 } }),
+    )
+  })
+
+  it('removeMember writes nothing when another live entry still joins the stand-in', async () => {
+    const r = await launched()
+    const gone = join(r.worlds, 'gone.tree')
+    const missing = r.registry.tryOpen(gone, { kind: 'native' })
+    r.service.addMember(missing, KAELEN)
+    // Created but not added: its stand-in stays digest-less, and the new
+    // world joins it by the path fallback.
+    r.registry.create(gone, uniqueWorld('gone'), { kind: 'native' })
+
+    // Simulate the stale record the pre-fix registry left behind.
+    const stale: UnavailableTree = {
+      id: 'path:' + resolve(gone),
+      path: resolve(gone),
+      kind: 'native',
+      name: 'gone',
+      status: 'missing',
+      reason: 'stale',
+    }
+    const realSummary = r.registry.summary.bind(r.registry)
+    const realEntry = r.registry.entry.bind(r.registry)
+    vi.spyOn(r.registry, 'summary').mockImplementation(() => [
+      ...realSummary(),
+      {
+        id: stale.id,
+        name: stale.name,
+        kind: stale.kind,
+        path: stale.path,
+        status: stale.status,
+        reason: stale.reason,
+      },
+    ])
+    vi.spyOn(r.registry, 'entry').mockImplementation((id: string) =>
+      id === stale.id ? stale : realEntry(id),
+    )
+
+    try {
+      const before = forestText(r)
+      expect(r.service.removeMember(stale.id, KAELEN)).toEqual({ committed: false })
+      expect(forestText(r)).toBe(before)
+    } finally {
+      vi.restoreAllMocks()
+    }
   })
 })
 

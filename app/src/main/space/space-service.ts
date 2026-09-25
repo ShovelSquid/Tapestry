@@ -638,13 +638,24 @@ export class SpaceService {
    * Take a tree out of the forest, signed by the person. Call it before
    * `registry.close`, while the registry entry still joins to its stand-in.
    * A tree that is not a member writes nothing.
+   *
+   * A stand-in is deleted only when this entry is the last registry entry
+   * joined to it. If another live entry still joins the same stand-in (a
+   * stale record beside the world now open there, 2.6 CR-02), nothing is
+   * written: the caller's `registry.close` then drops only this record, and
+   * the live world keeps its stand-in and frame.
    */
   removeMember(treeId: string, actor: Actor): { committed: boolean } {
     const forest = this.requireReady()
     const entry = this.registry.entry(treeId)
     if (!entry) return { committed: false }
-    const standIn = this.memberFor(entry, forest.members())
+    const members = forest.members()
+    const standIn = this.memberFor(entry, members)
     if (!standIn) return { committed: false }
+    const shared = this.registry
+      .summary()
+      .some((other) => other.id !== treeId && this.memberFor(other, members)?.nodeId === standIn.nodeId)
+    if (shared) return { committed: false }
     forest.removeMember(standIn.nodeId, actor, removeTreeMessage(entry.name))
     return { committed: true }
   }
