@@ -259,6 +259,144 @@ describe('a different world at a member path', () => {
   })
 })
 
+/** Live stand-ins in a closed forest, read with a fresh store. */
+function liveStandIns(space: Space): number {
+  const forest = ForestStore.open(space.paths.forest)
+  if (!(forest instanceof ForestStore)) throw new Error(`forest did not open: ${JSON.stringify(forest)}`)
+  try {
+    return forest.members().length
+  } finally {
+    forest.close()
+  }
+}
+
+describe('a different world at a member path, then Open tree (gap 3, WR-01)', () => {
+  it('lists both the old member and the new world across launches, and every stand-in stays listed', async () => {
+    const worlds = folder()
+    const d = makeWorld(worlds.worlds, 'alpha.tree')
+    const space = v1Space([{ path: d.path, x: 7, y: 8 }])
+    const first = launch(space)
+    await first.service.start()
+    quit(first)
+
+    // Launch 2: a different world E now sits at D's path.
+    rmSync(d.path)
+    const e = makeWorld(worlds.worlds, 'alpha.tree')
+    expect(e.digest).not.toBe(d.digest)
+    const second = launch(space)
+    await second.service.start()
+    const oldReason = differentWorldReason(resolve(d.path))
+    expect(second.service.list()).toEqual([
+      expect.objectContaining({ id: d.digest, status: 'missing', reason: oldReason, frame: { x: 7, y: 8 } }),
+    ])
+
+    // The person opens the path with Open tree.
+    const opened = second.registry.tryOpen(d.path, { kind: 'native' })
+    expect(opened.id).toBe(e.digest)
+    expect(second.service.addMember(opened, KAELEN)).toEqual({ committed: true })
+
+    const both = second.service.list()
+    expect(both).toHaveLength(2)
+    expect(both).toContainEqual(
+      expect.objectContaining({ id: d.digest, status: 'missing', reason: oldReason, frame: { x: 7, y: 8 } }),
+    )
+    const eListed = both.find((t) => t.id === e.digest)!
+    expect(eListed).toEqual(expect.objectContaining({ status: 'ok', path: resolve(d.path) }))
+    expect(eListed.frame).not.toEqual({ x: 7, y: 8 })
+    expect(pathIds(second.registry)).toEqual([])
+
+    // One drop naming every listed id commits: no two ids share a placement.
+    expect(
+      second.service.moveFrames(
+        [
+          { treeId: d.digest, x: 100, y: 200 },
+          { treeId: e.digest, x: 900, y: 200 },
+        ],
+        KAELEN,
+      ),
+    ).toEqual({ committed: true })
+    expect(forestText(space)).not.toContain('path:')
+    quit(second)
+    const standIns = liveStandIns(space)
+    expect(standIns).toBe(2)
+
+    // Launch 3: both are listed again, and every live stand-in is listed.
+    const third = launch(space)
+    await third.service.start()
+    const again = third.service.list()
+    expect(again).toHaveLength(standIns)
+    expect(again).toContainEqual(
+      expect.objectContaining({ id: d.digest, status: 'missing', reason: oldReason, frame: { x: 100, y: 200 } }),
+    )
+    expect(again).toContainEqual(
+      expect.objectContaining({ id: e.digest, status: 'ok', frame: { x: 900, y: 200 } }),
+    )
+
+    // Closing D removes only D.
+    expect(third.service.removeMember(d.digest, KAELEN)).toEqual({ committed: true })
+    third.registry.close(d.digest)
+    expect(third.service.list()).toEqual([
+      expect.objectContaining({ id: e.digest, status: 'ok', frame: { x: 900, y: 200 } }),
+    ])
+    expect(forestText(space)).not.toContain('path:')
+    quit(third)
+    expect(liveStandIns(space)).toBe(1)
+
+    // Launch 4 lists only E.
+    const fourth = launch(space)
+    await fourth.service.start()
+    expect(fourth.service.list()).toEqual([
+      expect.objectContaining({ id: e.digest, status: 'ok', frame: { x: 900, y: 200 } }),
+    ])
+  })
+
+  it("lists both after Create New World at a deleted member's path, and after a relaunch", async () => {
+    const worlds = folder()
+    const d = makeWorld(worlds.worlds, 'alpha.tree')
+    const space = v1Space([{ path: d.path, x: 7, y: 8 }])
+    const first = launch(space)
+    await first.service.start()
+    quit(first)
+
+    rmSync(d.path)
+    const second = launch(space)
+    await second.service.start()
+    expect(second.service.list()).toEqual([
+      expect.objectContaining({ id: d.digest, status: 'missing', frame: { x: 7, y: 8 } }),
+    ])
+
+    const created = second.registry.create(d.path, uniqueWorld('alpha'), { kind: 'native' })
+    expect(second.service.addMember(created, KAELEN)).toEqual({ committed: true })
+
+    const both = second.service.list()
+    expect(both.map((t) => [t.id, t.status])).toEqual(
+      expect.arrayContaining([
+        [d.digest, 'missing'],
+        [created.id, 'ok'],
+      ]),
+    )
+    expect(both).toHaveLength(2)
+    expect(both.find((t) => t.id === d.digest)?.frame).toEqual({ x: 7, y: 8 })
+    expect(forestText(space)).not.toContain('path:')
+    quit(second)
+    expect(liveStandIns(space)).toBe(2)
+
+    const third = launch(space)
+    await third.service.start()
+    const again = third.service.list()
+    expect(again).toHaveLength(2)
+    expect(again).toContainEqual(
+      expect.objectContaining({
+        id: d.digest,
+        status: 'missing',
+        reason: differentWorldReason(resolve(d.path)),
+        frame: { x: 7, y: 8 },
+      }),
+    )
+    expect(again).toContainEqual(expect.objectContaining({ id: created.id, status: 'ok' }))
+  })
+})
+
 // ---------------------------------------------------------------------------
 // Duplicate stand-ins (RESEARCH Pitfall 10)
 // ---------------------------------------------------------------------------

@@ -555,6 +555,124 @@ describe('TreeRegistry: an expected identity (2.6 D-03, Pitfall 5)', () => {
   })
 })
 
+describe('TreeRegistry: unavailable records keyed by expected identity (2.6 gap 3)', () => {
+  /** A world created and closed again, so a later open is the first holder. */
+  function closedWorld(prefix: string, name: string): { dir: string; path: string; id: string } {
+    const dir = tempDir(prefix)
+    const path = join(dir, `${name}.tree`)
+    const bridge = new KernelBridge()
+    bridge.create(path, name)
+    const id = bridge.getHeaderDigest()
+    bridge.close()
+    return { dir, path, id }
+  }
+
+  const reason = 'A different world is now at this path'
+  const fakeA = 'sha256:' + 'a'.repeat(64)
+  const fakeB = 'sha256:' + 'b'.repeat(64)
+
+  it('names a mismatch by the expected id, and a failed open without expect by path', () => {
+    const { dir, path } = closedWorld('reg-key-expect', 'key-expect')
+    const registry = newRegistry()
+
+    const mismatch = registry.tryOpen(path, { expect: { id: fakeA, reason } }) as UnavailableTree
+    expect(mismatch.id).toBe(fakeA)
+    expect(mismatch.status).toBe('missing')
+
+    const gone = registry.tryOpen(join(dir, 'gone.tree')) as UnavailableTree
+    expect(gone.id).toBe(`path:${resolve(join(dir, 'gone.tree'))}`)
+  })
+
+  it('lists two members expected at one path separately, both missing', () => {
+    const { path } = closedWorld('reg-key-two', 'key-two')
+    const registry = newRegistry()
+
+    registry.tryOpen(path, { expect: { id: fakeA, reason } })
+    registry.tryOpen(path, { expect: { id: fakeB, reason } })
+
+    const listed = registry.summary()
+    expect(listed.map((t) => t.id)).toEqual([fakeA, fakeB])
+    expect(listed.map((t) => t.status)).toEqual(['missing', 'missing'])
+    expect(registry.list()).toHaveLength(0)
+  })
+
+  it("keeps a member's record when a different world is opened at its path", () => {
+    const y = closedWorld('reg-key-keep', 'key-keep')
+    const registry = newRegistry()
+
+    registry.tryOpen(y.path, { expect: { id: fakeA, reason } })
+    const opened = registry.open(y.path)
+
+    expect(opened.id).toBe(y.id)
+    expect(registry.summary()).toEqual([
+      expect.objectContaining({ id: y.id, status: 'ok' }),
+      expect.objectContaining({ id: fakeA, status: 'missing', reason }),
+    ])
+  })
+
+  it("ends a member's record when it is opened from another path", () => {
+    const w = closedWorld('reg-key-found', 'key-found')
+    const registry = newRegistry()
+    const oldPath = join(w.dir, 'old.tree')
+
+    const missing = registry.tryOpen(oldPath, { expect: { id: w.id, reason } }) as UnavailableTree
+    expect(missing.id).toBe(w.id)
+    expect(registry.get(w.id)).toBeNull()
+
+    registry.open(w.path)
+
+    expect(registry.summary()).toEqual([expect.objectContaining({ id: w.id, status: 'ok' })])
+    expect(registry.refusalFor(w.id)).toBeNull()
+  })
+
+  it('honours expect when a different world is already open at the path', () => {
+    const y = closedWorld('reg-key-shortcut', 'key-shortcut')
+    const registry = newRegistry()
+    const open = registry.open(y.path)
+
+    const other = registry.tryOpen(y.path, { expect: { id: fakeA, reason } }) as UnavailableTree
+    expect('bridge' in other).toBe(false)
+    expect(other).toEqual(expect.objectContaining({ id: fakeA, status: 'missing', reason }))
+    expect(registry.get(y.id)).toBe(open)
+
+    expect(registry.tryOpen(y.path, { expect: { id: y.id, reason } })).toBe(open)
+    expect(registry.summary().map((t) => [t.id, t.status])).toEqual([
+      [y.id, 'ok'],
+      [fakeA, 'missing'],
+    ])
+  })
+
+  it('refuses an expected id that is open elsewhere, and records nothing', () => {
+    const w = closedWorld('reg-key-clash', 'key-clash')
+    const registry = newRegistry()
+    registry.open(w.path)
+    const elsewhere = join(w.dir, 'elsewhere.tree')
+
+    let caught: unknown
+    try {
+      registry.tryOpen(elsewhere, { expect: { id: w.id, reason } })
+    } catch (err) {
+      caught = err
+    }
+
+    expect(caught).toBeInstanceOf(TreeIdentityClash)
+    expect((caught as TreeIdentityClash).treeId).toBe(w.id)
+    expect(registry.unavailableList()).toEqual([])
+    expect(registry.summary()).toEqual([expect.objectContaining({ id: w.id, status: 'ok' })])
+  })
+
+  it('keeps the digest id through reopen while the mismatch persists', () => {
+    const { path } = closedWorld('reg-key-reopen', 'key-reopen')
+    const registry = newRegistry()
+
+    const first = registry.tryOpen(path, { expect: { id: fakeA, reason } }) as UnavailableTree
+    const again = registry.reopen(first.id) as UnavailableTree
+
+    expect(again.id).toBe(fakeA)
+    expect(registry.summary().map((t) => t.id)).toEqual([fakeA])
+  })
+})
+
 describe("TreeRegistry: Tapestry's own files are reserved (2.6 Pitfall 4)", () => {
   const refusal = (name: string): string => `refused: ${name}`
 
