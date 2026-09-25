@@ -832,7 +832,7 @@ export default function App(): React.ReactElement {
         ])
         await refreshTree(from.treeId)
       } catch (err) {
-        reportSaveError('Failed to create edge', err)
+        reportSaveError('Failed to create connection', err)
       }
     },
     [submitChange, refreshTree, reportSaveError],

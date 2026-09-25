@@ -340,6 +340,9 @@ function Canvas({
   const [connectingFrom, setConnectingFrom] = useState<NodeRef | null>(null)
   const [connectingLine, setConnectingLine] = useState<{ x: number; y: number } | null>(null)
   const [connectingHover, setConnectingHover] = useState<NodeRef | null>(null)
+  // The "landed" event: the tree a connection was just made in, and when.
+  // Its new line flashes green, then rests blue (Line Lab v2 wave 4).
+  const [landed, setLanded] = useState<{ treeId: string; at: number } | null>(null)
 
   // Hovered / selected note, keyed across every tree in the space.
   const [hoveredRef, setHoveredRef] = useState<NodeRef | null>(null)
@@ -850,6 +853,7 @@ function Canvas({
         // note does nothing here; cross-tree links are D-16 (Plan 15), and
         // writing one end of them now would record half a relationship.
         if (connectingHover && connectingHover.treeId === connectingFrom.treeId) {
+          setLanded({ treeId: connectingFrom.treeId, at: performance.now() })
           onEdgeCreate(connectingFrom, connectingHover)
         }
         setConnectingFrom(null)
@@ -1214,6 +1218,7 @@ function Canvas({
               selectedKey={selectedRef ? nodeKey(selectedRef) : null}
               connectingHoverKey={connectingHover ? nodeKey(connectingHover) : null}
               isConnecting={connectingFrom !== null}
+              landedAt={landed?.treeId === tree.id ? landed.at : null}
               pluginNodeViews={pluginNodeViews}
               currentUserActorId={currentUserActorId}
               dragPositions={dragPositions}

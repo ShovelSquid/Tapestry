@@ -23,13 +23,12 @@ checklist:
 
 ## In progress
 
-(empty) Wave 3 is done (REVIEW #6). Next session: **Part 2, Wave 4 (connections
-and knots)**. Start with `git merge ws/mergin`. Hook: `Canvas.tsx` passes the drag
-state and a "landed" event to `ConnectionLine` (41 lines, grey 1.5 px SVG). Draw
-connections as blue waving `InkLine`s (open shape, `wave` prop), a live drag line
-ending in a blue dot, a green `--tap-connect-flash` on landing; restyle `KnotNode`
-(it already hosts `FormatPill` on its top edge); UI copy "connection"/"knot", never
-"thread". Screenshot scripts: `autonomy/checks/line-lab-v2/wave3-*.js`.
+Wave 4 (connections and knots) under way. Done in the wip commit: `look/connection.ts`
+(sagging open ink shape), `ConnectionLine` as blue waving `InkLine` (`pinEnds`) with a
+drag dot and a `connection-landed` green flash, Canvas `landed` state → TreeFrame
+`landedAt`, `KnotNode` drawn with `NoteInk`, "Failed to create connection" copy.
+Tests green. Left: screenshot (connection + knot + live drag), save/reopen check,
+side-by-side with sketch 4 (`~/Tree/tapestry ui4.jpg`), tick boxes, REVIEW #7.
 
 ## Blocked
 

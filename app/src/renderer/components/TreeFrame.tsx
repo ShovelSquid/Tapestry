@@ -234,6 +234,11 @@ interface TreeFrameProps {
   connectingHoverKey: string | null
   /** True while any connection drag is in progress, in any tree. */
   isConnecting: boolean
+  /**
+   * When a connection last landed in this tree (performance.now()), or null:
+   * the canvas's "landed" event, so the new line can flash (wave 4).
+   */
+  landedAt?: number | null
   pluginNodeViews: Record<string, string>
   currentUserActorId: string | null
   /** Live drag positions, keyed by nodeKey. */
@@ -269,6 +274,7 @@ export default function TreeFrame({
   selectedKey,
   connectingHoverKey,
   isConnecting,
+  landedAt = null,
   pluginNodeViews,
   currentUserActorId,
   dragPositions,
@@ -662,7 +668,15 @@ export default function TreeFrame({
             const to = resolveNodeCenter(edge.to)
             if (!from || !to) return null
             return (
-              <ConnectionLine key={edge.id} x1={from.x} y1={from.y} x2={to.x} y2={to.y} />
+              <ConnectionLine
+                key={edge.id}
+                x1={from.x}
+                y1={from.y}
+                x2={to.x}
+                y2={to.y}
+                seedKey={edge.id}
+                landedAt={landedAt}
+              />
             )
           })}
         </svg>

@@ -770,12 +770,15 @@ html, body, #root {
 /* ---- Knot node (D-16/D-17/D-18) ---- */
 
 .knot-node {
-  background: var(--tap-surface);
-  border: 1.5px solid var(--tap-border-strong);
-  border-radius: 8px;
-  padding: 8px;
+  /* Line Lab v2 wave 4: a small note. NoteInk draws the paper and the pencil
+     outline, so the CSS box is invisible and never changes size. */
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  padding: 8px 10px;
   cursor: grab;
-  transition: border-color 150ms ease, box-shadow 150ms ease, opacity 150ms ease;
+  isolation: isolate;
+  transition: opacity 150ms ease;
 }
 
 .knot-node.ghost {
@@ -787,15 +790,32 @@ html, body, #root {
 .knot-node.ghost.hovered {
   opacity: 1;
   pointer-events: auto;
-  border-color: var(--tap-accent);
 }
 
 .knot-node.editing {
   opacity: 1;
   pointer-events: auto;
-  border-color: var(--tap-accent);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
   cursor: default;
+}
+
+/* Connections (components/ConnectionLine.tsx; Line Lab v2 wave 4). The new
+   line flashes green as it lands, then rests blue. */
+.connection-drag-dot {
+  fill: var(--tap-select);
+}
+
+.ink-line.connection-landed path:first-child {
+  animation: tap-connect-flash 900ms ease-out both;
+}
+
+@keyframes tap-connect-flash {
+  0%,
+  30% {
+    fill: var(--tap-connect-flash);
+  }
+  100% {
+    fill: var(--tap-select);
+  }
 }
 
 .knot-editor {

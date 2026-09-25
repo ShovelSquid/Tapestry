@@ -17,14 +17,20 @@
  * "thread" now names a time thread only, and never this feature.
  *
  * Per D-26: Same editor behavior as NoteCard via shared useProseMirror hook.
+ *
+ * Line Lab v2 wave 4: a knot is a small note in the notes' language: the
+ * same paper and pencil outline (`NoteInk`), taken over by the blue while it
+ * is hovered or edited, with no corner buttons and no bloom.
  */
 
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { EditorView } from 'prosemirror-view'
 import { useProseMirror } from '../editor/use-prosemirror'
 import { tapestrySchema } from '../editor/schema'
 import { FormatPill, useTextSelected } from '../look/FormatBar'
 import { seedFromId } from '../look/ink'
+import { NoteInk, noteShape } from '../look/NoteInk'
+import { DARK } from '../look/bloom'
 import { layoutSize, screenDeltaToWorld } from '../layout/camera'
 
 interface KnotProps {
@@ -207,6 +213,26 @@ export default function KnotNode({
   // text in it is selected; a knot has no corner buttons to open it from.
   const textSelected = useTextSelected(isEditing ? editorView : null)
 
+  // The knot's ink, built once per layout size (offset sizes ignore the
+  // zoom), like NoteCard's.
+  const [box, setBox] = useState({ w: 0, h: 0 })
+  useLayoutEffect(() => {
+    const el = cardRef.current
+    if (!el) return
+    const measure = (): void => {
+      const w = el.offsetWidth
+      const h = el.offsetHeight
+      setBox((b) => (b.w === w && b.h === h ? b : { w, h }))
+    }
+    measure()
+    if (typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+  const seed = useMemo(() => seedFromId(nodeId), [nodeId])
+  const outline = useMemo(() => (box.w > 0 && box.h > 0 ? noteShape(box.w, box.h, seed) : null), [box.w, box.h, seed])
+
   const isEmpty = !bodyHasText(body)
   const showOnlyOnHover = isEmpty && !isEditing
 
@@ -235,10 +261,13 @@ export default function KnotNode({
       onMouseEnter={() => onHover(true)}
       onMouseLeave={() => onHover(false)}
     >
+      {outline && (
+        <NoteInk shape={outline} w={box.w} h={box.h} seed={seed} light={DARK} blue={isEditing || isHovered} blueFromT={0} />
+      )}
       <div ref={editorRef} className="knot-editor" />
       {/* The format pill (D-24/D-26) */}
       {isEditing && textSelected && editorView && (
-        <FormatPill view={editorView} seed={seedFromId(nodeId)} x={8} y={-18} minW={KNOT_WIDTH - 16} h={28} />
+        <FormatPill view={editorView} seed={seed} x={8} y={-18} minW={KNOT_WIDTH - 16} h={28} />
       )}
     </div>
   )

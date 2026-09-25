@@ -53,6 +53,8 @@ export interface InkLineProps {
   /** This loop's length over a note outline's (fewer waves on small loops). */
   readonly waveScale?: number
   readonly takeover?: InkTakeover
+  /** Hold an open line's ends still while it waves (connections). */
+  readonly pinEnds?: boolean
   readonly className?: string
 }
 
@@ -68,7 +70,7 @@ const SVG_STYLE = {
 
 /** Both paths of a line at one moment: base tone where the blue isn't, blue where it is. */
 export function inkLinePaths(
-  props: Pick<InkLineProps, 'shape' | 'weight' | 'seed' | 'waveScale'> & {
+  props: Pick<InkLineProps, 'shape' | 'weight' | 'seed' | 'waveScale' | 'pinEnds'> & {
     readonly grow: number
     readonly fromT: number
     readonly waveAmp: number
@@ -78,7 +80,8 @@ export function inkLinePaths(
   const { shape, grow, fromT, waveAmp, nowMs } = props
   const seed = props.seed ?? 0
   const weight = props.weight ?? LOOK.line.weightPx
-  const wave: Wave | null = waveAmp > 0 ? loopWave(props.waveScale ?? 1, nowMs, waveAmp) : null
+  const loop: Wave | null = waveAmp > 0 ? loopWave(props.waveScale ?? 1, nowMs, waveAmp) : null
+  const wave: Wave | null = loop && props.pinEnds ? (t) => loop(t) * Math.sin(Math.PI * t) : loop
   const reach = blueReach(grow, fromT, seed)
   if (!reach) return { base: inkPath(shape, { weight, seed, wave }), active: '' }
   const base = grow >= 1 ? '' : inkPath(shape, { weight, seed, filter: (t) => !reach(t) })
@@ -87,7 +90,7 @@ export function inkLinePaths(
 }
 
 function InkLineImpl(props: InkLineProps): React.ReactElement {
-  const { shape, tone = 'pencil', weight, seed = 0, wave = 0, waveScale = 1, takeover, className } = props
+  const { shape, tone = 'pencil', weight, seed = 0, wave = 0, waveScale = 1, takeover, pinEnds = false, className } = props
   const on = takeover?.on ?? false
   const fromT = takeover?.fromT ?? 0
   const activeTone = takeover?.tone ?? 'select'
@@ -105,6 +108,7 @@ function InkLineImpl(props: InkLineProps): React.ReactElement {
         weight,
         seed,
         waveScale,
+        pinEnds,
         grow: grow.current?.value ?? 0,
         fromT,
         waveAmp: 0,
@@ -127,7 +131,7 @@ function InkLineImpl(props: InkLineProps): React.ReactElement {
 
     const paint = (nowMs: number): void => {
       const g = amount.value
-      const { base, active } = inkLinePaths({ shape, weight, seed, waveScale, grow: g, fromT, waveAmp: waveAmpFor(g), nowMs })
+      const { base, active } = inkLinePaths({ shape, weight, seed, waveScale, pinEnds, grow: g, fromT, waveAmp: waveAmpFor(g), nowMs })
       baseRef.current?.setAttribute('d', base)
       activeRef.current?.setAttribute('d', active)
     }
@@ -143,7 +147,7 @@ function InkLineImpl(props: InkLineProps): React.ReactElement {
       if (!moving()) unsubscribe()
     })
     return unsubscribe
-  }, [shape, weight, seed, wave, waveScale, on, fromT])
+  }, [shape, weight, seed, wave, waveScale, pinEnds, on, fromT])
 
   return (
     <svg className={className ? `ink-line ${className}` : 'ink-line'} style={SVG_STYLE} aria-hidden="true">
