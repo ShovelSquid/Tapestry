@@ -210,4 +210,51 @@ Choices made without asking (say if you want any changed):
 Answer `item 10: approved` or describe issues. Undo: revert bc0b145, 63d5323
 and 2fb4c29 (in that order).
 
+### 11. 02.8-06: edge arrows, Chat alerts, motion and stack raise (open)
+
+Plan 02.8-06 ran with no checkpoints. The executor could not launch the app,
+so these are for you. Run `npm --prefix app run dev` with a scratch
+workspace and a signed-in `claude`:
+
+1. Start a chat, pan it off-screen and let the turn finish. An arrow in its
+   colour appears on the edge facing it and tracks while you pan. Clicking
+   it (or Tab, then Enter/Space) glides the view to the card, which still
+   says Done; the arrow fades once the card shows.
+2. With the chat panel open, arrows sit left of the panel; a card hidden
+   only under the panel gets an arrow.
+3. Several finished chats past one edge: arrows at least 40px apart. Needs
+   you shows "!" on a filled disc, Failed shows ×.
+4. A new chat whose card lands off-screen gets a "New chat" arrow and no
+   camera move.
+5. A turn finishing on-screen: one jiggle, one author-colour flash, a steady
+   author border for ~30 s that fades over 2 s, "Done" until the pointer
+   rests on the card.
+6. Chat alerts (Agents panel, below "Let agents connect") set to "Move for
+   needs you only": finishing a turn moves nothing, but text, glyph and
+   "Done" update. The setting survives a window reload.
+7. macOS Reduce motion on: no jiggle, flash, badge scale, arrow fade or
+   glide (the arrow click jumps).
+8. Overlap two chat cards and let the lower one finish: it comes to the
+   top. Clicking the other raises it. Tab into a lower card's composer: it
+   rises and keeps focus. Reload: no commit was made for any of it.
+
+Choices made without asking (say if you want any changed):
+- A settled Done keeps a 2px grey border instead of going back to 1px (the
+  UI-SPEC says 1px), so content does not shift a second time.
+- Focus does not clear "New chat" (the composer takes focus by itself);
+  resting the pointer on the card does.
+- Sending a message raises that card (it enters Working at level 1).
+- Needs you jiggles and flashes as well as scaling in the badge (levels
+  table says level 3 always moves; the Motion table lists only the badge).
+- The arrow tooltip is the native `title`, not the passage-chooser style.
+- Arrows near a corner on two different edges can overlap.
+- A card too small to read at far zoom still counts as visible (no arrow).
+- Arrows sit under the selection bar (z 90 vs 100).
+- The pan uses the canvas camera glide, not the thread `flyTo`.
+- Outside the plan's file list: a `panelOpen` flag in `state/chat.ts` and
+  `App.tsx`; the reduced-motion block moved back to the end of App.css.
+
+Answer `item 11: approved` or describe issues. Undo: revert 8c66272,
+2f36924, 87f5410, 6f046cd and 22bcb96 (in that order).
+
 ## Closed

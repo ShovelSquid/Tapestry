@@ -64,6 +64,12 @@ current code and note it in the SUMMARY. ws/ui's driver is archived in
   checkpoints; choices and hands-on checks queued as REVIEW item 10.
   Executor took ~9 min. Next: wave 6 (02.8-06: Done fade, jiggle/flash,
   badge animation, raising the card, edge arrows).
+- 2026-09-25 19:12 session: wave 6, 02.8-06 done (22bcb96, 6f046cd,
+  87f5410, 2f36924, 8c66272 code; f9fb0df SUMMARY; state commit). 88 files /
+  1430 tests green. No checkpoints; choices and hands-on checks queued as
+  REVIEW item 11. Executor took ~16 min. Next: wave 7 (02.8-07: its Task 1
+  is a checkpoint:decision on fork storage; take Recommended, cite D-18).
+  02.8-08 must call `markNewSession` for forks.
 
 ## Learned
 
@@ -103,3 +109,6 @@ current code and note it in the SUMMARY. ws/ui's driver is archived in
 - 02.8-05 (executor's calls, REVIEW item 10): "New chat" comes from the
   header, not `initialStatus`; clicking clears Done/Failed; open panel does
   not clear a later Done; 2px border shifts content 1px.
+- 02.8-06 (executor's calls, REVIEW item 11): settled Done keeps a 2px grey
+  border; send raises the card; Needs you also jiggles; arrows under the
+  selection bar; added `panelOpen` to the chat context.
