@@ -12,7 +12,7 @@
  * D-16, Plan 15).
  */
 
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useLayoutEffect, useRef } from 'react'
 import { useAnnounce } from './LiveAnnouncer'
 import NoteCard from './NoteCard'
 import VaultNoteCard from './VaultNoteCard'
@@ -59,6 +59,8 @@ import { seedFromId } from '../look/ink'
 import { effectStrength, readMotionSettings } from '../look/motion'
 import { LOOK } from '../look/values'
 import { isSessionNode } from '../../shared/chat/transcript'
+import { useRaiseOrder } from '../state/chat-sessions'
+import { sortWithRaise } from '../layout/session-card'
 
 /** Fallback knot size until the node registers its real dims. */
 const KNOT_FALLBACK_WIDTH = 200
@@ -314,6 +316,25 @@ function TreeFrame({
   openRequest,
 }: TreeFrameProps): React.ReactElement {
   const announce = useAnnounce()
+
+  // The session cards raised in this frame, bottom to top (02.8 D-16): a
+  // secondary sort after depth, so a raised card draws after, and so over,
+  // the others at its depth. Renderer state, never written.
+  const raiseOrder = useRaiseOrder(tree.id)
+  // Reordering moves the raised card's DOM node, and a moved node loses
+  // focus. What had focus when the order changed gets it back once the new
+  // order is in the page, so a card raised while you type in it keeps you there.
+  const focusAtRaiseRef = useRef<Element | null>(null)
+  const seenRaiseOrderRef = useRef(raiseOrder)
+  if (seenRaiseOrderRef.current !== raiseOrder) {
+    seenRaiseOrderRef.current = raiseOrder
+    focusAtRaiseRef.current = typeof document === 'undefined' ? null : document.activeElement
+  }
+  useLayoutEffect(() => {
+    const el = focusAtRaiseRef.current
+    focusAtRaiseRef.current = null
+    if (el instanceof HTMLElement && el.isConnected && document.activeElement !== el) el.focus({ preventScroll: true })
+  }, [raiseOrder])
 
   const isUnavailable = tree.status !== 'ok'
   const failureLine = isUnavailable ? unavailableCopy(tree) : ''
@@ -598,8 +619,7 @@ function TreeFrame({
   }
 
   /** Nested notes draw after (over) their containers. */
-  const depthOrder = (a: NodeInfo, b: NodeInfo): number =>
-    (nesting?.depthOf.get(a.id) ?? 0) - (nesting?.depthOf.get(b.id) ?? 0)
+  const depthOf = (node: NodeInfo): number => nesting?.depthOf.get(node.id) ?? 0
 
   // ThreadCard menu (D-07 UI-SPEC "The thread on the 2D canvas": "Open
   // thread", "Thread settings", "Delete thread") and the settings popover it
@@ -854,15 +874,16 @@ function TreeFrame({
         {/* Note cards — the component a plugin registered, or the fallback.
             In a workspace tree, folders and the cards inside them are drawn by
             their FolderFrame, not here. */}
-        {tree.nodes
-          .filter(
+        {sortWithRaise(
+          tree.nodes.filter(
             (n) =>
               !isKnot(n) &&
               !isNestedInSubspace(n) &&
               (!outlines.hidden.has(n.id) || fades.has(n.id) || flyers.has(n.id)),
-          )
-          .sort(depthOrder)
-          .map((node) => {
+          ),
+          depthOf,
+          raiseOrder,
+        ).map((node) => {
           const key = keyFor(node.id)
           const view = mappedNodeView(pluginNodeViews[node.type])
 

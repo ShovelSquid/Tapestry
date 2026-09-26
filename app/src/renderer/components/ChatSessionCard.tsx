@@ -33,6 +33,12 @@
  * colour. The card is the one place a state change is announced, so a
  * session also open in the panel is announced once. All of it is renderer
  * state (D-10): nothing here writes a tree.
+ *
+ * Motion (02.8-06, D-14, D-15): a change the store marks to move (its level
+ * at or over the Chat alerts threshold, never Failed) jiggles and flashes the
+ * card once; the "!" badge scales in once; Done's border settles after 30 s.
+ * A press or focus raises the card in its frame (D-16). Nothing here moves
+ * the camera.
  */
 
 import React, { memo, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
@@ -45,6 +51,7 @@ import { useAnnounce } from './LiveAnnouncer'
 import { ChatContext, foldChatEvents, liveAfter } from '../state/chat'
 import {
   acknowledgeSession,
+  raiseSession,
   statusAnnouncement,
   useAlertThreshold,
   useChatSession,
@@ -351,12 +358,19 @@ function ChatSessionCardView({
   // ----- State (D-11): acknowledgement and announcements -----
   const status = session.status
   const acknowledge = useCallback(() => acknowledgeSession(treeId, node.id), [treeId, node.id])
+  // A press anywhere in the card (the drag strip included) is looking at it,
+  // and brings it to the top of its frame (D-16).
+  const handlePress = useCallback(() => {
+    acknowledge()
+    raiseSession(treeId, node.id)
+  }, [acknowledge, treeId, node.id])
   // Focus is looking at Done and Failed, but not at a new chat: its composer
   // takes focus by itself, before the person has seen where the card landed.
-  const acknowledgeFocus = useCallback(
-    () => acknowledgeSession(treeId, node.id, Date.now(), { keepNew: true }),
-    [treeId, node.id],
-  )
+  // Focus raises the card too.
+  const handleFocus = useCallback(() => {
+    acknowledgeSession(treeId, node.id, Date.now(), { keepNew: true })
+    raiseSession(treeId, node.id)
+  }, [treeId, node.id])
   const [pointerInside, setPointerInside] = useState(false)
   const waiting = status.state === 'done' || status.state === 'failed' || session.isNew
   // The pointer resting on a Done or Failed card (or a new chat) for a second
@@ -461,9 +475,10 @@ function ChatSessionCardView({
       }
       onPointerEnter={handleEnter}
       onPointerLeave={handleLeave}
-      // A press or focus anywhere inside is looking at it (Done and Failed go quiet).
-      onPointerDownCapture={acknowledge}
-      onFocus={acknowledgeFocus}
+      // A press or focus anywhere inside is looking at it (Done and Failed go
+      // quiet), and raises the card in its frame.
+      onPointerDownCapture={handlePress}
+      onFocus={handleFocus}
     >
       {status.needs && <NeedsYouBadge arrive={shouldAnimate(STATUS_LEVEL_CEILING, threshold)} />}
 

@@ -38,6 +38,7 @@ import {
   type SessionStatus,
 } from '../../shared/chat/session-status'
 import { authorToken, type AuthorToken } from '../threads/author-palette'
+import { raiseInOrder } from '../layout/session-card'
 
 // ---------------------------------------------------------------------------
 // Snapshots
@@ -288,6 +289,44 @@ export function recordChatPayload(payload: TapestryChatEventPayload): void {
   // Not loaded yet: open's `live` list will hold this event.
   if (!current || !current.loaded) return
   update(payload.treeId, payload.noteId, (s) => applyChatPayload(s, payload))
+  // A change that shows at level 1 or more brings the card to the top of its frame (D-16).
+  const after = sessions.get(chatSessionKey(payload.treeId, payload.noteId))
+  if (after && raisesCard(current, after)) raiseSession(payload.treeId, payload.noteId)
+}
+
+/** Whether going from `before` to `after` raised the card: a new change that asks to rise. */
+export function raisesCard(before: ChatSessionSnapshot, after: ChatSessionSnapshot): boolean {
+  return after.lastEffects !== before.lastEffects && after.lastEffects.raise
+}
+
+// ---------------------------------------------------------------------------
+// Stack order (D-16): per tree, last is on top. Renderer state, never written.
+// ---------------------------------------------------------------------------
+
+const NO_RAISE_ORDER: readonly string[] = Object.freeze([])
+const raiseOrders = new Map<string, readonly string[]>()
+
+/** A tree's raised session notes, bottom to top. */
+export function raiseOrderFor(treeId: string): readonly string[] {
+  return raiseOrders.get(treeId) ?? NO_RAISE_ORDER
+}
+
+/**
+ * Bring a session card to the top of its tree frame's stack: its state
+ * changed at level 1 or more, or the person pressed or focused it. The camera
+ * never moves, and nothing is written.
+ */
+export function raiseSession(treeId: string, noteId: string): void {
+  const before = raiseOrderFor(treeId)
+  const after = raiseInOrder(before, noteId)
+  if (after === before) return
+  raiseOrders.set(treeId, after)
+  notify()
+}
+
+/** raiseOrderFor, live: TreeFrame sorts its cards with it. */
+export function useRaiseOrder(treeId: string): readonly string[] {
+  return useSyncExternalStore(subscribe, () => raiseOrderFor(treeId))
 }
 
 /** Install the renderer's one chat-event subscription. Called once from App. */
@@ -647,6 +686,11 @@ export function retainChatSessions(openTreeIds: ReadonlySet<string>): void {
   for (const key of [...sessions.keys()]) {
     if (openTreeIds.has(treeOf(key))) continue
     sessions.delete(key)
+    changed = true
+  }
+  for (const treeId of [...raiseOrders.keys()]) {
+    if (openTreeIds.has(treeId)) continue
+    raiseOrders.delete(treeId)
     changed = true
   }
   if (changed) notify()

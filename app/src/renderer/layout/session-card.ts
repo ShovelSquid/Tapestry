@@ -109,3 +109,39 @@ export function browserCardViewStorage(): CardViewStorage | null {
     return null
   }
 }
+
+// ---------------------------------------------------------------------------
+// Stack order (02.8 D-16)
+// ---------------------------------------------------------------------------
+
+/**
+ * Raise `id` to the top of an id list: surface-windows' raiseWindow rule,
+ * last is on top. The same array comes back when it is already on top; an id
+ * that was not there is added on top. View state only, never written.
+ */
+export function raiseInOrder(order: readonly string[], id: string): readonly string[] {
+  const index = order.indexOf(id)
+  if (index === order.length - 1 && index >= 0) return order
+  if (index < 0) return [...order, id]
+  return [...order.slice(0, index), ...order.slice(index + 1), id]
+}
+
+/**
+ * Nodes in drawing order: by depth first (nested notes over their
+ * containers), then, among equal depths, the raised ids after the unraised
+ * ones, in raise order (so they draw on top). Stable otherwise. Returns a new
+ * array; the one given is left as it was.
+ */
+export function sortWithRaise<T extends { id: string }>(
+  nodes: readonly T[],
+  depthOf: (node: T) => number,
+  order: readonly string[],
+): T[] {
+  const rank = new Map<string, number>()
+  order.forEach((id, i) => rank.set(id, i))
+  const rankOf = (node: T): number => rank.get(node.id) ?? -1
+  return nodes
+    .map((node, index) => ({ node, index }))
+    .sort((a, b) => depthOf(a.node) - depthOf(b.node) || rankOf(a.node) - rankOf(b.node) || a.index - b.index)
+    .map((entry) => entry.node)
+}
