@@ -447,14 +447,14 @@ Plans:
 **Requirements**: TBD
 **Success Criteria** (what must be TRUE):
 
-  1. A workspace can hold any number of chat sessions, each its own note (a node with a real placement). `ChatService` is keyed by session note id, and every session acts as its own agent, `agent.claude-chat.<session>`
+  1. A workspace can hold any number of chat sessions, each its own note (a node with a real placement). `ChatService` is keyed by session note id, and every session acts as its own agent, `agent.claude-chat-<first 8 hex of the tree id>-<note id>` (the spec's `agent.claude-chat.<session>`; actor names allow no `.`, and D-03 leaves the exact form to Claude)
   2. Each turn is appended to the session note's text as one passage, one commit per turn, with tool calls as one-line summaries. The transcript reads as one document in `.tree`, and turns are never child notes
   3. The card keeps its note size and the conversation scrolls inside it. The docked ChatPanel is the enlarged view of the same session note, not a second store, and you can reply from the card
   4. Idle, Working, Needs you, Done and Failed come from engine events and the new `set_status({ text, needs?, level? })` tool. Status is renderer state that never enters the tree, Done decays and Needs you persists until you reply, and after a relaunch every session shows Idle
   5. Levels 0-3 (ceiling 3) and a visibility threshold setting decide what animates. Agents never move the camera; an off-screen session at level 2 or above gets an edge arrow in its author colour, and clicking it pans there
   6. Replying at an earlier completed turn k leaves the original untouched and creates a new session note beside it (2.5's `beyond`) holding turns 1..k, in one commit with a `forked-from` edge to turn k's passage anchor. The fork gets its own engine session, started by replaying turns 1..k from the transcript through `ChatEngine.fork(atTurn)`
 
-**Plans**: 7 plans
+**Plans**: 9 plans
 
 Plans:
 **Wave 1**
@@ -471,19 +471,27 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 02.8-04-PLAN.md — Status: the set_status tool, the pure state reducer, Idle/Working/Needs you/Done/Failed on card and panel, last status kept across relaunch
+- [ ] 02.8-04-PLAN.md — Status, main half: the set_status tool and the pure state reducer; last status kept across relaunch
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 02.8-05-PLAN.md — Attention: edge arrows with click-to-pan, Chat alerts threshold and motion, stack raise; agents never move the camera
+- [ ] 02.8-05-PLAN.md — Status, renderer half: Idle/Working/Needs you/Done/Failed on card and panel, acknowledgement, announcements
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
-- [ ] 02.8-06-PLAN.md — Forks: decision on the forked-from link, then ChatEngine.fork replaying turns 1..k, one-commit fork beside the original, Reply from here
+- [ ] 02.8-06-PLAN.md — Attention: edge arrows with click-to-pan, Chat alerts threshold and motion, stack raise; agents never move the camera
 
 **Wave 7** *(blocked on Wave 6 completion)*
 
-- [ ] 02.8-07-PLAN.md — The forked-from line from turn k with the clamped anchor dot, and the phase gate
+- [ ] 02.8-07-PLAN.md — Forks, main half: decision on the forked-from link, then ChatEngine.fork replaying turns 1..k and the one-commit fork beside the original
+
+**Wave 8** *(blocked on Wave 7 completion)*
+
+- [ ] 02.8-08-PLAN.md — Forks, renderer half: Reply from here, fork mode and Send as new chat in the card and panel
+
+**Wave 9** *(blocked on Wave 8 completion)*
+
+- [ ] 02.8-09-PLAN.md — The forked-from line from turn k with the clamped anchor dot, and the phase gate
 
 **UI hint**: yes
 
