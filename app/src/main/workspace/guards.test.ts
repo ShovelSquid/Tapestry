@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { KernelBridge, type OpObject } from '../kernel-bridge'
 import { humanActor } from '../commands/actor'
-import { WORKSPACE_REPLAY_REFUSAL, WORKSPACE_SUBMIT_REFUSAL, workspaceSubmitRefusal } from './guards'
+import { SESSION_NODE_TYPE } from '../../shared/chat/transcript'
+import { CHAT_BODY_REFUSAL, WORKSPACE_REPLAY_REFUSAL, WORKSPACE_SUBMIT_REFUSAL, workspaceSubmitRefusal } from './guards'
 
 const set = (key: string): OpObject => ({ op: 'setProperty', target: 'n1', key, type: 'real', value: 1 })
 const unset = (key: string): OpObject => ({ op: 'unsetProperty', target: 'n1', key })
@@ -43,6 +44,35 @@ describe('workspaceSubmitRefusal', () => {
 
   it('refuses a batch when any one op is refused', () => {
     expect(workspaceSubmitRefusal([set('position.x'), set('file.text')])).toBe(WORKSPACE_SUBMIT_REFUSAL)
+  })
+
+  it("refuses writing a chat session's body or chat.* keys; its title, place and size still change", () => {
+    const typeOf = (id: string): string | undefined =>
+      id === 'n5' ? SESSION_NODE_TYPE : id === 'n6' ? 'tapestry.notes/note@1' : undefined
+    const on = (target: string, key: string, unsetting = false): OpObject =>
+      unsetting
+        ? { op: 'unsetProperty', target, key }
+        : { op: 'setProperty', target, key, type: 'text', value: 'x' }
+
+    expect(workspaceSubmitRefusal([on('n5', 'body')], typeOf)).toBe(CHAT_BODY_REFUSAL)
+    expect(workspaceSubmitRefusal([on('n5', 'chat.turns')], typeOf)).toBe(CHAT_BODY_REFUSAL)
+    expect(workspaceSubmitRefusal([on('n5', 'chat.turns', true)], typeOf)).toBe(CHAT_BODY_REFUSAL)
+    expect(workspaceSubmitRefusal([on('n5', 'body', true)], typeOf)).toBe(CHAT_BODY_REFUSAL)
+    expect(workspaceSubmitRefusal([on('n5', 'position.x'), on('n5', 'body')], typeOf)).toBe(CHAT_BODY_REFUSAL)
+
+    for (const key of ['title', 'position.x', 'position.y', 'width', 'height']) {
+      expect(workspaceSubmitRefusal([on('n5', key)], typeOf), key).toBeNull()
+    }
+    // Not a session: the body rule does not apply, and the file.* rule is unchanged.
+    expect(workspaceSubmitRefusal([on('n6', 'body')], typeOf)).toBeNull()
+    expect(workspaceSubmitRefusal([on('n6', 'chat.turns')], typeOf)).toBeNull()
+    expect(workspaceSubmitRefusal([on('n6', 'file.text')], typeOf)).toBe(WORKSPACE_SUBMIT_REFUSAL)
+    expect(workspaceSubmitRefusal([on('n5', 'file.text')], typeOf)).toBe(WORKSPACE_SUBMIT_REFUSAL)
+    // A body op with no string target is refused when a lookup is given.
+    expect(workspaceSubmitRefusal([{ op: 'setProperty', target: 5, key: 'body' }], typeOf)).toBe(
+      WORKSPACE_SUBMIT_REFUSAL,
+    )
+    expect(CHAT_BODY_REFUSAL).toBe("A chat's conversation is written only by the chat itself.")
   })
 
   it('names git for undo', () => {

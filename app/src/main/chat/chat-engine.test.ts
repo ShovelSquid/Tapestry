@@ -11,7 +11,7 @@
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { readFileSync, rmSync, statSync, existsSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, rmSync, statSync, existsSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { TreeRegistry, type OpenTree } from '../trees/registry'
 import { NoteCommands } from '../commands/notes'
@@ -29,6 +29,7 @@ import {
   BRIDGE_OFF_MESSAGE,
   ChatService,
   CHAT_AGENT_NAME,
+  MAX_LIVE_ENGINES,
   SESSION_LOST_NOTICE,
   SHELL_OFF_NOTICE,
   SHELL_ON_NOTICE,
@@ -42,7 +43,7 @@ import {
 } from './claude-cli-engine'
 import { BUILTIN_TOOL_NAMES, SIGNED_OUT_MESSAGE, buildClaudeArgs, chatSystemPrompt } from './claude-cli'
 import type { ChatEvent } from './engine'
-import { persistKey, SessionNotes } from './session-notes'
+import { persistKey, SESSION_NOT_FOUND_MESSAGE, SessionNotes } from './session-notes'
 import { parseTranscript } from '../../shared/chat/transcript'
 
 const FAKE_CLAUDE = resolve(process.cwd(), 'test', 'fixtures', 'fake-claude', 'fake-claude.mjs')
@@ -728,6 +729,138 @@ describe('every way a turn ends is one passage (02.8-02)', () => {
     expect(passageLines(turns[0]).at(-1)).toBe('Stopped')
     await closing
     await expectAllDead(pids)
+  }, 30000)
+})
+
+// ---------------------------------------------------------------------------
+// Many sessions stay independent and bounded (02.8-02, D-02, D-03)
+// ---------------------------------------------------------------------------
+
+function chatsFile(h: Harness): any {
+  return JSON.parse(readFileSync(join(h.ws.dir, 'chat', 'chats.json'), 'utf-8'))
+}
+
+describe('many sessions (02.8-02)', () => {
+  it('two sessions have their own agent, 0600 config file, session id and chats.json entry, and close cleanly', async () => {
+    const h = await startHarness({ scenario: 'text' })
+    const b = h.chat.createSession(h.tree.id)
+
+    // Refused before anything runs: a file note, a tree id, '' and n0.
+    const file = h.tree.bridge.getNodes().find((n) => n.type.startsWith('tapestry.workspace/'))!
+    for (const noteId of [file.id, h.tree.id, '', 'n0']) {
+      await expect(h.chat.send(h.tree.id, noteId, 'hi')).rejects.toThrow(SESSION_NOT_FOUND_MESSAGE)
+      expect(() => h.chat.open(h.tree.id, noteId)).toThrow(SESSION_NOT_FOUND_MESSAGE)
+      await expect(h.chat.stop(h.tree.id, noteId)).rejects.toThrow(SESSION_NOT_FOUND_MESSAGE)
+      await expect(h.chat.setAllowShell(h.tree.id, noteId, true)).rejects.toThrow(SESSION_NOT_FOUND_MESSAGE)
+    }
+    expect(existsSync(h.record)).toBe(false)
+
+    await h.chat.send(h.tree.id, h.noteId, 'one')
+    await waitFor(() => doneCount(h.events) === 1)
+    await h.chat.send(h.tree.id, b.noteId, 'two')
+    await waitFor(() => doneCount(h.events) === 2)
+
+    expect(b.agent).not.toBe(h.agent)
+    const paths = [h.chat.configPathFor(h.tree.id, h.noteId), h.chat.configPathFor(h.tree.id, b.noteId)]
+    expect(paths[0]).not.toBe(paths[1])
+    for (const path of paths) expect(statSync(path).mode & 0o777).toBe(0o600)
+
+    const spawns = recordedSpawns(h)
+    expect(spawns).toHaveLength(2)
+    const ids = spawns.map((spawn) => flagValue(spawn.argv, '--session-id'))
+    expect(ids[0]).toBeDefined()
+    expect(ids[1]).toBeDefined()
+    expect(ids[0]).not.toBe(ids[1])
+    expect(flagValue(spawns[0].argv, '--mcp-config')).toBe(paths[0])
+    expect(flagValue(spawns[1].argv, '--mcp-config')).toBe(paths[1])
+
+    const realRoot = h.workspaces.workspaceFor(h.tree.id)!.realRoot
+    const sessions = chatsFile(h).sessions
+    expect(Object.keys(sessions).sort()).toEqual([persistKey(realRoot, h.noteId), persistKey(realRoot, b.noteId)].sort())
+    expect(sessions[persistKey(realRoot, h.noteId)].sessionId).toBe(ids[0])
+    expect(sessions[persistKey(realRoot, b.noteId)].sessionId).toBe(ids[1])
+
+    await h.chat.closeWorkspace(h.tree.id)
+    for (const path of paths) expect(existsSync(path)).toBe(false)
+    await waitFor(() => spawns.every((spawn) => !pidAlive(spawn.pid)), 5000)
+    for (const spawn of spawns) expect(pidAlive(spawn.pid)).toBe(false)
+  }, 30000)
+
+  it(`keeps at most ${MAX_LIVE_ENGINES} idle processes; an ended one resumes its conversation`, async () => {
+    expect(MAX_LIVE_ENGINES).toBe(4)
+    const h = await startHarness({ scenario: 'text' })
+    const notes = [h.noteId]
+    for (let i = 1; i < 5; i++) notes.push(h.chat.createSession(h.tree.id).noteId)
+    for (const [i, noteId] of notes.entries()) {
+      await h.chat.send(h.tree.id, noteId, `hello ${i + 1}`)
+      await waitFor(() => doneCount(h.events) === i + 1)
+    }
+
+    const spawns = recordedSpawns(h)
+    expect(spawns).toHaveLength(5)
+    expect(spawns.filter((spawn) => pidAlive(spawn.pid)).length).toBeLessThanOrEqual(MAX_LIVE_ENGINES)
+    // The least recently used, session 1, was ended quietly: no extra done.
+    expect(pidAlive(spawns[0].pid)).toBe(false)
+    expect(doneCount(h.events)).toBe(5)
+
+    const firstId = flagValue(spawns[0].argv, '--session-id')!
+    await h.chat.send(h.tree.id, notes[0], 'still there?')
+    await waitFor(() => doneCount(h.events) === 6)
+    const again = recordedSpawns(h)
+    expect(again).toHaveLength(6)
+    expect(flagValue(again[5].argv, '--resume')).toBe(firstId)
+    expect(again.filter((spawn) => pidAlive(spawn.pid)).length).toBeLessThanOrEqual(MAX_LIVE_ENGINES)
+    // Session 1 has two passages now, both signed by its own agent.
+    expect(noteTurns(h).map((turn) => turn.turn)).toEqual([1, 2])
+  }, 30000)
+
+  it('never ends a running turn to make room', async () => {
+    const scenarioFile = join(makeScenarioDir(), 'scenario')
+    writeFileSync(scenarioFile, 'slow')
+    const h = await startHarness({ scenarioFile })
+    await h.chat.send(h.tree.id, h.noteId, 'take your time')
+    const pids = await slowPids(h)
+
+    writeFileSync(scenarioFile, 'text')
+    for (let i = 1; i <= MAX_LIVE_ENGINES; i++) {
+      const { noteId } = h.chat.createSession(h.tree.id)
+      await h.chat.send(h.tree.id, noteId, `hello ${i}`)
+      await waitFor(() => doneCount(h.events) === i)
+    }
+    expect(pidAlive(pids.fake)).toBe(true)
+    expect(pidAlive(pids.sleep)).toBe(true)
+    expect(h.chat.open(h.tree.id, h.noteId).busy).toBe(true)
+    const spawns = recordedSpawns(h)
+    expect(spawns).toHaveLength(1 + MAX_LIVE_ENGINES)
+    expect(spawns.filter((spawn) => pidAlive(spawn.pid)).length).toBeLessThanOrEqual(MAX_LIVE_ENGINES)
+
+    await h.chat.stop(h.tree.id, h.noteId)
+    await expectAllDead(pids)
+  }, 30000)
+
+  it('a version 1 chats.json opens as no sessions and keeps its v1 map when rewritten', async () => {
+    const first = await startHarness({ scenario: 'text' })
+    const realRoot = first.workspaces.workspaceFor(first.tree.id)!.realRoot
+    const v1Chats = { [realRoot]: { sessionId: 'old' } }
+    mkdirSync(join(first.ws.dir, 'chat'), { recursive: true, mode: 0o700 })
+    writeFileSync(join(first.ws.dir, 'chat', 'chats.json'), JSON.stringify({ version: 1, chats: v1Chats }))
+
+    // A relaunch over that file.
+    const second = await startHarness({ scenario: 'text', existing: first })
+    expect(second.chat.open(second.tree.id, second.noteId).sessionId).toBeNull()
+    await second.chat.send(second.tree.id, second.noteId, 'hi')
+    await waitFor(() => doneCount(second.events) === 1)
+
+    const argv = readRecord(second.record).argv
+    expect(argv).not.toContain('--resume')
+    expect(flagValue(argv, '--session-id')).not.toBe('old')
+    expect(argv).not.toContain('old')
+
+    const file = chatsFile(second)
+    expect(file.version).toBe(2)
+    expect(file.chats).toEqual(v1Chats)
+    expect(Object.keys(file.sessions)).toEqual([persistKey(realRoot, second.noteId)])
+    expect(file.sessions[persistKey(realRoot, second.noteId)].sessionId).toBe(flagValue(argv, '--session-id'))
   }, 30000)
 })
 

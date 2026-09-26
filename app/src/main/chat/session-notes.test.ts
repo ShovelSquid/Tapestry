@@ -8,6 +8,11 @@ import { readFileSync } from 'node:fs'
 import { TreeRegistry, type OpenTree } from '../trees/registry'
 import { WorkspaceService } from '../workspace/workspace-service'
 import { agentActor, humanActor, isValidActorName } from '../commands/actor'
+import { NoteCommands } from '../commands/notes'
+import { ConnectionCommands } from '../commands/connections'
+import { SpatialCommands } from '../commands/spatial'
+import { WorkspaceFileCommands } from '../commands/file-tools'
+import { runAgentTool, type AgentCommands } from '../commands/agent-tools'
 import { makeTempWorkspace, type TempWorkspace } from '../../../test/helpers/temp-workspace'
 import { isWorkspaceNode } from '../../renderer/layout/subspaces'
 import { overlaps, rectAt } from '../../renderer/layout/placement'
@@ -81,6 +86,7 @@ interface Setup {
   ws: TempWorkspace
   registry: TreeRegistry
   tree: OpenTree
+  workspaces: WorkspaceService
   committed: Array<{ treeId: string; actor: string }>
   notes: SessionNotes
 }
@@ -104,7 +110,7 @@ async function setup(): Promise<Setup> {
   const notes = new SessionNotes({
     hooks: { onCommitted: (treeId, actor) => committed.push({ treeId, actor: `${actor.kind} ${actor.id}` }) },
   })
-  const s = { ws, registry, tree, committed, notes }
+  const s = { ws, registry, tree, workspaces, committed, notes }
   setups.push(s)
   return s
 }
@@ -210,5 +216,80 @@ describe('SessionNotes', () => {
     )
     expect(commitBlocks(s.tree)).toHaveLength(before)
     expect(s.committed).toEqual([])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Only the chat writes its transcript (02.8-02, D-03, T-02.8-08)
+// ---------------------------------------------------------------------------
+
+describe('agent tools on a session note', () => {
+  it('update_note, rename_note and delete_note are refused in the workspace, and the body is unchanged', async () => {
+    const s = await setup()
+    const { noteId } = s.notes.create(s.tree, person)
+    s.notes.appendTurn(s.tree, noteId, agentActor(sessionAgentName(s.tree.id, noteId)), [
+      { kind: 'you', text: 'hi' },
+      { kind: 'claude', text: 'ok' },
+    ])
+    const body = s.tree.bridge.getNode(noteId)!.props['body'].value
+    const before = commitBlocks(s.tree).length
+    // As the chat harness wires the agent socket.
+    const commands: AgentCommands = {
+      notes: new NoteCommands(s.registry),
+      connections: new ConnectionCommands(s.registry),
+      spatial: new SpatialCommands(s.registry),
+      files: new WorkspaceFileCommands(s.workspaces),
+    }
+    const refusal = `${s.tree.name} is a workspace; its notes are files. Use write_file or edit_file`
+
+    for (const actor of [agentActor('claude'), agentActor(sessionAgentName(s.tree.id, noteId))]) {
+      const calls: Array<[string, Record<string, unknown>]> = [
+        ['update_note', { tree: s.tree.id, note: noteId, text: 'rewritten' }],
+        ['rename_note', { tree: s.tree.id, note: noteId, title: 'Renamed' }],
+        ['delete_note', { tree: s.tree.id, note: noteId }],
+      ]
+      for (const [tool, args] of calls) {
+        const result = runAgentTool(commands, actor, tool, args)
+        expect(result, `${actor.id} ${tool}`).toEqual({ ok: false, error: refusal })
+      }
+    }
+    const node = s.tree.bridge.getNode(noteId)!
+    expect(node.props['body'].value).toBe(body)
+    expect(node.props['title'].value).toBe('New chat')
+    expect(commitBlocks(s.tree)).toHaveLength(before)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// The known limit, measured: each turn rewrites the whole body (resolution 1)
+// ---------------------------------------------------------------------------
+
+describe('journal growth per turn', () => {
+  it('each turn commit is about the whole current body, and no more', async () => {
+    const s = await setup()
+    const { noteId } = s.notes.create(s.tree, person)
+    const agent = agentActor(sessionAgentName(s.tree.id, noteId))
+    // A reply of a realistic size: a few sentences, about 600 characters.
+    const reply = 'Here is what I found in the workspace. '.repeat(15).trim()
+    const rows: Array<{ turn: number; bodyBytes: number; commitBytes: number }> = []
+    for (let k = 1; k <= 5; k++) {
+      s.notes.appendTurn(s.tree, noteId, agent, [
+        { kind: 'you', text: `Question ${k}: what changed in src/parser.ts?` },
+        { kind: 'tool', summary: 'read_file src/parser.ts — done', refused: false },
+        { kind: 'claude', text: reply },
+      ])
+      const block = `@commit ${commitBlocks(s.tree).at(-1)!}`
+      const bodyBytes = Buffer.byteLength(String(s.tree.bridge.getNode(noteId)!.props['body'].value), 'utf-8')
+      const commitBytes = Buffer.byteLength(block, 'utf-8')
+      expect(block).toContain(`message "chat turn ${k}"`)
+      expect(commitBytes).toBeLessThanOrEqual(bodyBytes + 512)
+      expect(commitBytes).toBeGreaterThanOrEqual(bodyBytes)
+      rows.push({ turn: k, bodyBytes, commitBytes })
+    }
+    console.info(
+      `[02.8-02 journal growth] ${rows
+        .map((r) => `turn ${r.turn}: body ${r.bodyBytes} B, commit ${r.commitBytes} B`)
+        .join('; ')}; total ${rows.reduce((sum, r) => sum + r.commitBytes, 0)} B for 5 turns`,
+    )
   })
 })

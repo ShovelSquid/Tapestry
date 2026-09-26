@@ -309,7 +309,11 @@ app.whenReady().then(async () => {
   const isWorkspaceTree = (treeId: unknown): boolean =>
     typeof treeId === 'string' && registry.get(treeId)?.kind === 'workspace'
   KernelBridge.registerHandlers(ipcMain, resolveTree, getHumanActor, {
-    beforeSubmit: (treeId, ops) => (isWorkspaceTree(treeId) ? workspaceSubmitRefusal(ops) : null),
+    // A chat session note's conversation is written only by its chat (02.8 T-02.8-07).
+    beforeSubmit: (treeId, ops) =>
+      isWorkspaceTree(treeId)
+        ? workspaceSubmitRefusal(ops, (id) => registry.get(treeId as string)?.bridge.getNode(id)?.type)
+        : null,
     beforeReplay: (treeId) => (isWorkspaceTree(treeId) ? WORKSPACE_REPLAY_REFUSAL : null),
   })
 
