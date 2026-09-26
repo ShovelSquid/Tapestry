@@ -7,6 +7,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   attentionOf,
+  changeEffects,
   clampLevel,
   FAILED_PHRASES,
   failedPhrase,
@@ -360,5 +361,69 @@ describe('attentionOf (D-16, A-07, A-08)', () => {
     const done = run(idle(), [user(), doneOk])
     expect(attentionOf(done, false)).toEqual({ kind: 'done', level: 2 })
     expect(attentionOf(reduceStatus(done, { kind: 'ack' }, 99), false)).toBeNull()
+  })
+})
+
+describe('changeEffects (D-14, D-15, A-06)', () => {
+  const working = (): SessionStatus => run(idle(), [user()])
+  const after = (prev: SessionStatus, event: StatusEvent): SessionStatus =>
+    reduceStatus(prev, { kind: 'event', event }, 1000)
+
+  it('a Done at level 2 moves under the default threshold and rises; threshold 3 only rises', () => {
+    const prev = working()
+    const next = after(prev, doneOk)
+    expect(next.state).toBe('done')
+    expect(next.level).toBe(2)
+    expect(changeEffects(prev, next, 2)).toEqual({ animate: true, raise: true })
+    expect(changeEffects(prev, next, 3)).toEqual({ animate: false, raise: true })
+  })
+
+  it('Needs you is level 3, so it moves even at threshold 3', () => {
+    const prev = working()
+    const next = after(prev, status('which file?', { needs: true }))
+    expect(changeEffects(prev, next, 3)).toEqual({ animate: true, raise: true })
+  })
+
+  it('Failed never moves, at any threshold, but still rises', () => {
+    const prev = working()
+    const next = after(prev, { type: 'error', kind: 'crashed', message: 'boom' } as StatusEvent)
+    expect(next.state).toBe('failed')
+    expect(changeEffects(prev, next, 1)).toEqual({ animate: false, raise: true })
+  })
+
+  it('a level-0 status changes nothing on the card: no motion, no rise', () => {
+    const prev = working()
+    const next = after(prev, status('quietly reading', { level: 0 }))
+    expect(changeEffects(prev, next, 1)).toEqual({ animate: false, raise: false })
+  })
+
+  it('a level-1 status moves only at threshold 1 (A-06), and rises either way', () => {
+    const prev = working()
+    const next = after(prev, status('reading the notes', { level: 1 }))
+    expect(changeEffects(prev, next, 1)).toEqual({ animate: true, raise: true })
+    expect(changeEffects(prev, next, 2)).toEqual({ animate: false, raise: true })
+  })
+
+  it('a Done at level 1 (the turn asked for it) moves only at threshold 1', () => {
+    const prev = after(working(), status('small thing', { level: 1 }))
+    const next = after(prev, doneOk)
+    expect(next.level).toBe(1)
+    expect(changeEffects(prev, next, 2)).toEqual({ animate: false, raise: true })
+    expect(changeEffects(prev, next, 1)).toEqual({ animate: true, raise: true })
+  })
+
+  it('nothing happens for an unchanged status, a stream of text, or the person looking', () => {
+    const prev = working()
+    expect(changeEffects(prev, prev, 1)).toEqual({ animate: false, raise: false })
+    const texted = after(prev, { type: 'text', text: 'Hello' } as StatusEvent)
+    expect(changeEffects(prev, texted, 1)).toEqual({ animate: false, raise: false })
+    const done = after(prev, doneOk)
+    expect(changeEffects(done, reduceStatus(done, { kind: 'ack' }, 2000), 1)).toEqual({ animate: false, raise: false })
+  })
+
+  it('a send (into Working) rises but never moves', () => {
+    const prev = idle()
+    const next = after(prev, user())
+    expect(changeEffects(prev, next, 1)).toEqual({ animate: false, raise: true })
   })
 })

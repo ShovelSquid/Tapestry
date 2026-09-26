@@ -11,6 +11,7 @@
 
 import { describe, expect, it } from 'vitest'
 import {
+  ALERT_THRESHOLD_KEY,
   EMPTY_CHAT_SESSION,
   acknowledgeChatSnapshot,
   acknowledgeSession,
@@ -23,6 +24,8 @@ import {
   sessionAttention,
   sessionAttentions,
   openedStatus,
+  readAlertThreshold,
+  setAlertThreshold,
   recordChatPayload,
   requestComposerFocus,
   retainChatSessions,
@@ -343,5 +346,80 @@ describe('new sessions and attention (02.8-06, D-16, A-08)', () => {
     expect(map.get(chatSessionKey(TREE, 'n21'))?.author).toMatch(/^--tap-author-/)
     forgetChatSession(TREE, 'n21')
     forgetChatSession(TREE, 'n22')
+  })
+})
+
+describe('the Chat alerts threshold (02.8-06, D-15)', () => {
+  const storageWith = (value: string | null): Pick<Storage, 'getItem' | 'setItem'> & { data: Map<string, string> } => {
+    const data = new Map<string, string>()
+    if (value !== null) data.set(ALERT_THRESHOLD_KEY, value)
+    return {
+      data,
+      getItem: (key: string) => data.get(key) ?? null,
+      setItem: (key: string, v: string) => {
+        data.set(key, v)
+      },
+    }
+  }
+  const throwing = {
+    getItem: (): string | null => {
+      throw new Error('locked')
+    },
+    setItem: (): void => {
+      throw new Error('locked')
+    },
+  }
+
+  it('is kept under tapestry.chat.alertThreshold', () => {
+    expect(ALERT_THRESHOLD_KEY).toBe('tapestry.chat.alertThreshold')
+  })
+
+  it('reads a stored 1, 2 or 3', () => {
+    expect(readAlertThreshold(storageWith('3'))).toBe(3)
+    expect(readAlertThreshold(storageWith('1'))).toBe(1)
+  })
+
+  it('falls back to 2 for a missing, garbage or out-of-range value, a throwing storage, or none', () => {
+    expect(readAlertThreshold(storageWith(null))).toBe(2)
+    expect(readAlertThreshold(storageWith('loud'))).toBe(2)
+    expect(readAlertThreshold(storageWith('0'))).toBe(2)
+    expect(readAlertThreshold(storageWith('4'))).toBe(2)
+    expect(readAlertThreshold(storageWith('1.5'))).toBe(2)
+    expect(readAlertThreshold(throwing)).toBe(2)
+    expect(readAlertThreshold(null)).toBe(2)
+  })
+
+  it('persists a new threshold and never throws', () => {
+    const storage = storageWith(null)
+    setAlertThreshold(3, storage)
+    expect(storage.data.get(ALERT_THRESHOLD_KEY)).toBe('3')
+    expect(() => setAlertThreshold(1, throwing)).not.toThrow()
+    setAlertThreshold(2, storage)
+  })
+
+  it('ignores a threshold outside 1 to 3', () => {
+    const storage = storageWith('3')
+    setAlertThreshold(9, storage)
+    expect(storage.data.get(ALERT_THRESHOLD_KEY)).toBe('3')
+  })
+})
+
+describe('motion and rise on each change (02.8-06, D-14)', () => {
+  const working = applyChatPayload(loaded, { turn: 1, event: { type: 'user', text: 'hi' } }, 10, 2)
+
+  it('an empty session has no effects yet', () => {
+    expect(EMPTY_CHAT_SESSION.lastEffects).toEqual({ animate: false, raise: false, at: 0 })
+  })
+
+  it('a Done records motion and rise under the threshold it arrived with', () => {
+    const done = applyChatPayload(working, { turn: 1, event: { type: 'done', ok: true } }, 50, 2)
+    expect(done.lastEffects).toEqual({ animate: true, raise: true, at: 50 })
+    const quiet = applyChatPayload(working, { turn: 1, event: { type: 'done', ok: true } }, 50, 3)
+    expect(quiet.lastEffects).toEqual({ animate: false, raise: true, at: 50 })
+  })
+
+  it('an event that changes nothing on the card leaves the last effects alone', () => {
+    const texted = applyChatPayload(working, { turn: 1, event: { type: 'text-delta', text: 'Hel' } }, 60, 1)
+    expect(texted.lastEffects).toBe(working.lastEffects)
   })
 })
