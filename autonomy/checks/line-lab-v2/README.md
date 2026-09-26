@@ -81,3 +81,8 @@ before the capture (wave 0 used it to click "Save my name").
   returns to 100%. `wave7-flight-2026-09-25.png`: four runs captured at 0, ~90, ~200 ms and 1.5 s
   (`__MODE__='mid'` with `SHOT_SETTLE_MS`). No sketch exists for entering; the frames were checked
   against spec §7.
+
+- Wave 8 (the screenshot set): `wave8-shoot-all.sh [outdir]` retakes every pose above against the current
+  build (10 shots). The side-by-sides with Kaelen's sketches (sketch on the left) are in `wave8/` and in
+  `~/Tree/Design/UI Build Review/`, embedded by `~/Tree/Design/UI Build Review.md`. All ten poses passed on
+  2026-09-25, after the ws/mergin merge.
