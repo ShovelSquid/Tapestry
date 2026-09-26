@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# autonomy/run.sh — unattended driver for Tapestry GSD phases on this worktree.
+# autonomy/run.sh — unattended driver for Tapestry GSD phases on this worktree (ws/mergin).
 #
-# Ported from ws/physics-engine. Each iteration starts a FRESH claude session
+# Ported from ws/windows, with ws/ui's never-prompt git and push handling. Each iteration starts a FRESH claude session
 # (fresh context), hands it autonomy/PROMPT.md plus a time-limit line, and
-# lets it execute the next GSD plan per autonomy/PROTOCOL.md. Memory between
+# lets it execute the next GSD wave per autonomy/PROTOCOL.md. Memory between
 # sessions is .planning/ (STATE.md, PLAN and SUMMARY files), autonomy/STATE.md
 # and git history, so context size never becomes a problem.
 #
@@ -28,6 +28,12 @@
 #   MAX_SESSIONS=1 autonomy/run.sh  # one plan, then stop
 #   PUSH=0 autonomy/run.sh          # do not push after each session
 #
+# Nothing here ever waits on the keyboard. Git and ssh are told never to
+# prompt (no username/password or passphrase questions), sessions get
+# /dev/null for stdin, and a push that fails or passes PUSH_TIMEOUT turns
+# pushing off for the rest of this run. Commits stay local; the loop keeps
+# working. Fix auth once by hand (see the message it prints), then restart.
+#
 # Knobs (all optional, seconds unless noted):
 #   MODEL            claude model alias                 (default: opus)
 #   MAX_SESSIONS     hard cap on iterations, 0 = none   (default: 0)
@@ -37,6 +43,7 @@
 #   STALL_LIMIT      no-commit sessions before backoff  (default: 3)
 #   STALL_SLEEP      backoff pause                      (default: 900)
 #   PUSH             1 = git push after a committing session (default: 1)
+#   PUSH_TIMEOUT     give up on one push after this long (default: 60)
 #   MAX_BUDGET_USD   per-session API budget in dollars, passed through if set
 
 set -u
@@ -52,8 +59,36 @@ SESSION_SLEEP="${SESSION_SLEEP:-20}"
 STALL_LIMIT="${STALL_LIMIT:-3}"
 STALL_SLEEP="${STALL_SLEEP:-900}"
 PUSH="${PUSH:-1}"
+PUSH_TIMEOUT="${PUSH_TIMEOUT:-60}"
 LOG_DIR="$ROOT/autonomy/logs"
 mkdir -p "$LOG_DIR"
+
+# Never block on a credential or passphrase prompt, here or inside sessions:
+# a prompt nobody answers must fail fast instead of hanging the loop.
+export GIT_TERMINAL_PROMPT=0
+export GCM_INTERACTIVE=never
+export GIT_SSH_COMMAND="ssh -o BatchMode=yes -o ConnectTimeout=15"
+export SSH_ASKPASS_REQUIRE=never
+
+# run_with_timeout SECONDS CMD... — run CMD with no stdin, kill it past
+# SECONDS. macOS has no timeout(1). Returns CMD's status, or 124 on timeout.
+run_with_timeout() {
+    local secs="$1"; shift
+    "$@" </dev/null &
+    local pid=$! waited=0
+    while kill -0 "$pid" 2>/dev/null; do
+        if [ "$waited" -ge "$secs" ]; then
+            kill "$pid" 2>/dev/null
+            sleep 2
+            kill -9 "$pid" 2>/dev/null
+            wait "$pid" 2>/dev/null
+            return 124
+        fi
+        sleep 1
+        waited=$((waited + 1))
+    done
+    wait "$pid"
+}
 
 if ! command -v claude >/dev/null 2>&1; then
     echo "run.sh: claude CLI not on PATH" >&2
@@ -127,7 +162,7 @@ while :; do
         --verbose \
         ${budget_args[@]+"${budget_args[@]}"} \
         "$(cat "$ROOT/autonomy/PROMPT.md"; time_limit_line)" \
-        >"$log" 2>&1 &
+        </dev/null >"$log" 2>&1 &
     CHILD_PID=$!
     # Watchdog: kill on no output for IDLE_LIMIT, or on the hard cap.
     (
@@ -169,7 +204,20 @@ while :; do
     if [ "$after" != "$before" ]; then
         stall=0
         if [ "$PUSH" = "1" ]; then
-            git push -q origin HEAD 2>>"$log" || echo "run.sh: push failed (see log)"
+            run_with_timeout "$PUSH_TIMEOUT" git push -q origin HEAD 2>>"$log"
+            push_status=$?
+            if [ "$push_status" -ne 0 ]; then
+                # Auth or network trouble will not fix itself between
+                # sessions, so stop retrying and keep working locally.
+                PUSH=0
+                if [ "$push_status" -eq 124 ]; then
+                    why="timed out after ${PUSH_TIMEOUT}s"
+                else
+                    why="failed: $(grep -v '^run.sh:' "$log" | tail -1)"
+                fi
+                echo "run.sh: push $why. Pushing is off for the rest of this run; commits stay local and the loop keeps going."
+                echo "run.sh: to fix, log in once by hand (for example \`git push origin HEAD\` in $ROOT and enter a GitHub token), then restart the driver."
+            fi
         fi
     else
         stall=$((stall + 1))

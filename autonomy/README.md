@@ -17,4 +17,6 @@ kept side by side, one folder per source branch, as archives. Don't run them:
 - `spatial-canvas/`: Phase 2.6 Placement Edges & Forest Tree (10/10; human_needed)
 - `windows/`: Phase 2.7 File Windows & Workspace Sandbox (6/7; 02.7-07 parked, now item 5 in ../REVIEW.md)
 
+- `ui/`: ws/ui's Design-plan driver (Line Lab v2 built; its REVIEW.md items 1-12 are open)
+
 `ws/02.3-time-threads` ran without a driver.

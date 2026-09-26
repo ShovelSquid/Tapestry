@@ -12,7 +12,7 @@
  * D-16, Plan 15).
  */
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useAnnounce } from './LiveAnnouncer'
 import NoteCard from './NoteCard'
 import VaultNoteCard from './VaultNoteCard'
@@ -51,6 +51,12 @@ import {
   type NestingOp,
   type Size,
 } from '../layout/nesting'
+import { FormFades, formsToDraw, type ShownForm } from '../look/collapse'
+import { flightScale, formScreenWidth, type FlightFrame } from '../look/enter'
+import { CollapsedNote } from '../look/CollapsedNote'
+import { seedFromId } from '../look/ink'
+import { effectStrength, readMotionSettings } from '../look/motion'
+import { LOOK } from '../look/values'
 
 /** Fallback knot size until the node registers its real dims. */
 const KNOT_FALLBACK_WIDTH = 200
@@ -204,8 +210,16 @@ export interface TreeFrameHandlers {
   onNestingMove: (ref: NodeRef, ops: NestingOp[]) => void
   /** "New note inside" a note, at a spot local to it. */
   onCreateInside: (container: NodeRef, x: number, y: number) => void
-  /** Fit a frame-local rect to the view ("Zoom into note", an outline's double-click). */
-  onZoomToRect: (treeId: string, rect: { x: number; y: number; width: number; height: number }) => void
+  /**
+   * Fit a frame-local rect to the view ("Zoom into note", a double-click). With
+   * `onFlight`, the note flies with the glide and Escape flies back out
+   * (look/enter.ts): it hears the flight's progress every frame.
+   */
+  onZoomToRect: (
+    treeId: string,
+    rect: { x: number; y: number; width: number; height: number },
+    onFlight?: (f: FlightFrame) => void,
+  ) => void
 }
 
 /** A workspace tree's folder subspaces, computed once in Canvas (02.7 D-21). */
@@ -230,14 +244,26 @@ interface TreeFrameProps {
   /** Per-note UI state, keyed by nodeKey so two trees cannot collide. */
   editingKey: string | null
   hoveredKey: string | null
-  selectedKey: string | null
+  /** Every selected note's nodeKey (this tree's only; see sameFrameProps). */
+  selectedKeys: ReadonlySet<string>
   connectingHoverKey: string | null
   /** True while any connection drag is in progress, in any tree. */
   isConnecting: boolean
+  /**
+   * When a connection last landed in this tree (performance.now()), or null:
+   * the canvas's "landed" event, so the new line can flash (wave 4).
+   */
+  landedAt?: number | null
   pluginNodeViews: Record<string, string>
   currentUserActorId: string | null
   /** Live drag positions, keyed by nodeKey. */
   dragPositions: Record<string, { x: number; y: number }>
+  /**
+   * Selected notes carried along by another note's drag, keyed by nodeKey, in
+   * their own (container-local) coordinates. Kept apart from dragPositions,
+   * which a card's own drag writes, so the card being dragged never reads it.
+   */
+  followerPositions?: Record<string, { x: number; y: number }>
   /**
    * Where each note in this tree is drawn, keyed by bare node id (D-05). The
    * single source of a note's drawn spot, computed once in Canvas so frame
@@ -259,19 +285,21 @@ interface TreeFrameProps {
   openRequest?: { key: string; nonce: number } | null
 }
 
-export default function TreeFrame({
+function TreeFrame({
   tree,
   rect,
   zoom,
   roll,
   editingKey,
   hoveredKey,
-  selectedKey,
+  selectedKeys,
   connectingHoverKey,
   isConnecting,
+  landedAt = null,
   pluginNodeViews,
   currentUserActorId,
   dragPositions,
+  followerPositions,
   displayPositions,
   getDims,
   isSelected,
@@ -424,9 +452,65 @@ export default function TreeFrame({
 
   const nestedAt = nesting ? nestedPositions(nesting, localSpot) : null
   const containerMins = nesting ? containerMinSizes(nesting, localSpot, sizeOf) : null
+  // Zoomed out, a note too small to read collapses to a circle or a dot
+  // (look/collapse.ts) and its contents are hidden; changes of form crossfade.
+  const outlineWidth = (id: string): number => Math.max(sizeOf(id).width, containerMins?.get(id)?.width ?? 0)
   const outlines = nesting
-    ? outlineState(nesting, (id) => sizeOf(id).width, zoom)
-    : { outlined: new Set<string>(), hidden: new Set<string>() }
+    ? outlineState(nesting, outlineWidth, zoom)
+    : { collapsed: new Map<string, 'circle' | 'dot'>(), hidden: new Set<string>() }
+  const formAt = (o: typeof outlines, id: string): ShownForm =>
+    o.hidden.has(id) ? 'hidden' : (o.collapsed.get(id) ?? 'note')
+
+  // Entering a note (look/enter.ts). While the camera glides in or out, no
+  // form crossfades: the entered note, and every other note that is drawn at
+  // both ends but in a different form, is drawn as its card the whole way,
+  // scaled from the form it left to the form it lands in. A note that is
+  // hidden at one end (inside a collapsed container) just changes form.
+  const [flyingId, setFlyingId] = useState<string | null>(null)
+  const flightRef = useRef<FlightFrame | null>(null)
+  const flight = flyingId !== null && nesting?.depthOf.has(flyingId) ? flightRef.current : null
+  /** Each flying note's extra scale this frame, and the form it lands in. */
+  const flyers = new Map<string, { scale: number; endForm: ShownForm }>()
+  /** Notes whose form changes during the flight: none of them fades. */
+  const noFade = new Set<string>()
+  if (nesting && flight && flyingId) {
+    const fromOutlines = outlineState(nesting, outlineWidth, flight.fromZoom)
+    const toOutlines = outlineState(nesting, outlineWidth, flight.toZoom)
+    for (const id of nesting.depthOf.keys()) {
+      const fromForm = formAt(fromOutlines, id)
+      const endForm = formAt(toOutlines, id)
+      if (id !== flyingId && fromForm === endForm) continue
+      noFade.add(id)
+      if (id !== flyingId && (fromForm === 'hidden' || endForm === 'hidden')) continue
+      const w = outlineWidth(id)
+      const scale = flightScale(
+        formScreenWidth(fromForm, w, flight.fromZoom),
+        formScreenWidth(endForm, w, flight.toZoom),
+        w,
+        zoom,
+        flight.p,
+      )
+      flyers.set(id, { scale, endForm })
+    }
+  }
+
+  const shownForms = new Map<string, ShownForm>()
+  for (const id of nesting?.depthOf.keys() ?? []) {
+    // The tracker hears where a flying note lands, so it has nothing to fade then either.
+    shownForms.set(id, flyers.get(id)?.endForm ?? formAt(outlines, id))
+  }
+  const fadeMs = effectStrength(readMotionSettings(), 'collapseFade') > 0 ? LOOK.detail.formCrossfadeMs : 0
+  const formFades = useRef<FormFades | null>(null)
+  if (!formFades.current) formFades.current = new FormFades()
+  const fades = formFades.current.update(shownForms, performance.now(), fadeMs, noFade)
+  // Draw once more when the soonest fade ends, to drop the form it left.
+  const [, setFadeTick] = useState(0)
+  const fadeEnd = formFades.current.nextEndMs(fadeMs)
+  useEffect(() => {
+    if (fadeEnd === null) return
+    const t = window.setTimeout(() => setFadeTick((n) => n + 1), Math.max(0, fadeEnd - performance.now()) + 16)
+    return () => window.clearTimeout(t)
+  }, [fadeEnd])
   const containerOf = (nodeId: string): string | null => nesting?.containerOf.get(nodeId) ?? null
 
   /** Where a note is in the frame, following every container it is in. */
@@ -496,9 +580,19 @@ export default function TreeFrame({
     handlers.onCreateInside(refFor(nodeId), spot.x, spot.y)
   }
 
+  /** Enter a note: zoom in on it with the note flying along (look/enter.ts). */
   const zoomTo = (nodeId: string): void => {
     const rect = drawnRect(nodeId)
-    if (rect) handlers.onZoomToRect(tree.id, rect)
+    if (!rect) return
+    handlers.onZoomToRect(tree.id, rect, (f) => {
+      if (f.p >= 1) {
+        flightRef.current = null
+        setFlyingId(null)
+      } else {
+        flightRef.current = f
+        setFlyingId(nodeId)
+      }
+    })
   }
 
   /** Nested notes draw after (over) their containers. */
@@ -599,7 +693,7 @@ export default function TreeFrame({
       key={node.id}
       treeId={tree.id}
       node={node}
-      isSelected={selectedKey === keyFor(node.id)}
+      isSelected={selectedKeys.has(keyFor(node.id))}
       zoom={zoom}
       provenance={tree.history?.nodes[node.id]}
       onBorderSelect={() => handlers.onBorderSelect(refFor(node.id))}
@@ -641,7 +735,10 @@ export default function TreeFrame({
         />
       </div>
 
-      <div className="tapestry-tree-frame-content" style={contentStyle}>
+      <div
+        className="tapestry-tree-frame-content"
+        style={{ ...contentStyle, ['--tap-form-fade-ms' as string]: `${LOOK.detail.formCrossfadeMs}ms` }}
+      >
         {/* This tree's connections only (D-16 cross-tree links are Plan 15) */}
         <svg
           className="tapestry-connections-svg"
@@ -649,8 +746,10 @@ export default function TreeFrame({
             position: 'absolute',
             top: 0,
             left: 0,
-            width: '100%',
-            height: '100%',
+            // 1 px, not 100%: the parent has no size, and a 0 × 0 SVG draws nothing
+            // even with overflow visible.
+            width: 1,
+            height: 1,
             overflow: 'visible',
             pointerEvents: 'none',
           }}
@@ -662,7 +761,15 @@ export default function TreeFrame({
             const to = resolveNodeCenter(edge.to)
             if (!from || !to) return null
             return (
-              <ConnectionLine key={edge.id} x1={from.x} y1={from.y} x2={to.x} y2={to.y} />
+              <ConnectionLine
+                key={edge.id}
+                x1={from.x}
+                y1={from.y}
+                x2={to.x}
+                y2={to.y}
+                seedKey={edge.id}
+                landedAt={landedAt}
+              />
             )
           })}
         </svg>
@@ -746,39 +853,51 @@ export default function TreeFrame({
             In a workspace tree, folders and the cards inside them are drawn by
             their FolderFrame, not here. */}
         {tree.nodes
-          .filter((n) => !isKnot(n) && !isNestedInSubspace(n) && !outlines.hidden.has(n.id))
+          .filter(
+            (n) =>
+              !isKnot(n) &&
+              !isNestedInSubspace(n) &&
+              (!outlines.hidden.has(n.id) || fades.has(n.id) || flyers.has(n.id)),
+          )
           .sort(depthOrder)
           .map((node) => {
           const key = keyFor(node.id)
           const view = mappedNodeView(pluginNodeViews[node.type])
 
-          // Zoomed out, a nested note is its outline: its real place and size,
-          // none of its contents. A double-click zooms into it.
-          if (outlines.outlined.has(node.id)) {
-            const rect = drawnRect(node.id)
-            if (!rect) return null
-            return (
-              <div
-                key={node.id}
-                className="tapestry-note-outline"
-                data-node-id={node.id}
-                aria-label={`${String(node.props['title']?.value ?? '') || 'Untitled'} (zoom in to see)`}
-                onDoubleClick={(e) => {
-                  e.stopPropagation()
-                  zoomTo(node.id)
-                }}
-                style={{
-                  position: 'absolute',
-                  left: rect.x,
-                  top: rect.y,
-                  width: rect.width,
-                  height: rect.height,
-                  borderWidth: 1 / zoom,
-                  borderRadius: 8,
-                }}
-              />
-            )
-          }
+          // A note of this tree's nesting is drawn in its form for this zoom:
+          // the card, or a circle or dot at its centre, and while a form
+          // changes, the form it left fading out over the new one fading in.
+          const shown = shownForms.get(node.id)
+          const draws =
+            shown && !flyers.has(node.id)
+              ? formsToDraw(shown, fades.get(node.id))
+              : [{ form: 'note' as const, fade: null }]
+          const collapsedEls = draws.flatMap((d) => {
+            if (d.form === 'note') return []
+            const at = frameSpot(node.id)
+            const size = sizeOf(node.id)
+            const min = containerMins?.get(node.id)
+            const w = Math.max(size.width, min?.width ?? 0)
+            const h = Math.max(size.height, min?.height ?? 0)
+            return [
+              <CollapsedNote
+                key={`collapsed-${d.form}`}
+                noteId={node.id}
+                form={d.form}
+                title={String(node.props['title']?.value ?? '')}
+                seed={seedFromId(node.id)}
+                x={at.x + w / 2}
+                y={at.y + h / 2}
+                zoom={zoom}
+                selected={selectedKeys.has(key)}
+                fade={d.fade}
+                onSelect={() => handlers.onBorderSelect(refFor(node.id))}
+                onZoomTo={() => zoomTo(node.id)}
+              />,
+            ]
+          })
+          const noteDraw = draws.find((d) => d.form === 'note')
+          if (!noteDraw) return <React.Fragment key={node.id}>{collapsedEls}</React.Fragment>
 
           if (view === 'WorkspaceFileCard') return renderWorkspaceCard(node)
 
@@ -807,7 +926,7 @@ export default function TreeFrame({
                   node={node}
                   isEditing={editingKey === key}
                   isHovered={hoveredKey === key}
-                  isSelected={selectedKey === key}
+                  isSelected={selectedKeys.has(key)}
                   zoom={zoom}
                   onStartEditing={() => handlers.onStartEditing(refFor(node.id))}
                   onBorderSelect={() => handlers.onBorderSelect(refFor(node.id))}
@@ -931,7 +1050,7 @@ export default function TreeFrame({
                 key={node.id}
                 treeId={tree.id}
                 node={node}
-                isSelected={selectedKey === key}
+                isSelected={selectedKeys.has(key)}
                 zoom={zoom}
                 roll={roll}
                 provenance={tree.history?.nodes[node.id]}
@@ -949,21 +1068,27 @@ export default function TreeFrame({
 
           if (view === 'NoteCard') {
             return (
+              <React.Fragment key={node.id}>
+              {collapsedEls}
               <NoteCard
-                key={node.id}
+                key="note"
+                formFade={noteDraw.fade}
+                flightScale={flyers.get(node.id)?.scale}
                 treeId={tree.id}
                 node={node}
                 displayPosition={
                   containerOf(node.id) !== null
                     ? frameSpot(node.id)
-                    : (displayPositions.get(node.id)?.followSpot ?? undefined)
+                    : (followerPositions?.[key] ??
+                      displayPositions.get(node.id)?.followSpot ??
+                      undefined)
                 }
                 minSize={containerMins?.get(node.id)}
                 onCreateInside={nesting ? () => createInside(node.id) : undefined}
                 onZoomTo={nesting ? () => zoomTo(node.id) : undefined}
                 isEditing={editingKey === key}
                 isHovered={hoveredKey === key}
-                isSelected={selectedKey === key}
+                isSelected={selectedKeys.has(key)}
                 isConnectTarget={connectingHoverKey === key || dropTargetId === node.id}
                 isConnecting={isConnecting}
                 zoom={zoom}
@@ -991,6 +1116,7 @@ export default function TreeFrame({
                 onDragMove={dragNote}
                 onDragEnd={(nodeId) => handlers.onDragEnd(refFor(nodeId))}
               />
+              </React.Fragment>
             )
           }
 
@@ -1000,7 +1126,7 @@ export default function TreeFrame({
               key={node.id}
               node={node}
               treeId={tree.id}
-              isSelected={selectedKey === key}
+              isSelected={selectedKeys.has(key)}
               isHovered={hoveredKey === key}
               zoom={zoom}
               roll={roll}
@@ -1018,3 +1144,28 @@ export default function TreeFrame({
     </div>
   )
 }
+
+/**
+ * Props equal enough to skip a render.
+ *
+ * Canvas re-renders on every pointer move of a drag, and a space can hold
+ * trees of thousands of notes; redrawing all of them per move froze the app.
+ * Canvas keeps each prop referentially stable while it is unchanged for this
+ * tree (per-tree slices, cached spots, a stable handlers object), so identity
+ * is the test for everything but the rect, which is rebuilt every render.
+ */
+function sameFrameProps(a: TreeFrameProps, b: TreeFrameProps): boolean {
+  for (const key of Object.keys(b) as Array<keyof TreeFrameProps>) {
+    if (key === 'rect') continue
+    if (!Object.is(a[key], b[key])) return false
+  }
+  if (Object.keys(a).length !== Object.keys(b).length) return false
+  return (
+    a.rect.x === b.rect.x &&
+    a.rect.y === b.rect.y &&
+    a.rect.width === b.rect.width &&
+    a.rect.height === b.rect.height
+  )
+}
+
+export default React.memo(TreeFrame, sameFrameProps)

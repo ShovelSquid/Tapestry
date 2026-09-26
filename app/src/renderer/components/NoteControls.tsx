@@ -2,8 +2,8 @@
  * NoteControls -- bubbly round controls around a note's edges (D-06).
  *
  * Two mandatory controls:
- *   1. Connection handle -- circular, 28px, accent #4A7CFF, scales to 32px on hover
- *   2. Delete bubble -- circular, 28px, destructive #E5484D, scales to 32px on hover
+ *   1. Connection handle -- circular, 28px, accent --tap-accent, scales to 32px on hover
+ *   2. Delete bubble -- circular, 28px, destructive --tap-destructive, scales to 32px on hover
  *
  * Controls appear on note hover or selection and remain reachable while
  * the pointer moves from the note body to the controls (hover group with

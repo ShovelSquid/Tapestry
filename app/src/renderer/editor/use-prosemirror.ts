@@ -108,7 +108,7 @@ interface DeserializedBody {
  *   - not JSON at all      -> legacy plain text, one paragraph per line
  *   - JSON but bad schema  -> plain-text fallback + schemaError (read-only)
  */
-function deserializeBody(body: string): DeserializedBody {
+export function deserializeBody(body: string): DeserializedBody {
   if (!body) return { doc: null, schemaError: false }
   let parsed: unknown
   try {

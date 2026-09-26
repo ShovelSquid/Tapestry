@@ -29,6 +29,7 @@ import React, {
   useState,
 } from 'react'
 import ConnectionLine from './ConnectionLine'
+import SelectionBar from './SelectionBar'
 import TreeFrame, { type TreeFrameHandlers, type TreeSubspaces } from './TreeFrame'
 import type { ForestTree, NodeRef } from '../state/use-forest'
 import { nodeKey } from '../state/use-forest'
@@ -43,7 +44,14 @@ import {
 } from '../layout/frames'
 import { buildFrameMoveBatch, originAfterFit } from '../layout/frame-moves'
 import { displayPositions, type DisplaySpot } from '../layout/placement'
-import { buildNesting, isNested, type NestingOp } from '../layout/nesting'
+import {
+  buildNesting,
+  INSIDE_KEY,
+  isNested,
+  MAX_NESTING_DEPTH,
+  NESTABLE_TYPE,
+  type NestingOp,
+} from '../layout/nesting'
 import { isZoomPinchDelta, normalizeWheelDelta, panDelta, zoomFactor } from '../layout/wheel'
 import {
   CameraRig,
@@ -61,6 +69,7 @@ import {
   type Camera,
 } from '../layout/camera'
 import { absolutePositions, isWorkspaceNode, subspaceRects, type DimsOf, type Point } from '../layout/subspaces'
+import { flightProgress, type FlightFrame } from '../look/enter'
 import { useContextMenu } from './ContextMenu'
 import { ChatContext } from '../state/chat'
 
@@ -132,15 +141,15 @@ interface CanvasProps {
   onSave: (ref: NodeRef, body: string, title: string) => Promise<void>
   onMarkDirty: (ref: NodeRef) => void
   onMarkClean: (ref: NodeRef) => void
-  onPositionChange: (ref: NodeRef, x: number, y: number) => void
+  onPositionChange: (ref: NodeRef, x: number, y: number) => void | Promise<void>
   /**
    * Called when a person drops, or left/top-resizes, a note that follows its
    * parent (D-03, D-16). Must persist position.x, position.y AND pinned=true
    * in a single commit, so the note stops following.
    */
-  onTakeOverPosition: (ref: NodeRef, x: number, y: number) => void
-  onWidthChange: (ref: NodeRef, width: number) => void
-  onHeightChange: (ref: NodeRef, height: number) => void
+  onTakeOverPosition: (ref: NodeRef, x: number, y: number) => void | Promise<void>
+  onWidthChange: (ref: NodeRef, width: number) => void | Promise<void>
+  onHeightChange: (ref: NodeRef, height: number) => void | Promise<void>
   /**
    * Called once when a thread center drag ends (D-17). Must persist
    * position.x, position.y AND pinned=true in a single commit.
@@ -188,9 +197,15 @@ interface CanvasProps {
    */
   onFolderDrop: (treeId: string, folderId: string, local: Point, dimsOf: DimsOf) => Promise<void>
   /** A note moved into or out of another note: submit these ops as one commit (nesting.ts). */
-  onNestingMove: (ref: NodeRef, ops: NestingOp[]) => void
+  onNestingMove: (ref: NodeRef, ops: NestingOp[]) => void | Promise<void>
   /** Make a note inside `container`, at a spot local to it. */
   onCreateInside: (container: NodeRef, x: number, y: number) => void
+  /**
+   * Notes carried along by a group drag, dropped together: one commit per
+   * tree. `pin` marks a note that was following its parent (D-03), which a
+   * person moving it takes over, as a single move does.
+   */
+  onMoveNotes: (moves: ReadonlyArray<{ ref: NodeRef; x: number; y: number; pin: boolean }>) => Promise<void>
   /** The selected frame, which is the space's focal point and undo target. */
   selectedTreeId: string | null
   onSelectTree: (treeId: string | null) => void
@@ -286,6 +301,7 @@ function Canvas({
   onFolderDrop,
   onNestingMove,
   onCreateInside,
+  onMoveNotes,
   selectedTreeId,
   onSelectTree,
   revealedFolders,
@@ -306,6 +322,41 @@ function Canvas({
   }, [rig])
 
   /**
+   * The shared-element flight riding the current glide, if any (entering a
+   * note, look/enter.ts). Each frame it is told how far the drawn camera has
+   * come; it ends on landing, or where it is when other input moves the
+   * target. `entered` remembers where the camera was before the last note
+   * was entered, so Escape can fly back out.
+   */
+  const flightRef = useRef<{ from: Camera; to: Camera; onFlight: (f: FlightFrame) => void } | null>(null)
+  const enteredRef = useRef<{ from: Camera; onFlight: (f: FlightFrame) => void } | null>(null)
+
+  const advanceFlight = useCallback(
+    (more: boolean) => {
+      const f = flightRef.current
+      if (!f) return
+      const t = rig.target
+      const interrupted = t.zoom !== f.to.zoom || t.panX !== f.to.panX || t.panY !== f.to.panY || t.roll !== f.to.roll
+      const done = interrupted || !more
+      f.onFlight({ p: done ? 1 : flightProgress(f.from, f.to, rig.drawn), fromZoom: f.from.zoom, toZoom: f.to.zoom })
+      if (done) flightRef.current = null
+    },
+    [rig],
+  )
+
+  /** Start a flight along the glide just set on the rig, ending any other. */
+  const startFlight = useCallback(
+    (from: Camera, onFlight: (f: FlightFrame) => void) => {
+      const prev = flightRef.current
+      if (prev) prev.onFlight({ p: 1, fromZoom: prev.from.zoom, toZoom: prev.to.zoom })
+      const to = { ...rig.target }
+      flightRef.current = { from, to, onFlight }
+      onFlight({ p: 0, fromZoom: from.zoom, toZoom: to.zoom })
+    },
+    [rig],
+  )
+
+  /**
    * Start the animation loop if it is not running. Each frame advances the
    * drawn camera by the real elapsed time; the loop stops as soon as the
    * camera has arrived, so an idle canvas schedules no frames.
@@ -317,11 +368,12 @@ function Canvas({
       const dt = Math.max(0, now - lastFrameRef.current)
       lastFrameRef.current = now
       const more = rig.tick(now, dt)
+      advanceFlight(more)
       setView({ ...rig.drawn })
       rafRef.current = more ? requestAnimationFrame(frame) : 0
     }
     rafRef.current = requestAnimationFrame(frame)
-  }, [rig])
+  }, [rig, advanceFlight])
 
   useEffect(
     () => () => {
@@ -340,15 +392,62 @@ function Canvas({
   const [connectingFrom, setConnectingFrom] = useState<NodeRef | null>(null)
   const [connectingLine, setConnectingLine] = useState<{ x: number; y: number } | null>(null)
   const [connectingHover, setConnectingHover] = useState<NodeRef | null>(null)
+  // The "landed" event: the tree a connection was just made in, and when.
+  // Its new line flashes green, then rests blue (Line Lab v2 wave 4).
+  const [landed, setLanded] = useState<{ treeId: string; at: number } | null>(null)
 
   // Hovered / selected note, keyed across every tree in the space.
   const [hoveredRef, setHoveredRef] = useState<NodeRef | null>(null)
-  const [selectedRef, setSelectedRef] = useState<NodeRef | null>(null)
+  // Every selected note, in the order selected. A plain click selects one; a
+  // Shift, Cmd or Ctrl click adds or removes one. The newest is the one undo
+  // and the app treat as "the" selected note.
+  const [selectedRefs, setSelectedRefs] = useState<NodeRef[]>([])
+  const selectedRefsRef = useRef(selectedRefs)
+  selectedRefsRef.current = selectedRefs
+  // Whether the last pointer press held a modifier that extends a selection.
+  // Card clicks reach Canvas as bare callbacks, so the press is read here.
+  const extendRef = useRef(false)
+  useEffect(() => {
+    const onDown = (e: PointerEvent) => {
+      extendRef.current = e.shiftKey || e.metaKey || e.ctrlKey
+    }
+    window.addEventListener('pointerdown', onDown, true)
+    return () => window.removeEventListener('pointerdown', onDown, true)
+  }, [])
+
+  // A group drag: the selected notes the dragged one carries with it, each
+  // with where it started, and where they are drawn while it moves.
+  const groupRef = useRef<{
+    lead: string
+    leadStart: Point
+    members: Array<{ ref: NodeRef; start: Point; pin: boolean }>
+  } | null>(null)
+  const [followerPositions, setFollowerPositions] = useState<Record<string, Point>>({})
 
   // Live drag positions (frame-local), keyed by nodeKey.
   const [dragPositions, setDragPositions] = useState<
     Record<string, { x: number; y: number }>
   >({})
+  const dragPositionsRef = useRef(dragPositions)
+  const followerPositionsRef = useRef<Record<string, Point>>({})
+  // Each tree's drawn spots, reused while its inputs are unchanged.
+  const spotsCacheRef = useRef(
+    new Map<string, { nodes: unknown; edges: unknown; sig: string; spots: ReadonlyMap<string, DisplaySpot> }>(),
+  )
+  const treeSpotsRef = useRef(new Map<string, ReadonlyMap<string, DisplaySpot>>())
+  const subspacesCacheRef = useRef(
+    new Map<string, { nodes: unknown; revealed: unknown; sig: string; dimsSig: string; value: TreeSubspaces }>(),
+  )
+  // Per-tree slices of canvas-wide state, reused while unchanged so a frame
+  // whose own slice did not change skips rendering.
+  const sliceCacheRef = useRef(new Map<string, { sig: string; value: unknown }>())
+  const slice = <T,>(cacheKey: string, sig: string, make: () => T): T => {
+    const cached = sliceCacheRef.current.get(cacheKey)
+    if (cached && cached.sig === sig) return cached.value as T
+    const value = make()
+    sliceCacheRef.current.set(cacheKey, { sig, value })
+    return value
+  }
 
   // Frame-level state (D-15). A frame is dragged by its header, selected by a
   // click on it, and never deleted by the Delete key.
@@ -396,22 +495,124 @@ function Canvas({
     setSettleTick((tick) => tick + 1)
   }, [])
 
-  const handleDragMove = useCallback((ref: NodeRef, x: number, y: number) => {
-    setDragPositions((prev) => ({ ...prev, [nodeKey(ref)]: { x, y } }))
-  }, [])
+  /**
+   * A note's own stored spot (container-local), before any live drag: where a
+   * group member starts from. A following note starts where it is drawn.
+   */
+  const startSpot = (ref: NodeRef): { at: Point; following: boolean } | null => {
+    const tree = treesRef.current.find((t) => t.id === ref.treeId)
+    const node = tree?.nodes.find((n) => n.id === ref.nodeId)
+    if (!tree || !node) return null
+    const stored = {
+      x: Number(node.props['position.x']?.value ?? 0),
+      y: Number(node.props['position.y']?.value ?? 0),
+    }
+    if (node.props[INSIDE_KEY] !== undefined) return { at: stored, following: false }
+    const spot = treeSpotsRef.current.get(ref.treeId)?.get(ref.nodeId)
+    if (spot?.following === true) return { at: { x: spot.x, y: spot.y }, following: true }
+    return { at: stored, following: false }
+  }
 
-  const handleDragEnd = useCallback((ref: NodeRef) => {
+  /**
+   * The selected notes a drag of `lead` carries: every other selected note of
+   * the note type, except one inside another selected note, which moves with
+   * its container already.
+   */
+  const groupFor = (lead: NodeRef): NonNullable<typeof groupRef.current> | null => {
+    const selected = selectedRefsRef.current
+    const leadKey = nodeKey(lead)
+    if (selected.length < 2 || !selected.some((r) => nodeKey(r) === leadKey)) return null
+    const leadStart = startSpot(lead)
+    if (!leadStart) return null
+    const chosen = new Set(selected.map(nodeKey))
+    const members: Array<{ ref: NodeRef; start: Point; pin: boolean }> = []
+    for (const ref of selected) {
+      if (nodeKey(ref) === leadKey) continue
+      const tree = treesRef.current.find((t) => t.id === ref.treeId)
+      if (!tree || tree.kind === 'workspace') continue
+      const byId = new Map(tree.nodes.map((n) => [n.id, n]))
+      const node = byId.get(ref.nodeId)
+      if (!node || node.type !== NESTABLE_TYPE) continue
+      let parent: unknown = node.props[INSIDE_KEY]?.value
+      let carried = false
+      for (let depth = 0; typeof parent === 'string' && depth < MAX_NESTING_DEPTH; depth += 1) {
+        if (chosen.has(nodeKey({ treeId: ref.treeId, nodeId: parent }))) {
+          carried = true
+          break
+        }
+        parent = byId.get(parent)?.props[INSIDE_KEY]?.value
+      }
+      if (carried) continue
+      const start = startSpot(ref)
+      if (start) members.push({ ref, start: start.at, pin: start.following })
+    }
+    return members.length > 0 ? { lead: leadKey, leadStart: leadStart.at, members } : null
+  }
+
+  const handleDragMove = (ref: NodeRef, x: number, y: number) => {
+    const key = nodeKey(ref)
+    if (groupRef.current?.lead !== key && !dragPositionsRef.current[key]) {
+      groupRef.current = groupFor(ref)
+    }
+    setDragPositions((prev) => ({ ...prev, [key]: { x, y } }))
+    const group = groupRef.current
+    if (group?.lead === key) {
+      const dx = x - group.leadStart.x
+      const dy = y - group.leadStart.y
+      const next: Record<string, Point> = {}
+      for (const member of group.members) {
+        next[nodeKey(member.ref)] = { x: member.start.x + dx, y: member.start.y + dy }
+      }
+      setFollowerPositions(next)
+    }
+  }
+
+  const handleDragEnd = (ref: NodeRef) => {
+    const key = nodeKey(ref)
     setDragPositions((prev) => {
       const next = { ...prev }
-      delete next[nodeKey(ref)]
+      delete next[key]
       return next
     })
-  }, [])
+    const group = groupRef.current
+    if (group?.lead !== key) return
+    groupRef.current = null
+    const moves = group.members.flatMap((member) => {
+      const at = followerPositionsRef.current[nodeKey(member.ref)]
+      return at ? [{ ref: member.ref, x: at.x, y: at.y, pin: member.pin }] : []
+    })
+    if (moves.length === 0) {
+      setFollowerPositions({})
+      return
+    }
+    // Hold the followers where they were dropped until the commit is back,
+    // so they do not flick to their old spots in between.
+    void onMoveNotes(moves)
+      .catch(() => undefined)
+      .then(() => {
+        setFollowerPositions({})
+        for (const treeId of new Set(moves.map((m) => m.ref.treeId))) requestSettle(treeId)
+      })
+  }
 
   const selectNote = useCallback(
     (ref: NodeRef | null) => {
-      setSelectedRef(ref)
+      setSelectedRefs(ref ? [ref] : [])
       onSelectedNoteChange(ref)
+    },
+    [onSelectedNoteChange],
+  )
+
+  /** Add a note to the selection, or take it out if it is already in. */
+  const toggleNote = useCallback(
+    (ref: NodeRef) => {
+      const key = nodeKey(ref)
+      const prev = selectedRefsRef.current
+      const next = prev.some((r) => nodeKey(r) === key)
+        ? prev.filter((r) => nodeKey(r) !== key)
+        : [...prev, ref]
+      setSelectedRefs(next)
+      onSelectedNoteChange(next.length > 0 ? next[next.length - 1] : null)
     },
     [onSelectedNoteChange],
   )
@@ -419,6 +620,9 @@ function Canvas({
   // -----------------------------------------------------------------------
   // Frame rects, recomputed from live content bounds every render
   // -----------------------------------------------------------------------
+
+  dragPositionsRef.current = dragPositions
+  followerPositionsRef.current = followerPositions
 
   const frameRects = new Map<string, FrameRect>()
   // D-05: where every note is drawn, computed once per tree so frame bounds,
@@ -430,20 +634,49 @@ function Canvas({
   for (const tree of trees) {
     const overrides = new Map<string, { x: number; y: number }>()
     for (const node of tree.nodes) {
-      const drag = dragPositions[nodeKey({ treeId: tree.id, nodeId: node.id })]
+      const key = nodeKey({ treeId: tree.id, nodeId: node.id })
+      const drag = dragPositions[key] ?? followerPositions[key]
       if (drag) overrides.set(node.id, drag)
     }
-    const spots = displayPositions(tree.nodes, tree.edges, overrides)
+    // Reused while this tree and its live drags are unchanged, so the tree's
+    // frame can skip rendering (see TreeFrame's sameFrameProps).
+    const overridesSig = JSON.stringify([...overrides])
+    const cachedSpots = spotsCacheRef.current.get(tree.id)
+    const spots =
+      cachedSpots && cachedSpots.nodes === tree.nodes && cachedSpots.edges === tree.edges && cachedSpots.sig === overridesSig
+        ? cachedSpots.spots
+        : displayPositions(tree.nodes, tree.edges, overrides)
+    spotsCacheRef.current.set(tree.id, { nodes: tree.nodes, edges: tree.edges, sig: overridesSig, spots })
     treeSpots.set(tree.id, spots)
 
     if (tree.kind === 'workspace') {
       const positions: ReadonlyMap<string, Point> = overrides
-      const layout = subspaceRects(tree.nodes, dimsOfTree(tree.id), revealedFolders?.get(tree.id), positions)
-      treeSubspaces.set(tree.id, {
-        layout,
-        positions,
-        draggingFolderId: draggingFolder?.treeId === tree.id ? draggingFolder.nodeId : null,
-      })
+      const revealed = revealedFolders?.get(tree.id)
+      const draggingFolderId = draggingFolder?.treeId === tree.id ? draggingFolder.nodeId : null
+      // The layout reads measured sizes, so they are part of what it is reused on.
+      const dimsSig = tree.nodes
+        .map((node) => {
+          const d = nodeDimsRef.current.get(nodeKey({ treeId: tree.id, nodeId: node.id }))
+          return d ? `${d.width}x${d.height}` : ''
+        })
+        .join(',')
+      const cachedSub = subspacesCacheRef.current.get(tree.id)
+      const subspaces =
+        cachedSub &&
+        cachedSub.nodes === tree.nodes &&
+        cachedSub.revealed === revealed &&
+        cachedSub.sig === overridesSig &&
+        cachedSub.dimsSig === dimsSig &&
+        cachedSub.value.draggingFolderId === draggingFolderId
+          ? cachedSub.value
+          : {
+              layout: subspaceRects(tree.nodes, dimsOfTree(tree.id), revealed, positions),
+              positions,
+              draggingFolderId,
+            }
+      subspacesCacheRef.current.set(tree.id, { nodes: tree.nodes, revealed, sig: overridesSig, dimsSig, value: subspaces })
+      const layout = subspaces.layout
+      treeSubspaces.set(tree.id, subspaces)
       // The workspace root's cards and top-level folder frames, plus any note
       // made in the workspace tree that is not a workspace file.
       const others: ContentBox[] = tree.nodes
@@ -489,6 +722,7 @@ function Canvas({
    */
   const frameRectsRef = useRef(frameRects)
   frameRectsRef.current = frameRects
+  treeSpotsRef.current = treeSpots
 
   /**
    * Fly to a frame: glide the camera so the frame's midpoint sits at the
@@ -544,7 +778,11 @@ function Canvas({
    * glide its centre to the middle. Keeps the current roll.
    */
   const zoomToFrameRect = useCallback(
-    (treeId: string, rect: { x: number; y: number; width: number; height: number }) => {
+    (
+      treeId: string,
+      rect: { x: number; y: number; width: number; height: number },
+      onFlight?: (f: FlightFrame) => void,
+    ) => {
       const viewport = viewportRef.current
       const tree = treesRef.current.find((t) => t.id === treeId)
       if (!viewport || !tree || rect.width <= 0 || rect.height <= 0) return
@@ -553,11 +791,44 @@ function Canvas({
       const zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, fit))
       const cx = tree.frame.x + rect.x + rect.width / 2
       const cy = tree.frame.y + rect.y + rect.height / 2
+      const from = { ...rig.drawn }
       rig.easeTo((c) => centerOn({ ...c, zoom }, cx, cy, clientWidth, clientHeight), FLY_TAU_MS)
+      // With a flight, the note's parts fly with the glide, and Escape can
+      // fly back to where the camera was (look/enter.ts).
+      if (onFlight) {
+        startFlight(from, onFlight)
+        if (!enteredRef.current) enteredRef.current = { from, onFlight }
+        else enteredRef.current = { from: enteredRef.current.from, onFlight }
+      }
       kick()
     },
-    [rig, kick],
+    [rig, kick, startFlight],
   )
+
+  /** Leave the entered note: fly back to the camera from before it was entered. */
+  const leaveNote = useCallback((): boolean => {
+    const entered = enteredRef.current
+    if (!entered) return false
+    enteredRef.current = null
+    const from = { ...rig.drawn }
+    rig.easeTo(() => ({ ...entered.from }), FLY_TAU_MS)
+    startFlight(from, entered.onFlight)
+    kick()
+    return true
+  }, [rig, kick, startFlight])
+
+  // Escape leaves an entered note, once nothing is being typed in (the first
+  // Escape stops editing; App handles that).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || !enteredRef.current) return
+      const active = document.activeElement
+      if (active && active.closest('.ProseMirror, input, textarea, [contenteditable="true"]')) return
+      leaveNote()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [leaveNote])
 
   useImperativeHandle(ref, () => ({ panToFrame, panToNote }), [panToFrame, panToNote])
 
@@ -850,6 +1121,7 @@ function Canvas({
         // note does nothing here; cross-tree links are D-16 (Plan 15), and
         // writing one end of them now would record half a relationship.
         if (connectingHover && connectingHover.treeId === connectingFrom.treeId) {
+          setLanded({ treeId: connectingFrom.treeId, at: performance.now() })
           onEdgeCreate(connectingFrom, connectingHover)
         }
         setConnectingFrom(null)
@@ -1009,11 +1281,30 @@ function Canvas({
 
   const handleBorderSelect = useCallback(
     (ref: NodeRef) => {
-      const same = selectedRef && nodeKey(selectedRef) === nodeKey(ref)
-      selectNote(same ? null : ref)
+      if (extendRef.current) {
+        toggleNote(ref)
+      } else {
+        const only = selectedRefs.length === 1 && nodeKey(selectedRefs[0]) === nodeKey(ref)
+        selectNote(only ? null : ref)
+      }
       onStopEditing()
     },
-    [selectedRef, selectNote, onStopEditing],
+    [selectedRefs, selectNote, toggleNote, onStopEditing],
+  )
+
+  // Typing into a note ends the selection, so one note is never blue for
+  // being selected while another is blue for being edited. A modified click
+  // on a note's text adds it to the selection instead of editing it.
+  const handleStartEditing = useCallback(
+    (ref: NodeRef) => {
+      if (extendRef.current) {
+        toggleNote(ref)
+        return
+      }
+      if (selectedRefsRef.current.length > 0) selectNote(null)
+      onStartEditing(ref)
+    },
+    [onStartEditing, selectNote, toggleNote],
   )
 
   const handleHover = useCallback((ref: NodeRef, hovered: boolean) => {
@@ -1030,18 +1321,21 @@ function Canvas({
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (!selectedRef) return
+      if (selectedRefs.length === 0) return
       if (editingRef) return
+      if (isTypingTarget(e.target)) return
       if (e.key === 'Delete' || e.key === 'Backspace') {
         e.preventDefault()
         e.stopPropagation()
-        onDeleteNote(selectedRef)
+        for (const ref of selectedRefs) onDeleteNote(ref)
+        selectNote(null)
+      } else if (e.key === 'Escape') {
         selectNote(null)
       }
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [selectedRef, editingRef, onDeleteNote, selectNote])
+  }, [selectedRefs, editingRef, onDeleteNote, selectNote])
 
   // -----------------------------------------------------------------------
   // Keyboard roll: Q and E turn the canvas, 0 levels it, about the centre.
@@ -1086,29 +1380,27 @@ function Canvas({
     height: '100%',
   }
 
+  /** Settle the space around a tree once `commit` has landed. */
+  const settleAfter = (treeId: string, commit: void | Promise<void>): void => {
+    void Promise.resolve(commit)
+      .catch(() => undefined)
+      .then(() => requestSettle(treeId))
+  }
+
   const handlers: TreeFrameHandlers = {
-    onStartEditing,
+    onStartEditing: handleStartEditing,
     onSave,
     onMarkDirty,
     onMarkClean,
     // A note landing or resizing can grow its frame into a neighbour, so the
     // space re-settles on the same rule a frame drag uses.
-    onPositionChange: (ref, x, y) => {
-      onPositionChange(ref, x, y)
-      recordFrameGrowth(ref.treeId)
-    },
-    onTakeOverPosition: (ref, x, y) => {
-      onTakeOverPosition(ref, x, y)
-      recordFrameGrowth(ref.treeId)
-    },
-    onWidthChange: (ref, width) => {
-      onWidthChange(ref, width)
-      recordFrameGrowth(ref.treeId)
-    },
-    onHeightChange: (ref, height) => {
-      onHeightChange(ref, height)
-      recordFrameGrowth(ref.treeId)
-    },
+    // It settles once the commit is back and the frame has been measured
+    // with the note where it landed; settling at once would measure the
+    // frame as it was before the drop and push nothing aside.
+    onPositionChange: (ref, x, y) => settleAfter(ref.treeId, onPositionChange(ref, x, y)),
+    onTakeOverPosition: (ref, x, y) => settleAfter(ref.treeId, onTakeOverPosition(ref, x, y)),
+    onWidthChange: (ref, width) => settleAfter(ref.treeId, onWidthChange(ref, width)),
+    onHeightChange: (ref, height) => settleAfter(ref.treeId, onHeightChange(ref, height)),
     onPinnedPositionChange,
     onDeleteNote,
     onPropertyEdit,
@@ -1126,15 +1418,12 @@ function Canvas({
         .then(() => requestSettle(folderRef.treeId))
         .catch(() => undefined)
     },
-    onNestingMove: (noteRef, ops) => {
-      onNestingMove(noteRef, ops)
-      recordFrameGrowth(noteRef.treeId)
-    },
+    onNestingMove: (noteRef, ops) => settleAfter(noteRef.treeId, onNestingMove(noteRef, ops)),
     onCreateInside: (container, x, y) => {
       onCreateInside(container, x, y)
       recordFrameGrowth(container.treeId)
     },
-    onZoomToRect: (treeId, rect) => zoomToFrameRect(treeId, rect),
+    onZoomToRect: (treeId, rect, onFlight) => zoomToFrameRect(treeId, rect, onFlight),
     onFolderHeaderPointerDown: (folderRef, e) => {
       if (e.button !== 0) return
       // A folder header is not canvas background: dragging it must not pan.
@@ -1154,6 +1443,60 @@ function Canvas({
       setDraggingFolder(folderRef)
       e.currentTarget.setPointerCapture(e.pointerId)
     },
+  }
+
+  // Stable stand-ins for what each frame is handed, so a frame is re-rendered
+  // only when something of its own changed. The handlers object and the frame
+  // callbacks delegate to this render's versions, so none of them goes stale.
+  const handlersRef = useRef(handlers)
+  handlersRef.current = handlers
+  const [stableHandlers] = useState(() => {
+    const cache = new Map<string, unknown>()
+    return new Proxy({} as TreeFrameHandlers, {
+      get: (_target, name: string) => {
+        if (!cache.has(name)) {
+          cache.set(name, (...args: unknown[]) =>
+            (handlersRef.current[name as keyof TreeFrameHandlers] as (...a: unknown[]) => unknown)(...args),
+          )
+        }
+        return cache.get(name)
+      },
+    })
+  })
+  const frameHeaderDownRef = useRef(handleFrameHeaderPointerDown)
+  frameHeaderDownRef.current = handleFrameHeaderPointerDown
+  const frameCallbacksRef = useRef(
+    new Map<
+      string,
+      {
+        onHeaderPointerDown: (e: React.PointerEvent<HTMLDivElement>) => void
+        onFrameHover: (hovered: boolean) => void
+      }
+    >(),
+  )
+  const frameCallbacksOf = (treeId: string) => {
+    let callbacks = frameCallbacksRef.current.get(treeId)
+    if (!callbacks) {
+      callbacks = {
+        onHeaderPointerDown: (e) => frameHeaderDownRef.current(treeId, e),
+        onFrameHover: (hovered) => setHoveredTreeId(hovered ? treeId : null),
+      }
+      frameCallbacksRef.current.set(treeId, callbacks)
+    }
+    return callbacks
+  }
+  const selectedKeysOf = (treeId: string): ReadonlySet<string> => {
+    const keys = selectedRefs.filter((r) => r.treeId === treeId).map(nodeKey)
+    return slice(`sel:${treeId}`, keys.join(','), () => new Set(keys))
+  }
+  const positionsOf = (
+    kind: string,
+    all: Record<string, Point>,
+    treeId: string,
+  ): Record<string, Point> => {
+    const prefix = `${treeId}|`
+    const mine = Object.entries(all).filter(([key]) => key.startsWith(prefix))
+    return slice(`${kind}:${treeId}`, JSON.stringify(mine), () => Object.fromEntries(mine))
   }
 
   // The in-progress connection line is drawn in world space, above the frames,
@@ -1197,6 +1540,14 @@ function Canvas({
         </div>
       )}
 
+      <SelectionBar
+        selected={selectedRefs}
+        trees={trees}
+        onGoTo={(ref) => panToNote(ref.treeId, ref.nodeId)}
+        onDeselect={toggleNote}
+        onClear={() => selectNote(null)}
+      />
+
       {/* Transformed container: every frame pans and zooms together */}
       <div className="tapestry-canvas-container" style={containerStyle}>
         {trees.map((tree) => {
@@ -1209,24 +1560,28 @@ function Canvas({
               rect={rect}
               zoom={view.zoom}
               roll={view.roll}
-              editingKey={editingRef ? nodeKey(editingRef) : null}
-              hoveredKey={hoveredRef ? nodeKey(hoveredRef) : null}
-              selectedKey={selectedRef ? nodeKey(selectedRef) : null}
-              connectingHoverKey={connectingHover ? nodeKey(connectingHover) : null}
+              editingKey={editingRef?.treeId === tree.id ? nodeKey(editingRef) : null}
+              hoveredKey={hoveredRef?.treeId === tree.id ? nodeKey(hoveredRef) : null}
+              selectedKeys={selectedKeysOf(tree.id)}
+              connectingHoverKey={
+                connectingHover?.treeId === tree.id ? nodeKey(connectingHover) : null
+              }
               isConnecting={connectingFrom !== null}
+              landedAt={landed?.treeId === tree.id ? landed.at : null}
               pluginNodeViews={pluginNodeViews}
               currentUserActorId={currentUserActorId}
-              dragPositions={dragPositions}
+              dragPositions={positionsOf('drag', dragPositions, tree.id)}
+              followerPositions={positionsOf('follow', followerPositions, tree.id)}
               displayPositions={treeSpots.get(tree.id) ?? NO_DISPLAY_SPOTS}
               getDims={getDims}
               isSelected={selectedTreeId === tree.id}
               isHovered={hoveredTreeId === tree.id}
               isDragging={draggingTreeId === tree.id}
-              onHeaderPointerDown={(e) => handleFrameHeaderPointerDown(tree.id, e)}
-              onFrameHover={(hovered) => setHoveredTreeId(hovered ? tree.id : null)}
-              handlers={handlers}
+              onHeaderPointerDown={frameCallbacksOf(tree.id).onHeaderPointerDown}
+              onFrameHover={frameCallbacksOf(tree.id).onFrameHover}
+              handlers={stableHandlers}
               subspaces={treeSubspaces.get(tree.id)}
-              openRequest={openRequest}
+              openRequest={openRequest?.key.startsWith(`${tree.id}:`) ? openRequest : null}
             />
           )
         })}
@@ -1239,8 +1594,10 @@ function Canvas({
               position: 'absolute',
               top: 0,
               left: 0,
-              width: '100%',
-              height: '100%',
+              // 1 px, not 100%: the parent has no size, and a 0 × 0 SVG draws nothing
+              // even with overflow visible.
+              width: 1,
+              height: 1,
               overflow: 'visible',
               pointerEvents: 'none',
             }}

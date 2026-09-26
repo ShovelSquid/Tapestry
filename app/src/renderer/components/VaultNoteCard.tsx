@@ -241,7 +241,7 @@ export default function VaultNoteCard({
             fontSize: 18,
             fontWeight: 600,
             lineHeight: 1.25,
-            color: '#2C2C2C',
+            color: 'var(--tap-ink)',
           }}
         >
           {noteTitle}
@@ -255,7 +255,7 @@ export default function VaultNoteCard({
           fontSize: 16,
           fontWeight: 400,
           lineHeight: 1.5,
-          color: '#2C2C2C',
+          color: 'var(--tap-ink)',
           whiteSpace: 'pre-wrap',
           wordBreak: 'break-word',
         }}

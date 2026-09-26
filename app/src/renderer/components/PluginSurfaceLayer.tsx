@@ -83,8 +83,9 @@ export function SurfaceLauncher({
       className="plugin-surface-launcher"
       style={{
         position: 'fixed',
-        top: 12,
-        right: 12,
+        // Level with the forest bar in the opposite corner.
+        top: 16,
+        right: 16,
         // Below notifications (10000) and below open surface windows (9000+)
         // so a window dragged over the strip covers it.
         zIndex: 8500,
@@ -100,16 +101,9 @@ export function SurfaceLauncher({
             type="button"
             aria-label={label}
             onClick={() => onOpen(surface)}
-            style={{
-              background: '#FFFFFF',
-              border: '1px solid #E0DDD7',
-              borderRadius: 6,
-              boxShadow: '0 2px 6px rgba(0,0,0,0.10)',
-              padding: '6px 12px',
-              fontSize: 13,
-              color: '#2C2C2C',
-              cursor: 'pointer',
-            }}
+            // The forest bar's button, so both corners hover, press and take
+            // focus the same way.
+            className="tapestry-forest-button"
           >
             {label}
           </button>
@@ -243,9 +237,9 @@ type Drag = { kind: 'move' } | { kind: 'resize'; edge: ResizeEdge }
 
 const headerButtonStyle: React.CSSProperties = {
   background: 'transparent',
-  border: '1px solid #5A5A5A',
+  border: '1px solid var(--tap-console-border-strong)',
   borderRadius: 6,
-  color: '#F0EDE6',
+  color: 'var(--tap-console-ink)',
   padding: '2px 10px',
   fontSize: 12,
   cursor: 'pointer',
@@ -426,9 +420,9 @@ function SurfaceWindow({
         position: 'fixed',
         ...placement,
         zIndex,
-        background: '#1E1E1E',
-        color: '#F0EDE6',
-        border: '1px solid #3A3A3A',
+        background: 'var(--tap-console-bg)',
+        color: 'var(--tap-console-ink)',
+        border: '1px solid var(--tap-console-border)',
         boxShadow: isTop ? '0 12px 32px rgba(0,0,0,0.35)' : '0 6px 18px rgba(0,0,0,0.22)',
         outline: 'none',
         overflow: 'visible',
@@ -445,7 +439,7 @@ function SurfaceWindow({
           justifyContent: 'space-between',
           gap: 8,
           padding: '0 8px 0 12px',
-          borderBottom: '1px solid #3A3A3A',
+          borderBottom: '1px solid var(--tap-console-border)',
           fontSize: 13,
           cursor: maximized ? 'default' : 'move',
           userSelect: 'none',
@@ -515,10 +509,10 @@ function SurfaceWindow({
             left: 12,
             right: 12,
             zIndex: 1,
-            background: '#3B1212',
-            border: '1px solid #A33',
+            background: 'var(--tap-console-error-bg)',
+            border: '1px solid var(--tap-console-error-border)',
             borderRadius: 6,
-            color: '#FFD6D6',
+            color: 'var(--tap-console-error-ink)',
             padding: '10px 12px',
             fontFamily: 'ui-monospace, Menlo, monospace',
             fontSize: 12,

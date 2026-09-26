@@ -1,0 +1,11 @@
+No plan in ~/Tree/Design is `ready for autonomy` or `in progress (ws/ui)`.
+
+Finished since the last DONE:
+- Plan - Line Lab v2: parked (ws/ui, 2026-09-25). Part 1 and Part 2 waves 0-8 are built. Parked: Task 8's publish
+  (needs the Artifact tool, REVIEW #1) and the cursor and grab-hand set (no drawings yet, REVIEW #11).
+  Screenshot review: ~/Tree/Design/UI Build Review.md.
+
+Open REVIEW.md items (answer in autonomy/RESPONSE): 1, 2, 3, 4, 5, 6 (gate 1), 7, 8 (gate 2), 9 (gate 4), 10, 11 (gate 3),
+12 (gate 5, the feel check). Several of these queue "merge ws/ui into ws/mergin"; ws/ui is at the tip of all of them.
+
+To continue: mark a new plan `ready for autonomy` (or answer item 11), then delete this file.

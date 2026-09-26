@@ -1475,7 +1475,7 @@ const styles: Record<string, React.CSSProperties> = {
     // stays faintly perceptible rather than a dark scrim (a dark scrim
     // would push half the author palette under AA, and glyphs are drawn
     // near-white against paper, not against black).
-    background: 'var(--tap-paper, #F7F5F0)',
+    background: 'var(--tap-paper)',
     opacity: 0.97,
   },
   panel: {
@@ -1498,15 +1498,15 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 600,
     fontSize: 18,
     flex: 1,
-    color: 'var(--tap-ink, #2C2C2C)',
+    color: 'var(--tap-ink)',
   },
   statusLabel: {
     fontSize: 13,
-    color: 'var(--tap-muted, #6B6B6B)',
+    color: 'var(--tap-muted)',
   },
   closeButton: {
     fontSize: 13,
-    border: '1px solid var(--tap-border, #E0DDD7)',
+    border: '1px solid var(--tap-border)',
     borderRadius: 6,
     background: 'transparent',
     padding: '4px 10px',
@@ -1526,7 +1526,7 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '12px 16px',
     fontSize: 16,
     lineHeight: 1.5,
-    background: 'var(--tap-surface, #FFFFFF)',
+    background: 'var(--tap-surface)',
     borderRadius: 12,
   },
   pastStageOverlay: {
@@ -1538,7 +1538,7 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '12px 16px',
     fontSize: 16,
     lineHeight: 1.5,
-    background: 'var(--tap-surface, #FFFFFF)',
+    background: 'var(--tap-surface)',
     borderRadius: 12,
   },
   underTyperLine: {
@@ -1546,21 +1546,21 @@ const styles: Record<string, React.CSSProperties> = {
     alignSelf: 'center',
     padding: '4px 16px 0',
     fontSize: 13,
-    color: 'var(--tap-muted, #6B6B6B)',
+    color: 'var(--tap-muted)',
   },
   error: {
     width: 'min(688px, 92vw)',
     alignSelf: 'center',
     padding: '4px 16px 0',
     fontSize: 13,
-    color: 'var(--tap-destructive-text, #B4232A)',
+    color: 'var(--tap-destructive-text)',
   },
   stage: {
     position: 'relative',
     flex: 1,
     width: '100%',
     marginTop: 24,
-    background: 'var(--tap-paper, #F7F5F0)',
+    background: 'var(--tap-paper)',
     overflow: 'hidden',
   },
   stageStatus: {
@@ -1569,7 +1569,7 @@ const styles: Record<string, React.CSSProperties> = {
     top: '38%',
     transform: 'translate(-50%, -50%)',
     fontSize: 13,
-    color: 'var(--tap-muted, #6B6B6B)',
+    color: 'var(--tap-muted)',
     pointerEvents: 'none',
   },
   separationChip: {
@@ -1580,8 +1580,8 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 13,
     padding: '4px 10px',
     borderRadius: 6,
-    background: 'var(--tap-surface, #FFFFFF)',
-    color: 'var(--tap-ink, #2C2C2C)',
+    background: 'var(--tap-surface)',
+    color: 'var(--tap-ink)',
     boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
     pointerEvents: 'none',
   },

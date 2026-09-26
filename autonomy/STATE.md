@@ -20,6 +20,17 @@ gate and collects the hands-on checks.
 (REVIEW item 5). Do not run it, and do not let 2.8 depend on it: 2.8's forks
 use transcript replay, which works on the Claude Code CLI engine.
 
+## After the ws/ui merge (2026-09-25)
+
+ws/ui (Line Lab v2: ink lines, note restyle, format bar, zoom collapse,
+motion, multi-select) was merged after 2.8 was planned. Plans cite line
+numbers in App.css, App.tsx, Canvas.tsx, NoteCard.tsx and TreeFrame.tsx that
+may have moved: find the code by name, not line. The 2.8 UI-SPEC predates the
+restyle. Where its colours or borders disagree with the current App.css
+tokens (for example `--tap-accent`) or the `look/` components, match the
+current code and note it in the SUMMARY. ws/ui's driver is archived in
+`autonomy/ui/` with its own open REVIEW items (1-12).
+
 ## In progress
 
 (nothing)
@@ -37,7 +48,7 @@ use transcript replay, which works on the Claude Code CLI engine.
 - `node_modules` at the root and `app/native/build` are real directories in
   this worktree. Build `app/out` with `npm --prefix app run build:js`.
 - Baseline on 2026-09-25 before 2.8: 71 test files, 1132 tests passing,
-  typecheck clean.
+  typecheck clean. After merging ws/ui: 82 files, 1237 tests.
 - From ws/windows: `worktree.base-check` may report shouldDegrade=true, so
   run executors sequentially with no isolation. Running `query
   dispatch-isolation` modifies the tracked `.gsd/dispatch-isolation-sentinel.json`;

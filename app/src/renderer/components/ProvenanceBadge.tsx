@@ -5,7 +5,7 @@
  * Two rules from the UI-SPEC shape everything here:
  *
  * 1. **Never color-only.** Actors differ by glyph shape and by the id text,
- *    never by hue: all provenance is Muted #6B6B6B, and the accent is never
+ *    never by hue: all provenance is Muted --tap-muted, and the accent is never
  *    used for it. Someone who cannot tell the glyphs apart still reads
  *    `agent.claude` in full.
  * 2. **The literal id, always.** The badge shows what a person would find on

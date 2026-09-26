@@ -2,16 +2,16 @@
  * Notes inside notes. What matters: a bad `inside` never breaks a tree (it
  * leaves the note at the top level), positions compose down any depth, a
  * container grows to hold what is in it, a drop never lands a note inside
- * itself, and zooming out hides contents behind an outline.
+ * itself, and zooming out collapses a note and hides its contents.
  */
 
 import { describe, expect, it } from 'vitest'
+import { LOOK } from '../look/values'
 import {
   CHILD_TOP,
   CONTAINER_PADDING,
   MAX_NESTING_DEPTH,
   NESTABLE_TYPE,
-  OUTLINE_BELOW_PX,
   absolutePositions,
   buildNesting,
   containerMinSizes,
@@ -119,14 +119,21 @@ describe('outlineState', () => {
 
   it('draws everything at a readable zoom', () => {
     const s = outlineState(nesting, width, 1)
-    expect(s.outlined.size + s.hidden.size).toBe(0)
+    expect(s.collapsed.size + s.hidden.size).toBe(0)
   })
 
-  it('outlines small nested notes and hides what is inside them, never the top level', () => {
-    const zoom = (OUTLINE_BELOW_PX - 1) / 200
-    const s = outlineState(nesting, width, zoom)
-    expect([...s.outlined]).toEqual(['n2'])
+  it('collapses small notes at any depth and hides what is inside them', () => {
+    const narrow = (id: string) => (id === 'n1' ? 400 : 200)
+    const zoom = (LOOK.collapse.circleBelowPx - 1) / 200
+    const s = outlineState(nesting, narrow, zoom)
+    expect([...s.collapsed]).toEqual([['n2', 'circle']])
     expect([...s.hidden]).toEqual(['n3'])
+  })
+
+  it('collapses a top-level note too, to a dot when smaller still', () => {
+    const s = outlineState(nesting, width, (LOOK.collapse.dotBelowPx - 1) / 200)
+    expect([...s.collapsed]).toEqual([['n1', 'dot']])
+    expect([...s.hidden].sort()).toEqual(['n2', 'n3'])
   })
 })
 

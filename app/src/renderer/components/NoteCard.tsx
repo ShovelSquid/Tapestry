@@ -24,12 +24,21 @@
  * editor/use-prosemirror.ts (D-26 universal editing).
  */
 
-import React, { useCallback, useContext, useEffect, useRef, useState } from 'react'
+import React, { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { EditorView } from 'prosemirror-view'
 import { useProseMirror } from '../editor/use-prosemirror'
-import NoteControls from './NoteControls'
-import FloatingToolbar from './FloatingToolbar'
-import { layoutSize, screenDeltaToWorld } from '../layout/camera'
+import { layoutSize, screenDeltaToWorld, screenToElementLocal } from '../layout/camera'
+import { inkShape, nearestT, seedFromId } from '../look/ink'
+import { InkLine } from '../look/InkLine'
+import { NoteInk, noteShape } from '../look/NoteInk'
+import { CornerCluster } from '../look/CornerCluster'
+import { FormatBar } from '../look/FormatBar'
+import { NoteSettings } from '../look/NoteSettings'
+import { MoveParticles } from '../look/MoveParticles'
+import { registerRifle } from '../look/rifle'
+import { DARK, aimLight, type LightTween } from '../look/bloom'
+import { bobScale, effectStrength, frameScheduler, readMotionSettings } from '../look/motion'
+import { LOOK } from '../look/values'
 import ProvenanceBadge, { actorSpokenText } from './ProvenanceBadge'
 import { AskClaudeButton, useContextMenu } from './ContextMenu'
 import { ChatContext } from '../state/chat'
@@ -103,8 +112,16 @@ interface NoteCardProps {
   minSize?: { width: number; height: number }
   /** "New note inside": make a note on this note's surface. */
   onCreateInside?: () => void
-  /** "Zoom into note": fit this note to the view. */
+  /** "Zoom into note", and a double-click: enter this note (look/enter.ts). */
   onZoomTo?: () => void
+  /** The zoom-collapse crossfade (look/collapse.ts): fading in, or out to a circle or dot. */
+  formFade?: 'in' | 'out' | null
+  /**
+   * While the note is entered or left, the extra scale that grows it out of
+   * (or back into) the form it was drawn in (look/enter.ts). A CSS `scale`,
+   * apart from the bob's `transform` and the rifle's `translate`.
+   */
+  flightScale?: number
 }
 
 // ---------------------------------------------------------------------------
@@ -122,6 +139,14 @@ function getNodeProp(
 
 const MIN_WIDTH = 120
 const MIN_HEIGHT = 60
+
+/** The card's side padding (App.css), which the ink rule spans inside. */
+const CARD_PAD = 16
+
+/** The hover bloom's length right now: 0 when the effect is off. */
+function bloomMs(): number {
+  return effectStrength(readMotionSettings(), 'hoverBloom') > 0 ? LOOK.motion.hoverBloomMs : 0
+}
 
 // ---------------------------------------------------------------------------
 // NoteCard
@@ -160,6 +185,8 @@ export default function NoteCard({
   minSize,
   onCreateInside,
   onZoomTo,
+  formFade,
+  flightScale,
 }: NoteCardProps): React.ReactElement {
   const cardRef = useRef<HTMLDivElement>(null)
 
@@ -215,7 +242,7 @@ export default function NoteCard({
   })
 
   // The EditorView is created inside the hook's effect, so expose it as state
-  // for the FloatingToolbar (D-24). This effect is declared after the hook, so
+  // for the format bar (D-24). This effect is declared after the hook, so
   // it runs after the view exists (and again if node.id recreates it).
   const [editorView, setEditorView] = useState<EditorView | null>(null)
   useEffect(() => {
@@ -252,7 +279,21 @@ export default function NoteCard({
   )
   const [localWidth, setLocalWidth] = useState<number | null>(null)
   const [localHeight, setLocalHeight] = useState<number | null>(null)
+  // Mirrors of the three overrides above, read by the pointer-up handlers so
+  // a commit is sent from the handler, never from inside a state updater
+  // (which StrictMode runs twice, sending the commit twice).
+  const localPosRef = useRef<{ x: number; y: number } | null>(null)
+  localPosRef.current = localPos
+  const localWidthRef = useRef<number | null>(null)
+  localWidthRef.current = localWidth
+  const localHeightRef = useRef<number | null>(null)
+  localHeightRef.current = localHeight
   const isDraggingRef = useRef(false)
+  // Set once a drag has really moved, so the click that ends it does not
+  // also toggle the note's selection.
+  const draggedRef = useRef(false)
+  // The same as the ref, as state, so the move particles run only while dragged.
+  const [dragging, setDragging] = useState(false)
   const isResizingRef = useRef(false)
   const resizeDirRef = useRef<string>('')
   const dragStartRef = useRef({ mouseX: 0, mouseY: 0, startX: 0, startY: 0 })
@@ -264,6 +305,121 @@ export default function NoteCard({
     posX: 0,
     posY: 0,
   })
+
+  // ----- The note look (Line Lab v2 wave 2) -----
+  //
+  // The card's layout size in its own px (offset sizes ignore the zoom and
+  // the bob), so the outline is built once per size and seed, never per zoom.
+  const [box, setBox] = useState({ w: 0, h: 0 })
+  useLayoutEffect(() => {
+    const el = cardRef.current
+    if (!el) return
+    const measure = (): void => {
+      const w = el.offsetWidth
+      const h = el.offsetHeight
+      setBox((b) => (b.w === w && b.h === h ? b : { w, h }))
+    }
+    measure()
+    if (typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+  const seed = useMemo(() => seedFromId(node.id), [node.id])
+  const outline = useMemo(() => (box.w > 0 && box.h > 0 ? noteShape(box.w, box.h, seed) : null), [box.w, box.h, seed])
+  const ruleLen = Math.max(0, box.w - 2 * CARD_PAD - 24)
+  const rule = useMemo(
+    () => (ruleLen > 0 ? inkShape([{ x: 0, y: 3 }, { x: ruleLen, y: 2 }], false, seed + 2, { step: 2, wobbleScale: 0.6 }) : null),
+    [ruleLen, seed],
+  )
+
+  // The last pointer point in the card's px: where the bloom comes in and
+  // leaves, and where the blue starts.
+  const lastPtRef = useRef({ x: 0, y: 0 })
+  const localPoint = (e: { clientX: number; clientY: number }): { x: number; y: number } => {
+    const el = cardRef.current
+    if (!el) return lastPtRef.current
+    const p = screenToElementLocal(
+      { x: e.clientX, y: e.clientY },
+      el.getBoundingClientRect(),
+      { width: el.offsetWidth, height: el.offsetHeight },
+      zoom,
+      roll,
+    )
+    lastPtRef.current = p
+    return p
+  }
+
+  // The blue replaces the pencil while the note is selected, edited, or the
+  // target of a connection; it grows from the last pointer point.
+  const blue = isSelected || isEditing || isConnectTarget
+  const blueFromTRef = useRef(0)
+  const wasBlueRef = useRef(blue)
+  if (blue && !wasBlueRef.current && outline) {
+    blueFromTRef.current = nearestT(outline, lastPtRef.current.x, lastPtRef.current.y)
+  }
+  wasBlueRef.current = blue
+
+  const [light, setLight] = useState<LightTween>(DARK)
+  const pointerInRef = useRef(false)
+  // A note that turns blue without the pointer on it lights from the last
+  // point; one that loses its blue with the pointer away drains toward it.
+  useEffect(() => {
+    if (pointerInRef.current) return
+    const { x: px, y: py } = lastPtRef.current
+    setLight((l) => aimLight(l, px, py, blue ? 1 : 0, performance.now(), bloomMs()))
+  }, [blue])
+
+  // The bob plays when the note turns blue. It is a transform on the card,
+  // so the dims reported for connections divide it back out.
+  const bobRef = useRef(1)
+  useEffect(() => {
+    if (!blue) return
+    const strength = effectStrength(readMotionSettings(), 'bob')
+    const el = cardRef.current
+    if (!el || strength <= 0) return
+    const start = performance.now()
+    const unsubscribe = frameScheduler().subscribe((nowMs) => {
+      const elapsed = nowMs - start
+      const s = bobScale(LOOK.motion.bobKeyframes, LOOK.motion.bobMs, elapsed, strength)
+      bobRef.current = s
+      el.style.transform = s === 1 ? '' : `scale(${s})`
+      if (elapsed >= LOOK.motion.bobMs) unsubscribe()
+    })
+    return () => {
+      unsubscribe()
+      bobRef.current = 1
+      el.style.transform = ''
+    }
+  }, [blue])
+
+  // Rifling and text bob (Line Lab v2 wave 6): the card drifts from a
+  // passing cursor and its text shifts a hair. Never while it's in hand or
+  // being written in.
+  const rifleState = useRef({ zoom, roll, editing: isEditing })
+  rifleState.current = { zoom, roll, editing: isEditing }
+  useEffect(() => {
+    const el = cardRef.current
+    if (!el) return undefined
+    return registerRifle({
+      el,
+      text: () => editorRef.current,
+      toLocal: (dx, dy) => screenDeltaToWorld(dx, dy, rifleState.current.zoom, rifleState.current.roll),
+      enabled: () => !isDraggingRef.current && !isResizingRef.current && !rifleState.current.editing,
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // The format bar and the settings face (Line Lab v2 wave 3). The red dot's
+  // hover folds the format pill; settings close when the note loses its blue.
+  const [redHover, setRedHover] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const toggleSettings = useCallback(() => setSettingsOpen((o) => !o), [])
+  const closeSettings = useCallback(() => setSettingsOpen(false), [])
+  const [faceShown, setFaceShown] = useState(false)
+  useEffect(() => {
+    if (!blue) setSettingsOpen(false)
+  }, [blue])
 
   // Hover delay for controls (D-06: controls remain reachable)
   const hoverTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -318,7 +474,9 @@ export default function NoteCard({
   useEffect(() => {
     if (cardRef.current) {
       const size = layoutSize(cardRef.current, zoom, roll)
-      onRegisterDims(node.id, size.width, size.height)
+      // The bob and an entering flight scale the card; divide them back out.
+      const bob = roll === 0 ? bobRef.current * (flightScale ?? 1) : 1
+      onRegisterDims(node.id, size.width / bob, size.height / bob)
     }
   })
 
@@ -335,7 +493,10 @@ export default function NoteCard({
   // Hover management (D-06, D-07)
   // -----------------------------------------------------------------------
 
-  const handleMouseEnter = useCallback(() => {
+  const handleMouseEnter = useCallback((e: React.MouseEvent) => {
+    pointerInRef.current = true
+    const p = localPoint(e)
+    setLight((l) => aimLight(l, p.x, p.y, 1, performance.now(), bloomMs()))
     if (hoverTimeoutRef.current) {
       clearTimeout(hoverTimeoutRef.current)
       hoverTimeoutRef.current = null
@@ -345,9 +506,14 @@ export default function NoteCard({
     if (isConnecting) {
       onHoverDuringConnection()
     }
-  }, [onHover, isConnecting, onHoverDuringConnection])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onHover, isConnecting, onHoverDuringConnection, zoom, roll])
 
-  const handleMouseLeave = useCallback(() => {
+  const handleMouseLeave = useCallback((e: React.MouseEvent) => {
+    pointerInRef.current = false
+    const p = localPoint(e)
+    // A blue note keeps its light; the exit runs when it isn't (Line Lab task 4).
+    if (!blue) setLight((l) => aimLight(l, p.x, p.y, 0, performance.now(), bloomMs()))
     // Delay hiding controls so the user can move from note to control (D-06)
     hoverTimeoutRef.current = setTimeout(() => {
       setShowControls(false)
@@ -356,7 +522,8 @@ export default function NoteCard({
     if (isConnecting) {
       onLeaveDuringConnection()
     }
-  }, [onHover, isConnecting, onLeaveDuringConnection])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onHover, isConnecting, onLeaveDuringConnection, blue, zoom, roll])
 
   useEffect(() => {
     return () => {
@@ -388,6 +555,8 @@ export default function NoteCard({
       e.preventDefault()
 
       isDraggingRef.current = true
+      draggedRef.current = false
+      setDragging(true)
       dragStartRef.current = {
         mouseX: e.clientX,
         mouseY: e.clientY,
@@ -405,20 +574,27 @@ export default function NoteCard({
         )
         const newX = dragStartRef.current.startX + d.x
         const newY = dragStartRef.current.startY + d.y
+        if (
+          Math.abs(me.clientX - dragStartRef.current.mouseX) +
+            Math.abs(me.clientY - dragStartRef.current.mouseY) >
+          3
+        ) {
+          draggedRef.current = true
+        }
+        localPosRef.current = { x: newX, y: newY }
         setLocalPos({ x: newX, y: newY })
         onDragMove?.(node.id, newX, newY)
       }
 
       const onUp = () => {
         isDraggingRef.current = false
+        setDragging(false)
         document.removeEventListener('pointermove', onMove, true)
         document.removeEventListener('pointerup', onUp, true)
         onDragEnd?.(node.id)
 
-        setLocalPos((pos) => {
-          if (pos) onPositionChange(node.id, pos.x, pos.y)
-          return pos
-        })
+        const pos = localPosRef.current
+        if (pos) onPositionChange(node.id, pos.x, pos.y)
       }
 
       document.addEventListener('pointermove', onMove, true)
@@ -484,9 +660,12 @@ export default function NoteCard({
           newY = resizeStartRef.current.posY + (resizeStartRef.current.height - newHeight)
         }
 
+        localWidthRef.current = newWidth
+        localHeightRef.current = newHeight
         setLocalWidth(newWidth)
         setLocalHeight(newHeight)
         if (newX !== resizeStartRef.current.posX || newY !== resizeStartRef.current.posY) {
+          localPosRef.current = { x: newX, y: newY }
           setLocalPos({ x: newX, y: newY })
         }
       }
@@ -496,18 +675,12 @@ export default function NoteCard({
         document.removeEventListener('pointermove', onMove, true)
         document.removeEventListener('pointerup', onUp, true)
 
-        setLocalWidth((w) => {
-          if (w !== null) onWidthChange(node.id, w)
-          return w
-        })
-        setLocalHeight((h) => {
-          if (h !== null) onHeightChange?.(node.id, h)
-          return h
-        })
-        setLocalPos((pos) => {
-          if (pos) onPositionChange(node.id, pos.x, pos.y)
-          return pos
-        })
+        const w = localWidthRef.current
+        const h = localHeightRef.current
+        const pos = localPosRef.current
+        if (w !== null) onWidthChange(node.id, w)
+        if (h !== null) onHeightChange?.(node.id, h)
+        if (pos) onPositionChange(node.id, pos.x, pos.y)
       }
 
       document.addEventListener('pointermove', onMove, true)
@@ -530,9 +703,33 @@ export default function NoteCard({
     [isEditing, onStartEditing],
   )
 
+  // Double-click enters the note (spec §7). A double-click inside a note
+  // that was already being written in selects a word as usual instead.
+  const editingAtFirstPressRef = useRef(false)
+  const handleMouseDownCapture = useCallback(
+    (e: React.MouseEvent) => {
+      if (e.detail <= 1) editingAtFirstPressRef.current = isEditing
+    },
+    [isEditing],
+  )
+  const handleDoubleClick = useCallback(
+    (e: React.MouseEvent) => {
+      if (!onZoomTo || editingAtFirstPressRef.current) return
+      const target = e.target as HTMLElement
+      if (target.closest('.tapestry-resize-handle, .tapestry-format-bar, .tapestry-corner-cluster, .tapestry-note-settings, button')) return
+      e.stopPropagation()
+      onZoomTo()
+    },
+    [onZoomTo],
+  )
+
   const handleBorderClick = useCallback(
     (e: React.MouseEvent) => {
       e.stopPropagation()
+      if (draggedRef.current) {
+        draggedRef.current = false
+        return
+      }
       onBorderSelect()
     },
     [onBorderSelect],
@@ -636,8 +833,12 @@ export default function NoteCard({
   if (isHighlighted) borderClass += ' tapestry-note-card--selected'
   if (isEditing) borderClass += ' tapestry-note-card--editing'
   if (isConnectTarget) borderClass += ' tapestry-note-card--connect-target'
+  borderClass += ' tapestry-note-card--ink'
+  if (faceShown) borderClass += ' tapestry-note-card--flipped'
+  if (formFade) borderClass += ` tap-form-fade-${formFade}`
 
   const cardStyle: React.CSSProperties = {
+    ...(flightScale !== undefined && flightScale !== 1 ? { scale: String(flightScale) } : {}),
     left: `${effectiveX}px`,
     top: `${effectiveY}px`,
     ...(effectiveWidth ? { width: `${effectiveWidth}px`, minWidth: `${MIN_WIDTH}px`, maxWidth: 'none' } : {}),
@@ -659,8 +860,29 @@ export default function NoteCard({
       style={cardStyle}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
+      onPointerDownCapture={localPoint}
+      onMouseDownCapture={handleMouseDownCapture}
+      onDoubleClick={handleDoubleClick}
       onContextMenu={handleContextMenu}
     >
+      {/* Paper, hover bloom and the pencil outline (Line Lab v2 wave 2) */}
+      {outline && (
+        <NoteInk
+          shape={outline}
+          w={box.w}
+          h={box.h}
+          seed={seed}
+          light={light}
+          blue={blue}
+          blueFromT={blueFromTRef.current}
+        />
+      )}
+
+      {/* Move particles while dragged (Line Lab v2 wave 6) */}
+      {box.w > 0 && (
+        <MoveParticles x={effectiveX} y={effectiveY} w={box.w} h={box.h} zoom={zoom} dragging={dragging} />
+      )}
+
       {/* Drag handle area -- the top border strip */}
       <div
         className="tapestry-note-drag-handle"
@@ -669,7 +891,7 @@ export default function NoteCard({
       />
 
       {/* Editable title, with the chat button beside it (D-19) */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+      <div className="tapestry-note-title-row" style={{ paddingRight: blue ? 64 : 0 }}>
         <input
           type="text"
           className="tapestry-note-title-input"
@@ -706,6 +928,11 @@ export default function NoteCard({
         <AskClaudeButton label={askLabel} onAsk={askClaude} />
       </div>
 
+      {/* The ink rule under the title */}
+      <div className="tapestry-note-rule" aria-hidden="true">
+        {rule && <InkLine shape={rule} seed={seed + 2} />}
+      </div>
+
       {/* ProseMirror body editor */}
       <div
         className="tapestry-note-editor"
@@ -717,15 +944,32 @@ export default function NoteCard({
           journal rather than from anything stored on the note itself. */}
       {provenanceFooter}
 
-      {/* Floating formatting toolbar near the text selection (D-24) */}
-      {isEditing && <FloatingToolbar view={editorView} containerRef={cardRef} zoom={zoom} roll={roll} />}
+      {/* The back of the note: its settings (Line Lab v2 wave 3) */}
+      <NoteSettings open={settingsOpen} onClose={closeSettings} onShownChange={setFaceShown} />
 
-      {/* Bubbly controls (D-06) */}
+      {/* The format bar: `f`, the settings button and the pill (D-24) */}
+      {blue && box.w > 0 && (
+        <FormatBar
+          view={editorView}
+          w={box.w}
+          seed={seed}
+          editing={isEditing}
+          redHover={redHover}
+          settingsOpen={settingsOpen}
+          onToggleSettings={toggleSettings}
+          onStartEditing={onStartEditing}
+        />
+      )}
+
+      {/* Corner cluster (D-06): the red delete dot and the blue connect dot */}
       {showControlsBool && (
-        <NoteControls
+        <CornerCluster
           onConnect={onStartConnection}
           onDelete={onDeleteNote}
           hasTextSelection={hasTextSelection}
+          seed={seed}
+          noteLength={outline ? outline.L : 0}
+          onRedHoverChange={setRedHover}
         />
       )}
 

@@ -70,8 +70,8 @@ export default function PluginErrorNotification({
           left: '50%',
           transform: 'translateX(-50%)',
           zIndex: 10000,
-          background: '#FFFFFF',
-          border: '1px solid #E0DDD7',
+          background: 'var(--tap-surface)',
+          border: '1px solid var(--tap-border)',
           borderRadius: 8,
           boxShadow: '0 4px 12px rgba(0,0,0,0.12)',
           padding: '12px 20px',
@@ -79,7 +79,7 @@ export default function PluginErrorNotification({
           alignItems: 'center',
           gap: 12,
           fontSize: 14,
-          color: '#2C2C2C',
+          color: 'var(--tap-ink)',
           maxWidth: 440,
         }}
       >
@@ -97,8 +97,8 @@ export default function PluginErrorNotification({
         left: '50%',
         transform: 'translateX(-50%)',
         zIndex: 10000,
-        background: '#FFFFFF',
-        border: '1px solid #E5484D',
+        background: 'var(--tap-surface)',
+        border: '1px solid var(--tap-destructive)',
         borderRadius: 8,
         boxShadow: '0 4px 12px rgba(0,0,0,0.12)',
         padding: '12px 20px',
@@ -106,7 +106,7 @@ export default function PluginErrorNotification({
         alignItems: 'center',
         gap: 12,
         fontSize: 14,
-        color: '#2C2C2C',
+        color: 'var(--tap-ink)',
         maxWidth: 520,
       }}
     >
@@ -118,17 +118,17 @@ export default function PluginErrorNotification({
         fill="none"
         style={{ flexShrink: 0 }}
       >
-        <circle cx="10" cy="10" r="9" stroke="#E5484D" strokeWidth="2" />
+        <circle cx="10" cy="10" r="9" style={{ stroke: 'var(--tap-destructive)' }} strokeWidth="2" />
         <line
           x1="10"
           y1="5"
           x2="10"
           y2="11"
-          stroke="#E5484D"
+          style={{ stroke: 'var(--tap-destructive)' }}
           strokeWidth="2"
           strokeLinecap="round"
         />
-        <circle cx="10" cy="14" r="1" fill="#E5484D" />
+        <circle cx="10" cy="14" r="1" style={{ fill: 'var(--tap-destructive)' }} />
       </svg>
 
       <span style={{ flex: 1 }}>{message}</span>
@@ -141,8 +141,8 @@ export default function PluginErrorNotification({
               padding: '4px 12px',
               fontSize: 13,
               fontWeight: 600,
-              background: '#4A7CFF',
-              color: '#FFFFFF',
+              background: 'var(--tap-accent)',
+              color: 'var(--tap-surface)',
               border: 'none',
               borderRadius: 6,
               cursor: 'pointer',
@@ -157,8 +157,8 @@ export default function PluginErrorNotification({
               fontSize: 13,
               fontWeight: 500,
               background: 'transparent',
-              color: '#666',
-              border: '1px solid #E0DDD7',
+              color: 'var(--tap-neutral)',
+              border: '1px solid var(--tap-border)',
               borderRadius: 6,
               cursor: 'pointer',
             }}

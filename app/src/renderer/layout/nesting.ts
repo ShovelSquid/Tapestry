@@ -15,9 +15,8 @@
  *  - a container is drawn at least large enough to hold its contents, plus
  *    CONTAINER_PADDING; a stored width/height smaller than that is kept, not
  *    overwritten, so emptying a container lets it shrink back
- *  - zoomed out, a nested note narrower than OUTLINE_BELOW_PX on screen is
- *    drawn as an empty outline at its real place and size, and nothing inside
- *    it is drawn at all
+ *  - zoomed out, a note too small on screen collapses to a circle or a dot
+ *    (look/collapse.ts decides which), and nothing inside it is drawn at all
  *
  * The tunable numbers are the exported constants. This is stage 1 of making
  * notes the only core concept (world_space_design.md): it works inside
@@ -27,6 +26,8 @@
  * the node count, and a malformed `inside` (missing target, not a note, a
  * cycle, too deep) leaves the note at the top level rather than failing.
  */
+
+import { collapseForm, thresholdsFor, type CollapsedForm } from '../look/collapse'
 
 export const INSIDE_KEY = 'inside'
 
@@ -44,9 +45,6 @@ export const CONTAINER_PADDING = 24
 
 /** Deeper than this, a note is treated as top-level (and so is any cycle). */
 export const MAX_NESTING_DEPTH = 32
-
-/** A nested note drawn narrower than this many screen px is an outline. */
-export const OUTLINE_BELOW_PX = 64
 
 /** The size a note is assumed to have before it has been measured (placement.ts's defaults). */
 export const FALLBACK_SIZE = Object.freeze({ width: 280, height: 120 })
@@ -259,35 +257,30 @@ export function dropContainer(
   return best
 }
 
-/** Whether a nested note of this world width is drawn as an outline at this zoom. */
-export function isOutlined(width: number, zoom: number): boolean {
-  return width * zoom < OUTLINE_BELOW_PX
-}
-
 /**
- * The notes to draw as outlines and the notes not drawn at all: a nested note
- * too small on screen is an outline, and everything inside an outline is
- * hidden. Top-level notes are always drawn in full.
+ * The notes drawn collapsed and the notes not drawn at all: a note too small
+ * on screen is a circle or a dot (look/collapse.ts), at any depth, and
+ * everything inside a collapsed note is hidden.
  */
 export function outlineState(
   nesting: Nesting,
   widthOf: (id: string) => number,
   zoom: number,
-): { outlined: Set<string>; hidden: Set<string> } {
-  const outlined = new Set<string>()
+): { collapsed: Map<string, CollapsedForm>; hidden: Set<string> } {
+  const collapsed = new Map<string, CollapsedForm>()
   const hidden = new Set<string>()
   const queue: string[] = [...(nesting.childrenOf.get(null) ?? [])]
   for (let i = 0; i < queue.length; i += 1) {
     const id = queue[i]
-    const children = nesting.childrenOf.get(id) ?? []
-    if (outlined.has(id) || hidden.has(id)) {
-      for (const child of children) hidden.add(child)
-    } else {
-      for (const child of children) if (isOutlined(widthOf(child), zoom)) outlined.add(child)
+    if (!hidden.has(id)) {
+      const form = collapseForm(widthOf(id) * zoom, thresholdsFor(id))
+      if (form !== 'note') collapsed.set(id, form)
     }
+    const children = nesting.childrenOf.get(id) ?? []
+    if (collapsed.has(id) || hidden.has(id)) for (const child of children) hidden.add(child)
     for (const child of children) queue.push(child)
   }
-  return { outlined, hidden }
+  return { collapsed, hidden }
 }
 
 /** One op of the kind App submits. */

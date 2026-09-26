@@ -35,8 +35,8 @@ const TEXT_TYPE = 'tapestry.workspace/text@1'
 const PREVIEW_LINES = 8
 const OPEN_WIDTH = 720
 const MAX_TEXTAREA_HEIGHT = 560
-const DESTRUCTIVE = '#B3261E'
-const MUTED = '#6B6760'
+const DESTRUCTIVE = 'var(--tap-destructive-strong)'
+const MUTED = 'var(--tap-muted-warm)'
 
 interface WorkspaceFileCardProps {
   treeId: string
@@ -125,10 +125,10 @@ const buttonStyle: React.CSSProperties = {
   fontSize: 13,
   fontWeight: 600,
   padding: '4px 10px',
-  border: '1px solid #D5D1CA',
+  border: '1px solid var(--tap-border-warm)',
   borderRadius: 6,
-  background: '#FAF9F7',
-  color: '#2C2C2C',
+  background: 'var(--tap-surface-warm)',
+  color: 'var(--tap-ink)',
   cursor: 'pointer',
 }
 
@@ -411,7 +411,7 @@ function WorkspaceFileCardView({
           fontSize: 15,
           fontWeight: 600,
           lineHeight: 1.3,
-          color: '#2C2C2C',
+          color: 'var(--tap-ink)',
           overflow: 'hidden',
           textOverflow: 'ellipsis',
           whiteSpace: 'nowrap',
@@ -481,7 +481,7 @@ function WorkspaceFileCardView({
             maxHeight: 128,
             overflow: 'hidden',
             whiteSpace: 'pre',
-            color: '#2C2C2C',
+            color: 'var(--tap-ink)',
           }}
         >
           {preview}
@@ -524,9 +524,9 @@ function WorkspaceFileCardView({
             style={{
               fontSize: 13,
               lineHeight: 1.4,
-              color: '#2C2C2C',
-              background: '#FFF4E0',
-              border: '1px solid #E8C98A',
+              color: 'var(--tap-ink)',
+              background: 'var(--tap-warning-wash)',
+              border: '1px solid var(--tap-warning-border)',
               borderRadius: 6,
               padding: '6px 8px',
               marginBottom: 6,
@@ -565,14 +565,14 @@ function WorkspaceFileCardView({
             fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
             fontSize: 13,
             lineHeight: 1.5,
-            border: '1px solid #E0DDD7',
+            border: '1px solid var(--tap-border)',
             borderRadius: 6,
             padding: 8,
             resize: 'none',
             overflowY: 'auto',
             whiteSpace: 'pre',
-            color: '#2C2C2C',
-            background: readOnly ? '#F5F4F1' : '#FFFFFF',
+            color: 'var(--tap-ink)',
+            background: readOnly ? 'var(--tap-surface-readonly)' : 'var(--tap-surface)',
           }}
         />
         <div

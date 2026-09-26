@@ -135,12 +135,12 @@ function EditableValue({
           if (e.key === 'Escape') setIsEditing(false)
         }}
         style={{
-          border: '1px solid #4A7CFF',
+          border: '1px solid var(--tap-accent)',
           borderRadius: 3,
           padding: '1px 4px',
           fontSize: 12,
           fontFamily: 'monospace',
-          background: '#fff',
+          background: 'var(--tap-surface)',
           outline: 'none',
           width: '100%',
           maxWidth: 200,
@@ -161,7 +161,7 @@ function EditableValue({
         cursor: 'pointer',
         fontFamily: 'monospace',
         fontSize: 12,
-        color: '#555',
+        color: 'var(--tap-neutral-dark)',
       }}
       title="Click to edit"
     >
@@ -301,7 +301,7 @@ export default function FallbackNodeView({
     ? `Thread history needs the Threads plugin. The text below is the last saved version of the document, from ${formatRecordedLabel(bodyRecorded)}.`
     : 'Thread history needs the Threads plugin. The text below is the last saved version of the document.'
 
-  const borderColor = isSelected ? '#4A7CFF' : '#E0DDD7'
+  const borderColor = isSelected ? 'var(--tap-accent)' : 'var(--tap-border)'
   const borderWidth = isSelected ? 2 : 1
   const shadow = isSelected
     ? '0 2px 8px rgba(0,0,0,0.10)'
@@ -316,7 +316,7 @@ export default function FallbackNodeView({
         left: localPos.x,
         top: localPos.y,
         width: 260,
-        background: '#FFFFFF',
+        background: 'var(--tap-surface)',
         border: `${borderWidth}px solid ${borderColor}`,
         borderRadius: 8,
         boxShadow: shadow,
@@ -334,12 +334,12 @@ export default function FallbackNodeView({
       <div
         style={{
           padding: '8px 12px',
-          background: '#F0EDEA',
-          borderBottom: '1px solid #E0DDD7',
+          background: 'var(--tap-surface-header)',
+          borderBottom: '1px solid var(--tap-border)',
           cursor: 'grab',
           fontSize: 11,
           fontWeight: 600,
-          color: '#888',
+          color: 'var(--tap-neutral-light)',
           textTransform: 'uppercase',
           letterSpacing: '0.05em',
         }}
@@ -356,7 +356,7 @@ export default function FallbackNodeView({
           padding: '8px 12px 4px',
           fontSize: 13,
           fontWeight: 600,
-          color: '#2C2C2C',
+          color: 'var(--tap-ink)',
         }}
       >
         {node.type}
@@ -372,7 +372,7 @@ export default function FallbackNodeView({
               margin: '0 0 8px',
               fontSize: 12,
               lineHeight: 1.4,
-              color: '#888',
+              color: 'var(--tap-neutral-light)',
             }}
           >
             {threadNotice}
@@ -386,10 +386,10 @@ export default function FallbackNodeView({
               fontSize: 16,
               fontWeight: 400,
               lineHeight: 1.5,
-              color: '#2C2C2C',
+              color: 'var(--tap-ink)',
               padding: '8px 0',
-              borderTop: '1px solid #F0F0F0',
-              borderBottom: '1px solid #F0F0F0',
+              borderTop: '1px solid var(--tap-rule-light)',
+              borderBottom: '1px solid var(--tap-rule-light)',
             }}
             onPointerDown={(e) => e.stopPropagation()}
           >
@@ -410,13 +410,13 @@ export default function FallbackNodeView({
                 alignItems: 'center',
                 padding: '2px 0',
                 fontSize: 12,
-                borderBottom: '1px solid #F0F0F0',
+                borderBottom: '1px solid var(--tap-rule-light)',
                 gap: 8,
               }}
             >
               <span
                 style={{
-                  color: '#666',
+                  color: 'var(--tap-neutral)',
                   fontWeight: 500,
                   flexShrink: 0,
                 }}
@@ -439,7 +439,7 @@ export default function FallbackNodeView({
           style={{
             padding: '8px 12px 12px',
             fontSize: 12,
-            color: '#999',
+            color: 'var(--tap-neutral-faint)',
             fontStyle: 'italic',
           }}
         >
