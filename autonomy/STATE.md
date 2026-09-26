@@ -46,6 +46,10 @@ current code and note it in the SUMMARY. ws/ui's driver is archived in
   = Task 1 option a; 67ffce6, edb7802 code; 36f0bf7 SUMMARY). 84 files /
   1272 tests green. Hands-on checks queued as REVIEW item 7. Next: wave 2
   (02.8-02).
+- 2026-09-25 18:25 session: wave 2, 02.8-02 done (9c0e01f, 4f6305a, 5ea9299
+  code; 77ecdc8 SUMMARY). 84 files / 1292 tests green. No checkpoints.
+  Journal grows by the note's whole body + ~342 B per turn (~3.5 MB at 100
+  turns). Next: wave 3 (02.8-03).
 
 ## Learned
 
@@ -73,3 +77,7 @@ current code and note it in the SUMMARY. ws/ui's driver is archived in
 (questions a human would have been asked, with the option taken)
 
 - 02.8-01 Task 1 session-note format: option a (REVIEW item 6).
+- 02.8-02 (executor's calls, in its SUMMARY): a failed engine start is now
+  recorded as a turn (`Error (crashed): …`) rather than thrown to the window;
+  deleting a chat leaves its agent token in agents.json until the name is
+  reissued (process and config file are gone; the plan asks no revocation).
