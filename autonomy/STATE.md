@@ -92,3 +92,6 @@ current code and note it in the SUMMARY. ws/ui's driver is archived in
   reissued (process and config file are gone; the plan asks no revocation).
 - 02.8-03 (executor's calls, REVIEW item 8): Ask Claude… on a card goes to
   the next free spot; card delete stays top-right; resize only right/bottom.
+- 02.8-04 (executor's calls, REVIEW item 9): Needs you clears only on a
+  user message; lastStatus stores full text; old chats never learn
+  set_status; live transcript hides set_status rows.
