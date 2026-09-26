@@ -54,6 +54,11 @@ current code and note it in the SUMMARY. ws/ui's driver is archived in
   f1050d3, 5f18a3a code; fb88861 SUMMARY). 86 files / 1313 tests green.
   Hands-on checks and the executor's choices queued as REVIEW item 8.
   Executor took ~14 min. Next: wave 4 (02.8-04).
+- 2026-09-25 18:52 session: wave 4, 02.8-04 done (c44a1c4, f2db616, 9fbca78
+  code; 5175e1f SUMMARY). 87 files / 1356 tests green. No checkpoints;
+  executor's choices and hands-on checks queued as REVIEW item 9. Executor
+  took ~9 min. Next: wave 5 (02.8-05), which must pass the turn count to
+  `initialStatus`.
 
 ## Learned
 

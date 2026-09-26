@@ -129,4 +129,38 @@ Choices made without asking (say if you want any changed):
 Answer `item 8: approved` or describe issues. Undo: revert 5f18a3a, f1050d3,
 232d2e1 and 34e32c9 (in that order).
 
+### 9. 02.8-04: set_status and the status reducer, choices made (open)
+
+Built by the unattended driver (commits c44a1c4, f2db616, 9fbca78; SUMMARY
+`.planning/phases/02.8-agent-note-windows/02.8-04-SUMMARY.md`). Tests green
+(87 files, 1356 tests); the app was not launched. Nothing draws the status
+until 02.8-05, so these checks read events and chats.json. Run
+`npm --prefix app run dev` in ~/Tapestrees/mergin with a scratch workspace:
+
+1. In a new chat, check Claude calls `set_status` on its own: `lastStatus`
+   appears for the session in `<userData>/chat/chats.json`.
+2. Ask something that makes Claude ask you a question back; it should call
+   `set_status` with `needs: true`.
+3. From an agent connected through a terminal (`agent.claude`), call
+   `set_status`: it is refused with "set_status is only available to
+   Tapestry's in-app chats". The tree gets no commit from set_status.
+
+Choices made without asking (say if you want any changed):
+- Needs you clears only on a message you send in that session; Done, Stop,
+  errors, later statuses and looking at the card leave it. Level 3 without
+  `needs` also raises it.
+- `lastStatus` stores the full text, not the shorter card text, so a level-0
+  status the card never showed can appear after a relaunch. Quitting mid-turn
+  saves "Stopped".
+- Chats started before this plan keep their first system prompt, so they
+  never learn `set_status`: their line falls back to the latest tool call or
+  reply, and they can never raise Needs you.
+- Outside the plan's files: the live transcript no longer draws a
+  `set_status` row (it would vanish once the turn is saved), in
+  `app/src/renderer/state/chat.ts`; `setStatus` refuses a session being
+  deleted.
+
+Answer `item 9: approved` or describe issues. Undo: revert 9fbca78, f2db616
+and c44a1c4 (in that order).
+
 ## Closed
