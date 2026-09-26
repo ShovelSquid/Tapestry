@@ -12,6 +12,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   EMPTY_CHAT_SESSION,
+  acknowledgeChatSnapshot,
+  acknowledgeSession,
   applyChatPayload,
   busyAfter,
   chatSessionFor,
@@ -25,6 +27,7 @@ import {
   setChatDraft,
   sessionAuthorToken,
   setSessionAgentOrder,
+  statusAnnouncement,
   type ChatSessionSnapshot,
 } from './chat-sessions'
 import { liveAfter, type ChatAttachment } from './chat'
@@ -140,6 +143,73 @@ describe('the status in each snapshot (02.8-05, D-11, D-12)', () => {
     )
     expect(s.state).toBe('working')
     expect(s.text).toContain('read_file')
+  })
+})
+
+describe('acknowledgement (02.8-05, D-11: the person looked)', () => {
+  const user: TapestryChatEvent = { type: 'user', text: 'hi' }
+  const working = applyChatPayload(loaded, { turn: 1, event: user }, 10)
+
+  it('after a done payload gives Idle with the same text', () => {
+    let s = applyChatPayload(working, { turn: 1, event: { type: 'status', text: 'Wrote plan.md', needs: false, level: 2 } }, 15)
+    s = applyChatPayload(s, { turn: 1, event: { type: 'done', ok: true } }, 20)
+    expect(s.status.state).toBe('done')
+    const acked = acknowledgeChatSnapshot(s, 30)
+    expect(acked.status.state).toBe('idle')
+    expect(acked.status.text).toBe('Wrote plan.md')
+    expect(s.status.state).toBe('done')
+  })
+
+  it('after a failed turn gives Idle keeping the short phrase', () => {
+    const s = applyChatPayload(working, { turn: 1, event: { type: 'error', kind: 'not-installed', message: 'x' } }, 20)
+    const acked = acknowledgeChatSnapshot(s, 30)
+    expect(acked.status.state).toBe('idle')
+    expect(acked.status.text).toBe("Claude Code isn't installed")
+  })
+
+  it('after a needs payload leaves Needs you standing', () => {
+    let s = applyChatPayload(working, { turn: 1, event: { type: 'status', text: 'Which file?', needs: true, level: 3 } }, 15)
+    s = applyChatPayload(s, { turn: 1, event: { type: 'done', ok: true } }, 20)
+    const acked = acknowledgeChatSnapshot(s, 30)
+    expect(acked).toBe(s)
+    expect(acked.status.state).toBe('needs')
+    expect(acked.status.needs).toBe(true)
+  })
+
+  it('on a Working session changes nothing', () => {
+    expect(acknowledgeChatSnapshot(working, 30)).toBe(working)
+  })
+
+  it('on a session the store has not loaded changes nothing', () => {
+    acknowledgeSession(TREE, 'n-ack')
+    expect(chatSessionFor(TREE, 'n-ack')).toBe(EMPTY_CHAT_SESSION)
+  })
+})
+
+describe('statusAnnouncement (UI-SPEC § Accessibility)', () => {
+  const at = (state: string, text: string, level: number) =>
+    ({ ...EMPTY_CHAT_SESSION.status, state, text, cardText: text, level }) as ChatSessionSnapshot['status']
+
+  it('says done, needs you and failed, and nothing for Working or Idle', () => {
+    expect(statusAnnouncement('Plan', at('working', 'x', 1), at('done', 'Wrote plan.md', 2))).toEqual({
+      tone: 'polite',
+      text: 'Plan: done. Wrote plan.md',
+    })
+    expect(statusAnnouncement('Plan', at('working', 'x', 1), at('needs', 'Which file?', 3))).toEqual({
+      tone: 'polite',
+      text: 'Plan needs you: Which file?',
+    })
+    expect(statusAnnouncement('Plan', at('working', 'x', 1), at('failed', 'Claude Code is signed out', 2))).toEqual({
+      tone: 'assertive',
+      text: 'Plan failed: Claude Code is signed out',
+    })
+    expect(statusAnnouncement('Plan', at('idle', 'x', 0), at('working', 'Reading your message', 1))).toBeNull()
+    expect(statusAnnouncement('Plan', at('done', 'x', 2), at('idle', 'x', 0))).toBeNull()
+  })
+
+  it('says nothing at level 0 or when the state did not change', () => {
+    expect(statusAnnouncement('Plan', at('working', 'x', 1), at('done', 'quiet', 0))).toBeNull()
+    expect(statusAnnouncement('Plan', at('needs', 'a', 3), at('needs', 'b', 3))).toBeNull()
   })
 })
 
