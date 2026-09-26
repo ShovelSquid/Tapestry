@@ -14,7 +14,7 @@
  * A workspace folder's frame uses the same header (02.7 D-21), variant
  * 'folder': the same two rows and styles, with the folder's name and a
  * Collapse folder / Expand folder button in row 1, and "Folder · <n> files" in
- * row 2. It has no Tree options and no Chat with Claude.
+ * row 2. It has no Tree options and no New chat.
  *
  * A workspace tree's status slot says whether its outside changes are being
  * recorded (02.7 D-06): "Watching", or in the destructive color why not.
@@ -249,10 +249,10 @@ export default function FrameHeader({
           <button
             type="button"
             className="tapestry-frame-chat-button"
-            title="Talk to Claude in this workspace, beside the canvas"
+            title="Start a new chat in this workspace"
             onClick={() => openChat({ treeId })}
           >
-            Chat with Claude
+            New chat
           </button>
         )}
 

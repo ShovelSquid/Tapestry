@@ -380,26 +380,43 @@ type TapestryChatEvent =
 
 type TapestryChatResult<T> = { ok: true; value: T } | { ok: false; error: string }
 
-interface TapestryChatOpenState {
+/** One live chat event with its turn (main/chat/chat-service.ts ChatLiveEntry). */
+interface TapestryChatLiveEntry {
+  turn: number
+  event: TapestryChatEvent
+}
+
+/** A chat session as main holds it (main/chat/chat-service.ts ChatSessionState). */
+interface TapestryChatSessionState {
   /** The workspace's name. */
   workspace: string
+  /** The session's agent name, without the `agent.` prefix. */
+  agent: string
   sessionId: string | null
-  transcript: TapestryChatEvent[]
+  /** Events not yet committed into the note, each tagged with its turn. */
+  live: TapestryChatLiveEntry[]
   busy: boolean
-  /** The conversation continues one from an earlier launch. */
-  resumed: boolean
   /** The chat's Allow shell (not sandboxed) switch (D-15); off after every relaunch. */
   allowShell: boolean
 }
 
-/** The in-app chat (02.7 D-12). No token or file path ever comes back. */
+/** One chat event, with its session note and turn (`done` carries the turn just committed). */
+interface TapestryChatEventPayload {
+  treeId: string
+  noteId: string
+  turn: number
+  event: TapestryChatEvent
+}
+
+/** The in-app chats (02.7 D-12, 02.8 D-02): each is a session note. No token or file path ever comes back. */
 interface TapestryChatAPI {
-  open(treeId: string): Promise<TapestryChatResult<TapestryChatOpenState>>
-  send(treeId: string, text: string): Promise<TapestryChatResult<null>>
-  stop(treeId: string): Promise<TapestryChatResult<null>>
-  newChat(treeId: string): Promise<TapestryChatResult<null>>
+  /** New chat: a session note in the workspace, at the next free spot. */
+  create(treeId: string): Promise<TapestryChatResult<{ noteId: string; agent: string }>>
+  open(treeId: string, noteId: string): Promise<TapestryChatResult<TapestryChatSessionState>>
+  send(treeId: string, noteId: string, text: string): Promise<TapestryChatResult<null>>
+  stop(treeId: string, noteId: string): Promise<TapestryChatResult<null>>
   /** Turn the chat's shell on or off from the next message on (D-15). */
-  setAllowShell(treeId: string, on: boolean): Promise<TapestryChatResult<null>>
+  setAllowShell(treeId: string, noteId: string, on: boolean): Promise<TapestryChatResult<null>>
 }
 
 interface TapestryAPI {
@@ -412,8 +429,8 @@ interface TapestryAPI {
   settings: TapestrySettingsAPI
   agents: TapestryAgentsAPI
   chat: TapestryChatAPI
-  /** Something happened in a workspace's chat. */
-  onChatEvent(callback: (payload: { treeId: string; event: TapestryChatEvent }) => void): () => void
+  /** Something happened in a chat. */
+  onChatEvent(callback: (payload: TapestryChatEventPayload) => void): () => void
   thread: TapestryThreadAPI
   /** The set of open trees changed: one opened, one closed, or the space restored. */
   onTreesChanged(callback: () => void): () => void

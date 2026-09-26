@@ -9,18 +9,17 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { IpcRendererEvent } from 'electron'
 import type { ChatEvent } from '../main/chat/engine'
+import type { ChatSessionState } from '../main/chat/chat-service'
 
 /** Every chat call answers like this. */
 type ChatResult<T> = { ok: true; value: T } | { ok: false; error: string }
 
-/** What the panel needs to show a workspace's chat. */
-interface ChatOpenState {
-  workspace: string
-  sessionId: string | null
-  transcript: ChatEvent[]
-  busy: boolean
-  resumed: boolean
-  allowShell: boolean
+/** One chat event, with the session note and the turn it belongs to (02.8 D-02). */
+interface ChatEventPayload {
+  treeId: string
+  noteId: string
+  turn: number
+  event: ChatEvent
 }
 
 // ---------------------------------------------------------------------------
@@ -287,24 +286,28 @@ const tapestryAPI = {
   },
 
   /**
-   * The in-app chat for a workspace (02.7 D-12). Every call names the
-   * workspace's tree; main owns the process, the token and the config file,
-   * none of which ever reach the renderer.
+   * The in-app chats (02.7 D-12, 02.8 D-02). A chat is a session note: every
+   * call names the workspace's tree and the note. Main owns the process, the
+   * token and the config file, none of which ever reach the renderer.
    */
   chat: {
-    open: (treeId: string): Promise<ChatResult<ChatOpenState>> => ipcRenderer.invoke('chat:open', treeId),
-    send: (treeId: string, text: string): Promise<ChatResult<null>> =>
-      ipcRenderer.invoke('chat:send', treeId, text),
-    stop: (treeId: string): Promise<ChatResult<null>> => ipcRenderer.invoke('chat:stop', treeId),
-    newChat: (treeId: string): Promise<ChatResult<null>> => ipcRenderer.invoke('chat:new', treeId),
+    /** New chat: a session note in the workspace, at the next free spot. */
+    create: (treeId: string): Promise<ChatResult<{ noteId: string; agent: string }>> =>
+      ipcRenderer.invoke('chat:create', treeId),
+    open: (treeId: string, noteId: string): Promise<ChatResult<ChatSessionState>> =>
+      ipcRenderer.invoke('chat:open', treeId, noteId),
+    send: (treeId: string, noteId: string, text: string): Promise<ChatResult<null>> =>
+      ipcRenderer.invoke('chat:send', treeId, noteId, text),
+    stop: (treeId: string, noteId: string): Promise<ChatResult<null>> =>
+      ipcRenderer.invoke('chat:stop', treeId, noteId),
     /** The chat's Allow shell (not sandboxed) switch (D-15), from the next message. */
-    setAllowShell: (treeId: string, on: boolean): Promise<ChatResult<null>> =>
-      ipcRenderer.invoke('chat:setAllowShell', treeId, on),
+    setAllowShell: (treeId: string, noteId: string, on: boolean): Promise<ChatResult<null>> =>
+      ipcRenderer.invoke('chat:setAllowShell', treeId, noteId, on),
   },
 
-  /** Something happened in a workspace's chat. */
-  onChatEvent: (callback: (payload: { treeId: string; event: ChatEvent }) => void): (() => void) => {
-    const handler = (_event: IpcRendererEvent, payload: { treeId: string; event: ChatEvent }) => {
+  /** Something happened in a chat. */
+  onChatEvent: (callback: (payload: ChatEventPayload) => void): (() => void) => {
+    const handler = (_event: IpcRendererEvent, payload: ChatEventPayload) => {
       callback(payload)
     }
     ipcRenderer.on('chat-event', handler)

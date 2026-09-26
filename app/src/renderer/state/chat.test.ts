@@ -4,7 +4,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { chatWorkspaceFor, composeFirstMessage, formatAttachment, type ChatAttachment } from './chat'
+import { chatWorkspaceFor, composeFirstMessage, formatAttachment, liveAfter, type ChatAttachment } from './chat'
 
 const WS_A = `sha256:${'a'.repeat(64)}`
 const WS_B = `sha256:${'b'.repeat(64)}`
@@ -101,5 +101,20 @@ describe('chatWorkspaceFor', () => {
   it('says none when no workspace is open', () => {
     expect(chatWorkspaceFor({}, [both[2]], WS_A)).toEqual({ none: true })
     expect(chatWorkspaceFor({ attachment: fileAttachment }, [], null)).toEqual({ none: true })
+  })
+})
+
+describe('liveAfter (02.8-01, D-09)', () => {
+  const entries = [
+    { turn: 1, event: { type: 'user' as const, text: 'one' } },
+    { turn: 1, event: { type: 'done' as const, ok: true } },
+    { turn: 2, event: { type: 'notice' as const, text: 'shell on' } },
+    { turn: 2, event: { type: 'user' as const, text: 'two' } },
+  ]
+
+  it('keeps only the turns the note does not hold yet', () => {
+    expect(liveAfter(entries, 0)).toEqual(entries)
+    expect(liveAfter(entries, 1)).toEqual(entries.slice(2))
+    expect(liveAfter(entries, 2)).toEqual([])
   })
 })

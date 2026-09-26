@@ -1842,6 +1842,27 @@ html, body, #root {
   gap: 8px;
 }
 
+/* 02.8: one committed turn (or the live one) keeps the transcript's column. */
+.tapestry-chat-turn {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tapestry-chat-empty-heading {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.tapestry-chat-empty-body,
+.tapestry-chat-other {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--tap-muted);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .tapestry-chat-user,
 .tapestry-chat-assistant {
   font-size: 14px;
@@ -1915,7 +1936,7 @@ html, body, #root {
   gap: 8px;
 }
 
-/* Chat with Claude in a workspace frame's header. */
+/* New chat in a workspace frame's header (02.8). */
 .tapestry-frame-chat-button {
   flex: none;
   /* Sits with Tree options at the row's end, not centered between. */

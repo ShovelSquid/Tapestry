@@ -43,6 +43,7 @@ import {
   type FrameRunEvent,
 } from './state/undo-target'
 import { ChatContext, chatWorkspaceFor, type ChatContextValue, type ChatTarget } from './state/chat'
+import { isSessionNode } from '../shared/chat/transcript'
 import { COLLAPSED_KEY, revealExpanded, settleSubspace, type DimsOf, type Point } from './layout/subspaces'
 import ThreadOverlay from './threads/ThreadOverlay'
 import { THREAD_TYPE } from './threads/ThreadCard'
@@ -136,12 +137,16 @@ export default function App(): React.ReactElement {
   const [agents, setAgents] = useState<TapestryAgentSummary[]>([])
   const [agentsEnabled, setAgentsEnabled] = useState(true)
 
-  // The chat panel (02.7 D-12, D-19): a workspace's chat, a chooser when
-  // several workspaces could be meant, or a note that none is open.
+  // A passing message about something that already happened (UA-14).
+  const [notice, setNotice] = useState<string | null>(null)
+
+  // The chat panel (02.7 D-12, D-19; 02.8 D-02): one session note's chat, a
+  // chooser when several workspaces could be meant, or a note that none is open.
   const [chatPanel, setChatPanel] = useState<ChatPanelState | null>(null)
   // The last workspace chatted in, so a click that names none goes back there.
   const [lastChatTreeId, setLastChatTreeId] = useState<string | null>(null)
   const chatTreeId = chatPanel?.kind === 'chat' ? chatPanel.treeId : null
+  const chatNoteId = chatPanel?.kind === 'chat' ? chatPanel.noteId : null
 
   const openChat = useCallback(
     (target: ChatTarget = {}) => {
@@ -151,21 +156,32 @@ export default function App(): React.ReactElement {
       const choice = chatWorkspaceFor(target, openTrees, lastChatTreeId)
       const attachment = target.attachment ?? null
       if ('treeId' in choice) {
-        setLastChatTreeId(choice.treeId)
-        setChatPanel((previous) => ({
-          kind: 'chat',
-          treeId: choice.treeId,
-          attachment,
-          // A new attachment replaces the chip even when this chat is open.
-          seq: (previous?.kind === 'chat' ? previous.seq : 0) + 1,
-        }))
+        const treeId = choice.treeId
+        setLastChatTreeId(treeId)
+        // New chat (D-02): main writes a session note into the workspace,
+        // then the panel opens on it once the canvas has it.
+        void (async () => {
+          const created = await window.tapestry.chat.create(treeId)
+          if (!created.ok) {
+            setNotice(created.error)
+            return
+          }
+          await refreshTree(treeId)
+          setChatPanel((previous) => ({
+            kind: 'chat',
+            treeId,
+            noteId: created.value.noteId,
+            attachment,
+            seq: (previous?.kind === 'chat' ? previous.seq : 0) + 1,
+          }))
+        })()
       } else if ('choose' in choice) {
         setChatPanel({ kind: 'choose', options: choice.choose, attachment })
       } else {
         setChatPanel({ kind: 'none' })
       }
     },
-    [trees, lastChatTreeId],
+    [trees, lastChatTreeId, refreshTree],
   )
 
   // Read through a ref so the context value does not change on every commit:
@@ -174,22 +190,19 @@ export default function App(): React.ReactElement {
   treesForNameRef.current = trees
   const chatContext = React.useMemo<ChatContextValue>(
     () => ({
-      openTreeId: chatTreeId,
+      openSession: chatTreeId !== null && chatNoteId !== null ? { treeId: chatTreeId, noteId: chatNoteId } : null,
       openChat,
       // Closing the panel stops the chat's process; its session is kept, so
       // the next message continues the conversation.
       closeChat: () => {
-        if (chatTreeId !== null) void window.tapestry.chat.stop(chatTreeId)
+        if (chatTreeId !== null && chatNoteId !== null) void window.tapestry.chat.stop(chatTreeId, chatNoteId)
         setChatPanel(null)
       },
       treeName: (treeId: string) =>
         treesForNameRef.current.find((tree) => tree.id === treeId)?.name ?? '',
     }),
-    [chatTreeId, openChat],
+    [chatTreeId, chatNoteId, openChat],
   )
-
-  // A passing message about something that already happened (UA-14).
-  const [notice, setNotice] = useState<string | null>(null)
 
   // Plugin contributions: maps node types to component names from plugins
   const [pluginNodeViews, setPluginNodeViews] = useState<Record<string, string>>({})
@@ -1262,13 +1275,25 @@ export default function App(): React.ReactElement {
     trees,
   ])
 
-  // A chat panel belongs to an open workspace: when that tree leaves the
-  // space (Close tree), its panel goes too.
+  // The session note the chat panel shows, as the canvas has it.
+  const chatSessionNode = React.useMemo(() => {
+    if (chatTreeId === null || chatNoteId === null) return null
+    const node = trees.find((t) => t.id === chatTreeId)?.nodes.find((n) => n.id === chatNoteId)
+    return node && isSessionNode(node) ? node : null
+  }, [trees, chatTreeId, chatNoteId])
+
+  // A chat panel belongs to an open workspace and its session note: when that
+  // tree leaves the space (Close tree), or the note is gone, the panel goes too.
   useEffect(() => {
     if (chatTreeId === null) return
     const tree = trees.find((t) => t.id === chatTreeId)
-    if (!tree || tree.kind !== 'workspace' || tree.status !== 'ok') setChatPanel(null)
-  }, [trees, chatTreeId])
+    if (!tree || tree.kind !== 'workspace' || tree.status !== 'ok') {
+      setChatPanel(null)
+      return
+    }
+    // Only a loaded tree can say the note is gone.
+    if (tree.nodes.length > 0 && chatSessionNode === null) setChatPanel(null)
+  }, [trees, chatTreeId, chatSessionNode])
 
   // -----------------------------------------------------------------------
   // Render
@@ -1393,8 +1418,8 @@ export default function App(): React.ReactElement {
               />
             )}
 
-            {/* Claude beside the canvas, for one workspace (02.7 D-12) */}
-            {chatPanel !== null && <ChatPanel state={chatPanel} />}
+            {/* Claude beside the canvas, for one session note (02.7 D-12, 02.8 D-04) */}
+            {chatPanel !== null && <ChatPanel state={chatPanel} sessionNode={chatSessionNode} />}
           </div>
         </ContextMenuProvider>
       </ChatContext.Provider>

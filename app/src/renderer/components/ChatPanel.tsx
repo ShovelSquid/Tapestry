@@ -1,9 +1,12 @@
 /**
- * ChatPanel — Claude, docked beside the canvas, for one workspace (02.7 D-12).
+ * ChatPanel — Claude, docked beside the canvas, for one chat session note
+ * (02.7 D-12, 02.8 D-02, D-04).
  *
  * The panel runs the person's own Claude Code (main owns the process). Its
  * Claude reaches files only through Tapestry's workspace tools, so every edit
- * it makes lands in the file windows and the tree as agent.claude-chat.
+ * it makes lands in the file windows and the tree as the session's own agent,
+ * `agent.claude-chat-<8 hex>-<note id>`. The conversation it shows is the
+ * session note's text (committed turns) plus the turn in progress.
  *
  * It sits outside the canvas transform, fixed to the right edge. Keys,
  * pointer presses and wheel scrolling inside it stay inside it, as in a file
@@ -14,20 +17,29 @@
  * turns it off for every new chat and after every relaunch.
  */
 
-import React, { useContext, useEffect, useId, useRef, useState } from 'react'
+import React, { useContext, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import Dialog from './Dialog'
+import ChatSessionTranscript from './ChatSessionTranscript'
 import {
   ChatContext,
   composeFirstMessage,
+  foldChatEvents,
+  liveAfter,
   useChat,
   type ChatAttachment,
-  type ChatItem,
 } from '../state/chat'
+import {
+  committedTurns,
+  NEW_SESSION_TITLE,
+  parseTranscript,
+  sessionBody,
+  type SessionNodeLike,
+} from '../../shared/chat/transcript'
 
-/** What the panel shows: a workspace's chat, a chooser, or that none is open (D-19). */
+/** What the panel shows: a session note's chat, a chooser, or that none is open (D-19). */
 export type ChatPanelState =
-  | { kind: 'chat'; treeId: string; attachment: ChatAttachment | null; seq: number }
+  | { kind: 'chat'; treeId: string; noteId: string; attachment: ChatAttachment | null; seq: number }
   | {
       kind: 'choose'
       options: Array<{ treeId: string; name: string }>
@@ -37,47 +49,6 @@ export type ChatPanelState =
 
 export const NO_WORKSPACE_CHAT_TEXT =
   'Open a workspace folder first (Add tree > Add Workspace Folder...). The chat runs inside a workspace.'
-
-/** The tool's own name, without the MCP server prefix. */
-function shortToolName(name: string): string {
-  return name.replace(/^mcp__tapestry__/, '')
-}
-
-function pathArgument(input: unknown): string | null {
-  if (input && typeof input === 'object' && 'path' in input) {
-    const path = (input as { path?: unknown }).path
-    if (typeof path === 'string') return path
-  }
-  return null
-}
-
-function firstLine(text: string): string {
-  return text.split('\n').find((line) => line.trim().length > 0)?.trim() ?? ''
-}
-
-/** What to do next, for the failures a person can fix themselves. */
-const errorHints: Partial<Record<TapestryChatErrorKind, string>> = {
-  'signed-out': 'Open a terminal, run claude, and type /login.',
-  'not-installed': 'After installing it, run claude once in a terminal to sign in, then send again.',
-}
-
-function ToolRow({ item }: { item: Extract<ChatItem, { kind: 'tool' }> }): React.ReactElement {
-  const path = pathArgument(item.input)
-  const label = [shortToolName(item.name), path].filter(Boolean).join(' ')
-  let status = '…'
-  if (item.result) {
-    status = item.result.isError ? `— refused: ${firstLine(item.result.text)}` : '— done'
-  }
-  return (
-    <div
-      className={
-        item.result?.isError ? 'tapestry-chat-tool tapestry-chat-tool--refused' : 'tapestry-chat-tool'
-      }
-    >
-      {label} {status}
-    </div>
-  )
-}
 
 /** How an attachment reads on its chip. */
 function attachmentLabel(attachment: ChatAttachment): string {
@@ -146,22 +117,38 @@ function PanelHeader({
 
 function Conversation({
   treeId,
+  noteId,
+  sessionNode,
   attachment: initialAttachment,
   seq,
 }: {
   treeId: string
+  noteId: string
+  /** The session note as the canvas has it, or null before the tree refreshes. */
+  sessionNode: SessionNodeLike | null
   attachment: ChatAttachment | null
   seq: number
 }): React.ReactElement {
-  const { workspace, transcript, busy, error, send, stop, newChat, allowShell, setAllowShell } =
-    useChat(treeId)
+  const { openChat } = useContext(ChatContext)
+  const { workspace, agent, live, busy, error, send, stop, allowShell, setAllowShell } = useChat(treeId, noteId)
   const [draft, setDraft] = useState('')
   const [attachment, setAttachment] = useState<ChatAttachment | null>(initialAttachment)
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
-  // Each Ask Claude… brings its own attachment, even into an open chat.
+  // Committed turns are the note's own text (D-09); only later turns are live.
+  const body = sessionNode ? sessionBody(sessionNode) : ''
+  const committed = sessionNode ? committedTurns(sessionNode) : 0
+  const turns = useMemo(() => parseTranscript(body), [body])
+  const liveItems = useMemo(
+    () => foldChatEvents(liveAfter(live, committed).map((entry) => entry.event)),
+    [live, committed],
+  )
+  const rawTitle = sessionNode?.props['title']?.value
+  const title = typeof rawTitle === 'string' && rawTitle.trim().length > 0 ? rawTitle : NEW_SESSION_TITLE
+
+  // Each Ask Claude… brings its own attachment.
   useEffect(() => {
     setAttachment(initialAttachment)
     inputRef.current?.focus()
@@ -172,7 +159,7 @@ function Conversation({
   useEffect(() => {
     const scroller = scrollRef.current
     if (scroller) scroller.scrollTop = scroller.scrollHeight
-  }, [transcript])
+  }, [turns, liveItems])
 
   const submit = async (): Promise<void> => {
     const text = draft
@@ -186,19 +173,19 @@ function Conversation({
   }
 
   return (
-    <PanelShell label={`Claude — ${workspace}`}>
+    <PanelShell label={`${title} — ${workspace}`}>
       <div className="tapestry-chat-header">
         <div className="tapestry-chat-title-row">
-          <span className="tapestry-chat-title" title={workspace}>
-            Claude — {workspace}
+          <span className="tapestry-chat-title" title={`${title} — ${workspace}`}>
+            {title}
           </span>
-          <button type="button" className="tapestry-button--secondary" onClick={() => void newChat()}>
+          <button type="button" className="tapestry-button--secondary" onClick={() => openChat({ treeId })}>
             New chat
           </button>
           <CloseChatButton />
         </div>
         <div className="tapestry-chat-subtitle">
-          Edits go through Tapestry's workspace tools as agent.claude-chat
+          {agent ? `Edits go through Tapestry's workspace tools as agent.${agent}` : workspace}
         </div>
         <ShellSwitch on={allowShell} onChange={setAllowShell} />
       </div>
@@ -209,44 +196,7 @@ function Conversation({
       )}
 
       <div ref={scrollRef} className="tapestry-chat-transcript" aria-live="polite">
-        {transcript.map((item, index) => {
-          switch (item.kind) {
-            case 'user':
-              return (
-                <div key={index} className="tapestry-chat-user">
-                  {item.text}
-                </div>
-              )
-            case 'assistant':
-              return (
-                <div key={index} className="tapestry-chat-assistant">
-                  {item.text}
-                </div>
-              )
-            case 'tool':
-              return <ToolRow key={index} item={item} />
-            case 'notice':
-              return (
-                <div key={index} className="tapestry-chat-notice">
-                  {item.text}
-                </div>
-              )
-            case 'error':
-              return (
-                <div key={index} className="tapestry-chat-error" role="alert">
-                  <div>{item.message}</div>
-                  {errorHints[item.errorKind] && (
-                    <div className="tapestry-chat-error-hint">{errorHints[item.errorKind]}</div>
-                  )}
-                </div>
-              )
-          }
-        })}
-        {error && (
-          <div className="tapestry-chat-error" role="alert">
-            {error}
-          </div>
-        )}
+        <ChatSessionTranscript turns={turns} live={liveItems} error={error} />
       </div>
 
       <div className="tapestry-chat-composer">
@@ -388,14 +338,23 @@ function CloseChatButton(): React.ReactElement {
   )
 }
 
-export default function ChatPanel({ state }: { state: ChatPanelState }): React.ReactElement {
+export default function ChatPanel({
+  state,
+  sessionNode,
+}: {
+  state: ChatPanelState
+  /** The session note the panel shows, as the canvas has it (null until it is there). */
+  sessionNode: SessionNodeLike | null
+}): React.ReactElement {
   const { openChat } = useContext(ChatContext)
 
   if (state.kind === 'chat') {
     return (
       <Conversation
-        key={state.treeId}
+        key={`${state.treeId}#${state.noteId}`}
         treeId={state.treeId}
+        noteId={state.noteId}
+        sessionNode={sessionNode}
         attachment={state.attachment}
         seq={state.seq}
       />
