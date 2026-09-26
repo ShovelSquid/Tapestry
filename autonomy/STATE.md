@@ -59,6 +59,11 @@ current code and note it in the SUMMARY. ws/ui's driver is archived in
   executor's choices and hands-on checks queued as REVIEW item 9. Executor
   took ~9 min. Next: wave 5 (02.8-05), which must pass the turn count to
   `initialStatus`.
+- 2026-09-25 19:02 session: wave 5, 02.8-05 done (2fb4c29, 63d5323, bc0b145
+  code; c2cb37e SUMMARY; 540657a state). 87 files / 1370 tests green. No
+  checkpoints; choices and hands-on checks queued as REVIEW item 10.
+  Executor took ~9 min. Next: wave 6 (02.8-06: Done fade, jiggle/flash,
+  badge animation, raising the card, edge arrows).
 
 ## Learned
 
@@ -95,3 +100,6 @@ current code and note it in the SUMMARY. ws/ui's driver is archived in
 - 02.8-04 (executor's calls, REVIEW item 9): Needs you clears only on a
   user message; lastStatus stores full text; old chats never learn
   set_status; live transcript hides set_status rows.
+- 02.8-05 (executor's calls, REVIEW item 10): "New chat" comes from the
+  header, not `initialStatus`; clicking clears Done/Failed; open panel does
+  not clear a later Done; 2px border shifts content 1px.

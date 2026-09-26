@@ -163,4 +163,51 @@ Choices made without asking (say if you want any changed):
 Answer `item 9: approved` or describe issues. Undo: revert 9fbca78, f2db616
 and c44a1c4 (in that order).
 
+### 10. 02.8-05: the session states drawn on the card and panel (open)
+
+Built by the unattended driver (commits 2fb4c29, 63d5323, bc0b145; SUMMARY
+`.planning/phases/02.8-agent-note-windows/02.8-05-SUMMARY.md`). Tests green
+(87 files, 1370 tests); the app was not launched and there is no renderer
+test harness, so none of the looks are checked. Run
+`npm --prefix app run dev` in ~/Tapestrees/mergin with a scratch workspace:
+
+1. Send a message: "Working · Reading your message", then the tool or reply
+   text; transcript blurred under a sharp header, hover sharpens it, Stop
+   reply shows, no spinner.
+2. Make Claude ask you something back: the "!" badge, the author-colour
+   border and "Needs you" stay through hover, opening, scrolling and Stop,
+   and clear only when you reply in that session.
+3. A finished turn shows Done until the pointer rests ~1 s on the card (or
+   click, focus, enlarge); it then turns Idle and keeps its text.
+4. Stop a turn: Idle with "Stopped"; the partial reply stays.
+5. Sign out of Claude Code and send: × glyph and "Failed · <phrase>" in red,
+   the error box in the transcript, never the Done border.
+6. Quit mid-turn and relaunch: every card Idle with its last status text; no
+   blur, no "!".
+7. Enlarged view: same glyph and word with full text, no blur; opening it
+   clears Done and Failed.
+8. VoiceOver: each announcement (done / needs you / failed) spoken once,
+   even with the session open in the panel.
+9. Long title and status text: one line each with an ellipsis, full text in
+   the tooltip.
+
+Choices made without asking (say if you want any changed):
+- "New chat" is decided by the header (no text and no turns), not by passing
+  the turn count to `initialStatus`: the composer asks for the session
+  before the card does, so the store cannot know the count.
+- Clicking inside the card also clears Done/Failed (UI-SPEC lists it; the
+  plan did not).
+- With the panel already open, a later Done is not cleared until you rest
+  the pointer on the card; only opening the panel clears it.
+- Announcements with no status text read "<title>: done." and "<title>
+  needs you".
+- The "!", check and × glyphs are hand-drawn 16px SVGs; look at them next
+  to the spark.
+- The Needs you / Done border is a real 2px border, so content shifts 1px.
+- A session opened mid-turn replays that turn's events, so it shows the real
+  text instead of "Reading your message".
+
+Answer `item 10: approved` or describe issues. Undo: revert bc0b145, 63d5323
+and 2fb4c29 (in that order).
+
 ## Closed
