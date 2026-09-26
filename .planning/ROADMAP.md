@@ -454,11 +454,36 @@ Plans:
   5. Levels 0-3 (ceiling 3) and a visibility threshold setting decide what animates. Agents never move the camera; an off-screen session at level 2 or above gets an edge arrow in its author colour, and clicking it pans there
   6. Replying at an earlier completed turn k leaves the original untouched and creates a new session note beside it (2.5's `beyond`) holding turns 1..k, in one commit with a `forked-from` edge to turn k's passage anchor. The fork gets its own engine session, started by replaying turns 1..k from the transcript through `ChatEngine.fork(atTurn)`
 
-**Plans**: 0 plans
+**Plans**: 7 plans
 
 Plans:
+**Wave 1**
 
-- [ ] TBD (run gsd-plan-phase 2.8 to break down)
+- [ ] 02.8-01-PLAN.md — Tracer: a chat is a session note (decision on its on-disk shape first); ChatService keyed per session with its own agent; each turn one committed passage; the panel shows a session from its text; New chat
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 02.8-02-PLAN.md — Honest turns and many sessions: every turn outcome (crash, stop, agents off, lost session, quit mid-turn) is one passage; live-process cap; only the chat writes its transcript; chat:delete and create at a spot
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 02.8-03-PLAN.md — The session card: one store, reply from the card, the panel as the enlarged view, entry points and delete, size/closed/scroll as view state
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 02.8-04-PLAN.md — Status: the set_status tool, the pure state reducer, Idle/Working/Needs you/Done/Failed on card and panel, last status kept across relaunch
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
+- [ ] 02.8-05-PLAN.md — Attention: edge arrows with click-to-pan, Chat alerts threshold and motion, stack raise; agents never move the camera
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
+- [ ] 02.8-06-PLAN.md — Forks: decision on the forked-from link, then ChatEngine.fork replaying turns 1..k, one-commit fork beside the original, Reply from here
+
+**Wave 7** *(blocked on Wave 6 completion)*
+
+- [ ] 02.8-07-PLAN.md — The forked-from line from turn k with the clamped anchor dot, and the phase gate
 
 **UI hint**: yes
 
