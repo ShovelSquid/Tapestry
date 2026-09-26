@@ -255,6 +255,39 @@ If no: `git revert f71416e 595cfdf` on ws/ui, and untick wave 5 in the plan.
 Answer `item 9: approved` (and for gate 4, `rifling on` or `rifling off for writers`), or the issues, in `autonomy/RESPONSE`.
 If no: `git revert 87f5348 4df67b5` on ws/ui (keep the `}` fix), and untick wave 6 in the plan.
 
+### 10. Wave 7 (entering a note): merge into mergin, and a look (Plan - Line Lab v2, Part 2)
+
+- **What it does:** double-clicking a note enters it. That works on a card, a circle or a dot, and "Zoom
+  into note" in the context menu does the same. The camera glides in until the note fills 85% of the view.
+  The note is a shared element: the card grows out of whatever form it was drawn in, scaled with a CSS
+  `scale` that runs from the circle's (or dot's) size on screen to the full view, so the title and body fly
+  from the chip's spot to their places. Any other note whose form changes on the way (e.g. a circle
+  becoming a card) is drawn as its card the whole way too. No text crossfades during a flight. **Escape**
+  flies back to where the camera was before you entered: the first Escape stops editing, the second leaves.
+  The flight's progress is read off the camera's zoom, so it can't drift from the glide
+  (`look/enter.ts`, hook in `Canvas.zoomToFrameRect`).
+- **My calls (taste):**
+  1. "Full view" means the note fitted to the viewport by the camera. The note's layout doesn't change, so
+     inside a card its parts keep their relative places and fly by scaling. A reflowed reading layout would
+     be a new feature, so I didn't build one.
+  2. Leaving is Escape.
+  3. At the start the chip becomes the card at the chip's width, so the circle's round edge snaps to the
+     card's rounded rectangle on the first frame.
+  4. A double-click inside a note you were already writing in still selects a word; it doesn't enter.
+  5. A nested note that is hidden at one end of the glide (inside a collapsed container) switches form
+     with no fade instead of flying.
+- **Checks:** 7 new tests; the full suite (1237), typecheck and build are clean. In the app (`wave7-pose.js`):
+  in 44 → 1020 px and out 1020 → 44 px, both monotonic. There were 0 frames with any crossfade and 0 frames
+  with the circle and card drawn together. Frame time median 16.7 ms, p95 16.8 ms, none over 25 ms.
+  Double-clicking a full card enters it and creates no note (`wave7-card.js`). Frames:
+  `autonomy/checks/line-lab-v2/wave7-flight-2026-09-25.png`. No sketch covers entering.
+- **To check in the dev app:** zoom out until notes are circles, double-click one, and watch it grow into
+  the view. Press Escape (twice if you were typing). Also double-click a full note.
+- **Merge `ws/ui` wave 7 into `ws/mergin`.** It touches `Canvas.tsx`, `TreeFrame.tsx`, `NoteCard.tsx` and `look/`.
+
+Answer `item 10: approved`, or the issues, in `autonomy/RESPONSE`.
+If no: `git revert cd23bfc 4d7a907` on ws/ui, and untick wave 7 in the plan.
+
 ## Closed
 
 (none)

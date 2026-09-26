@@ -23,11 +23,11 @@ checklist:
 
 ## In progress
 
-(empty) Wave 6 is done (REVIEW #9). Next session: **Part 2, Wave 7 (entering a note)**. Start with
-`git merge ws/mergin`. The hook: the camera's "Zoom into note" (`zoomToFrameRect`) gains an optional
-shared-element callback. Double-click lerps the camera in while the title and each part fly from their
-collapsed spots (look/CollapsedNote.tsx) to their full-view spots, with no text cross-fade, at 60 fps (use the
-Electron bench in `autonomy/checks/line-lab-v2/ink-bench` for fps). Pose scripts: `wave5-pose.js` (zoom), `wave6-pose.js`.
+(empty) Wave 7 is done (REVIEW #10). Next session: **Part 2, Wave 8 (icons, cursors and the feel check)**. Start
+with `git merge ws/mergin` (keep ws/ui's `autonomy/*` and `CLAUDE.md` if they conflict: mergin now carries its own
+driver files). Cursor set: park it (gate 3) unless drawings are in `~/Tree/Design/`. Screenshot set: every state
+(waves 2-7 poses in `autonomy/checks/line-lab-v2/`) next to every sketch into a new `~/Tree/Design/UI Build Review.md`
+(the plan names it). Then queue the feel check (gate 5), and do the plan's report step and set its status.
 
 ## Blocked
 
@@ -44,6 +44,11 @@ Electron bench in `autonomy/checks/line-lab-v2/ink-bench` for fps). Pose scripts
   fly along Δv from the corners facing it. Queued in REVIEW #2.
 
 ## Learned
+
+- A CSS `scale` on a NoteCard shows up in its reported dims (layoutSize reads getBoundingClientRect), which
+  feeds back into the collapse forms next frame and makes the scale flicker on alternate frames. Divide any
+  card scale out of the dims, as the bob and the entering flight do.
+- ws/mergin now has its own `autonomy/` driver and CLAUDE.md; merging it conflicts on those. Keep ws/ui's.
 
 - A missing `}` in App.css doesn't fail the build: CSS nesting silently swallows every later rule. If new
   CSS "doesn't apply", count `document.styleSheets[0].cssRules` in the app and read the last few.
@@ -120,3 +125,6 @@ Electron bench in `autonomy/checks/line-lab-v2/ink-bench` for fps). Pose scripts
 - 2026-09-25 17:40: Line Lab v2 Part 2 Wave 6 done and ticked (particles, rifling and text bob, button swell,
   Motion panel; restored the App.css brace wave 0 dropped; 23 tests, 1230 green; with all off, 0 frames).
   Commits 4df67b5, 87f5348. REVIEW #9 queued (gate 4 open).
+- 2026-09-25 17:20: Line Lab v2 Part 2 Wave 7 done and ticked (look/enter.ts flight hook on zoomToFrameRect, shared-
+  element scale for every note changing form, Escape leaves; 7 tests, 1237 green; 60 fps, 0 crossfade frames both ways).
+  Merge d58b805, commits 4d7a907, cd23bfc. REVIEW #10 queued.
