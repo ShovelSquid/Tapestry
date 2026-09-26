@@ -6,6 +6,7 @@
 
 import { describe, expect, it } from 'vitest'
 import {
+  attentionOf,
   clampLevel,
   FAILED_PHRASES,
   failedPhrase,
@@ -326,5 +327,38 @@ describe('statusTextAfterTurn (the last status text main keeps, D-12)', () => {
   it("is 'Reading your message' for a turn with nothing yet, and 'New chat' for no events", () => {
     expect(statusTextAfterTurn([user()])).toBe(READING_TEXT)
     expect(statusTextAfterTurn([])).toBe(NEW_CHAT_TEXT)
+  })
+})
+
+describe('attentionOf (D-16, A-07, A-08)', () => {
+  const at = (overrides: Partial<SessionStatus>): SessionStatus => ({ ...idle(), ...overrides })
+
+  it('done at level 2 asks for an arrow; done at level 1 does not', () => {
+    expect(attentionOf(at({ state: 'done', level: 2 }), false)).toEqual({ kind: 'done', level: 2 })
+    expect(attentionOf(at({ state: 'done', level: 1 }), false)).toBeNull()
+  })
+
+  it('needs you is level 3 until a reply', () => {
+    expect(attentionOf(at({ state: 'needs', level: 3, needs: true }), false)).toEqual({ kind: 'needs', level: 3 })
+  })
+
+  it('failed counts as level 2 (A-07)', () => {
+    expect(attentionOf(at({ state: 'failed', level: 2 }), false)).toEqual({ kind: 'failed', level: 2 })
+  })
+
+  it('a new chat that is still idle counts as a level-2 arrival (A-08); a quiet idle asks for nothing', () => {
+    expect(attentionOf(at({ state: 'idle' }), true)).toEqual({ kind: 'new', level: 2 })
+    expect(attentionOf(at({ state: 'idle' }), false)).toBeNull()
+  })
+
+  it('working asks for nothing', () => {
+    expect(attentionOf(at({ state: 'working', level: 1 }), false)).toBeNull()
+    expect(attentionOf(at({ state: 'working', level: 1 }), true)).toBeNull()
+  })
+
+  it('follows the reducer: a finished turn asks, and looking at it stops the asking', () => {
+    const done = run(idle(), [user(), doneOk])
+    expect(attentionOf(done, false)).toEqual({ kind: 'done', level: 2 })
+    expect(attentionOf(reduceStatus(done, { kind: 'ack' }, 99), false)).toBeNull()
   })
 })

@@ -26,9 +26,15 @@
  * (D-12), never a stale Working.
  */
 
-import { useEffect, useSyncExternalStore } from 'react'
+import { useEffect, useRef, useSyncExternalStore } from 'react'
 import { composeFirstMessage, type ChatAttachment, type LiveEntry } from './chat'
-import { initialStatus, reduceStatus, type SessionStatus } from '../../shared/chat/session-status'
+import {
+  attentionOf,
+  initialStatus,
+  reduceStatus,
+  type Attention,
+  type SessionStatus,
+} from '../../shared/chat/session-status'
 import { authorToken, type AuthorToken } from '../threads/author-palette'
 
 // ---------------------------------------------------------------------------
@@ -66,6 +72,12 @@ export interface ChatSessionSnapshot {
    * (D-11, D-13, D-14). Renderer state only (D-10).
    */
   readonly status: SessionStatus
+  /**
+   * Made by the person just now (a new chat, a fork) and not yet looked at:
+   * an arrival like a level-2 Done, so a card that landed off-screen gets an
+   * edge arrow instead of the camera moving (A-08). Renderer state only.
+   */
+  readonly isNew: boolean
 }
 
 /**
@@ -107,6 +119,7 @@ export const EMPTY_CHAT_SESSION: ChatSessionSnapshot = Object.freeze({
   focusNonce: 0,
   focusPlace: 'card' as ComposerPlace,
   status: Object.freeze(initialStatus({ busy: false, lastStatus: null, turns: 1 })),
+  isNew: false,
 })
 
 /** The store key for one session. */
@@ -258,12 +271,23 @@ export function useChatSession(treeId: string, noteId: string): ChatSessionSnaps
 
 /**
  * The person looked at a session: Done and Failed become Idle, keeping their
- * status text. Needs you clears only on a reply, and Working and Idle have
- * nothing to acknowledge, so those return the same snapshot.
+ * status text, and a new chat is no longer new. Needs you clears only on a
+ * reply, and Working and Idle have nothing to acknowledge, so those return
+ * the same snapshot.
+ *
+ * `keepNew` leaves a new chat's arrival alone: focus alone does not count
+ * for it, because a new chat's composer takes focus by itself (the person
+ * has not seen where the card landed yet).
  */
-export function acknowledgeChatSnapshot(snapshot: ChatSessionSnapshot, now: number): ChatSessionSnapshot {
+export function acknowledgeChatSnapshot(
+  snapshot: ChatSessionSnapshot,
+  now: number,
+  options: { keepNew?: boolean } = {},
+): ChatSessionSnapshot {
   const status = reduceStatus(snapshot.status, { kind: 'ack' }, now)
-  return status === snapshot.status ? snapshot : { ...snapshot, status }
+  const isNew = options.keepNew === true ? snapshot.isNew : false
+  if (status === snapshot.status && isNew === snapshot.isNew) return snapshot
+  return { ...snapshot, status, isNew }
 }
 
 /**
@@ -271,8 +295,73 @@ export function acknowledgeChatSnapshot(snapshot: ChatSessionSnapshot, now: numb
  * went into the card, it was enlarged, or the person sent in it. Renderer
  * state only; nothing is written.
  */
-export function acknowledgeSession(treeId: string, noteId: string, now: number = Date.now()): void {
-  update(treeId, noteId, (s) => acknowledgeChatSnapshot(s, now))
+export function acknowledgeSession(
+  treeId: string,
+  noteId: string,
+  now: number = Date.now(),
+  options: { keepNew?: boolean } = {},
+): void {
+  update(treeId, noteId, (s) => acknowledgeChatSnapshot(s, now, options))
+}
+
+/**
+ * A session the person just made (a new chat, or a fork): it arrives like a
+ * level-2 Done until looked at (A-08), so if it landed off-screen it gets an
+ * edge arrow. Nothing moves the camera.
+ */
+export function markNewSession(treeId: string, noteId: string): void {
+  update(treeId, noteId, (s) => (s.isNew ? s : { ...s, isNew: true }))
+}
+
+// ---------------------------------------------------------------------------
+// Attention for edge arrows (D-16)
+// ---------------------------------------------------------------------------
+
+/** What one session asks for, with the author colour its arrow is drawn in. */
+export interface SessionAttention extends Attention {
+  /** The CSS variable naming the session's author colour. */
+  author: AuthorToken
+}
+
+/** What the session under `key` asks for right now, or null. */
+export function sessionAttention(key: string): SessionAttention | null {
+  const s = sessions.get(key)
+  if (!s) return null
+  const attention = attentionOf(s.status, s.isNew)
+  return attention ? { ...attention, author: sessionAuthorToken(s.agent) } : null
+}
+
+/** Every asking session among `keys`, by key. Keys that ask for nothing are left out. */
+export function sessionAttentions(keys: readonly string[]): Map<string, SessionAttention> {
+  const out = new Map<string, SessionAttention>()
+  for (const key of keys) {
+    const attention = sessionAttention(key)
+    if (attention) out.set(key, attention)
+  }
+  return out
+}
+
+function attentionsSignature(map: ReadonlyMap<string, SessionAttention>): string {
+  let sig = ''
+  for (const [key, a] of map) sig += `${key}=${a.kind}/${a.level}/${a.author};`
+  return sig
+}
+
+/**
+ * sessionAttentions, live, for many sessions at once (the edge-arrow layer
+ * needs every session card, and hooks cannot run in a loop). One
+ * subscription; the map keeps its identity until what it says changes.
+ */
+export function useSessionAttentions(keys: readonly string[]): ReadonlyMap<string, SessionAttention> {
+  const cache = useRef<{ sig: string; map: ReadonlyMap<string, SessionAttention> }>({ sig: '', map: new Map() })
+  const read = (): ReadonlyMap<string, SessionAttention> => {
+    const map = sessionAttentions(keys)
+    const sig = attentionsSignature(map)
+    if (sig === cache.current.sig) return cache.current.map
+    cache.current = { sig, map }
+    return map
+  }
+  return useSyncExternalStore(subscribe, read)
 }
 
 /** What LiveAnnouncer says about a state change, and in which region. */
@@ -441,6 +530,8 @@ export async function createChatSession(
   }
   if (!result.ok) return { ok: false, error: result.error }
   const noteId = result.value.noteId
+  // An arrival: if the card landed off-screen, an edge arrow says where (A-08).
+  markNewSession(treeId, noteId)
   if (attachment) setChatAttachment(treeId, noteId, attachment)
   requestComposerFocus(treeId, noteId, focusPlace)
   return { ok: true, treeId, noteId }

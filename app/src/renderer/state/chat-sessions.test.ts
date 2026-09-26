@@ -19,6 +19,9 @@ import {
   chatSessionFor,
   chatSessionKey,
   forgetChatSession,
+  markNewSession,
+  sessionAttention,
+  sessionAttentions,
   openedStatus,
   recordChatPayload,
   requestComposerFocus,
@@ -308,5 +311,37 @@ describe('the store', () => {
 
   it('keys a session by tree and note', () => {
     expect(chatSessionKey(TREE, 'n5')).toBe(`${TREE}:n5`)
+  })
+})
+
+describe('new sessions and attention (02.8-06, D-16, A-08)', () => {
+  it('a new chat asks like a level-2 arrival until looked at', () => {
+    markNewSession(TREE, 'n20')
+    expect(chatSessionFor(TREE, 'n20').isNew).toBe(true)
+    expect(sessionAttention(chatSessionKey(TREE, 'n20'))).toMatchObject({ kind: 'new', level: 2 })
+    acknowledgeSession(TREE, 'n20', 5)
+    expect(chatSessionFor(TREE, 'n20').isNew).toBe(false)
+    expect(sessionAttention(chatSessionKey(TREE, 'n20'))).toBeNull()
+    forgetChatSession(TREE, 'n20')
+  })
+
+  it('focus alone leaves a new chat new (its composer takes focus by itself)', () => {
+    const fresh = { ...loaded, isNew: true }
+    expect(acknowledgeChatSnapshot(fresh, 1, { keepNew: true })).toBe(fresh)
+    expect(acknowledgeChatSnapshot(fresh, 1).isNew).toBe(false)
+  })
+
+  it('an empty session starts not new', () => {
+    expect(EMPTY_CHAT_SESSION.isNew).toBe(false)
+  })
+
+  it('lists only the sessions that ask, with their author colour', () => {
+    markNewSession(TREE, 'n21')
+    setChatDraft(TREE, 'n22', 'quiet')
+    const map = sessionAttentions([chatSessionKey(TREE, 'n21'), chatSessionKey(TREE, 'n22'), chatSessionKey(TREE, 'n23')])
+    expect([...map.keys()]).toEqual([chatSessionKey(TREE, 'n21')])
+    expect(map.get(chatSessionKey(TREE, 'n21'))?.author).toMatch(/^--tap-author-/)
+    forgetChatSession(TREE, 'n21')
+    forgetChatSession(TREE, 'n22')
   })
 })

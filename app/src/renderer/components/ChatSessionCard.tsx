@@ -343,10 +343,16 @@ function ChatSessionCardView({
   // ----- State (D-11): acknowledgement and announcements -----
   const status = session.status
   const acknowledge = useCallback(() => acknowledgeSession(treeId, node.id), [treeId, node.id])
+  // Focus is looking at Done and Failed, but not at a new chat: its composer
+  // takes focus by itself, before the person has seen where the card landed.
+  const acknowledgeFocus = useCallback(
+    () => acknowledgeSession(treeId, node.id, Date.now(), { keepNew: true }),
+    [treeId, node.id],
+  )
   const [pointerInside, setPointerInside] = useState(false)
-  const waiting = status.state === 'done' || status.state === 'failed'
-  // The pointer resting on a Done or Failed card for a second is looking at it,
-  // whether it came to rest before or after the state arrived.
+  const waiting = status.state === 'done' || status.state === 'failed' || session.isNew
+  // The pointer resting on a Done or Failed card (or a new chat) for a second
+  // is looking at it, whether it came to rest before or after the state arrived.
   useEffect(() => {
     if (!pointerInside || !waiting) return undefined
     const timer = setTimeout(acknowledge, ACK_REST_MS)
@@ -412,7 +418,7 @@ function ChatSessionCardView({
       onPointerLeave={handleLeave}
       // A press or focus anywhere inside is looking at it (Done and Failed go quiet).
       onPointerDownCapture={acknowledge}
-      onFocus={acknowledge}
+      onFocus={acknowledgeFocus}
     >
       {status.needs && <NeedsYouBadge />}
 

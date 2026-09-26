@@ -210,9 +210,11 @@ export default function App(): React.ReactElement {
     [refreshTree],
   )
 
+  const chatPanelOpen = chatPanel !== null
   const chatContext = React.useMemo<ChatContextValue>(
     () => ({
       openSession: chatTreeId !== null && chatNoteId !== null ? { treeId: chatTreeId, noteId: chatNoteId } : null,
+      panelOpen: chatPanelOpen,
       openChat,
       enlarge: (treeId: string, noteId: string) => {
         setLastChatTreeId(treeId)
@@ -223,7 +225,7 @@ export default function App(): React.ReactElement {
       treeName: (treeId: string) =>
         treesForNameRef.current.find((tree) => tree.id === treeId)?.name ?? '',
     }),
-    [chatTreeId, chatNoteId, openChat],
+    [chatTreeId, chatNoteId, chatPanelOpen, openChat],
   )
 
   // A chat asked to be deleted while Claude is answering (the confirmation).

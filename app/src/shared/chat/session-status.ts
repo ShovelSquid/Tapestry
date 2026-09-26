@@ -254,3 +254,34 @@ export function statusTextAfterTurn(events: readonly StatusEvent[]): string {
 export function shouldAnimate(level: number, threshold: number): boolean {
   return level >= 1 && level >= threshold
 }
+
+// ---------------------------------------------------------------------------
+// Attention (D-16, A-07, A-08)
+// ---------------------------------------------------------------------------
+
+/** What a session is asking the person to look at: its edge arrow's glyph and label. */
+export type AttentionKind = 'done' | 'needs' | 'failed' | 'new'
+
+export interface Attention {
+  kind: AttentionKind
+  level: number
+}
+
+/** A new chat or fork arrives like a level-2 Done (A-08). */
+const NEW_LEVEL = 2
+/** Done asks for an arrow from this level (D-14 levels table). */
+const DONE_ATTENTION_LEVEL = 2
+
+/**
+ * What a session asks for until the person looks, or null. Needs you is
+ * level 3 until a reply; Failed counts as level 2 (A-07); Done counts from
+ * level 2; a just-created chat that is still Idle counts as a level-2
+ * arrival (A-08). Working and a quiet Idle ask for nothing.
+ */
+export function attentionOf(status: SessionStatus, isNew: boolean): Attention | null {
+  if (status.needs || status.state === 'needs') return { kind: 'needs', level: STATUS_LEVEL_CEILING }
+  if (status.state === 'failed') return { kind: 'failed', level: FAILED_LEVEL }
+  if (status.state === 'done') return status.level >= DONE_ATTENTION_LEVEL ? { kind: 'done', level: status.level } : null
+  if (isNew && status.state === 'idle') return { kind: 'new', level: NEW_LEVEL }
+  return null
+}

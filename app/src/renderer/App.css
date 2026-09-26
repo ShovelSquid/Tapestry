@@ -2342,6 +2342,63 @@ html, body, #root {
   background-color: color-mix(in srgb, var(--tap-author-underlay-color) 18%, transparent);
 }
 
+/* ----- Edge arrows (02.8-06, D-16; UI-SPEC § Edge arrows) ----------------
+   Screen space over the canvas, under the forest bar, the ChatPanel and
+   dialogs. A 32px disc in --tap-surface with a 2px author-colour border and
+   the control-bubble shadow; the chevron points at the card. Needs you is
+   the badge's look: a filled author-colour disc with a white "!". The layer
+   itself takes no pointer events, so the canvas pans through it. */
+.tapestry-edge-arrows {
+  position: absolute;
+  inset: 0;
+  z-index: 90;
+  pointer-events: none;
+}
+
+.tapestry-edge-arrow {
+  position: absolute;
+  width: 32px;
+  height: 32px;
+  margin: -16px 0 0 -16px;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid var(--tap-session-author, var(--tap-muted));
+  background-color: var(--tap-surface);
+  color: var(--tap-session-author, var(--tap-muted));
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  pointer-events: auto;
+  animation: tapestry-edge-arrow-in 150ms ease both;
+}
+
+.tapestry-edge-arrow:focus-visible {
+  outline: 2px solid var(--tap-accent);
+  outline-offset: 2px;
+}
+
+.tapestry-edge-arrow--needs {
+  background-color: var(--tap-session-author, var(--tap-muted));
+  color: #FFFFFF;
+}
+
+.tapestry-edge-arrow--leaving {
+  pointer-events: none;
+  animation: tapestry-edge-arrow-out 150ms ease both;
+}
+
+@keyframes tapestry-edge-arrow-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes tapestry-edge-arrow-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
 /* 02.3-07: this phase's first prefers-reduced-motion rule (UI-SPEC "Motion
    and prefers-reduced-motion": "No reduced-motion rule exists in the
    renderer today ... this phase introduces the first one"). The stage's own

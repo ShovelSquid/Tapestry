@@ -25,6 +25,11 @@ export interface ChatContextValue {
   /** The session the enlarged view (the docked panel) shows, or null. */
   openSession: { treeId: string; noteId: string } | null
   /**
+   * Whether the docked panel is showing anything (a session, the chooser or
+   * the no-workspace text): the canvas keeps edge arrows clear of its column.
+   */
+  panelOpen: boolean
+  /**
    * Start a chat for where the person asked (D-19): which workspace that
    * means is chatWorkspaceFor's rule. In that workspace a new session note is
    * made (at `target.at`, or at the next free spot), its card's composer
@@ -43,6 +48,7 @@ export interface ChatContextValue {
 
 export const ChatContext = createContext<ChatContextValue>({
   openSession: null,
+  panelOpen: false,
   openChat: async () => null,
   enlarge: () => undefined,
   backToCard: () => undefined,

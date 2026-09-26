@@ -72,6 +72,10 @@ import { absolutePositions, isWorkspaceNode, subspaceRects, type DimsOf, type Po
 import { flightProgress, type FlightFrame } from '../look/enter'
 import { useContextMenu } from './ContextMenu'
 import { ChatContext } from '../state/chat'
+import EdgeArrowLayer, { type EdgeArrowSessionCard } from './EdgeArrowLayer'
+import { PANEL_COLUMN, type ViewportSize } from '../layout/edge-arrows'
+import { chatSessionKey } from '../state/chat-sessions'
+import { NEW_SESSION_TITLE, SESSION_HEIGHT, SESSION_WIDTH, isSessionNode } from '../../shared/chat/transcript'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -1201,7 +1205,7 @@ function Canvas({
   // -----------------------------------------------------------------------
 
   const openContextMenu = useContextMenu()
-  const { openChat } = useContext(ChatContext)
+  const { openChat, panelOpen } = useContext(ChatContext)
 
   const handleContextMenu = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
@@ -1505,6 +1509,101 @@ function Canvas({
     return slice(`${kind}:${treeId}`, JSON.stringify(mine), () => Object.fromEntries(mine))
   }
 
+  // -----------------------------------------------------------------------
+  // Edge arrows (02.8 D-16): session cards waiting off-screen. The arrow
+  // layer draws them; only its click, the person's own action, pans here.
+  // -----------------------------------------------------------------------
+
+  const [viewportSize, setViewportSize] = useState<ViewportSize>({ width: 0, height: 0 })
+  useEffect(() => {
+    const el = viewportRef.current
+    if (!el) return undefined
+    const read = (): void => {
+      const width = el.clientWidth
+      const height = el.clientHeight
+      setViewportSize((prev) => (prev.width === width && prev.height === height ? prev : { width, height }))
+    }
+    read()
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', read)
+      return () => window.removeEventListener('resize', read)
+    }
+    const observer = new ResizeObserver(read)
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
+
+  // Every session card of every open tree, in world coordinates: the frame's
+  // origin plus the note's drawn spot, at its measured size. A session nested
+  // inside another note is drawn in that note's coordinates and is left out.
+  const sessionCards: EdgeArrowSessionCard[] = []
+  for (const tree of trees) {
+    if (!tree.nodes.some(isSessionNode)) continue
+    const nesting = buildNesting(tree.nodes)
+    const spots = treeSpots.get(tree.id)
+    for (const node of tree.nodes) {
+      if (!isSessionNode(node) || isNested(nesting, node.id)) continue
+      const spot = spots?.get(node.id)
+      const localX = spot ? spot.x : Number(node.props['position.x']?.value ?? 0)
+      const localY = spot ? spot.y : Number(node.props['position.y']?.value ?? 0)
+      const dims = nodeDimsRef.current.get(nodeKey({ treeId: tree.id, nodeId: node.id }))
+      const rawTitle = node.props['title']?.value
+      const title = typeof rawTitle === 'string' && rawTitle.trim().length > 0 ? rawTitle : NEW_SESSION_TITLE
+      sessionCards.push({
+        key: chatSessionKey(tree.id, node.id),
+        treeId: tree.id,
+        noteId: node.id,
+        worldRect: {
+          x: tree.frame.x + localX,
+          y: tree.frame.y + localY,
+          width: dims?.width ?? SESSION_WIDTH,
+          height: dims?.height ?? SESSION_HEIGHT,
+        },
+        title,
+      })
+    }
+  }
+  // Kept by identity until a card moves, resizes or is renamed.
+  const sessionCardsSig = JSON.stringify(sessionCards)
+  const sessionCardsRef = useRef<{ sig: string; cards: EdgeArrowSessionCard[] }>({ sig: '', cards: [] })
+  if (sessionCardsRef.current.sig !== sessionCardsSig) {
+    sessionCardsRef.current = { sig: sessionCardsSig, cards: sessionCards }
+  }
+  const stableSessionCards = sessionCardsRef.current.cards
+  const panelOpenRef = useRef(panelOpen)
+  panelOpenRef.current = panelOpen
+
+  /**
+   * Centre a session card in the visible area (left of the panel when it is
+   * open) at the current zoom and roll: the CameraRig glide panToFrame uses,
+   * or a jump under reduced motion. Only an edge arrow's click calls this; no
+   * status, event or store change ever moves the camera (D-16).
+   */
+  const panToSession = useCallback(
+    (treeId: string, noteId: string) => {
+      const viewport = viewportRef.current
+      const key = chatSessionKey(treeId, noteId)
+      const card = sessionCardsRef.current.cards.find((c) => c.key === key)
+      if (!viewport || !card) return
+      const { clientWidth, clientHeight } = viewport
+      const visibleWidth = Math.max(0, clientWidth - (panelOpenRef.current ? PANEL_COLUMN : 0))
+      const cx = card.worldRect.x + card.worldRect.width / 2
+      const cy = card.worldRect.y + card.worldRect.height / 2
+      const reduced =
+        typeof window !== 'undefined' &&
+        typeof window.matchMedia === 'function' &&
+        window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      if (reduced) {
+        rig.direct((c) => centerOn(c, cx, cy, visibleWidth, clientHeight))
+        showDrawn()
+        return
+      }
+      rig.easeTo((c) => centerOn(c, cx, cy, visibleWidth, clientHeight), FLY_TAU_MS)
+      kick()
+    },
+    [rig, kick, showDrawn],
+  )
+
   // The in-progress connection line is drawn in world space, above the frames,
   // so it stays visible while the pointer is between two of them.
   let tempConnectionLine: { x1: number; y1: number; x2: number; y2: number } | null = null
@@ -1618,6 +1717,16 @@ function Canvas({
           </svg>
         )}
       </div>
+
+      {/* Edge arrows: screen space, outside the transform, after the canvas
+          and before the ChatPanel in DOM order (02.8 D-16). */}
+      <EdgeArrowLayer
+        cards={stableSessionCards}
+        camera={view}
+        viewport={viewportSize}
+        panelOpen={panelOpen}
+        onGo={panToSession}
+      />
     </div>
   )
 }
