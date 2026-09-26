@@ -42,6 +42,10 @@ current code and note it in the SUMMARY. ws/ui's driver is archived in
 - 2026-09-25 (interactive, not a driver session): Phase 2.8 inserted and
   planned; driver ported; App.css brace lost in the 2.3 merge fixed (8bb2614).
   71 files / 1132 tests green before 2.8. Next: wave 1 (02.8-01).
+- 2026-09-25 18:08 session: wave 1, 02.8-01 done (ce9b091 REVIEW item 6
+  = Task 1 option a; 67ffce6, edb7802 code; 36f0bf7 SUMMARY). 84 files /
+  1272 tests green. Hands-on checks queued as REVIEW item 7. Next: wave 2
+  (02.8-02).
 
 ## Learned
 
@@ -58,9 +62,14 @@ current code and note it in the SUMMARY. ws/ui's driver is archived in
   each plan.
 - From ws/windows: foreground gsd-executors of 15-30 minutes do not trip the
   idle watchdog; subagent events reach the stream-json log.
+- Resolving a plan's opening checkpoint:decision before spawning (REVIEW
+  item written by the driver, executor told the answer) worked cleanly for
+  02.8-01; the executor took ~16 min.
 - Executors must not launch the app before a checkpoint. On first open the
   app can write commits into real trees, and the human verifies those.
 
 ## Blocked
 
 (questions a human would have been asked, with the option taken)
+
+- 02.8-01 Task 1 session-note format: option a (REVIEW item 6).

@@ -66,4 +66,28 @@ grammar, prefixes or keys you want instead. Undoing it later means adding a
 sessions; before any real sessions exist it is just a code change in
 `app/src/shared/chat/transcript.ts`.
 
+### 7. 02.8-01: hands-on check of session notes and New chat (open)
+
+Built by the unattended driver (commits 67ffce6, edb7802; SUMMARY
+`.planning/phases/02.8-agent-note-windows/02.8-01-SUMMARY.md`). Tests green
+(84 files, 1272 tests); the app was not launched. Run
+`npm --prefix app run dev` in ~/Tapestrees/mergin with a scratch workspace:
+
+1. Click **New chat** on a workspace frame. A new note appears in the frame
+   (plain fallback look until 02.8-03) and the panel opens titled "New chat",
+   subtitle naming `agent.claude-chat-<8 hex>-n<k>`.
+2. Send "hi". The reply streams in and stays visible after the turn ends;
+   the note's body shows `Turn 1` / `You: hi` / `Claude: …`.
+3. Click **New chat** again: a second note with an empty conversation, and
+   the Agents panel lists two `claude-chat-…` agents.
+4. Judgement call: **Ask Claude…** on a note or file card, and on the canvas
+   background menu, now makes a new chat note on every click (the plan routes
+   them all through one path). Until 02.8-02 adds placement beside the card
+   they land at the next free spot. Say if you want a different behaviour.
+
+Deviations to know about: NUL and broken UTF-16 in chat text become U+FFFD;
+tool lines are capped at 1,000 characters (UI-SPEC says never truncated);
+`chat:new` and the "earlier messages aren't shown here" notice are removed.
+Answer `item 7: approved` or describe issues. Undo: revert 67ffce6 and edb7802.
+
 ## Closed
