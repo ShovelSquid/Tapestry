@@ -1914,6 +1914,23 @@ html, body, #root {
   gap: 16px;
 }
 
+/* Closed to its header: rows 1 and 2 only, the same width. */
+.tapestry-session-card--closed {
+  height: auto;
+}
+
+/* Jump to latest: 8px above the composer rule, centred, while the reader is
+   scrolled up (UI-SPEC Scroll). Sticky, so it stays put as the text scrolls. */
+.tapestry-session-jump,
+.tapestry-chat-transcript > .tapestry-session-jump {
+  position: sticky;
+  bottom: 8px;
+  align-self: center;
+  flex: none;
+  z-index: 1;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+}
+
 .tapestry-session-composer {
   flex: none;
   margin-top: 8px;

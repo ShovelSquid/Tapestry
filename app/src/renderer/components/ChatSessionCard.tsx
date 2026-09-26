@@ -4,8 +4,13 @@
  *
  * The card is the session: its title, its conversation (the note's own text
  * plus the turn in progress) scrolling inside it, and a composer you can
- * reply from. Its position is the note's real placement. Its size stays the
+ * reply from. Its position is the note's real placement. Its size is the
  * note's (360 × 440 by default); the conversation never grows it.
+ *
+ * Resizing it (280 × 240 to 720 × 960), closing it to its header and
+ * scrolling its transcript are view state (layout/session-card.ts): kept in
+ * localStorage by tree and note, never a commit, never the note's
+ * `width`/`height`.
  *
  * It reads the same store as the enlarged view (state/chat-sessions.ts), so
  * both show one live turn and one draft.
@@ -28,6 +33,13 @@ import ChatSessionComposer from './ChatSessionComposer'
 import { ChatContext, foldChatEvents, liveAfter } from '../state/chat'
 import { useChatSession } from '../state/chat-sessions'
 import { screenDeltaToWorld } from '../layout/camera'
+import {
+  browserCardViewStorage,
+  clampCardSize,
+  readCardView,
+  writeCardView,
+  type CardView,
+} from '../layout/session-card'
 import {
   NEW_SESSION_TITLE,
   SESSION_HEIGHT,
@@ -77,6 +89,21 @@ function EnlargeGlyph(): React.ReactElement {
     <svg width={14} height={14} viewBox="0 0 16 16" fill="none" aria-hidden="true" focusable="false">
       <path
         d="M9.5 2.5h4v4M13.5 2.5 9 7M6.5 13.5h-4v-4M2.5 13.5 7 9"
+        stroke="currentColor"
+        strokeWidth={1.3}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+/** A chevron: down while the card is open (closes it), right while closed. */
+function ChevronGlyph({ closed }: { closed: boolean }): React.ReactElement {
+  return (
+    <svg width={14} height={14} viewBox="0 0 16 16" fill="none" aria-hidden="true" focusable="false">
+      <path
+        d={closed ? 'M6 3.5 10.5 8 6 12.5' : 'M3.5 6 8 10.5 12.5 6'}
         stroke="currentColor"
         strokeWidth={1.3}
         strokeLinecap="round"
@@ -165,11 +192,76 @@ function ChatSessionCardView({
     [x, y, zoom, roll, node.id, onDragMove, onDragEnd, onPositionChange],
   )
 
-  // ----- Size: the note's (D-05) -----
+  // ----- View state (D-05): size, closed and scroll, never a commit -----
+  const storage = useMemo(() => browserCardViewStorage(), [])
+  const [view, setView] = useState<CardView>(() => (storage ? readCardView(storage, treeId, node.id) : {}))
+  const remember = useCallback(
+    (patch: CardView) => {
+      if (storage) writeCardView(storage, treeId, node.id, patch)
+    },
+    [storage, treeId, node.id],
+  )
+  // The last scroll, for a transcript drawn again after the card reopens.
+  const scrollRef = useRef({ scrollTop: view.scrollTop, atBottom: view.atBottom })
+
+  // Size: the view's if resized, else the note's (360 x 440 by default).
   const storedWidth = numberProp(node, 'width')
   const storedHeight = numberProp(node, 'height')
-  const width = storedWidth > 0 ? storedWidth : SESSION_WIDTH
-  const height = storedHeight > 0 ? storedHeight : SESSION_HEIGHT
+  const [liveSize, setLiveSize] = useState<{ width: number; height: number } | null>(null)
+  const { width, height } =
+    liveSize ??
+    clampCardSize({
+      width: view.width ?? (storedWidth > 0 ? storedWidth : SESSION_WIDTH),
+      height: view.height ?? (storedHeight > 0 ? storedHeight : SESSION_HEIGHT),
+    })
+  const closed = view.closed === true
+
+  // Resize from the right edge, the bottom edge or the bottom-right corner.
+  // It changes only the view's size: this card has no width or height
+  // handler, so a resize can never commit.
+  const handleResizeStart = useCallback(
+    (e: React.PointerEvent, edges: { right: boolean; bottom: boolean }) => {
+      if (e.button !== 0) return
+      e.stopPropagation()
+      e.preventDefault()
+      const start = { mouseX: e.clientX, mouseY: e.clientY, width, height }
+      let last: { width: number; height: number } | null = null
+      const onMove = (me: PointerEvent): void => {
+        const d = screenDeltaToWorld(me.clientX - start.mouseX, me.clientY - start.mouseY, zoom, roll)
+        last = clampCardSize({
+          width: edges.right ? start.width + d.x : start.width,
+          height: edges.bottom ? start.height + d.y : start.height,
+        })
+        setLiveSize(last)
+      }
+      const onUp = (): void => {
+        document.removeEventListener('pointermove', onMove, true)
+        document.removeEventListener('pointerup', onUp, true)
+        setLiveSize(null)
+        if (!last) return
+        const size = last
+        setView((v) => ({ ...v, ...size }))
+        remember(size)
+      }
+      document.addEventListener('pointermove', onMove, true)
+      document.addEventListener('pointerup', onUp, true)
+    },
+    [width, height, zoom, roll, remember],
+  )
+
+  const toggleClosed = (): void => {
+    const next = !closed
+    setView((v) => ({ ...v, closed: next }))
+    remember({ closed: next })
+  }
+
+  const handleScrollChange = useCallback(
+    (scrollTop: number, atBottom: boolean) => {
+      scrollRef.current = { scrollTop, atBottom }
+      remember({ scrollTop, atBottom })
+    },
+    [remember],
+  )
 
   // Layout size, unaffected by the camera's zoom and roll.
   useEffect(() => {
@@ -232,6 +324,8 @@ function ChatSessionCardView({
   let className = 'tapestry-note-card tapestry-session-card'
   if (isSelected || isConnectTarget) className += ' tapestry-note-card--selected'
   if (isConnectTarget) className += ' tapestry-note-card--connect-target'
+  if (closed) className += ' tapestry-session-card--closed'
+  const showControlsNow = showControls || isSelected
 
   return (
     <div
@@ -239,7 +333,7 @@ function ChatSessionCardView({
       className={className}
       role="article"
       aria-label={`Chat: ${shownTitle}`}
-      style={{ left: `${x}px`, top: `${y}px`, width: `${width}px`, height: `${height}px` }}
+      style={{ left: `${x}px`, top: `${y}px`, width: `${width}px`, height: closed ? undefined : `${height}px` }}
       onPointerEnter={handleEnter}
       onPointerLeave={handleLeave}
     >
@@ -290,6 +384,22 @@ function ChatSessionCardView({
         <button
           type="button"
           className="tapestry-ask-claude-button"
+          aria-label={closed ? 'Open chat card' : 'Close chat card'}
+          title={closed ? 'Open chat card' : 'Close chat card'}
+          aria-expanded={!closed}
+          onPointerDown={stop}
+          onDoubleClick={stop}
+          onKeyDown={stop}
+          onClick={(e) => {
+            e.stopPropagation()
+            toggleClosed()
+          }}
+        >
+          <ChevronGlyph closed={closed} />
+        </button>
+        <button
+          type="button"
+          className="tapestry-ask-claude-button"
           aria-label="Open beside the canvas"
           title="Open beside the canvas"
           aria-pressed={isEnlarged}
@@ -306,25 +416,51 @@ function ChatSessionCardView({
       </div>
 
       {/* The conversation and the composer keep their input (PanelShell rule). */}
-      <div
-        className="tapestry-session-body"
-        onKeyDown={stop}
-        onPointerDown={stop}
-        onDoubleClick={stop}
-        onContextMenu={stop}
-      >
-        <ChatSessionTranscript
-          className="tapestry-session-transcript"
-          turns={turns}
-          live={liveItems}
-          error={session.error}
-        />
-        <div className="tapestry-session-composer">
-          <ChatSessionComposer treeId={treeId} noteId={node.id} place="card" />
+      {!closed && (
+        <div
+          className="tapestry-session-body"
+          onKeyDown={stop}
+          onPointerDown={stop}
+          onDoubleClick={stop}
+          onContextMenu={stop}
+        >
+          <ChatSessionTranscript
+            className="tapestry-session-transcript"
+            turns={turns}
+            live={liveItems}
+            error={session.error}
+            initialScroll={scrollRef.current}
+            onScrollChange={handleScrollChange}
+          />
+          <div className="tapestry-session-composer">
+            <ChatSessionComposer treeId={treeId} noteId={node.id} place="card" />
+          </div>
         </div>
-      </div>
+      )}
 
-      {(showControls || isSelected) && <NoteControls onConnect={onStartConnection} onDelete={onDeleteNote} />}
+      {showControlsNow && <NoteControls onConnect={onStartConnection} onDelete={onDeleteNote} />}
+
+      {/* Resize handles: view state only (D-05). */}
+      {showControlsNow && (
+        <>
+          <div
+            className="tapestry-resize-handle tapestry-resize-handle--right"
+            onPointerDown={(e) => handleResizeStart(e, { right: true, bottom: false })}
+          />
+          {!closed && (
+            <>
+              <div
+                className="tapestry-resize-handle tapestry-resize-handle--bottom"
+                onPointerDown={(e) => handleResizeStart(e, { right: false, bottom: true })}
+              />
+              <div
+                className="tapestry-resize-handle tapestry-resize-handle--corner-br"
+                onPointerDown={(e) => handleResizeStart(e, { right: true, bottom: true })}
+              />
+            </>
+          )}
+        </>
+      )}
     </div>
   )
 }

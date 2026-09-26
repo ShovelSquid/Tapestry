@@ -10,9 +10,10 @@
  * Read-only (UI-SPEC A-09): nothing here can change the note.
  */
 
-import React, { useEffect, useLayoutEffect, useRef } from 'react'
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { toolLabel, toolSummary, type RecordedTurn, type TurnItem } from '../../shared/chat/transcript'
 import type { ChatItem } from '../state/chat'
+import { isNearBottom } from '../layout/session-card'
 
 /** What to do next, for the failures a person can fix themselves. */
 const errorHints: Partial<Record<string, string>> = {
@@ -100,14 +101,18 @@ function LiveItem({ item }: { item: ChatItem }): React.ReactElement {
   }
 }
 
-/** Within this many px of the bottom, the transcript follows new text. */
-const FOLLOW_PX = 48
+/** Where a transcript was left, restored when it is drawn again. */
+export interface TranscriptScroll {
+  scrollTop?: number
+  atBottom?: boolean
+}
 
 /**
- * The transcript and its own scroller. It follows new text only while the
- * reader is at (or near) the bottom, so reading an older turn is never
- * interrupted. A wheel turn over it scrolls it and never pans the canvas;
- * pinch-zoom (ctrlKey) passes through.
+ * The transcript and its own scroller. While the reader is within 48px of
+ * the bottom it follows new text; scrolled further up, it stays put and
+ * Jump to latest shows until the reader is back at the bottom. It opens at
+ * the bottom, or where it was left (`initialScroll`). A wheel turn over it
+ * scrolls it and never pans the canvas; pinch-zoom (ctrlKey) passes through.
  */
 export default function ChatSessionTranscript({
   turns,
@@ -115,6 +120,8 @@ export default function ChatSessionTranscript({
   error,
   className,
   ariaLive,
+  initialScroll,
+  onScrollChange,
 }: {
   /** The committed turns, parsed from the session note's text. */
   turns: RecordedTurn[]
@@ -125,9 +132,19 @@ export default function ChatSessionTranscript({
   /** The scroller's class (the card's or the panel's). */
   className: string
   ariaLive?: 'polite'
+  /** Where to open, read once when this mounts; the bottom when absent. */
+  initialScroll?: TranscriptScroll
+  /** Where the reader scrolled to, at most once a frame. */
+  onScrollChange?: (scrollTop: number, atBottom: boolean) => void
 }): React.ReactElement {
   const scrollRef = useRef<HTMLDivElement>(null)
-  const atBottomRef = useRef(true)
+  const restoreAt = initialScroll?.atBottom === false ? (initialScroll.scrollTop ?? null) : null
+  const atBottomRef = useRef(restoreAt === null)
+  const [atBottom, setAtBottom] = useState(restoreAt === null)
+  const restoreRef = useRef(restoreAt)
+  const frameRef = useRef<number | null>(null)
+  const onScrollChangeRef = useRef(onScrollChange)
+  onScrollChangeRef.current = onScrollChange
   const empty = turns.length === 0 && live.length === 0
 
   useEffect(() => {
@@ -137,24 +154,52 @@ export default function ChatSessionTranscript({
       if (!e.ctrlKey) e.stopPropagation()
     }
     scroller.addEventListener('wheel', onWheel, { passive: true })
-    return () => scroller.removeEventListener('wheel', onWheel)
+    return () => {
+      scroller.removeEventListener('wheel', onWheel)
+      if (frameRef.current !== null) cancelAnimationFrame(frameRef.current)
+    }
   }, [])
 
-  // New text: follow it only while the reader is at the bottom.
+  // Opening: where the reader left it, else the bottom. Then new text is
+  // followed only while the reader is at the bottom.
   useLayoutEffect(() => {
     const scroller = scrollRef.current
-    if (scroller && atBottomRef.current) scroller.scrollTop = scroller.scrollHeight
+    if (!scroller) return
+    if (restoreRef.current !== null) {
+      scroller.scrollTop = restoreRef.current
+      restoreRef.current = null
+      return
+    }
+    if (atBottomRef.current) scroller.scrollTop = scroller.scrollHeight
   }, [turns, live, error])
+
+  const handleScroll = (e: React.UIEvent<HTMLDivElement>): void => {
+    const el = e.currentTarget
+    const near = isNearBottom(el.scrollTop, el.scrollHeight, el.clientHeight)
+    atBottomRef.current = near
+    setAtBottom(near)
+    if (!onScrollChangeRef.current || frameRef.current !== null) return
+    frameRef.current = requestAnimationFrame(() => {
+      frameRef.current = null
+      const scroller = scrollRef.current
+      if (scroller) onScrollChangeRef.current?.(scroller.scrollTop, atBottomRef.current)
+    })
+  }
+
+  const jumpToLatest = (): void => {
+    const scroller = scrollRef.current
+    if (!scroller) return
+    scroller.scrollTop = scroller.scrollHeight
+    atBottomRef.current = true
+    setAtBottom(true)
+  }
 
   return (
     <div
       ref={scrollRef}
       className={className}
       aria-live={ariaLive}
-      onScroll={(e) => {
-        const el = e.currentTarget
-        atBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight <= FOLLOW_PX
-      }}
+      onScroll={handleScroll}
     >
       {empty && (
         <div className="tapestry-chat-empty">
@@ -189,6 +234,11 @@ export default function ChatSessionTranscript({
         <div className="tapestry-chat-error" role="alert">
           {error}
         </div>
+      )}
+      {!atBottom && (
+        <button type="button" className="tapestry-button--secondary tapestry-session-jump" onClick={jumpToLatest}>
+          Jump to latest
+        </button>
       )}
     </div>
   )
