@@ -4,16 +4,16 @@ milestone: v1.0
 current_phase: "2.8"
 current_phase_name: Agent Note Windows
 status: executing
-stopped_at: Completed 02.8-02 (wave 2)
-last_updated: "2026-09-26T01:35:27.183Z"
-last_activity: 2026-09-25
-last_activity_desc: "02.8-02 complete (wave 2); next 02.8-03 (wave 3)"
-state_head: 5ea929949a0b39b8e10b8d4524fbbd32448e9104
+stopped_at: Completed 02.8-03-PLAN.md
+last_updated: "2026-09-26T01:50:53.246Z"
+last_activity: 2026-09-26
+last_activity_desc: 02.8-03 complete (wave 3); next 02.8-04 (wave 4)
+state_head: 5f18a3a7a0b7935dcb08de3b86f7e14aa6a6e84d
 progress:
   total_phases: 15
   completed_phases: 0
   total_plans: 71
-  completed_plans: 54
+  completed_plans: 55
 ---
 
 # Project State
@@ -28,10 +28,10 @@ See: .planning/PROJECT.md (updated 2026-09-08)
 ## Current Position
 
 Phase: 2.8 (Agent Note Windows) — EXECUTING
-Plan: 2 of 9 complete; next is 02.8-03 (wave 3). 02.7 is 6/7, with 02.7-07 parked on a package approval (autonomy/REVIEW.md item 5)
-Status: Ready to execute 02.8-03
+Plan: 3 of 9 complete; next is 02.8-04 (wave 4). 02.7 is 6/7, with 02.7-07 parked on a package approval (autonomy/REVIEW.md item 5)
+Status: Ready to execute 02.8-04
 Phase 02.4 (Lock Model): COMPLETE — verified 25/25, 2026-09-16; rebased onto the main line 2026-09-23
-Last activity: 2026-09-25 - 02.8-02 complete (honest failure turns, quit-time turn commit, MAX_LIVE_ENGINES = 4, chat body guard, chat:delete, create at a spot)
+Last activity: 2026-09-26 - 02.8-03 complete (session card on the canvas, one chat-sessions store, the panel as the enlarged view, entry points and delete through sessions, card size/closed/scroll as view state)
 
 Progress: [███████░░░] 76%
 
@@ -81,6 +81,7 @@ Progress: [███████░░░] 76%
 | Phase 02.7 P05 | 16 min | 3 tasks | 23 files |
 | Phase 02.7 P06 | 18 min | 3 tasks | 17 files |
 | Phase 02.8 P02 | 9min | 3 tasks | 10 files |
+| Phase 02.8 P03 | 12 min | 3 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -155,6 +156,9 @@ Recent decisions affecting current work:
 - [Phase 02.7]: 02.7-06: watch errors restart after 5 s with a full catch-up; a missing folder commits nothing, shows folder-missing, and heals by itself when it returns
 - [Phase 02.7]: 02.7-06: an agent file edit costs ~40 ms of main time on an 800-file tree (whole-tree getNodes per call); reopen does not grow measurably over 200 commits
 - [Phase 2.8]: 02.8-02: quit/close mid-turn commits the open turn synchronously with Stopped; MAX_LIVE_ENGINES = 4 idle, LRU ended and resumed
+- [Phase 02.8]: 02.8-03: A-10 changed — Ask Claude… on a note or file creates the session at the workspace's next free spot, not beyond the card (reversible)
+- [Phase 02.8]: 02.8-03: A-12 — Back to card closes the panel only; only Stop reply stops a turn. The panel never opens without a session
+- [Phase 02.8]: 02.8-03: the session card keeps NoteControls (delete top-right) rather than Line Lab CornerCluster (delete top-left), leaving the top-left corner for 02.8-04's '!' badge
 
 ### Pending Todos
 
@@ -213,6 +217,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-26T01:35:27.109Z
-Stopped at: Completed 02.8-02 (wave 2)
+Last session: 2026-09-26T01:50:53.173Z
+Stopped at: Completed 02.8-03-PLAN.md
 Resume file: None
