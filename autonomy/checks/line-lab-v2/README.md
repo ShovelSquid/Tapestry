@@ -71,3 +71,13 @@ before the capture (wave 0 used it to click "Save my name").
   timers to 1 s) and takes `SHOT_TIMEOUT_MS`. Result on 2026-09-25: on, 3 specks,
   rifle 0.62 px, text 0.22 px, both settled; all off, 0 specks, no nudge, **0 animation
   frames** over the whole sequence. `app-wave6-2026-09-25.png` shows the panel open.
+
+- Wave 7 (entering a note): `SHOT_SCRIPT="$(cat wave5-setup.js)" SHOT_AFTER_RELOAD="$(cat wave7-pose.js)"`
+  zooms out until "Beds" is a circle, double-clicks it, samples every frame in, then Escape and every
+  frame out. Result on 2026-09-25: in 44 → 1020 px and out 1020 → 44 px, both monotonic; 0 frames with
+  any form crossfade on any note; 0 frames with the circle and the card both drawn; frame time median
+  16.7 ms, p95 ≤ 16.8 ms, none over 25 ms. `window.__TRACE__=1` adds the per-frame zoom:width trace.
+  `wave7-card.js` double-clicks a full card at 100% (enters to 392%, no note created) and Escape
+  returns to 100%. `wave7-flight-2026-09-25.png`: four runs captured at 0, ~90, ~200 ms and 1.5 s
+  (`__MODE__='mid'` with `SHOT_SETTLE_MS`). No sketch exists for entering; the frames were checked
+  against spec §7.

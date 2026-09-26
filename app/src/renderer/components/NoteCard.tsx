@@ -462,7 +462,8 @@ export default function NoteCard({
   useEffect(() => {
     if (cardRef.current) {
       const size = layoutSize(cardRef.current, zoom, roll)
-      const bob = roll === 0 ? bobRef.current : 1
+      // The bob and an entering flight scale the card; divide them back out.
+      const bob = roll === 0 ? bobRef.current * (flightScale ?? 1) : 1
       onRegisterDims(node.id, size.width / bob, size.height / bob)
     }
   })

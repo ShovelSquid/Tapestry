@@ -453,37 +453,48 @@ export default function TreeFrame({
   const formAt = (o: typeof outlines, id: string): ShownForm =>
     o.hidden.has(id) ? 'hidden' : (o.collapsed.get(id) ?? 'note')
 
-  // Entering a note (look/enter.ts): the note in flight is drawn as its card
-  // the whole way, scaled from the form it left to the form it lands in, and
-  // its form changes without a crossfade.
+  // Entering a note (look/enter.ts). While the camera glides in or out, no
+  // form crossfades: the entered note, and every other note that is drawn at
+  // both ends but in a different form, is drawn as its card the whole way,
+  // scaled from the form it left to the form it lands in. A note that is
+  // hidden at one end (inside a collapsed container) just changes form.
   const [flyingId, setFlyingId] = useState<string | null>(null)
   const flightRef = useRef<FlightFrame | null>(null)
   const flight = flyingId !== null && nesting?.depthOf.has(flyingId) ? flightRef.current : null
-  const flying = flight ? flyingId : null
-  let flyScale = 1
-  let flyEndForm: ShownForm = 'note'
-  if (nesting && flight && flying) {
-    const w = outlineWidth(flying)
-    const fromForm = formAt(outlineState(nesting, outlineWidth, flight.fromZoom), flying)
-    flyEndForm = formAt(outlineState(nesting, outlineWidth, flight.toZoom), flying)
-    flyScale = flightScale(
-      formScreenWidth(fromForm, w, flight.fromZoom),
-      formScreenWidth(flyEndForm, w, flight.toZoom),
-      w,
-      zoom,
-      flight.p,
-    )
+  /** Each flying note's extra scale this frame, and the form it lands in. */
+  const flyers = new Map<string, { scale: number; endForm: ShownForm }>()
+  /** Notes whose form changes during the flight: none of them fades. */
+  const noFade = new Set<string>()
+  if (nesting && flight && flyingId) {
+    const fromOutlines = outlineState(nesting, outlineWidth, flight.fromZoom)
+    const toOutlines = outlineState(nesting, outlineWidth, flight.toZoom)
+    for (const id of nesting.depthOf.keys()) {
+      const fromForm = formAt(fromOutlines, id)
+      const endForm = formAt(toOutlines, id)
+      if (id !== flyingId && fromForm === endForm) continue
+      noFade.add(id)
+      if (id !== flyingId && (fromForm === 'hidden' || endForm === 'hidden')) continue
+      const w = outlineWidth(id)
+      const scale = flightScale(
+        formScreenWidth(fromForm, w, flight.fromZoom),
+        formScreenWidth(endForm, w, flight.toZoom),
+        w,
+        zoom,
+        flight.p,
+      )
+      flyers.set(id, { scale, endForm })
+    }
   }
 
   const shownForms = new Map<string, ShownForm>()
   for (const id of nesting?.depthOf.keys() ?? []) {
     // The tracker hears where a flying note lands, so it has nothing to fade then either.
-    shownForms.set(id, id === flying ? flyEndForm : formAt(outlines, id))
+    shownForms.set(id, flyers.get(id)?.endForm ?? formAt(outlines, id))
   }
   const fadeMs = effectStrength(readMotionSettings(), 'collapseFade') > 0 ? LOOK.detail.formCrossfadeMs : 0
   const formFades = useRef<FormFades | null>(null)
   if (!formFades.current) formFades.current = new FormFades()
-  const fades = formFades.current.update(shownForms, performance.now(), fadeMs, flying ? new Set([flying]) : undefined)
+  const fades = formFades.current.update(shownForms, performance.now(), fadeMs, noFade)
   // Draw once more when the soonest fade ends, to drop the form it left.
   const [, setFadeTick] = useState(0)
   const fadeEnd = formFades.current.nextEndMs(fadeMs)
@@ -838,7 +849,7 @@ export default function TreeFrame({
             (n) =>
               !isKnot(n) &&
               !isNestedInSubspace(n) &&
-              (!outlines.hidden.has(n.id) || fades.has(n.id) || n.id === flying),
+              (!outlines.hidden.has(n.id) || fades.has(n.id) || flyers.has(n.id)),
           )
           .sort(depthOrder)
           .map((node) => {
@@ -850,7 +861,7 @@ export default function TreeFrame({
           // changes, the form it left fading out over the new one fading in.
           const shown = shownForms.get(node.id)
           const draws =
-            shown && node.id !== flying
+            shown && !flyers.has(node.id)
               ? formsToDraw(shown, fades.get(node.id))
               : [{ form: 'note' as const, fade: null }]
           const collapsedEls = draws.flatMap((d) => {
@@ -1054,7 +1065,7 @@ export default function TreeFrame({
               <NoteCard
                 key="note"
                 formFade={noteDraw.fade}
-                flightScale={node.id === flying ? flyScale : undefined}
+                flightScale={flyers.get(node.id)?.scale}
                 treeId={tree.id}
                 node={node}
                 displayPosition={
