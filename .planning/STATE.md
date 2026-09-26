@@ -4,11 +4,11 @@ milestone: v1.0
 current_phase: "02.7"
 current_phase_name: File Windows & Workspace Sandbox
 status: executing
-stopped_at: Completed 02.7-06-PLAN.md
-last_updated: "2026-09-25T23:34:29.534Z"
+stopped_at: Phase 2.8 UI-SPEC approved
+last_updated: "2026-09-25T23:47:31.229Z"
 last_activity: 2026-09-24
 last_activity_desc: 02.7-06 live watching, watch status, Retry write and scale complete (hands-on check deferred); next 02.7-07 (wave 7)
-state_head: 07aeaa40f4c2ee5d145f0aa25785713445e3dd5c
+state_head: 45a2595ba52e9f121f08951f3ea89ca85fd8cd4c
 progress:
   total_phases: 15
   completed_phases: 0
@@ -211,6 +211,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-24T23:16:00.000Z
-Stopped at: Completed 02.7-06-PLAN.md
-Resume file: None
+Last session: 2026-09-25T23:47:31.112Z
+Stopped at: Phase 2.8 UI-SPEC approved
+Resume file: .planning/phases/02.8-agent-note-windows/02.8-UI-SPEC.md
