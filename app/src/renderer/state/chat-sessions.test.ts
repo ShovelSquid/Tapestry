@@ -17,11 +17,14 @@ import {
   chatSessionFor,
   chatSessionKey,
   forgetChatSession,
+  openedStatus,
   recordChatPayload,
   requestComposerFocus,
   retainChatSessions,
   setChatAttachment,
   setChatDraft,
+  sessionAuthorToken,
+  setSessionAgentOrder,
   type ChatSessionSnapshot,
 } from './chat-sessions'
 import { liveAfter, type ChatAttachment } from './chat'
@@ -60,6 +63,94 @@ describe('applyChatPayload', () => {
     s = applyChatPayload(s, { turn: 2, event: { type: 'done', ok: true } })
     s = applyChatPayload(s, { turn: 3, event: { type: 'user', text: 'three' } })
     expect(s.entries.map((e) => e.turn)).toEqual([2, 2, 3])
+  })
+})
+
+describe('the status in each snapshot (02.8-05, D-11, D-12)', () => {
+  const status = (text: string, needs = false, level = 1): TapestryChatEvent => ({ type: 'status', text, needs, level })
+
+  it('a needs status makes the session Needs you, a later done keeps it, and a user event clears it', () => {
+    let s = applyChatPayload(loaded, { turn: 1, event: { type: 'user', text: 'hi' } }, 10)
+    expect(s.status.state).toBe('working')
+    s = applyChatPayload(s, { turn: 1, event: status('Which file should I read?', true) }, 20)
+    expect(s.status.state).toBe('needs')
+    expect(s.status.needs).toBe(true)
+    s = applyChatPayload(s, { turn: 1, event: { type: 'done', ok: true } }, 30)
+    expect(s.status.state).toBe('needs')
+    expect(s.status.text).toBe('Which file should I read?')
+    s = applyChatPayload(s, { turn: 2, event: { type: 'user', text: 'a.ts' } }, 40)
+    expect(s.status.state).toBe('working')
+    expect(s.status.needs).toBe(false)
+  })
+
+  it('never mutates the previous snapshot or its status', () => {
+    const before = applyChatPayload(loaded, { turn: 1, event: { type: 'user', text: 'hi' } }, 10)
+    const beforeStatus = before.status
+    const frozen = JSON.stringify(before)
+    const after = applyChatPayload(before, { turn: 1, event: status('Reading the parser') }, 20)
+    expect(after.status).not.toBe(beforeStatus)
+    expect(after.status.text).toBe('Reading the parser')
+    expect(before.status).toBe(beforeStatus)
+    expect(JSON.stringify(before)).toBe(frozen)
+  })
+
+  it('a done turn is Done, a failed one Failed, and a stopped one Idle with "Stopped"', () => {
+    const working = applyChatPayload(loaded, { turn: 1, event: { type: 'user', text: 'hi' } }, 10)
+    expect(applyChatPayload(working, { turn: 1, event: { type: 'done', ok: true } }, 20).status.state).toBe('done')
+    const failed = applyChatPayload(
+      working,
+      { turn: 1, event: { type: 'error', kind: 'signed-out', message: 'x' } },
+      20,
+    )
+    expect(failed.status.state).toBe('failed')
+    expect(failed.status.text).toBe('Claude Code is signed out')
+    const stopped = applyChatPayload(working, { turn: 1, event: { type: 'done', ok: false, reason: 'stopped' } }, 20)
+    expect(stopped.status.state).toBe('idle')
+    expect(stopped.status.text).toBe('Stopped')
+  })
+
+  it('a session loaded with { busy: false, lastStatus } starts Idle with that text (a relaunch)', () => {
+    const s = openedStatus({ busy: false, lastStatus: 'write_file a.ts', live: [] }, 5)
+    expect(s.state).toBe('idle')
+    expect(s.text).toBe('write_file a.ts')
+    expect(s.cardText).toBe('write_file a.ts')
+    expect(s.needs).toBe(false)
+    expect(s.level).toBe(0)
+  })
+
+  it('a session with no last status text starts with no text (the header says "New chat" for no turns)', () => {
+    expect(openedStatus({ busy: false, lastStatus: null, live: [] }, 5).text).toBe('')
+    expect(EMPTY_CHAT_SESSION.status.state).toBe('idle')
+    expect(EMPTY_CHAT_SESSION.status.text).toBe('')
+  })
+
+  it('a session opened mid-turn folds that turn only', () => {
+    const s = openedStatus(
+      {
+        busy: true,
+        lastStatus: 'old',
+        live: [
+          { turn: 1, event: { type: 'user', text: 'one' } },
+          { turn: 1, event: { type: 'done', ok: true } },
+          { turn: 2, event: { type: 'user', text: 'two' } },
+          { turn: 2, event: { type: 'tool-call', id: 't', name: 'mcp__tapestry__read_file', input: { path: 'a.ts' } } },
+        ],
+      },
+      5,
+    )
+    expect(s.state).toBe('working')
+    expect(s.text).toContain('read_file')
+  })
+})
+
+describe('the session author colour', () => {
+  it('follows the agents’ connection order and is unknown for an agent not in it', () => {
+    setSessionAgentOrder(['claude', 'claude-chat-aaaaaaaa-n1', 'claude-chat-aaaaaaaa-n2'])
+    expect(sessionAuthorToken('claude-chat-aaaaaaaa-n1')).toBe('--tap-author-2')
+    expect(sessionAuthorToken('claude-chat-aaaaaaaa-n2')).toBe('--tap-author-3')
+    expect(sessionAuthorToken('someone-else')).toBe('--tap-author-unknown')
+    setSessionAgentOrder([])
+    expect(sessionAuthorToken('claude-chat-aaaaaaaa-n1')).toBe('--tap-author-unknown')
   })
 })
 

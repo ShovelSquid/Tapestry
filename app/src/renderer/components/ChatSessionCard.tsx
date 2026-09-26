@@ -30,8 +30,9 @@ import type { NodeInfo } from './Canvas'
 import NoteControls from './NoteControls'
 import ChatSessionTranscript from './ChatSessionTranscript'
 import ChatSessionComposer from './ChatSessionComposer'
+import { ChatSessionHeader } from './ChatSessionHeader'
 import { ChatContext, foldChatEvents, liveAfter } from '../state/chat'
-import { useChatSession } from '../state/chat-sessions'
+import { useChatSession, useSessionAuthorToken } from '../state/chat-sessions'
 import { screenDeltaToWorld } from '../layout/camera'
 import {
   browserCardViewStorage,
@@ -141,6 +142,7 @@ function ChatSessionCardView({
 }: ChatSessionCardProps): React.ReactElement {
   const cardRef = useRef<HTMLDivElement>(null)
   const session = useChatSession(treeId, node.id)
+  const authorColour = useSessionAuthorToken(session.agent)
   const { openSession, enlarge } = useContext(ChatContext)
   const isEnlarged = openSession?.treeId === treeId && openSession.noteId === node.id
 
@@ -333,7 +335,16 @@ function ChatSessionCardView({
       className={className}
       role="article"
       aria-label={`Chat: ${shownTitle}`}
-      style={{ left: `${x}px`, top: `${y}px`, width: `${width}px`, height: closed ? undefined : `${height}px` }}
+      style={
+        {
+          left: `${x}px`,
+          top: `${y}px`,
+          width: `${width}px`,
+          height: closed ? undefined : `${height}px`,
+          // The session's author colour (Done, Needs you): display only, never written.
+          '--tap-session-author': `var(${authorColour})`,
+        } as React.CSSProperties
+      }
       onPointerEnter={handleEnter}
       onPointerLeave={handleLeave}
     >
@@ -350,37 +361,43 @@ function ChatSessionCardView({
         }}
       />
 
-      <div className="tapestry-session-header">
-        <input
-          type="text"
-          className="tapestry-note-title-input tapestry-session-title"
-          value={localTitle}
-          placeholder={NEW_SESSION_TITLE}
-          aria-label="Chat title"
-          title={shownTitle}
-          onChange={(e) => setLocalTitle(e.target.value)}
-          onFocus={() => {
-            titleFocusedRef.current = true
-          }}
-          onBlur={() => {
-            titleFocusedRef.current = false
-            commitTitle()
-          }}
-          onKeyDown={(e) => {
-            e.stopPropagation()
-            if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
-              e.preventDefault()
-              e.currentTarget.blur()
-            } else if (e.key === 'Escape') {
-              setLocalTitle(storedTitle)
+      <ChatSessionHeader
+        status={session.status}
+        forCard
+        turns={committed}
+        title={
+          <input
+            type="text"
+            className="tapestry-note-title-input tapestry-session-title"
+            value={localTitle}
+            placeholder={NEW_SESSION_TITLE}
+            aria-label="Chat title"
+            title={shownTitle}
+            onChange={(e) => setLocalTitle(e.target.value)}
+            onFocus={() => {
+              titleFocusedRef.current = true
+            }}
+            onBlur={() => {
               titleFocusedRef.current = false
-              e.currentTarget.blur()
-            }
-          }}
-          onPointerDown={stop}
-          onDoubleClick={stop}
-          onClick={stop}
-        />
+              commitTitle()
+            }}
+            onKeyDown={(e) => {
+              e.stopPropagation()
+              if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+                e.preventDefault()
+                e.currentTarget.blur()
+              } else if (e.key === 'Escape') {
+                setLocalTitle(storedTitle)
+                titleFocusedRef.current = false
+                e.currentTarget.blur()
+              }
+            }}
+            onPointerDown={stop}
+            onDoubleClick={stop}
+            onClick={stop}
+          />
+        }
+      >
         <button
           type="button"
           className="tapestry-ask-claude-button"
@@ -413,7 +430,7 @@ function ChatSessionCardView({
         >
           <EnlargeGlyph />
         </button>
-      </div>
+      </ChatSessionHeader>
 
       {/* The conversation and the composer keep their input (PanelShell rule). */}
       {!closed && (

@@ -1888,6 +1888,43 @@ html, body, #root {
   white-space: nowrap;
 }
 
+/* The state glyph (02.8-05, UI-SPEC § States): its shape carries the state,
+   its colour only repeats it. The author colour falls back to muted before
+   the agent list has loaded. */
+.tapestry-session-glyph {
+  flex: none;
+  color: var(--tap-muted);
+}
+
+.tapestry-session-glyph--needs,
+.tapestry-session-glyph--done {
+  color: var(--tap-session-author, var(--tap-muted));
+}
+
+.tapestry-session-glyph--failed {
+  color: var(--tap-destructive-text);
+}
+
+/* The status line: Label, muted, one line with an ellipsis; the full text is
+   in its tooltip. It keeps its height when it has no text. */
+.tapestry-session-status {
+  flex: none;
+  min-height: calc(13px * 1.4);
+  margin-top: 2px;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--tap-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Failed: the word and the short phrase in the destructive text colour.
+   Acknowledged, it is Idle and muted again, keeping the phrase. */
+.tapestry-session-status--failed {
+  color: var(--tap-destructive-text);
+}
+
 /* Enlarge, pressed while this session is the one beside the canvas. */
 .tapestry-session-header .tapestry-ask-claude-button[aria-pressed='true'] {
   color: var(--tap-ink);

@@ -51,7 +51,9 @@ import {
   ensureChatSessionsSubscribed,
   forgetChatSession,
   retainChatSessions,
+  setSessionAgentOrder,
 } from './state/chat-sessions'
+import { orderAgentsByConnection } from './threads/author-palette'
 import { COLLAPSED_KEY, revealExpanded, settleSubspace, type DimsOf, type Point } from './layout/subspaces'
 import ThreadOverlay from './threads/ThreadOverlay'
 import { THREAD_TYPE } from './threads/ThreadCard'
@@ -144,6 +146,11 @@ export default function App(): React.ReactElement {
   // the forest bar's label and the panel's rows can never disagree.
   const [agents, setAgents] = useState<TapestryAgentSummary[]>([])
   const [agentsEnabled, setAgentsEnabled] = useState(true)
+  // Each chat session is its own agent (02.8 D-03), so its author colour is
+  // its slot in this list's connection order. Display only, never written.
+  useEffect(() => {
+    setSessionAgentOrder(orderAgentsByConnection(agents))
+  }, [agents])
 
   // A passing message about something that already happened (UA-14).
   const [notice, setNotice] = useState<string | null>(null)

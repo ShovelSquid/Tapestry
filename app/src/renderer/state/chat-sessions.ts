@@ -17,10 +17,19 @@
  *
  * Nothing in this store is written anywhere. The draft and attachment are
  * view state; the renderer never sees a token or a config path.
+ *
+ * Each snapshot also carries the session's status (02.8 D-10..D-14): the
+ * state, status text and level that `reduceStatus` (shared/chat/
+ * session-status.ts) derives from every event heard, plus the person's
+ * acknowledgement. It is chrome: never written to a tree, a commit or a hash.
+ * After a relaunch a session starts Idle with the last status text main kept
+ * (D-12), never a stale Working.
  */
 
 import { useEffect, useSyncExternalStore } from 'react'
 import { composeFirstMessage, type ChatAttachment, type LiveEntry } from './chat'
+import { initialStatus, reduceStatus, type SessionStatus } from '../../shared/chat/session-status'
+import { authorToken, type AuthorToken } from '../threads/author-palette'
 
 // ---------------------------------------------------------------------------
 // Snapshots
@@ -52,6 +61,36 @@ export interface ChatSessionSnapshot {
   /** Bumped to ask a composer to take focus once. */
   readonly focusNonce: number
   readonly focusPlace: ComposerPlace
+  /**
+   * What the card and the enlarged view show: state, status text and level
+   * (D-11, D-13, D-14). Renderer state only (D-10).
+   */
+  readonly status: SessionStatus
+}
+
+/**
+ * A session's status when main answers `open` (D-12). A relaunch has no
+ * engine, so a session that is not busy is Idle with its last status text.
+ * A busy one (the renderer reloaded mid-turn) is folded from its running
+ * turn's events, so its text is the turn's, not "Reading your message".
+ *
+ * The store does not know the note's committed turns (the note is the
+ * tree's, and a composer may ask for the session before its card does), so
+ * a session with no last status text starts with an empty text here, and
+ * ChatSessionHeader shows "New chat" for it while the note has no turns.
+ */
+export function openedStatus(
+  opened: { busy: boolean; lastStatus: string | null; live: readonly LiveEntry[] },
+  now: number,
+): SessionStatus {
+  // turns: 1 means "not known to be empty": no text rather than 'New chat'.
+  let status = initialStatus({ busy: opened.busy, lastStatus: opened.lastStatus, turns: 1 })
+  if (!opened.busy || opened.live.length === 0) return status
+  const current = opened.live[opened.live.length - 1].turn
+  for (const entry of opened.live) {
+    if (entry.turn === current) status = reduceStatus(status, { kind: 'event', event: entry.event }, now)
+  }
+  return status
 }
 
 export const EMPTY_CHAT_SESSION: ChatSessionSnapshot = Object.freeze({
@@ -67,6 +106,7 @@ export const EMPTY_CHAT_SESSION: ChatSessionSnapshot = Object.freeze({
   error: null,
   focusNonce: 0,
   focusPlace: 'card' as ComposerPlace,
+  status: Object.freeze(initialStatus({ busy: false, lastStatus: null, turns: 1 })),
 })
 
 /** The store key for one session. */
@@ -89,10 +129,15 @@ export function busyAfter(busy: boolean, event: TapestryChatEvent): boolean {
  * are dropped: they were committed into the note long ago, and the renderer
  * draws them from its text. The previous turn's entries are kept one turn
  * longer, so a slow tree refresh never leaves a gap.
+ *
+ * Every event also runs the status reducer, so the state is what was
+ * observed (D-11): Needs you persists through `done` and clears only on a
+ * `user` event in this session.
  */
 export function applyChatPayload(
   snapshot: ChatSessionSnapshot,
   payload: { turn: number; event: TapestryChatEvent },
+  now: number = Date.now(),
 ): ChatSessionSnapshot {
   const kept =
     payload.event.type === 'user'
@@ -102,6 +147,7 @@ export function applyChatPayload(
     ...snapshot,
     entries: [...kept, { turn: payload.turn, event: payload.event }],
     busy: busyAfter(snapshot.busy, payload.event),
+    status: reduceStatus(snapshot.status, { kind: 'event', event: payload.event }, now),
   }
 }
 
@@ -187,6 +233,7 @@ export function loadChatSession(treeId: string, noteId: string): void {
               entries: result.value.live,
               busy: result.value.busy,
               allowShell: result.value.allowShell,
+              status: openedStatus(result.value, Date.now()),
             }
           : { ...s, loaded: true, error: result.error },
       )
@@ -203,6 +250,37 @@ export function useChatSession(treeId: string, noteId: string): ChatSessionSnaps
     loadChatSession(treeId, noteId)
   }, [treeId, noteId, snapshot])
   return snapshot
+}
+
+// ---------------------------------------------------------------------------
+// Author colour (UI-SPEC § Author colour for sessions)
+// ---------------------------------------------------------------------------
+
+/** Agent names in connection order, as App last passed them. */
+let agentOrder: readonly string[] = []
+
+/**
+ * The agents' connection order (`orderAgentsByConnection(agents)`), set by
+ * App whenever its agent list changes. Each session is its own agent (D-03),
+ * so this gives each session its palette slot.
+ */
+export function setSessionAgentOrder(orderedNames: readonly string[]): void {
+  if (orderedNames.length === agentOrder.length && orderedNames.every((name, i) => name === agentOrder[i])) return
+  agentOrder = [...orderedNames]
+  notify()
+}
+
+/**
+ * The CSS variable naming a session's author colour, from its agent name
+ * (without `agent.`). Set inline as `--tap-session-author`; never written.
+ */
+export function sessionAuthorToken(agent: string): AuthorToken {
+  return authorToken(`agent.${agent}`, agentOrder)
+}
+
+/** sessionAuthorToken, live: a card redraws when the agent order changes. */
+export function useSessionAuthorToken(agent: string): AuthorToken {
+  return useSyncExternalStore(subscribe, () => sessionAuthorToken(agent))
 }
 
 // ---------------------------------------------------------------------------

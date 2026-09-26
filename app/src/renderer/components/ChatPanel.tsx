@@ -29,8 +29,14 @@ import { createPortal } from 'react-dom'
 import Dialog from './Dialog'
 import ChatSessionTranscript from './ChatSessionTranscript'
 import ChatSessionComposer from './ChatSessionComposer'
+import { ChatSessionHeader } from './ChatSessionHeader'
 import { ChatContext, foldChatEvents, liveAfter, type ChatAttachment } from '../state/chat'
-import { requestComposerFocus, setChatShell, useChatSession } from '../state/chat-sessions'
+import {
+  requestComposerFocus,
+  setChatShell,
+  useChatSession,
+  useSessionAuthorToken,
+} from '../state/chat-sessions'
 import {
   committedTurns,
   NEW_SESSION_TITLE,
@@ -124,7 +130,8 @@ function Conversation({
 }): React.ReactElement {
   const { openChat, enlarge } = useContext(ChatContext)
   const session = useChatSession(treeId, noteId)
-  const { workspace, agent, entries, error, allowShell } = session
+  const { workspace, agent, entries, error, allowShell, status } = session
+  const authorColour = useSessionAuthorToken(agent)
 
   // Committed turns are the note's own text (D-09); only later turns are live.
   const body = sessionNode ? sessionBody(sessionNode) : ''
@@ -151,16 +158,29 @@ function Conversation({
 
   return (
     <PanelShell label={`${title} — ${workspace}`}>
-      <div className="tapestry-chat-header">
-        <div className="tapestry-chat-title-row">
-          <span className="tapestry-chat-title" title={`${title} — ${workspace}`}>
-            {title}
-          </span>
+      {/* The same header as the card, from the same snapshot, with the full
+          status text. The panel never blurs and never animates (UI-SPEC
+          § Enlarged view): Working shows only its glyph and word here. */}
+      <div
+        className="tapestry-chat-header"
+        style={{ '--tap-session-author': `var(${authorColour})` } as React.CSSProperties}
+      >
+        <ChatSessionHeader
+          status={status}
+          forCard={false}
+          turns={committed}
+          rowClassName="tapestry-chat-title-row"
+          title={
+            <span className="tapestry-chat-title" title={`${title} — ${workspace}`}>
+              {title}
+            </span>
+          }
+        >
           <button type="button" className="tapestry-button--secondary" onClick={() => void newChat()}>
             New chat
           </button>
           <BackToCardButton label="Back to card" />
-        </div>
+        </ChatSessionHeader>
         <div className="tapestry-chat-subtitle">
           {agent ? `Edits go through Tapestry's workspace tools as agent.${agent}` : workspace}
         </div>
