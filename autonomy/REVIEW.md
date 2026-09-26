@@ -90,4 +90,43 @@ tool lines are capped at 1,000 characters (UI-SPEC says never truncated);
 `chat:new` and the "earlier messages aren't shown here" notice are removed.
 Answer `item 7: approved` or describe issues. Undo: revert 67ffce6 and edb7802.
 
+### 8. 02.8-03: hands-on check of the session card and choices made (open)
+
+Built by the unattended driver (commits 34e32c9, 232d2e1, f1050d3, 5f18a3a;
+SUMMARY `.planning/phases/02.8-agent-note-windows/02.8-03-SUMMARY.md`). Tests
+green (86 files, 1313 tests); the app was not launched. Run
+`npm --prefix app run dev` in ~/Tapestrees/mergin with a scratch workspace:
+
+1. **New chat** on a frame: a 360 x 440 card appears with its composer
+   focused and the camera does not move. Send a message: the reply streams
+   in and settles with no flicker or duplicate.
+2. Backspace/Delete in the card's composer or title never deletes the card.
+   The wheel over the transcript scrolls it, not the canvas.
+3. Type half a message on a card, then **Enlarge**: the panel shows the same
+   draft. Send from the panel and the card updates too.
+4. **Back to card** while Claude is answering: the panel closes, the reply
+   keeps running on the card. Only **Stop reply** stops it.
+5. Right-click in a workspace, **Ask Claude…**: a card at the pointer. Ask
+   Claude… on a file: a card with that file's chip.
+6. Delete a working chat: "Delete this chat?" appears, Escape keeps it.
+   Delete an idle chat: no dialog.
+7. At the minimum size (280 x 240) header, two transcript lines and the
+   composer stay visible. Closed state and scroll survive a relaunch.
+   Scrolling up during a reply shows **Jump to latest**. History shows no
+   commit for resize/close/scroll.
+8. A title edit on the card is saved as one title change.
+
+Choices made without asking (say if you want any changed):
+- Ask Claude… on a note or file puts the chat at the workspace's next free
+  spot, not beside the card (UI-SPEC A-10; reversible).
+- The card's delete bubble is top-right as the UI-SPEC says, though the ws/ui
+  restyle puts note delete top-left; top-left is kept for 02.8-04's "!" badge.
+- Resize handles only on right, bottom and bottom-right: left/top would move
+  the note, and a resize must never commit.
+- Deleting a chat cannot be undone in the window; the conversation remains
+  in the tree's history.
+
+Answer `item 8: approved` or describe issues. Undo: revert 5f18a3a, f1050d3,
+232d2e1 and 34e32c9 (in that order).
+
 ## Closed

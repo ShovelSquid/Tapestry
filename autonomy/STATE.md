@@ -50,6 +50,10 @@ current code and note it in the SUMMARY. ws/ui's driver is archived in
   code; 77ecdc8 SUMMARY). 84 files / 1292 tests green. No checkpoints.
   Journal grows by the note's whole body + ~342 B per turn (~3.5 MB at 100
   turns). Next: wave 3 (02.8-03).
+- 2026-09-25 18:36 session: wave 3, 02.8-03 done (34e32c9, 232d2e1,
+  f1050d3, 5f18a3a code; fb88861 SUMMARY). 86 files / 1313 tests green.
+  Hands-on checks and the executor's choices queued as REVIEW item 8.
+  Executor took ~14 min. Next: wave 4 (02.8-04).
 
 ## Learned
 
@@ -81,3 +85,5 @@ current code and note it in the SUMMARY. ws/ui's driver is archived in
   recorded as a turn (`Error (crashed): …`) rather than thrown to the window;
   deleting a chat leaves its agent token in agents.json until the name is
   reissued (process and config file are gone; the plan asks no revocation).
+- 02.8-03 (executor's calls, REVIEW item 8): Ask Claude… on a card goes to
+  the next free spot; card delete stays top-right; resize only right/bottom.
