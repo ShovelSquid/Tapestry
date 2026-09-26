@@ -9,7 +9,12 @@ environment lessons.
 
 Phase 2.8: Agent Note Windows (`.planning/phases/02.8-agent-note-windows/`).
 Decisions are in `02.8-CONTEXT.md`, from Kaelen's spec at
-`~/Tree/Connections/Spec - Agent Note Windows.md`. Run its waves in order.
+`~/Tree/Connections/Spec - Agent Note Windows.md`. It has 9 plans in 9 waves,
+strictly linear (02.8-01 .. 02.8-09); the plan check passed after one
+revision. 02.8-01 Task 1 and 02.8-07 Task 1 are `checkpoint:decision` gates
+on how sessions and forks are stored: take the Recommended option and queue
+it in REVIEW.md citing D-07/D-18, as each plan says. 02.8-09 runs the phase
+gate and collects the hands-on checks.
 
 02.7-07 (the API-key engine) is PARKED on a human package approval
 (REVIEW item 5). Do not run it, and do not let 2.8 depend on it: 2.8's forks
@@ -22,6 +27,10 @@ use transcript replay, which works on the Claude Code CLI engine.
 ## Log
 
 (one line per session: date, wave or plan, commits, result)
+
+- 2026-09-25 (interactive, not a driver session): Phase 2.8 inserted and
+  planned; driver ported; App.css brace lost in the 2.3 merge fixed (8bb2614).
+  71 files / 1132 tests green before 2.8. Next: wave 1 (02.8-01).
 
 ## Learned
 

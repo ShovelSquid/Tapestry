@@ -1,18 +1,18 @@
 ---
 gsd_state_version: "1.0"
 milestone: v1.0
-current_phase: "02.7"
-current_phase_name: File Windows & Workspace Sandbox
+current_phase: "2.8"
+current_phase_name: Agent Note Windows
 status: executing
-stopped_at: Phase 2.8 UI-SPEC approved
-last_updated: "2026-09-25T23:47:31.229Z"
-last_activity: 2026-09-24
-last_activity_desc: 02.7-06 live watching, watch status, Retry write and scale complete (hands-on check deferred); next 02.7-07 (wave 7)
-state_head: 45a2595ba52e9f121f08951f3ea89ca85fd8cd4c
+stopped_at: Phase 2.8 planned (9 plans, plan check passed)
+last_updated: "2026-09-26T00:55:15.214Z"
+last_activity: 2026-09-25
+last_activity_desc: Phase 2.8 Agent Note Windows planned: CONTEXT, UI-SPEC, RESEARCH, PATTERNS, 9 plans in 9 waves; next 02.8-01 (wave 1)
+state_head: f0efb20579a2818a75019b0fab5af36659859cd5
 progress:
   total_phases: 15
   completed_phases: 0
-  total_plans: 62
+  total_plans: 71
   completed_plans: 52
 ---
 
@@ -27,11 +27,11 @@ See: .planning/PROJECT.md (updated 2026-09-08)
 
 ## Current Position
 
-Phase: 02.7 (File Windows & Workspace Sandbox) — EXECUTING
-Plan: 02.7-06 of 7 complete (live watching with recursive fs.watch and 750 ms moments signed workspace.watcher, stat-cached reconcileNow with the seq guard, self-healing watch status in the frame header, the author-unknown badge, Retry write, memoised file cards and scale measures; its hands-on check is deferred); next is 02.7-07 (wave 7)
-Status: Ready to execute 02.7-07
+Phase: 2.8 (Agent Note Windows) — READY TO EXECUTE
+Plan: 0 of 9 complete; next is 02.8-01 (wave 1). 02.7 is 6/7, with 02.7-07 parked on a package approval (autonomy/REVIEW.md item 5)
+Status: Ready to execute 02.8-01
 Phase 02.4 (Lock Model): COMPLETE — verified 25/25, 2026-09-16; rebased onto the main line 2026-09-23
-Last activity: 2026-09-24 - Completed 02.7-06 (live watching, watch status, Retry write, scale: import 166 ms, idle reconcile reads 0, reopen 33 ms after 202 commits); 38 files / 681 tests
+Last activity: 2026-09-25 - Planned Phase 2.8 (9 plans in 9 waves, plan check passed after one revision)
 
 Progress: [███████░░░] 76%
 
