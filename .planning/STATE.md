@@ -4,16 +4,16 @@ milestone: v1.0
 current_phase: "2.8"
 current_phase_name: Agent Note Windows
 status: executing
-stopped_at: Phase 2.8 planned (9 plans, plan check passed)
-last_updated: "2026-09-26T00:55:15.214Z"
+stopped_at: Completed 02.8-01 (wave 1)
+last_updated: "2026-09-26T01:24:45.223Z"
 last_activity: 2026-09-25
-last_activity_desc: Phase 2.8 Agent Note Windows planned: CONTEXT, UI-SPEC, RESEARCH, PATTERNS, 9 plans in 9 waves; next 02.8-01 (wave 1)
-state_head: f0efb20579a2818a75019b0fab5af36659859cd5
+last_activity_desc: "Phase 2.8 Agent Note Windows planned: CONTEXT, UI-SPEC, RESEARCH, PATTERNS, 9 plans in 9 waves; next 02.8-01 (wave 1)"
+state_head: 36f0bf7e2126b51f7e0676eb8cd045ef1fa12ea3
 progress:
   total_phases: 15
   completed_phases: 0
   total_plans: 71
-  completed_plans: 52
+  completed_plans: 53
 ---
 
 # Project State
@@ -27,11 +27,11 @@ See: .planning/PROJECT.md (updated 2026-09-08)
 
 ## Current Position
 
-Phase: 2.8 (Agent Note Windows) — READY TO EXECUTE
-Plan: 0 of 9 complete; next is 02.8-01 (wave 1). 02.7 is 6/7, with 02.7-07 parked on a package approval (autonomy/REVIEW.md item 5)
-Status: Ready to execute 02.8-01
+Phase: 2.8 (Agent Note Windows) — EXECUTING
+Plan: 1 of 9 complete; next is 02.8-02 (wave 2). 02.7 is 6/7, with 02.7-07 parked on a package approval (autonomy/REVIEW.md item 5)
+Status: Ready to execute 02.8-02
 Phase 02.4 (Lock Model): COMPLETE — verified 25/25, 2026-09-16; rebased onto the main line 2026-09-23
-Last activity: 2026-09-25 - Planned Phase 2.8 (9 plans in 9 waves, plan check passed after one revision)
+Last activity: 2026-09-25 - 02.8-01 complete (session notes and turn passages; Task 1 option a queued as autonomy/REVIEW.md item 6)
 
 Progress: [███████░░░] 76%
 
