@@ -454,7 +454,7 @@ Plans:
   5. Levels 0-3 (ceiling 3) and a visibility threshold setting decide what animates. Agents never move the camera; an off-screen session at level 2 or above gets an edge arrow in its author colour, and clicking it pans there
   6. Replying at an earlier completed turn k leaves the original untouched and creates a new session note beside it (2.5's `beyond`) holding turns 1..k, in one commit with a `forked-from` edge to turn k's passage anchor. The fork gets its own engine session, started by replaying turns 1..k from the transcript through `ChatEngine.fork(atTurn)`
 
-**Plans**: 1/9 plans executed
+**Plans**: 2/9 plans executed
 
 Plans:
 **Wave 1**
@@ -463,7 +463,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 02.8-02-PLAN.md — Honest turns and many sessions: every turn outcome (crash, stop, agents off, lost session, quit mid-turn) is one passage; live-process cap; only the chat writes its transcript; chat:delete and create at a spot
+- [x] 02.8-02-PLAN.md — Honest turns and many sessions: every turn outcome (crash, stop, agents off, lost session, quit mid-turn) is one passage; live-process cap; only the chat writes its transcript; chat:delete and create at a spot
 
 **Wave 3** *(blocked on Wave 2 completion)*
 

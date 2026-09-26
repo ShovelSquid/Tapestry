@@ -4,16 +4,16 @@ milestone: v1.0
 current_phase: "2.8"
 current_phase_name: Agent Note Windows
 status: executing
-stopped_at: Completed 02.8-01 (wave 1)
-last_updated: "2026-09-26T01:24:45.223Z"
+stopped_at: Completed 02.8-02 (wave 2)
+last_updated: "2026-09-26T01:35:27.183Z"
 last_activity: 2026-09-25
-last_activity_desc: "Phase 2.8 Agent Note Windows planned: CONTEXT, UI-SPEC, RESEARCH, PATTERNS, 9 plans in 9 waves; next 02.8-01 (wave 1)"
-state_head: 36f0bf7e2126b51f7e0676eb8cd045ef1fa12ea3
+last_activity_desc: "02.8-02 complete (wave 2); next 02.8-03 (wave 3)"
+state_head: 5ea929949a0b39b8e10b8d4524fbbd32448e9104
 progress:
   total_phases: 15
   completed_phases: 0
   total_plans: 71
-  completed_plans: 53
+  completed_plans: 54
 ---
 
 # Project State
@@ -28,10 +28,10 @@ See: .planning/PROJECT.md (updated 2026-09-08)
 ## Current Position
 
 Phase: 2.8 (Agent Note Windows) — EXECUTING
-Plan: 1 of 9 complete; next is 02.8-02 (wave 2). 02.7 is 6/7, with 02.7-07 parked on a package approval (autonomy/REVIEW.md item 5)
-Status: Ready to execute 02.8-02
+Plan: 2 of 9 complete; next is 02.8-03 (wave 3). 02.7 is 6/7, with 02.7-07 parked on a package approval (autonomy/REVIEW.md item 5)
+Status: Ready to execute 02.8-03
 Phase 02.4 (Lock Model): COMPLETE — verified 25/25, 2026-09-16; rebased onto the main line 2026-09-23
-Last activity: 2026-09-25 - 02.8-01 complete (session notes and turn passages; Task 1 option a queued as autonomy/REVIEW.md item 6)
+Last activity: 2026-09-25 - 02.8-02 complete (honest failure turns, quit-time turn commit, MAX_LIVE_ENGINES = 4, chat body guard, chat:delete, create at a spot)
 
 Progress: [███████░░░] 76%
 
@@ -80,6 +80,7 @@ Progress: [███████░░░] 76%
 | Phase 02.7 P04 | 10 min | 2 tasks | 13 files |
 | Phase 02.7 P05 | 16 min | 3 tasks | 23 files |
 | Phase 02.7 P06 | 18 min | 3 tasks | 17 files |
+| Phase 02.8 P02 | 9min | 3 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -153,6 +154,7 @@ Recent decisions affecting current work:
 - [Phase 02.7]: 02.7-06: workspaces are watched with recursive fs.watch (FSEvents), not chokidar; events are hints, the stat-cached reconcileNow decides, and 'all' also trusts the stat cache
 - [Phase 02.7]: 02.7-06: watch errors restart after 5 s with a full catch-up; a missing folder commits nothing, shows folder-missing, and heals by itself when it returns
 - [Phase 02.7]: 02.7-06: an agent file edit costs ~40 ms of main time on an 800-file tree (whole-tree getNodes per call); reopen does not grow measurably over 200 commits
+- [Phase 2.8]: 02.8-02: quit/close mid-turn commits the open turn synchronously with Stopped; MAX_LIVE_ENGINES = 4 idle, LRU ended and resumed
 
 ### Pending Todos
 
@@ -211,6 +213,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-25T23:47:31.112Z
-Stopped at: Phase 2.8 UI-SPEC approved
-Resume file: .planning/phases/02.8-agent-note-windows/02.8-UI-SPEC.md
+Last session: 2026-09-26T01:35:27.109Z
+Stopped at: Completed 02.8-02 (wave 2)
+Resume file: None
