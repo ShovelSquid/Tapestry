@@ -244,7 +244,8 @@ interface TreeFrameProps {
   /** Per-note UI state, keyed by nodeKey so two trees cannot collide. */
   editingKey: string | null
   hoveredKey: string | null
-  selectedKey: string | null
+  /** Every selected note's nodeKey (this tree's only; see sameFrameProps). */
+  selectedKeys: ReadonlySet<string>
   connectingHoverKey: string | null
   /** True while any connection drag is in progress, in any tree. */
   isConnecting: boolean
@@ -257,6 +258,12 @@ interface TreeFrameProps {
   currentUserActorId: string | null
   /** Live drag positions, keyed by nodeKey. */
   dragPositions: Record<string, { x: number; y: number }>
+  /**
+   * Selected notes carried along by another note's drag, keyed by nodeKey, in
+   * their own (container-local) coordinates. Kept apart from dragPositions,
+   * which a card's own drag writes, so the card being dragged never reads it.
+   */
+  followerPositions?: Record<string, { x: number; y: number }>
   /**
    * Where each note in this tree is drawn, keyed by bare node id (D-05). The
    * single source of a note's drawn spot, computed once in Canvas so frame
@@ -278,20 +285,21 @@ interface TreeFrameProps {
   openRequest?: { key: string; nonce: number } | null
 }
 
-export default function TreeFrame({
+function TreeFrame({
   tree,
   rect,
   zoom,
   roll,
   editingKey,
   hoveredKey,
-  selectedKey,
+  selectedKeys,
   connectingHoverKey,
   isConnecting,
   landedAt = null,
   pluginNodeViews,
   currentUserActorId,
   dragPositions,
+  followerPositions,
   displayPositions,
   getDims,
   isSelected,
@@ -685,7 +693,7 @@ export default function TreeFrame({
       key={node.id}
       treeId={tree.id}
       node={node}
-      isSelected={selectedKey === keyFor(node.id)}
+      isSelected={selectedKeys.has(keyFor(node.id))}
       zoom={zoom}
       provenance={tree.history?.nodes[node.id]}
       onBorderSelect={() => handlers.onBorderSelect(refFor(node.id))}
@@ -881,7 +889,7 @@ export default function TreeFrame({
                 x={at.x + w / 2}
                 y={at.y + h / 2}
                 zoom={zoom}
-                selected={selectedKey === key}
+                selected={selectedKeys.has(key)}
                 fade={d.fade}
                 onSelect={() => handlers.onBorderSelect(refFor(node.id))}
                 onZoomTo={() => zoomTo(node.id)}
@@ -918,7 +926,7 @@ export default function TreeFrame({
                   node={node}
                   isEditing={editingKey === key}
                   isHovered={hoveredKey === key}
-                  isSelected={selectedKey === key}
+                  isSelected={selectedKeys.has(key)}
                   zoom={zoom}
                   onStartEditing={() => handlers.onStartEditing(refFor(node.id))}
                   onBorderSelect={() => handlers.onBorderSelect(refFor(node.id))}
@@ -1042,7 +1050,7 @@ export default function TreeFrame({
                 key={node.id}
                 treeId={tree.id}
                 node={node}
-                isSelected={selectedKey === key}
+                isSelected={selectedKeys.has(key)}
                 zoom={zoom}
                 roll={roll}
                 provenance={tree.history?.nodes[node.id]}
@@ -1071,14 +1079,16 @@ export default function TreeFrame({
                 displayPosition={
                   containerOf(node.id) !== null
                     ? frameSpot(node.id)
-                    : (displayPositions.get(node.id)?.followSpot ?? undefined)
+                    : (followerPositions?.[key] ??
+                      displayPositions.get(node.id)?.followSpot ??
+                      undefined)
                 }
                 minSize={containerMins?.get(node.id)}
                 onCreateInside={nesting ? () => createInside(node.id) : undefined}
                 onZoomTo={nesting ? () => zoomTo(node.id) : undefined}
                 isEditing={editingKey === key}
                 isHovered={hoveredKey === key}
-                isSelected={selectedKey === key}
+                isSelected={selectedKeys.has(key)}
                 isConnectTarget={connectingHoverKey === key || dropTargetId === node.id}
                 isConnecting={isConnecting}
                 zoom={zoom}
@@ -1116,7 +1126,7 @@ export default function TreeFrame({
               key={node.id}
               node={node}
               treeId={tree.id}
-              isSelected={selectedKey === key}
+              isSelected={selectedKeys.has(key)}
               isHovered={hoveredKey === key}
               zoom={zoom}
               roll={roll}
@@ -1134,3 +1144,28 @@ export default function TreeFrame({
     </div>
   )
 }
+
+/**
+ * Props equal enough to skip a render.
+ *
+ * Canvas re-renders on every pointer move of a drag, and a space can hold
+ * trees of thousands of notes; redrawing all of them per move froze the app.
+ * Canvas keeps each prop referentially stable while it is unchanged for this
+ * tree (per-tree slices, cached spots, a stable handlers object), so identity
+ * is the test for everything but the rect, which is rebuilt every render.
+ */
+function sameFrameProps(a: TreeFrameProps, b: TreeFrameProps): boolean {
+  for (const key of Object.keys(b) as Array<keyof TreeFrameProps>) {
+    if (key === 'rect') continue
+    if (!Object.is(a[key], b[key])) return false
+  }
+  if (Object.keys(a).length !== Object.keys(b).length) return false
+  return (
+    a.rect.x === b.rect.x &&
+    a.rect.y === b.rect.y &&
+    a.rect.width === b.rect.width &&
+    a.rect.height === b.rect.height
+  )
+}
+
+export default React.memo(TreeFrame, sameFrameProps)

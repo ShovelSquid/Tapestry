@@ -2294,3 +2294,89 @@ html, body, #root {
 .tap-motion-row input[type='range']:disabled {
   opacity: 0.35;
 }
+
+/* ------------------------------------------------------------------------ */
+/* Selection bar -- more than one note selected                              */
+/* ------------------------------------------------------------------------ */
+
+.tapestry-selection-bar {
+  position: absolute;
+  /* Under the forest bar and the surface launcher, which share the top row
+     and leave no room between them on a narrow window. */
+  top: 60px;
+  left: 50%;
+  translate: -50% 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: min(720px, calc(100% - 32px));
+  flex-wrap: wrap;
+  justify-content: center;
+  padding: 6px 8px 6px 12px;
+  background: var(--tap-surface);
+  border: 1px solid var(--tap-accent);
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--tap-ink);
+}
+
+.tapestry-selection-count {
+  font-weight: 600;
+  margin-right: 4px;
+  white-space: nowrap;
+}
+
+.tapestry-selection-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  border: 1px solid var(--tap-border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.tapestry-selection-chip button {
+  height: 100%;
+  border: none;
+  background: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.tapestry-selection-chip-title {
+  max-width: 140px;
+  padding: 0 4px 0 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tapestry-selection-chip-remove {
+  padding: 0 8px 0 4px;
+  color: var(--tap-faint);
+}
+
+.tapestry-selection-chip:hover {
+  border-color: var(--tap-pencil);
+}
+
+.tapestry-selection-chip-remove:hover {
+  color: var(--tap-ink);
+}
+
+.tapestry-selection-chip button:focus-visible {
+  outline: 2px solid var(--tap-accent);
+  outline-offset: -2px;
+}
+
+.tapestry-selection-more {
+  color: var(--tap-faint);
+  white-space: nowrap;
+}
+
+.tapestry-selection-bar .tapestry-forest-button {
+  height: 24px;
+}

@@ -279,7 +279,19 @@ export default function NoteCard({
   )
   const [localWidth, setLocalWidth] = useState<number | null>(null)
   const [localHeight, setLocalHeight] = useState<number | null>(null)
+  // Mirrors of the three overrides above, read by the pointer-up handlers so
+  // a commit is sent from the handler, never from inside a state updater
+  // (which StrictMode runs twice, sending the commit twice).
+  const localPosRef = useRef<{ x: number; y: number } | null>(null)
+  localPosRef.current = localPos
+  const localWidthRef = useRef<number | null>(null)
+  localWidthRef.current = localWidth
+  const localHeightRef = useRef<number | null>(null)
+  localHeightRef.current = localHeight
   const isDraggingRef = useRef(false)
+  // Set once a drag has really moved, so the click that ends it does not
+  // also toggle the note's selection.
+  const draggedRef = useRef(false)
   // The same as the ref, as state, so the move particles run only while dragged.
   const [dragging, setDragging] = useState(false)
   const isResizingRef = useRef(false)
@@ -543,6 +555,7 @@ export default function NoteCard({
       e.preventDefault()
 
       isDraggingRef.current = true
+      draggedRef.current = false
       setDragging(true)
       dragStartRef.current = {
         mouseX: e.clientX,
@@ -561,6 +574,14 @@ export default function NoteCard({
         )
         const newX = dragStartRef.current.startX + d.x
         const newY = dragStartRef.current.startY + d.y
+        if (
+          Math.abs(me.clientX - dragStartRef.current.mouseX) +
+            Math.abs(me.clientY - dragStartRef.current.mouseY) >
+          3
+        ) {
+          draggedRef.current = true
+        }
+        localPosRef.current = { x: newX, y: newY }
         setLocalPos({ x: newX, y: newY })
         onDragMove?.(node.id, newX, newY)
       }
@@ -572,10 +593,8 @@ export default function NoteCard({
         document.removeEventListener('pointerup', onUp, true)
         onDragEnd?.(node.id)
 
-        setLocalPos((pos) => {
-          if (pos) onPositionChange(node.id, pos.x, pos.y)
-          return pos
-        })
+        const pos = localPosRef.current
+        if (pos) onPositionChange(node.id, pos.x, pos.y)
       }
 
       document.addEventListener('pointermove', onMove, true)
@@ -641,9 +660,12 @@ export default function NoteCard({
           newY = resizeStartRef.current.posY + (resizeStartRef.current.height - newHeight)
         }
 
+        localWidthRef.current = newWidth
+        localHeightRef.current = newHeight
         setLocalWidth(newWidth)
         setLocalHeight(newHeight)
         if (newX !== resizeStartRef.current.posX || newY !== resizeStartRef.current.posY) {
+          localPosRef.current = { x: newX, y: newY }
           setLocalPos({ x: newX, y: newY })
         }
       }
@@ -653,18 +675,12 @@ export default function NoteCard({
         document.removeEventListener('pointermove', onMove, true)
         document.removeEventListener('pointerup', onUp, true)
 
-        setLocalWidth((w) => {
-          if (w !== null) onWidthChange(node.id, w)
-          return w
-        })
-        setLocalHeight((h) => {
-          if (h !== null) onHeightChange?.(node.id, h)
-          return h
-        })
-        setLocalPos((pos) => {
-          if (pos) onPositionChange(node.id, pos.x, pos.y)
-          return pos
-        })
+        const w = localWidthRef.current
+        const h = localHeightRef.current
+        const pos = localPosRef.current
+        if (w !== null) onWidthChange(node.id, w)
+        if (h !== null) onHeightChange?.(node.id, h)
+        if (pos) onPositionChange(node.id, pos.x, pos.y)
       }
 
       document.addEventListener('pointermove', onMove, true)
@@ -710,6 +726,10 @@ export default function NoteCard({
   const handleBorderClick = useCallback(
     (e: React.MouseEvent) => {
       e.stopPropagation()
+      if (draggedRef.current) {
+        draggedRef.current = false
+        return
+      }
       onBorderSelect()
     },
     [onBorderSelect],

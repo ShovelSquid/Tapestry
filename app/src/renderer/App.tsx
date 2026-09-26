@@ -168,6 +168,10 @@ export default function App(): React.ReactElement {
     [trees, lastChatTreeId],
   )
 
+  // Read through a ref so the context value does not change on every commit:
+  // every card in the space consumes it, and a new value re-renders them all.
+  const treesForNameRef = useRef(trees)
+  treesForNameRef.current = trees
   const chatContext = React.useMemo<ChatContextValue>(
     () => ({
       openTreeId: chatTreeId,
@@ -178,9 +182,10 @@ export default function App(): React.ReactElement {
         if (chatTreeId !== null) void window.tapestry.chat.stop(chatTreeId)
         setChatPanel(null)
       },
-      treeName: (treeId: string) => trees.find((tree) => tree.id === treeId)?.name ?? '',
+      treeName: (treeId: string) =>
+        treesForNameRef.current.find((tree) => tree.id === treeId)?.name ?? '',
     }),
-    [chatTreeId, openChat, trees],
+    [chatTreeId, openChat],
   )
 
   // A passing message about something that already happened (UA-14).
@@ -738,6 +743,41 @@ export default function App(): React.ReactElement {
         await refreshTree(ref.treeId)
       } catch (err) {
         reportSaveError('Failed to update position', err)
+      }
+    },
+    [submitChange, refreshTree, reportSaveError],
+  )
+
+  /**
+   * Notes carried along by a group drag: one 'Move notes' commit per tree, so
+   * one undo puts a tree's part of the drop back. A note that was following its
+   * parent is pinned where it landed, as a single move of it would be.
+   */
+  const handleMoveNotes = useCallback(
+    async (moves: ReadonlyArray<{ ref: NodeRef; x: number; y: number; pin: boolean }>) => {
+      const byTree = new Map<string, typeof moves[number][]>()
+      for (const move of moves) {
+        const list = byTree.get(move.ref.treeId) ?? []
+        list.push(move)
+        byTree.set(move.ref.treeId, list)
+      }
+      for (const [treeId, list] of [...byTree].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
+        try {
+          await submitChange(
+            treeId,
+            'Move notes',
+            list.flatMap((move) => [
+              { op: 'setProperty', target: move.ref.nodeId, key: 'position.x', type: 'real', value: move.x },
+              { op: 'setProperty', target: move.ref.nodeId, key: 'position.y', type: 'real', value: move.y },
+              ...(move.pin
+                ? [{ op: 'setProperty', target: move.ref.nodeId, key: 'pinned', type: 'bool', value: true }]
+                : []),
+            ]),
+          )
+          await refreshTree(treeId)
+        } catch (err) {
+          reportSaveError('Failed to move notes', err)
+        }
       }
     },
     [submitChange, refreshTree, reportSaveError],
@@ -1318,6 +1358,7 @@ export default function App(): React.ReactElement {
               onStopEditing={() => setEditingRef(null)}
               onCanvasDoubleClick={handleCanvasDoubleClick}
               onNestingMove={handleNestingMove}
+              onMoveNotes={handleMoveNotes}
               onCreateInside={handleCreateInside}
               onStartThread={handleStartThread}
               onSelectedNoteChange={setSelectedRef}

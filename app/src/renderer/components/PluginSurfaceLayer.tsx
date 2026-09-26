@@ -83,8 +83,9 @@ export function SurfaceLauncher({
       className="plugin-surface-launcher"
       style={{
         position: 'fixed',
-        top: 12,
-        right: 12,
+        // Level with the forest bar in the opposite corner.
+        top: 16,
+        right: 16,
         // Below notifications (10000) and below open surface windows (9000+)
         // so a window dragged over the strip covers it.
         zIndex: 8500,
@@ -100,16 +101,9 @@ export function SurfaceLauncher({
             type="button"
             aria-label={label}
             onClick={() => onOpen(surface)}
-            style={{
-              background: 'var(--tap-surface)',
-              border: '1px solid var(--tap-border)',
-              borderRadius: 6,
-              boxShadow: '0 2px 6px rgba(0,0,0,0.10)',
-              padding: '6px 12px',
-              fontSize: 13,
-              color: 'var(--tap-ink)',
-              cursor: 'pointer',
-            }}
+            // The forest bar's button, so both corners hover, press and take
+            // focus the same way.
+            className="tapestry-forest-button"
           >
             {label}
           </button>
