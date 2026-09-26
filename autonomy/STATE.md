@@ -20,14 +20,14 @@ checklist:
 ## Plans
 
 (one line per finished or parked plan: date, plan, result, REVIEW items)
+- 2026-09-25: Plan - Line Lab v2 parked. Part 1 and waves 0-8 are done; the publish (#1) and the cursor set (#11)
+  are parked; gates are open in #6, #8, #9 and #12; merges into mergin are queued in #5, #7, #8, #9, #10 and #12.
 
 ## In progress
 
-(empty) Wave 7 is done (REVIEW #10). Next session: **Part 2, Wave 8 (icons, cursors and the feel check)**. Start
-with `git merge ws/mergin` (keep ws/ui's `autonomy/*` and `CLAUDE.md` if they conflict: mergin now carries its own
-driver files). Cursor set: park it (gate 3) unless drawings are in `~/Tree/Design/`. Screenshot set: every state
-(waves 2-7 poses in `autonomy/checks/line-lab-v2/`) next to every sketch into a new `~/Tree/Design/UI Build Review.md`
-(the plan names it). Then queue the feel check (gate 5), and do the plan's report step and set its status.
+(empty) Line Lab v2 is parked: every box is ticked except Task 8's publish (REVIEW #1) and the cursor set
+(REVIEW #11). No other plan is ready, so `autonomy/DONE` is written. If Kaelen answers `item 11: drawings in`,
+wire the drawings in as SVG cursors in `App.css` (pointer, grab, grabbing), tick the cursor box, and re-status the plan.
 
 ## Blocked
 
@@ -128,3 +128,6 @@ driver files). Cursor set: park it (gate 3) unless drawings are in `~/Tree/Desig
 - 2026-09-25 17:20: Line Lab v2 Part 2 Wave 7 done and ticked (look/enter.ts flight hook on zoomToFrameRect, shared-
   element scale for every note changing form, Escape leaves; 7 tests, 1237 green; 60 fps, 0 crossfade frames both ways).
   Merge d58b805, commits 4d7a907, cd23bfc. REVIEW #10 queued.
+- 2026-09-25 17:35: Line Lab v2 Part 2 Wave 8 (merged ws/mergin, docs only; retook all 10 poses, all passed; side-by-sides
+  into new `~/Tree/Design/UI Build Review.md` + folder; cursor set parked #11; feel check queued #12). Commit 23abde7.
+  Plan parked, DONE written.

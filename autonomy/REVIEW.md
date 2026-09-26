@@ -288,6 +288,38 @@ If no: `git revert 87f5348 4df67b5` on ws/ui (keep the `}` fix), and untick wave
 Answer `item 10: approved`, or the issues, in `autonomy/RESPONSE`.
 If no: `git revert cd23bfc 4d7a907` on ws/ui, and untick wave 7 in the plan.
 
+### 11. Gate 3: the cursor and grab-hand set, parked (Plan - Line Lab v2, Part 2 wave 8)
+
+- **Status:** parked. The drawings aren't in `~/Tree/Design/` yet. [[Dump]] describes the set ("thick and chunky,
+  almost like the aseprite icons, yet not too retro"), but no cursor drawings exist. Nothing was built, and the
+  app still uses the system cursors.
+- **To unpark:** put the cursor and hand drawings in `~/Tree/Design/`. Include at least the pointer, the open
+  hand and the closed (grabbing) hand, plus text and connect if you want them. Then answer
+  `item 11: drawings in` and the next session wires them in as SVG cursors in `App.css` and ticks the box.
+- **Undo:** nothing to undo.
+
+### 12. Gate 5: the feel check, plus the UI Build Review (Plan - Line Lab v2, Part 2 wave 8)
+
+- **What to look at first:** `~/Tree/Design/UI Build Review.md` holds every app state next to the sketch it
+  answers (sketches 0–4 and strokes), plus the collapse, Motion panel and entered-note states, each with a
+  note on where the two differ. All states were retaken from one build (commit 23abde7).
+- **Differences I'd look at first (my read):**
+  1. Line weight. The sketches and `strokes.jpg` are much heavier than the tuned 1 px. If notes should read
+     like the strokes, raise `LOOK.line.weightPx` in `app/src/renderer/look/values.ts` (it's in Line Lab too).
+  2. While the format pill is open the red delete dot hides, whereas sketch 3 shows it beside the pill.
+  3. Inside an entered note, the parent's body text shows behind the child's corner, and the line is about 4 px
+     at 392%.
+- **The feel check:** run the dev app (`npm --prefix app run dev` in `~/Tapestrees/ui`), then hover, click,
+  drag, connect, zoom out to circles and dots, double-click in, and press Escape. Tune the numbers in
+  `look/values.ts` (the one place they live) or the Motion panel sliders, and write what you want changed.
+- **Merge `ws/ui` into `ws/mergin`.** Wave 8 changes no app code: it's the ws/mergin merge plus
+  check scripts and images, so it is safe to take along with wave 7 (item 10).
+
+Answer `item 12: approved`, or the values and issues, in `autonomy/RESPONSE`. Answering this closes the plan's
+last gate; the plan is `parked` only because of Task 8's publish (item 1) and the cursor set (item 11).
+If no: `~/Tree/Design/UI Build Review.md` and `~/Tree/Design/UI Build Review/` are new files from this
+session; delete them if you don't want them.
+
 ## Closed
 
 (none)
