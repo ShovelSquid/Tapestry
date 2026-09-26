@@ -424,11 +424,18 @@ describe('ChatService failures and lifecycle', () => {
     const h = await startHarness({ claudeBinary: () => ({ lookedIn }) })
     await h.chat.send(h.tree.id, h.noteId, 'hi')
 
+    // The message is still a turn: user, then the error, then done (02.8-02).
+    expect(h.events.map((e) => e.type)).toEqual(['user', 'error', 'done'])
     const error = h.events.find((e) => e.type === 'error') as Extract<ChatEvent, { type: 'error' }>
     expect(error.kind).toBe('not-installed')
     expect(error.message).toContain("Claude Code isn't installed, or Tapestry can't find it.")
     expect(error.message).toContain('/usr/bin/claude, /opt/homebrew/bin/claude')
+    expect(h.events.at(-1)).toEqual({ type: 'done', ok: false })
     expect(existsSync(h.record)).toBe(false)
+    const turns = turnCommits(h)
+    expect(turns).toHaveLength(1)
+    expect(turns[0]).toContain('You: hi\n')
+    expect(turns[0]).toContain('Error (not-installed): ')
   }, 30000)
 
   it('says agents are off and spawns nothing', async () => {
@@ -436,8 +443,17 @@ describe('ChatService failures and lifecycle', () => {
     h.bridge.enabled = false
     await h.chat.send(h.tree.id, h.noteId, 'hi')
 
-    expect(h.events).toEqual([{ type: 'error', kind: 'bridge-off', message: BRIDGE_OFF_MESSAGE }])
+    expect(h.events).toEqual([
+      { type: 'user', text: 'hi' },
+      { type: 'error', kind: 'bridge-off', message: BRIDGE_OFF_MESSAGE },
+      { type: 'done', ok: false },
+    ])
     expect(existsSync(h.record)).toBe(false)
+    const turns = turnCommits(h)
+    expect(turns).toHaveLength(1)
+    expect(turns[0]).toContain('You: hi\n')
+    expect(turns[0]).toContain('Error (bridge-off): ')
+    expect(h.chat.open(h.tree.id, h.noteId).live).toEqual([])
   }, 30000)
 
   it('names a signed-out Claude Code with the /login sentence', async () => {
@@ -599,6 +615,123 @@ describe('ChatService failures and lifecycle', () => {
 })
 
 // ---------------------------------------------------------------------------
+// Every way a turn can end is one honest passage (02.8-02, D-07, SC2)
+// ---------------------------------------------------------------------------
+
+describe('every way a turn ends is one passage (02.8-02)', () => {
+  it('a crash: one commit with You and Error (crashed)', async () => {
+    const h = await startHarness({ scenario: 'crash' })
+    const before = turnCommits(h).length
+    await h.chat.send(h.tree.id, h.noteId, 'hi')
+    await waitFor(() => doneCount(h.events) === 1)
+    const turns = turnCommits(h)
+    expect(turns).toHaveLength(before + 1)
+    const lines = passageLines(turns.at(-1)!)
+    expect(lines.filter((line) => line === 'You: hi')).toHaveLength(1)
+    expect(lines.some((line) => line.startsWith('Error (crashed): '))).toBe(true)
+  }, 30000)
+
+  it('Stop: one commit ending with the line Stopped', async () => {
+    const h = await startHarness({ scenario: 'slow' })
+    await h.chat.send(h.tree.id, h.noteId, 'take your time')
+    const pids = await slowPids(h)
+    await h.chat.stop(h.tree.id, h.noteId)
+    await expectAllDead(pids)
+    const turns = turnCommits(h)
+    expect(turns).toHaveLength(1)
+    const lines = passageLines(turns[0])
+    expect(lines).toContain('You: take your time')
+    expect(lines.at(-1)).toBe('Stopped')
+  }, 30000)
+
+  it('a timeout: one commit with Error (timeout)', async () => {
+    const h = await startHarness({ scenario: 'slow', turnTimeoutMs: 300 })
+    await h.chat.send(h.tree.id, h.noteId, 'take your time')
+    const pids = await slowPids(h)
+    await waitFor(() => doneCount(h.events) === 1, 5000)
+    await expectAllDead(pids)
+    const turns = turnCommits(h)
+    expect(turns).toHaveLength(1)
+    const lines = passageLines(turns[0])
+    expect(lines).toContain('You: take your time')
+    expect(lines.some((line) => line.startsWith('Error (timeout): '))).toBe(true)
+  }, 30000)
+
+  it('a lost session after a relaunch: one commit, You once, and the notice as a Note', async () => {
+    const scenarioFile = join(makeScenarioDir(), 'scenario')
+    writeFileSync(scenarioFile, 'text')
+    const first = await startHarness({ scenarioFile })
+    await first.chat.send(first.tree.id, first.noteId, 'remember this')
+    await waitFor(() => doneCount(first.events) === 1)
+    await first.chat.disposeAll()
+
+    writeFileSync(scenarioFile, 'session-lost')
+    const second = await startHarness({ scenarioFile, existing: first })
+    const before = turnCommits(second).length
+    await second.chat.send(second.tree.id, second.noteId, 'hi')
+    await waitFor(() => doneCount(second.events) === 1)
+
+    const turns = turnCommits(second)
+    expect(turns).toHaveLength(before + 1)
+    const lines = passageLines(turns.at(-1)!)
+    expect(lines[0]).toBe('Turn 2')
+    expect(lines.filter((line) => line === 'You: hi')).toHaveLength(1)
+    expect(lines).toContain(`Note: ${SESSION_LOST_NOTICE}`)
+    expect(lines.some((line) => line.startsWith('Error'))).toBe(false)
+    expect(second.events.filter((e) => e.type === 'user')).toHaveLength(1)
+    expect(second.events.at(-1)).toMatchObject({ type: 'done', ok: true })
+  }, 30000)
+
+  it("a shell turn's watcher commit comes before its passage", async () => {
+    const h = await startHarness({ scenario: 'shell-edit' })
+    await h.chat.setAllowShell(h.tree.id, h.noteId, true)
+    await h.chat.send(h.tree.id, h.noteId, 'run echo shell was here >> src/nested/deep.txt')
+    await waitFor(() => doneCount(h.events) === 1, 20000)
+
+    const blocks = commitBlocks(h)
+    const observed = blocks.findIndex((b) => b.includes('observed change to src/nested/deep.txt'))
+    const turn = blocks.findIndex((b) => b.includes('message "chat turn 1"'))
+    expect(observed).toBeGreaterThanOrEqual(0)
+    expect(turn).toBeGreaterThan(observed)
+    const seqOf = (block: string): number => Number(/^([0-9]+)/.exec(block)?.[1] ?? NaN)
+    if (Number.isFinite(seqOf(blocks[observed]))) expect(seqOf(blocks[turn])).toBeGreaterThan(seqOf(blocks[observed]))
+  }, 30000)
+
+  it('disposeAll mid-turn commits the turn with Stopped before it resolves, and the trees still close', async () => {
+    const h = await startHarness({ scenario: 'slow' })
+    await h.chat.send(h.tree.id, h.noteId, 'take your time')
+    const pids = await slowPids(h)
+    const turnsBefore = turnCommits(h).length
+    const agent = h.agent
+
+    const disposing = h.chat.disposeAll()
+    // Already on disk, before disposeAll resolves: at quit, the trees close next.
+    const turns = commitBlocks(h).filter((b) => b.includes(`actor plugin agent.${agent}\n`))
+    expect(turns).toHaveLength(turnsBefore + 1)
+    const lines = passageLines(turns.at(-1)!)
+    expect(lines).toEqual(['Turn 1', 'You: take your time', 'Stopped'])
+    await disposing
+    await expectAllDead(pids)
+    // One commit for the turn: the engine's own later done wrote nothing.
+    expect(commitBlocks(h).filter((b) => b.includes(`actor plugin agent.${agent}\n`))).toHaveLength(1)
+    expect(() => h.registry.closeAll()).not.toThrow()
+  }, 30000)
+
+  it('closing the workspace mid-turn commits the turn with Stopped', async () => {
+    const h = await startHarness({ scenario: 'slow' })
+    await h.chat.send(h.tree.id, h.noteId, 'take your time')
+    const pids = await slowPids(h)
+    const agent = h.agent
+    const closing = h.chat.closeWorkspace(h.tree.id)
+    const turns = commitBlocks(h).filter((b) => b.includes(`actor plugin agent.${agent}\n`))
+    expect(turns).toHaveLength(1)
+    expect(passageLines(turns[0]).at(-1)).toBe('Stopped')
+    await closing
+    await expectAllDead(pids)
+  }, 30000)
+})
+
+// ---------------------------------------------------------------------------
 // The Allow shell switch (02.7-04, D-15)
 // ---------------------------------------------------------------------------
 
@@ -652,6 +785,30 @@ function notices(h: Harness): string[] {
 /** Every commit block in the tree file. */
 function commitBlocks(h: Harness): string[] {
   return readFileSync(h.tree.path, 'utf-8').split('@commit ').slice(1)
+}
+
+/** The commit blocks of this harness's session turns, in journal order. */
+function turnCommits(h: Harness, noteId = h.noteId): string[] {
+  return commitBlocks(h).filter(
+    (b) => /message "chat turn [0-9]+"/.test(b) && b.includes(`actor plugin agent.${sessionAgent(h, noteId)}\n`),
+  )
+}
+
+function sessionAgent(h: Harness, noteId: string): string {
+  return h.chat.open(h.tree.id, noteId).agent
+}
+
+/** The body text a turn commit sets, as its lines. */
+function passageLines(block: string): string[] {
+  const match = /body text <<TEXT\n([\s\S]*?)\nTEXT\n/.exec(block)
+  if (!match) return []
+  const lines = match[1].split('\n')
+  // Only the last turn's block: the lines after its `Turn k` header.
+  let start = 0
+  lines.forEach((line, index) => {
+    if (/^Turn [0-9]+$/.test(line)) start = index
+  })
+  return lines.slice(start)
 }
 
 describe('the Allow shell switch', () => {

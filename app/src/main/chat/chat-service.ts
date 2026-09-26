@@ -73,6 +73,13 @@ export function turnNotSavedNotice(reason: string): string {
   return `This turn couldn't be saved into the note: ${reason}`
 }
 
+/**
+ * How many session processes stay alive while idle (orchestrator resolution
+ * 3). Past it, the least recently used idle one is ended quietly and resumes
+ * with `--resume` at its next message; a running turn is never ended for room.
+ */
+export const MAX_LIVE_ENGINES = 4
+
 const MAX_MESSAGE_CHARS = 100_000
 const MAX_LIVE_EVENTS = 2000
 
@@ -158,6 +165,10 @@ interface Session {
   settling: Promise<void> | null
   /** Switch changes reaching the engine, in order. */
   shellChange: Promise<void>
+  /** The engine's `done` for a turn whose shell catch-up is still running. */
+  pendingDone: Extract<ChatEvent, { type: 'done' }> | null
+  /** Bumped at each send; the least recently used idle engine is ended first. */
+  lastUsed: number
 }
 
 interface ChatsEntry {
@@ -207,6 +218,8 @@ export class ChatService {
   private readonly configFiles = new Map<string, { treeId: string; noteId: string }>()
   /** Sessions (persist keys) whose shell was on before this launch, until they say so. */
   private readonly shellResetKeys = new Set<string>()
+  /** The last send's number, for least-recently-used order. */
+  private useCounter = 0
 
   constructor(options: ChatServiceOptions) {
     this.options = options
@@ -281,16 +294,24 @@ export class ChatService {
     // A switch change or the last shell turn's catch-up finishes first.
     await session.shellChange
     if (session.settling) await session.settling
-    if (session.engine?.busy) throw new Error(STILL_ANSWERING_MESSAGE)
+    if (session.engine?.busy || session.turnOpen) throw new Error(STILL_ANSWERING_MESSAGE)
+
+    // Every accepted message is a turn (D-07): whatever happens next, the
+    // note gets one passage that starts with it and says how it ended.
+    session.lastUsed = ++this.useCounter
+    session.lastText = text
+    session.resentAfterLoss = false
+    session.turnOpen = true
+    this.record(session, { type: 'user', text })
 
     if (!this.options.isBridgeEnabled()) {
-      this.record(session, { type: 'error', kind: 'bridge-off', message: BRIDGE_OFF_MESSAGE })
+      this.failTurn(session, { type: 'error', kind: 'bridge-off', message: BRIDGE_OFF_MESSAGE })
       return
     }
 
     const binary = (this.options.claudeBinary ?? defaultClaudeBinary)()
     if (!('path' in binary)) {
-      this.record(session, {
+      this.failTurn(session, {
         type: 'error',
         kind: 'not-installed',
         message: notInstalledMessage(binary.lookedIn),
@@ -298,12 +319,14 @@ export class ChatService {
       return
     }
 
-    if (session.engine?.busy) throw new Error(STILL_ANSWERING_MESSAGE)
-    const engine = await this.ensureEngine(session, binary.path)
-    session.lastText = text
-    session.resentAfterLoss = false
-    session.turnOpen = true
-    this.record(session, { type: 'user', text })
+    let engine: ChatEngine
+    try {
+      engine = await this.ensureEngine(session, binary.path)
+    } catch (err) {
+      this.failTurn(session, { type: 'error', kind: 'crashed', message: startFailedMessage(err) })
+      return
+    }
+    if (!this.isCurrent(session) || !session.turnOpen) return
     this.sendToEngine(session, engine, text)
   }
 
@@ -312,9 +335,16 @@ export class ChatService {
     await session.engine?.stop()
   }
 
-  /** The workspace closed: stop every chat in it and delete their MCP config files. */
+  /**
+   * The workspace closed: stop every chat in it and delete their MCP config
+   * files. A turn still open is committed first, synchronously and before any
+   * engine is dropped, while the tree is still open: what arrived so far and a
+   * `Stopped` line, so the person's message is never lost (one commit per
+   * turn, D-07). The engine's own later `done` is not heard.
+   */
   async closeWorkspace(treeId: string): Promise<void> {
     const closing = [...this.sessions.values()].filter((session) => session.treeId === treeId)
+    for (const session of closing) this.commitOnClose(session)
     for (const session of closing) this.sessions.delete(sessionKey(session.treeId, session.noteId))
     await Promise.all(closing.map((session) => this.dropEngine(session)))
     for (const [key, file] of [...this.configFiles]) {
@@ -322,6 +352,11 @@ export class ChatService {
     }
   }
 
+  /**
+   * App quit: every chat is closed. Each open turn is committed synchronously
+   * (closeWorkspace does so before its first await), so will-quit may close
+   * the trees right after calling this without awaiting it.
+   */
   async disposeAll(): Promise<void> {
     const treeIds = new Set<string>([
       ...[...this.sessions.values()].map((session) => session.treeId),
@@ -398,6 +433,8 @@ export class ChatService {
         turnShell: false,
         settling: null,
         shellChange: Promise.resolve(),
+        pendingDone: null,
+        lastUsed: 0,
       }
       this.sessions.set(key, session)
       if (this.shellResetKeys.delete(saved)) {
@@ -410,10 +447,49 @@ export class ChatService {
   /** Send one message, noting whether its turn runs with the shell on. */
   private sendToEngine(session: Session, engine: ChatEngine, text: string): void {
     session.turnShell = session.allowShell
-    engine.send(text)
+    try {
+      engine.send(text)
+    } catch (err) {
+      session.turnShell = false
+      this.failTurn(session, { type: 'error', kind: 'crashed', message: startFailedMessage(err) })
+    }
+  }
+
+  /** The session is still the one this service holds for its note. */
+  private isCurrent(session: Session): boolean {
+    return this.sessions.get(sessionKey(session.treeId, session.noteId)) === session
+  }
+
+  /**
+   * At most MAX_LIVE_ENGINES session processes stay alive while idle. Before
+   * a new one starts, the least recently used idle sessions are ended
+   * quietly (no `done`; the conversation id is kept, so the next message
+   * resumes it). A running or settling turn is never ended: with more turns
+   * running at once than the cap, the cap is exceeded.
+   */
+  private async makeRoomForEngine(except: Session): Promise<void> {
+    for (;;) {
+      const holding = [...this.sessions.values()].filter((session) => session.engine !== null)
+      if (holding.length < MAX_LIVE_ENGINES) return
+      const idle = holding
+        .filter(
+          (session) =>
+            session !== except &&
+            !session.turnOpen &&
+            !session.recovering &&
+            session.settling === null &&
+            !(session.engine?.busy ?? false),
+        )
+        .sort((a, b) => a.lastUsed - b.lastUsed)
+      const oldest = idle[0]
+      if (!oldest) return
+      await this.dropEngine(oldest)
+    }
   }
 
   private async ensureEngine(session: Session, binaryPath: string, fresh = false): Promise<ChatEngine> {
+    if (session.engine) return session.engine
+    await this.makeRoomForEngine(session)
     if (session.engine) return session.engine
 
     if (session.token === null || this.options.agents.verify(session.token)?.name !== session.agent) {
@@ -447,6 +523,8 @@ export class ChatService {
     if (session.engine !== engine) return
 
     if (session.recovering) {
+      // The lost session's failed attempt: its error and `done` never reach
+      // the passage; the message is sent once more in a fresh session.
       if (event.type === 'done') {
         session.recovering = false
         void this.resendAfterLoss(session)
@@ -461,6 +539,7 @@ export class ChatService {
       session.lastText
     ) {
       session.recovering = true
+      // Recorded into the open turn, so the passage says it as a Note.
       this.record(session, { type: 'notice', text: SESSION_LOST_NOTICE })
       return
     }
@@ -471,12 +550,14 @@ export class ChatService {
     }
 
     // A turn that ran with the shell on (ok or not: a crash or Stop may follow
-    // a command that changed files) is caught up before its `done` is shown,
-    // so what it changed is in the tree, as observed, when the turn ends.
+    // a command that changed files) is caught up before its passage is
+    // committed, so the file changes precede the passage in the journal.
     if (event.type === 'done' && session.turnShell) {
       session.turnShell = false
+      session.pendingDone = event
       const settling = this.catchUpAfterShellTurn(session).finally(() => {
         if (session.settling === settling) session.settling = null
+        session.pendingDone = null
         this.finishTurn(session, event)
       })
       session.settling = settling
@@ -490,17 +571,50 @@ export class ChatService {
   }
 
   /**
+   * A turn failed before or instead of reaching the engine (agents off, no
+   * `claude`, a start that threw): its error is recorded and the turn is
+   * committed like any other, so the note says what happened.
+   */
+  private failTurn(session: Session, error: Extract<ChatEvent, { type: 'error' }>): void {
+    this.record(session, error)
+    this.finishTurn(session, { type: 'done', ok: false })
+  }
+
+  /**
    * A turn ended (D-07): its passage is appended to the session note in one
-   * commit signed by the session's agent, then its `done` is recorded, tagged
-   * with the turn just committed. The passage holds the turn's events from its
-   * user message on, plus the notices recorded before it (the shell switch).
-   * A failed commit is logged and said in the chat, never thrown.
+   * commit signed by the session's agent, then its `done` is sent, tagged
+   * with the turn just committed. A failed commit is logged and said in the
+   * chat, never thrown.
    */
   private finishTurn(session: Session, done: Extract<ChatEvent, { type: 'done' }>): void {
     if (!session.turnOpen) {
       this.record(session, done)
       return
     }
+    try {
+      const turn = this.commitOpenTurn(session, [done])
+      if (turn === null) {
+        this.record(session, done)
+        return
+      }
+      // Sent, not kept: the note holds this turn now.
+      this.emitEvent(session, done, turn)
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err)
+      console.error('[ChatService] could not save a chat turn into its note:', err)
+      this.record(session, { type: 'notice', text: turnNotSavedNotice(reason) })
+      this.record(session, done)
+    }
+  }
+
+  /**
+   * Commit the open turn as one passage (D-07): its events from its user
+   * message on, the notices recorded before it (the shell switch), and
+   * `extra` (how it ended). Returns the committed turn number, or null when
+   * no turn was open. The turn is closed even when the commit throws.
+   */
+  private commitOpenTurn(session: Session, extra: ChatEvent[] = []): number | null {
+    if (!session.turnOpen) return null
     session.turnOpen = false
     const open = session.committed + 1
     const events = session.live.filter((entry) => entry.turn === open).map((entry) => entry.event)
@@ -513,30 +627,38 @@ export class ChatService {
     }
     const turnEvents =
       userIndex < 0
-        ? [...events, done]
+        ? [...events, ...extra]
         : [
             ...events.slice(0, userIndex).filter((event) => event.type === 'notice'),
             ...events.slice(userIndex),
-            done,
+            ...extra,
           ]
 
+    const ws = this.workspaceFor(session.treeId)
+    const { turn } = this.options.sessionNotes.appendTurn(
+      ws.tree,
+      session.noteId,
+      agentActor(session.agent),
+      turnItemsFromEvents(turnEvents),
+    )
+    session.committed = turn
+    session.live = session.live.filter((entry) => entry.turn > turn)
+    return turn
+  }
+
+  /**
+   * The workspace is closing or Tapestry is quitting: an open turn is
+   * committed now, with what arrived so far and a `Stopped` line (or, when
+   * its shell catch-up is still running, the `done` it already had). Never
+   * throws.
+   */
+  private commitOnClose(session: Session): void {
+    if (!session.turnOpen) return
+    const done = session.pendingDone ?? { type: 'done', ok: false, reason: 'stopped' }
     try {
-      const ws = this.workspaceFor(session.treeId)
-      const { turn } = this.options.sessionNotes.appendTurn(
-        ws.tree,
-        session.noteId,
-        agentActor(session.agent),
-        turnItemsFromEvents(turnEvents),
-      )
-      session.committed = turn
-      session.live = session.live.filter((entry) => entry.turn > turn)
-      // Sent, not kept: the note holds this turn now.
-      this.emitEvent(session, done, turn)
+      this.commitOpenTurn(session, [done])
     } catch (err) {
-      const reason = err instanceof Error ? err.message : String(err)
-      console.error('[ChatService] could not save a chat turn into its note:', err)
-      this.record(session, { type: 'notice', text: turnNotSavedNotice(reason) })
-      this.record(session, done)
+      console.error('[ChatService] could not save an open chat turn while closing:', err)
     }
   }
 
@@ -549,19 +671,30 @@ export class ChatService {
     }
   }
 
+  /**
+   * One resend after a lost session, in a fresh session. The message is not
+   * recorded a second time: the open turn already starts with it.
+   */
   private async resendAfterLoss(session: Session): Promise<void> {
     const text = session.lastText
     await this.dropEngine(session)
     session.sessionId = null
     this.persistSession(session)
-    if (!text || this.sessions.get(sessionKey(session.treeId, session.noteId)) !== session) return
+    if (!text || !this.isCurrent(session) || !session.turnOpen) return
     const binary = (this.options.claudeBinary ?? defaultClaudeBinary)()
     if (!('path' in binary)) {
-      this.record(session, { type: 'error', kind: 'not-installed', message: notInstalledMessage(binary.lookedIn) })
+      this.failTurn(session, { type: 'error', kind: 'not-installed', message: notInstalledMessage(binary.lookedIn) })
       return
     }
     session.resentAfterLoss = true
-    const engine = await this.ensureEngine(session, binary.path, true)
+    let engine: ChatEngine
+    try {
+      engine = await this.ensureEngine(session, binary.path, true)
+    } catch (err) {
+      this.failTurn(session, { type: 'error', kind: 'crashed', message: startFailedMessage(err) })
+      return
+    }
+    if (!this.isCurrent(session) || !session.turnOpen) return
     this.sendToEngine(session, engine, text)
   }
 
@@ -740,6 +873,12 @@ export class ChatService {
       console.error('[ChatService] could not reset the shell switches in chats.json:', err)
     }
   }
+}
+
+/** Said when Claude Code could not be started for a turn. */
+function startFailedMessage(err: unknown): string {
+  const reason = err instanceof Error ? err.message : String(err)
+  return `Claude Code couldn't be started: ${reason}`
 }
 
 function defaultClaudeBinary(): { path: string } | { lookedIn: string[] } {
