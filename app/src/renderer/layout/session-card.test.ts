@@ -16,6 +16,8 @@ import {
   SESSION_CARD_MIN,
   clampCardSize,
   isNearBottom,
+  raiseInOrder,
+  sortWithRaise,
   readCardView,
   writeCardView,
 } from './session-card'
@@ -120,5 +122,48 @@ describe('isNearBottom', () => {
 
   it('treats content shorter than the viewport as at the bottom', () => {
     expect(isNearBottom(0, 200, 300)).toBe(true)
+  })
+})
+
+describe('raiseInOrder (D-16: the raiseWindow rule, last is on top)', () => {
+  it('moves an id to the end', () => {
+    expect(raiseInOrder(['n1', 'n2', 'n3'], 'n1')).toEqual(['n2', 'n3', 'n1'])
+  })
+
+  it('returns the same array when the id is already on top', () => {
+    const order = ['n1', 'n2', 'n3']
+    expect(raiseInOrder(order, 'n3')).toBe(order)
+  })
+
+  it('appends an id that was not there', () => {
+    expect(raiseInOrder(['n1'], 'n9')).toEqual(['n1', 'n9'])
+    expect(raiseInOrder([], 'n9')).toEqual(['n9'])
+  })
+})
+
+describe('sortWithRaise (D-16: raise is a secondary key after depth)', () => {
+  const node = (id: string, depth = 0) => ({ id, depth })
+  const depthOf = (n: { depth: number }) => n.depth
+
+  it('keeps depth order first', () => {
+    const nodes = [node('deep', 1), node('a'), node('b')]
+    expect(sortWithRaise(nodes, depthOf, ['deep']).map((n) => n.id)).toEqual(['a', 'b', 'deep'])
+  })
+
+  it('puts raised ids after unraised ones at the same depth, in raise order', () => {
+    const nodes = [node('a'), node('b'), node('c'), node('d')]
+    expect(sortWithRaise(nodes, depthOf, ['c', 'a']).map((n) => n.id)).toEqual(['b', 'd', 'c', 'a'])
+  })
+
+  it('is stable otherwise, and never raises across depths', () => {
+    const nodes = [node('x', 1), node('a'), node('b'), node('y', 1)]
+    expect(sortWithRaise(nodes, depthOf, ['a']).map((n) => n.id)).toEqual(['b', 'a', 'x', 'y'])
+    expect(sortWithRaise(nodes, depthOf, []).map((n) => n.id)).toEqual(['a', 'b', 'x', 'y'])
+  })
+
+  it('does not change the list it was given', () => {
+    const nodes = [node('a'), node('b')]
+    sortWithRaise(nodes, depthOf, ['a'])
+    expect(nodes.map((n) => n.id)).toEqual(['a', 'b'])
   })
 })

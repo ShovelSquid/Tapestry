@@ -24,6 +24,9 @@ import {
   sessionAttention,
   sessionAttentions,
   openedStatus,
+  raiseOrderFor,
+  raiseSession,
+  raisesCard,
   readAlertThreshold,
   setAlertThreshold,
   recordChatPayload,
@@ -421,5 +424,44 @@ describe('motion and rise on each change (02.8-06, D-14)', () => {
   it('an event that changes nothing on the card leaves the last effects alone', () => {
     const texted = applyChatPayload(working, { turn: 1, event: { type: 'text-delta', text: 'Hel' } }, 60, 1)
     expect(texted.lastEffects).toBe(working.lastEffects)
+  })
+})
+
+describe('the stack raise (02.8-06, D-16)', () => {
+  it('keeps a per-tree raise order, last on top, never shared between trees', () => {
+    raiseSession(TREE, 'r1')
+    raiseSession(TREE, 'r2')
+    raiseSession(OTHER_TREE, 'r3')
+    raiseSession(TREE, 'r1')
+    expect(raiseOrderFor(TREE)).toEqual(['r2', 'r1'])
+    expect(raiseOrderFor(OTHER_TREE)).toEqual(['r3'])
+  })
+
+  it('keeps the same order object when raising the card already on top', () => {
+    const before = raiseOrderFor(TREE)
+    raiseSession(TREE, before[before.length - 1])
+    expect(raiseOrderFor(TREE)).toBe(before)
+  })
+
+  it('forgets the order of a tree that closed', () => {
+    raiseSession(OTHER_TREE, 'r4')
+    retainChatSessions(new Set([TREE]))
+    expect(raiseOrderFor(OTHER_TREE)).toEqual([])
+    expect(raiseOrderFor(TREE).length).toBeGreaterThan(0)
+  })
+
+  it('a change that shows at level 1 or more raises; a quiet event does not', () => {
+    const working = applyChatPayload(loaded, { turn: 1, event: { type: 'user', text: 'hi' } }, 10, 2)
+    const done = applyChatPayload(working, { turn: 1, event: { type: 'done', ok: true } }, 20, 3)
+    expect(raisesCard(working, done)).toBe(true)
+    const streamed = applyChatPayload(working, { turn: 1, event: { type: 'text-delta', text: 'x' } }, 30, 1)
+    expect(raisesCard(working, streamed)).toBe(false)
+    const quiet = applyChatPayload(
+      working,
+      { turn: 1, event: { type: 'status', text: 'shh', needs: false, level: 0 } as TapestryChatEvent },
+      40,
+      1,
+    )
+    expect(raisesCard(working, quiet)).toBe(false)
   })
 })
