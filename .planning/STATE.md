@@ -4,16 +4,16 @@ milestone: v1.0
 current_phase: "2.8"
 current_phase_name: Agent Note Windows
 status: executing
-stopped_at: Completed 02.8-05-PLAN.md
+stopped_at: Completed 02.8-06-PLAN.md
 last_updated: "2026-09-26T02:11:19.197Z"
 last_activity: 2026-09-26
-last_activity_desc: 02.8-05 complete (wave 5); next 02.8-06 (wave 6)
-state_head: c2cb37ee435fd05be038f5162a7df6e47b9f46f3
+last_activity_desc: 02.8-06 complete (wave 6); next 02.8-07 (wave 7)
+state_head: f9fb0df
 progress:
   total_phases: 15
   completed_phases: 0
   total_plans: 71
-  completed_plans: 57
+  completed_plans: 58
 ---
 
 # Project State
@@ -28,10 +28,10 @@ See: .planning/PROJECT.md (updated 2026-09-08)
 ## Current Position
 
 Phase: 2.8 (Agent Note Windows) — EXECUTING
-Plan: 5 of 9 complete; next is 02.8-06 (wave 6). 02.7 is 6/7, with 02.7-07 parked on a package approval (autonomy/REVIEW.md item 5)
-Status: Ready to execute 02.8-06
+Plan: 6 of 9 complete; next is 02.8-07 (wave 7). 02.7 is 6/7, with 02.7-07 parked on a package approval (autonomy/REVIEW.md item 5)
+Status: Ready to execute 02.8-07
 Phase 02.4 (Lock Model): COMPLETE — verified 25/25, 2026-09-16; rebased onto the main line 2026-09-23
-Last activity: 2026-09-26 - 02.8-05 complete (each session card and the enlarged view show the reducer's state in ChatSessionHeader: glyph, word, status line; Working blur, the "!" badge, Done/Needs you author border, Failed in destructive text; acknowledgement and LiveAnnouncer announcements from the card; all renderer state)
+Last activity: 2026-09-26 - 02.8-06 complete (edge arrows for off-screen sessions that need a look, click pans the camera; Chat alerts threshold in the Agents panel; Done jiggle/flash and fading border, badge scale-in; state change raises the card in its tree frame; all renderer state)
 
 Progress: [████████░░] 79%
 
