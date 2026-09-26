@@ -23,6 +23,16 @@
  * The transcript is read-only (UI-SPEC A-09): the only writes this card can
  * make are its title, its position and its connections, which the workspace
  * guard allows. Main refuses any renderer write to its body or `chat.*` keys.
+ *
+ * Its state (02.8-05, D-11, SC4) comes from the store's status, never from
+ * reply text: Working blurs and desaturates the transcript under a sharp
+ * header; Needs you draws the "!" badge and the author-colour border until a
+ * reply is sent here; Done draws the author-colour border until the person
+ * looks (pointer rest 1000 ms, a press or focus inside, Enlarge, a send);
+ * Failed shows only its glyph, word and phrase in the destructive text
+ * colour. The card is the one place a state change is announced, so a
+ * session also open in the panel is announced once. All of it is renderer
+ * state (D-10): nothing here writes a tree.
  */
 
 import React, { memo, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
@@ -31,8 +41,14 @@ import NoteControls from './NoteControls'
 import ChatSessionTranscript from './ChatSessionTranscript'
 import ChatSessionComposer from './ChatSessionComposer'
 import { ChatSessionHeader } from './ChatSessionHeader'
+import { useAnnounce } from './LiveAnnouncer'
 import { ChatContext, foldChatEvents, liveAfter } from '../state/chat'
-import { useChatSession, useSessionAuthorToken } from '../state/chat-sessions'
+import {
+  acknowledgeSession,
+  statusAnnouncement,
+  useChatSession,
+  useSessionAuthorToken,
+} from '../state/chat-sessions'
 import { screenDeltaToWorld } from '../layout/camera'
 import {
   browserCardViewStorage,
@@ -113,6 +129,24 @@ function ChevronGlyph({ closed }: { closed: boolean }): React.ReactElement {
     </svg>
   )
 }
+
+/**
+ * The Needs you badge: a 24px disc in the session's author colour on the
+ * card's top-left corner, with a white "!". Hidden from assistive tech: the
+ * state word and the announcement carry it.
+ */
+function NeedsYouBadge(): React.ReactElement {
+  return (
+    <span className="tapestry-needs-badge" aria-hidden="true">
+      <svg width={14} height={14} viewBox="0 0 16 16" fill="currentColor" focusable="false">
+        <path d="M6.8 2.2h2.4l-.45 7.6h-1.5L6.8 2.2ZM8 11.2a1.4 1.4 0 1 1 0 2.8 1.4 1.4 0 0 1 0-2.8Z" />
+      </svg>
+    </span>
+  )
+}
+
+/** How long the pointer rests on a Done or Failed card before it counts as looked at. */
+const ACK_REST_MS = 1000
 
 /** Stop an event here, so the canvas never acts on it. */
 function stop(e: React.SyntheticEvent): void {
@@ -306,7 +340,33 @@ function ChatSessionCardView({
     },
     [],
   )
+  // ----- State (D-11): acknowledgement and announcements -----
+  const status = session.status
+  const acknowledge = useCallback(() => acknowledgeSession(treeId, node.id), [treeId, node.id])
+  const [pointerInside, setPointerInside] = useState(false)
+  const waiting = status.state === 'done' || status.state === 'failed'
+  // The pointer resting on a Done or Failed card for a second is looking at it,
+  // whether it came to rest before or after the state arrived.
+  useEffect(() => {
+    if (!pointerInside || !waiting) return undefined
+    const timer = setTimeout(acknowledge, ACK_REST_MS)
+    return () => clearTimeout(timer)
+  }, [pointerInside, waiting, acknowledge])
+
+  const announce = useAnnounce()
+  const announcedRef = useRef(status)
+  useEffect(() => {
+    const before = announcedRef.current
+    announcedRef.current = status
+    if (before === status) return
+    const said = statusAnnouncement(shownTitle, before, status)
+    if (said === null) return
+    if (said.tone === 'assertive') announce.assertive(said.text)
+    else announce.polite(said.text)
+  }, [status, shownTitle, announce])
+
   const handleEnter = (): void => {
+    setPointerInside(true)
     if (hideTimerRef.current) {
       clearTimeout(hideTimerRef.current)
       hideTimerRef.current = null
@@ -316,6 +376,7 @@ function ChatSessionCardView({
     if (isConnecting) onHoverDuringConnection()
   }
   const handleLeave = (): void => {
+    setPointerInside(false)
     hideTimerRef.current = setTimeout(() => {
       setShowControls(false)
       onHover(false)
@@ -327,6 +388,8 @@ function ChatSessionCardView({
   if (isSelected || isConnectTarget) className += ' tapestry-note-card--selected'
   if (isConnectTarget) className += ' tapestry-note-card--connect-target'
   if (closed) className += ' tapestry-session-card--closed'
+  // The state look; it shows on a closed card too.
+  if (status.state !== 'idle') className += ` tapestry-session-card--${status.state}`
   const showControlsNow = showControls || isSelected
 
   return (
@@ -347,7 +410,12 @@ function ChatSessionCardView({
       }
       onPointerEnter={handleEnter}
       onPointerLeave={handleLeave}
+      // A press or focus anywhere inside is looking at it (Done and Failed go quiet).
+      onPointerDownCapture={acknowledge}
+      onFocus={acknowledge}
     >
+      {status.needs && <NeedsYouBadge />}
+
       <div
         className="tapestry-note-drag-handle"
         onPointerDown={handleDragStart}
@@ -362,7 +430,7 @@ function ChatSessionCardView({
       />
 
       <ChatSessionHeader
-        status={session.status}
+        status={status}
         forCard
         turns={committed}
         title={
@@ -425,6 +493,7 @@ function ChatSessionCardView({
           onKeyDown={stop}
           onClick={(e) => {
             e.stopPropagation()
+            acknowledge()
             enlarge(treeId, node.id)
           }}
         >

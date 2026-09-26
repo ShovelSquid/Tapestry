@@ -1951,6 +1951,65 @@ html, body, #root {
   gap: 16px;
 }
 
+/* ----- Session states (02.8-05, D-11; UI-SPEC § States) ------------------
+   Renderer state only: nothing here enters a tree. Accent is never a state;
+   the author colour is --tap-session-author, set inline on each card. */
+
+.tapestry-session-transcript,
+.tapestry-session-composer {
+  transition: filter 200ms ease;
+}
+
+/* Working: the transcript blurred and desaturated under a sharp header, the
+   composer desaturated only. Hover or focus inside sharpens the transcript
+   (the desaturation stays). The border stays --tap-border. */
+.tapestry-session-card--working .tapestry-session-transcript {
+  filter: saturate(0.2) blur(2px);
+}
+
+.tapestry-session-card--working:hover .tapestry-session-transcript,
+.tapestry-session-card--working:focus-within .tapestry-session-transcript {
+  filter: saturate(0.2) blur(0);
+}
+
+.tapestry-session-card--working .tapestry-session-composer {
+  filter: saturate(0.2);
+}
+
+/* Needs you and Done: a 2px author-colour border. Selection and the connect
+   target keep their 2px accent border in every state. Failed has no author
+   border. */
+.tapestry-session-card--needs:not(.tapestry-note-card--selected):not(.tapestry-note-card--connect-target),
+.tapestry-session-card--done:not(.tapestry-note-card--selected):not(.tapestry-note-card--connect-target) {
+  border: 2px solid var(--tap-session-author, var(--tap-border));
+}
+
+/* The Needs you badge: a 24px author-colour disc on the top-left corner,
+   white "!", the control-bubble shadow. It persists until a reply. */
+.tapestry-needs-badge {
+  position: absolute;
+  left: -12px;
+  top: -12px;
+  z-index: 3;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background-color: var(--tap-session-author, var(--tap-muted));
+  color: #FFFFFF;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tapestry-session-transcript,
+  .tapestry-session-composer {
+    transition: none;
+  }
+}
+
 /* Closed to its header: rows 1 and 2 only, the same width. */
 .tapestry-session-card--closed {
   height: auto;

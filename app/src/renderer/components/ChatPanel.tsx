@@ -32,6 +32,7 @@ import ChatSessionComposer from './ChatSessionComposer'
 import { ChatSessionHeader } from './ChatSessionHeader'
 import { ChatContext, foldChatEvents, liveAfter, type ChatAttachment } from '../state/chat'
 import {
+  acknowledgeSession,
   requestComposerFocus,
   setChatShell,
   useChatSession,
@@ -149,6 +150,14 @@ function Conversation({
   useEffect(() => {
     requestComposerFocus(treeId, noteId, 'panel')
   }, [treeId, noteId])
+
+  // Opening the enlarged view is looking at the session: Done and Failed go
+  // quiet (UI-SPEC § Leaving a state). Needs you stays until a reply. Also
+  // when the session's status first arrives from main after opening.
+  const loaded = session.loaded
+  useEffect(() => {
+    acknowledgeSession(treeId, noteId)
+  }, [treeId, noteId, loaded])
 
   // New chat here makes another session in this workspace and shows it.
   const newChat = async (): Promise<void> => {

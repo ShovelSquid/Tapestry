@@ -253,6 +253,61 @@ export function useChatSession(treeId: string, noteId: string): ChatSessionSnaps
 }
 
 // ---------------------------------------------------------------------------
+// Acknowledgement and announcements (D-11, UI-SPEC § Leaving a state)
+// ---------------------------------------------------------------------------
+
+/**
+ * The person looked at a session: Done and Failed become Idle, keeping their
+ * status text. Needs you clears only on a reply, and Working and Idle have
+ * nothing to acknowledge, so those return the same snapshot.
+ */
+export function acknowledgeChatSnapshot(snapshot: ChatSessionSnapshot, now: number): ChatSessionSnapshot {
+  const status = reduceStatus(snapshot.status, { kind: 'ack' }, now)
+  return status === snapshot.status ? snapshot : { ...snapshot, status }
+}
+
+/**
+ * Acknowledge a session: the pointer rested on its card for 1000 ms, focus
+ * went into the card, it was enlarged, or the person sent in it. Renderer
+ * state only; nothing is written.
+ */
+export function acknowledgeSession(treeId: string, noteId: string, now: number = Date.now()): void {
+  update(treeId, noteId, (s) => acknowledgeChatSnapshot(s, now))
+}
+
+/** What LiveAnnouncer says about a state change, and in which region. */
+export interface StatusAnnouncement {
+  tone: 'polite' | 'assertive'
+  text: string
+}
+
+/**
+ * The announcement for a change from `before` to `after` (UI-SPEC
+ * § Accessibility), or null. Only a change into Done, Needs you or Failed at
+ * level 1 or above is announced; Working is continuous and never announced.
+ * The card calls this, never the panel, so a session is announced once.
+ */
+export function statusAnnouncement(
+  title: string,
+  before: SessionStatus,
+  after: SessionStatus,
+): StatusAnnouncement | null {
+  if (before.state === after.state || after.level < 1) return null
+  const text = after.text
+  switch (after.state) {
+    case 'done':
+      return { tone: 'polite', text: text.length > 0 ? `${title}: done. ${text}` : `${title}: done.` }
+    case 'needs':
+      return { tone: 'polite', text: text.length > 0 ? `${title} needs you: ${text}` : `${title} needs you` }
+    case 'failed':
+      return { tone: 'assertive', text: `${title} failed: ${text}` }
+    case 'idle':
+    case 'working':
+      return null
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Author colour (UI-SPEC § Author colour for sessions)
 // ---------------------------------------------------------------------------
 
@@ -313,6 +368,9 @@ export async function sendChatSession(treeId: string, noteId: string): Promise<b
   if (s.draft.trim().length === 0 || s.busy || s.sending) return false
   const sentDraft = s.draft
   const sentAttachment = s.attachment
+  // Sending is looking (D-11): Done and Failed go quiet. Needs you waits for
+  // the `user` event main sends back once it accepts the message.
+  acknowledgeSession(treeId, noteId)
   update(treeId, noteId, (c) => ({ ...c, sending: true, error: null }))
   let result: TapestryChatResult<null>
   try {
