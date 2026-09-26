@@ -4,16 +4,16 @@ milestone: v1.0
 current_phase: "2.8"
 current_phase_name: Agent Note Windows
 status: executing
-stopped_at: Completed 02.8-04-PLAN.md
-last_updated: "2026-09-26T02:01:23.931Z"
+stopped_at: Completed 02.8-05-PLAN.md
+last_updated: "2026-09-26T02:11:19.197Z"
 last_activity: 2026-09-26
-last_activity_desc: 02.8-04 complete (wave 4); next 02.8-05 (wave 5)
-state_head: 9fbca784933a05a9f9cfe9a0d9a8820341ec4c73
+last_activity_desc: 02.8-05 complete (wave 5); next 02.8-06 (wave 6)
+state_head: c2cb37ee435fd05be038f5162a7df6e47b9f46f3
 progress:
   total_phases: 15
   completed_phases: 0
   total_plans: 71
-  completed_plans: 56
+  completed_plans: 57
 ---
 
 # Project State
@@ -28,10 +28,10 @@ See: .planning/PROJECT.md (updated 2026-09-08)
 ## Current Position
 
 Phase: 2.8 (Agent Note Windows) — EXECUTING
-Plan: 4 of 9 complete; next is 02.8-05 (wave 5). 02.7 is 6/7, with 02.7-07 parked on a package approval (autonomy/REVIEW.md item 5)
-Status: Ready to execute 02.8-05
+Plan: 5 of 9 complete; next is 02.8-06 (wave 6). 02.7 is 6/7, with 02.7-07 parked on a package approval (autonomy/REVIEW.md item 5)
+Status: Ready to execute 02.8-06
 Phase 02.4 (Lock Model): COMPLETE — verified 25/25, 2026-09-16; rebased onto the main line 2026-09-23
-Last activity: 2026-09-26 - 02.8-04 complete (set_status as the 21st bridge tool, refused for outside agents and never in the tree; the pure status reducer in shared/chat/session-status.ts; lastStatus kept in chats.json v2 and returned by chat:open; the system prompt names set_status)
+Last activity: 2026-09-26 - 02.8-05 complete (each session card and the enlarged view show the reducer's state in ChatSessionHeader: glyph, word, status line; Working blur, the "!" badge, Done/Needs you author border, Failed in destructive text; acknowledgement and LiveAnnouncer announcements from the card; all renderer state)
 
 Progress: [████████░░] 79%
 
@@ -83,6 +83,7 @@ Progress: [████████░░] 79%
 | Phase 02.8 P02 | 9min | 3 tasks | 10 files |
 | Phase 02.8 P03 | 12 min | 3 tasks | 13 files |
 | Phase 02.8 P04 | 9 min | 2 tasks | 16 files |
+| Phase 02.8 P05 | 7 min | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -163,6 +164,7 @@ Recent decisions affecting current work:
 - [Phase 02.8]: 02.8-04: set_status is the 21st bridge tool (costly, published); only a loaded in-app session's own agent may call it, everyone else gets "set_status is only available to Tapestry's in-app chats"
 - [Phase 02.8]: 02.8-04: Needs you (needs: true, or level 3 including clamped levels) persists through done, ack, Stop, errors and later statuses; only a user event in that session clears it. Failed never becomes Done; a stopped done is Idle 'Stopped'
 - [Phase 02.8]: 02.8-04: lastStatus is the reducer's full text after the open turn, stored at each set_status and turn commit (a quit mid-turn stores 'Stopped'); sessions made before 02.8-04 do not know set_status (prompt snapshot) and fall back to tool and reply text
+- [Phase 02.8]: 02.8-05: 'New chat' is decided in ChatSessionHeader from the note's committed turns; the store opens sessions with initialStatus({ busy, lastStatus, turns: 1 })
 
 ### Pending Todos
 
@@ -221,6 +223,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-09-26T02:02:00Z
-Stopped at: Completed 02.8-04-PLAN.md
+Last session: 2026-09-26T02:11:19.121Z
+Stopped at: Completed 02.8-05-PLAN.md
 Resume file: None

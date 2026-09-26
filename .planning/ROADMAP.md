@@ -454,7 +454,7 @@ Plans:
   5. Levels 0-3 (ceiling 3) and a visibility threshold setting decide what animates. Agents never move the camera; an off-screen session at level 2 or above gets an edge arrow in its author colour, and clicking it pans there
   6. Replying at an earlier completed turn k leaves the original untouched and creates a new session note beside it (2.5's `beyond`) holding turns 1..k, in one commit with a `forked-from` edge to turn k's passage anchor. The fork gets its own engine session, started by replaying turns 1..k from the transcript through `ChatEngine.fork(atTurn)`
 
-**Plans**: 4/9 plans executed
+**Plans**: 5/9 plans executed
 
 Plans:
 **Wave 1**
@@ -475,7 +475,7 @@ Plans:
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 02.8-05-PLAN.md — Status, renderer half: Idle/Working/Needs you/Done/Failed on card and panel, acknowledgement, announcements
+- [x] 02.8-05-PLAN.md — Status, renderer half: Idle/Working/Needs you/Done/Failed on card and panel, acknowledgement, announcements
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
