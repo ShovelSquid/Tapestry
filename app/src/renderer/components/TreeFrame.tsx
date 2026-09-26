@@ -17,6 +17,7 @@ import { useAnnounce } from './LiveAnnouncer'
 import NoteCard from './NoteCard'
 import VaultNoteCard from './VaultNoteCard'
 import WorkspaceFileCard from './WorkspaceFileCard'
+import ChatSessionCard from './ChatSessionCard'
 import FolderFrame from './FolderFrame'
 import FallbackNodeView from './FallbackNodeView'
 import ConnectionLine from './ConnectionLine'
@@ -57,6 +58,7 @@ import { CollapsedNote } from '../look/CollapsedNote'
 import { seedFromId } from '../look/ink'
 import { effectStrength, readMotionSettings } from '../look/motion'
 import { LOOK } from '../look/values'
+import { isSessionNode } from '../../shared/chat/transcript'
 
 /** Fallback knot size until the node registers its real dims. */
 const KNOT_FALLBACK_WIDTH = 200
@@ -898,6 +900,35 @@ function TreeFrame({
           })
           const noteDraw = draws.find((d) => d.form === 'note')
           if (!noteDraw) return <React.Fragment key={node.id}>{collapsedEls}</React.Fragment>
+
+          // A chat session note is its session card (02.8 D-05), whatever
+          // plugin views are registered.
+          if (isSessionNode(node)) {
+            return (
+              <ChatSessionCard
+                key={node.id}
+                treeId={tree.id}
+                node={node}
+                isSelected={selectedKeys.has(key)}
+                isConnectTarget={connectingHoverKey === key}
+                isConnecting={isConnecting}
+                zoom={zoom}
+                roll={roll}
+                displayPosition={followerPositions?.[key] ?? displayPositions.get(node.id)?.followSpot ?? undefined}
+                onBorderSelect={() => handlers.onBorderSelect(refFor(node.id))}
+                onHover={(hovered) => handlers.onHover(refFor(node.id), hovered)}
+                onHoverDuringConnection={() => handlers.onHoverDuringConnection(refFor(node.id))}
+                onLeaveDuringConnection={() => handlers.onHoverDuringConnection(null)}
+                onPositionChange={writePosition}
+                onRegisterDims={(nodeId, w, h) => handlers.onRegisterDims(refFor(nodeId), w, h)}
+                onDragMove={(nodeId, x, y) => handlers.onDragMove(refFor(nodeId), x, y)}
+                onDragEnd={(nodeId) => handlers.onDragEnd(refFor(nodeId))}
+                onDeleteNote={() => handlers.onDeleteNote(refFor(node.id))}
+                onStartConnection={() => handlers.onStartConnection(refFor(node.id))}
+                onTitleChange={(title) => handlers.onPropertyEdit(refFor(node.id), 'title', 'text', title)}
+              />
+            )
+          }
 
           if (view === 'WorkspaceFileCard') return renderWorkspaceCard(node)
 

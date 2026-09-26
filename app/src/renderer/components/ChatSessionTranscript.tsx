@@ -10,7 +10,7 @@
  * Read-only (UI-SPEC A-09): nothing here can change the note.
  */
 
-import React from 'react'
+import React, { useEffect, useLayoutEffect, useRef } from 'react'
 import { toolLabel, toolSummary, type RecordedTurn, type TurnItem } from '../../shared/chat/transcript'
 import type { ChatItem } from '../state/chat'
 
@@ -77,6 +77,7 @@ function LiveItem({ item }: { item: ChatItem }): React.ReactElement {
         <div className="tapestry-chat-assistant">
           <span className="tapestry-visually-hidden">Claude said: </span>
           {item.text}
+          {/* A static trailing "…" while the reply is still being written. */}
           {item.streaming ? ' …' : ''}
         </div>
       )
@@ -99,10 +100,21 @@ function LiveItem({ item }: { item: ChatItem }): React.ReactElement {
   }
 }
 
+/** Within this many px of the bottom, the transcript follows new text. */
+const FOLLOW_PX = 48
+
+/**
+ * The transcript and its own scroller. It follows new text only while the
+ * reader is at (or near) the bottom, so reading an older turn is never
+ * interrupted. A wheel turn over it scrolls it and never pans the canvas;
+ * pinch-zoom (ctrlKey) passes through.
+ */
 export default function ChatSessionTranscript({
   turns,
   live,
   error,
+  className,
+  ariaLive,
 }: {
   /** The committed turns, parsed from the session note's text. */
   turns: RecordedTurn[]
@@ -110,11 +122,40 @@ export default function ChatSessionTranscript({
   live: ChatItem[]
   /** Why the last request to main failed, if it did. */
   error: string | null
+  /** The scroller's class (the card's or the panel's). */
+  className: string
+  ariaLive?: 'polite'
 }): React.ReactElement {
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const atBottomRef = useRef(true)
   const empty = turns.length === 0 && live.length === 0
 
+  useEffect(() => {
+    const scroller = scrollRef.current
+    if (!scroller) return undefined
+    const onWheel = (e: WheelEvent): void => {
+      if (!e.ctrlKey) e.stopPropagation()
+    }
+    scroller.addEventListener('wheel', onWheel, { passive: true })
+    return () => scroller.removeEventListener('wheel', onWheel)
+  }, [])
+
+  // New text: follow it only while the reader is at the bottom.
+  useLayoutEffect(() => {
+    const scroller = scrollRef.current
+    if (scroller && atBottomRef.current) scroller.scrollTop = scroller.scrollHeight
+  }, [turns, live, error])
+
   return (
-    <>
+    <div
+      ref={scrollRef}
+      className={className}
+      aria-live={ariaLive}
+      onScroll={(e) => {
+        const el = e.currentTarget
+        atBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight <= FOLLOW_PX
+      }}
+    >
       {empty && (
         <div className="tapestry-chat-empty">
           <div className="tapestry-chat-empty-heading">No messages yet</div>
@@ -149,6 +190,6 @@ export default function ChatSessionTranscript({
           {error}
         </div>
       )}
-    </>
+    </div>
   )
 }

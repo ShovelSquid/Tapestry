@@ -134,7 +134,6 @@ function Conversation({
   const [draft, setDraft] = useState('')
   const [attachment, setAttachment] = useState<ChatAttachment | null>(initialAttachment)
 
-  const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
   // Committed turns are the note's own text (D-09); only later turns are live.
@@ -154,12 +153,6 @@ function Conversation({
     inputRef.current?.focus()
     // Keyed on seq alone: the same attachment asked for twice still resets.
   }, [seq])
-
-  // Follow the reply as it is written.
-  useEffect(() => {
-    const scroller = scrollRef.current
-    if (scroller) scroller.scrollTop = scroller.scrollHeight
-  }, [turns, liveItems])
 
   const submit = async (): Promise<void> => {
     const text = draft
@@ -195,9 +188,13 @@ function Conversation({
         </div>
       )}
 
-      <div ref={scrollRef} className="tapestry-chat-transcript" aria-live="polite">
-        <ChatSessionTranscript turns={turns} live={liveItems} error={error} />
-      </div>
+      <ChatSessionTranscript
+        className="tapestry-chat-transcript"
+        ariaLive="polite"
+        turns={turns}
+        live={liveItems}
+        error={error}
+      />
 
       <div className="tapestry-chat-composer">
         {attachment && (

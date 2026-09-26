@@ -44,6 +44,7 @@ import {
 } from './state/undo-target'
 import { ChatContext, chatWorkspaceFor, type ChatContextValue, type ChatTarget } from './state/chat'
 import { isSessionNode } from '../shared/chat/transcript'
+import { ensureChatSessionsSubscribed } from './state/chat-sessions'
 import { COLLAPSED_KEY, revealExpanded, settleSubspace, type DimsOf, type Point } from './layout/subspaces'
 import ThreadOverlay from './threads/ThreadOverlay'
 import { THREAD_TYPE } from './threads/ThreadCard'
@@ -143,6 +144,11 @@ export default function App(): React.ReactElement {
   // The chat panel (02.7 D-12, D-19; 02.8 D-02): one session note's chat, a
   // chooser when several workspaces could be meant, or a note that none is open.
   const [chatPanel, setChatPanel] = useState<ChatPanelState | null>(null)
+  // Every session card and the enlarged view read one store, fed by one
+  // chat-event subscription for the whole window (02.8 D-04).
+  useEffect(() => {
+    ensureChatSessionsSubscribed()
+  }, [])
   // The last workspace chatted in, so a click that names none goes back there.
   const [lastChatTreeId, setLastChatTreeId] = useState<string | null>(null)
   const chatTreeId = chatPanel?.kind === 'chat' ? chatPanel.treeId : null
