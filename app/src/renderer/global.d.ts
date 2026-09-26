@@ -400,6 +400,8 @@ interface TapestryChatSessionState {
   busy: boolean
   /** The chat's Allow shell (not sandboxed) switch (D-15); off after every relaunch. */
   allowShell: boolean
+  /** The session's last status text (02.8 D-12), kept outside the tree, or null. */
+  lastStatus: string | null
 }
 
 /** One chat event, with its session note and turn (`done` carries the turn just committed). */

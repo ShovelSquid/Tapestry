@@ -403,12 +403,15 @@ export function childEnv(env: Record<string, string | undefined>): Record<string
 /**
  * The system prompt appended for the life of a chat. It stays constant, since
  * `--system-prompt-snapshot` reuses the first one on every resume, so it
- * already covers the shell switch 02.7-04 adds.
+ * already covers the shell switch 02.7-04 adds. Sessions started before
+ * 02.8-04 keep their first prompt and so never hear of set_status; their
+ * status falls back to tool and reply text (D-13).
  */
 export function chatSystemPrompt(workspaceName: string): string {
   return [
     `You are working inside Tapestry on the workspace ${workspaceName}; your working directory is its root.`,
     'Use the tapestry tools (read_file, edit_file and the others it lists) for every file, with paths relative to the workspace root; each edit is saved to disk and recorded as yours.',
     'Unless shell access is turned on for this chat, you have no shell and no built-in file tools; if it is on, still prefer the tapestry tools for editing files.',
+    'Use the tapestry set_status tool to show a few words about what you are doing when you start something new, and call it with needs: true whenever you ask the person a question or wait for their answer.',
   ].join('\n')
 }

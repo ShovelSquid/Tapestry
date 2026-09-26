@@ -316,6 +316,12 @@ describe('chatSystemPrompt', () => {
     expect(prompt).toContain('Unless shell access is turned on for this chat')
     expect(chatSystemPrompt('windows')).toBe(prompt)
   })
+
+  it('tells Claude to say what it is doing with set_status, and to raise needs when it asks (02.8 D-13)', () => {
+    const prompt = chatSystemPrompt('windows')
+    expect(prompt).toContain('set_status')
+    expect(prompt).toContain('needs: true')
+  })
 })
 
 function installedClaude(): string | null {

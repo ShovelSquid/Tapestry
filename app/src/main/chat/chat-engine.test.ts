@@ -1401,3 +1401,53 @@ describe('set_status (02.8-04)', () => {
     expect(h.events).toEqual([])
   }, 30000)
 })
+
+describe('the last status text (02.8-04, D-12)', () => {
+  it('survives a relaunch in chats.json, outside the tree, and opens as not busy', async () => {
+    const first = await startHarness({ scenario: 'text' })
+    expect(first.chat.open(first.tree.id, first.noteId).lastStatus).toBeNull()
+    await first.chat.send(first.tree.id, first.noteId, 'hi')
+    await waitFor(() => doneCount(first.events) === 1)
+    // The text scenario replies "ok": its first line is the status text.
+    expect(first.chat.open(first.tree.id, first.noteId).lastStatus).toBe('ok')
+    await first.chat.disposeAll()
+
+    const second = await startHarness({ scenario: 'text', existing: first })
+    expect(second.chat.open(second.tree.id, second.noteId)).toMatchObject({ lastStatus: 'ok', busy: false, live: [] })
+
+    const realRoot = second.workspaces.workspaceFor(second.tree.id)!.realRoot
+    const chats = JSON.parse(readFileSync(join(first.ws.dir, 'chat', 'chats.json'), 'utf-8'))
+    expect(chats.sessions[persistKey(realRoot, first.noteId)].lastStatus).toBe('ok')
+    // Chrome, never history: no commit holds a status field.
+    expect(commitBlocks(first).some((b) => b.includes('lastStatus'))).toBe(false)
+
+    // Deleting the chat drops its entry, last status text and all.
+    await second.chat.deleteSession(second.tree.id, second.noteId)
+    const after = JSON.parse(readFileSync(join(first.ws.dir, 'chat', 'chats.json'), 'utf-8'))
+    expect(after.sessions[persistKey(realRoot, first.noteId)]).toBeUndefined()
+  }, 30000)
+
+  it("keeps the set_status text, both when it arrives and after the turn's commit", async () => {
+    const h = await startHarness({ scenario: 'status' })
+    await h.chat.send(h.tree.id, h.noteId, 'look at the parser')
+    await waitFor(() => h.events.some((e) => e.type === 'status'), 20000)
+    expect(h.chat.open(h.tree.id, h.noteId).lastStatus).toBe('Reading the parser')
+    await waitFor(() => doneCount(h.events) === 1, 20000)
+    expect(h.chat.open(h.tree.id, h.noteId).lastStatus).toBe('Reading the parser')
+  }, 30000)
+
+  it("a failed turn keeps its short phrase, and a stopped one keeps 'Stopped'", async () => {
+    const h = await startHarness({ scenario: 'text' })
+    h.bridge.enabled = false
+    await h.chat.send(h.tree.id, h.noteId, 'hi')
+    await waitFor(() => doneCount(h.events) === 1)
+    expect(h.chat.open(h.tree.id, h.noteId).lastStatus).toBe('Agents are turned off')
+
+    const slow = await startHarness({ scenario: 'slow' })
+    await slow.chat.send(slow.tree.id, slow.noteId, 'take your time')
+    await slowPids(slow)
+    await slow.chat.stop(slow.tree.id, slow.noteId)
+    await waitFor(() => doneCount(slow.events) === 1)
+    expect(slow.chat.open(slow.tree.id, slow.noteId).lastStatus).toBe('Stopped')
+  }, 30000)
+})

@@ -44,7 +44,7 @@ import { SET_STATUS_REFUSAL } from '../commands/agent-tools'
 import type { CommandResult } from '../commands/notes'
 import { NO_WORKSPACE_MESSAGE, type OpenWorkspace } from '../workspace/sandbox'
 import { isSessionNode, committedTurns, turnItemsFromEvents } from '../../shared/chat/transcript'
-import { clampLevel } from '../../shared/chat/session-status'
+import { clampLevel, statusTextAfterTurn } from '../../shared/chat/session-status'
 import type { ChatEngine, ChatEvent } from './engine'
 import { CHAT_MCP_SERVER, chatSystemPrompt, childEnv, notInstalledMessage, resolveClaudeBinary } from './claude-cli'
 import { ClaudeCliEngine, STILL_ANSWERING_MESSAGE, type ClaudeCliEngineOptions } from './claude-cli-engine'
@@ -86,6 +86,8 @@ export const MAX_LIVE_ENGINES = 4
 
 const MAX_MESSAGE_CHARS = 100_000
 const MAX_LIVE_EVENTS = 2000
+/** The most of a session's last status text kept in chats.json (D-12). */
+export const MAX_LAST_STATUS_CHARS = 200
 
 export interface ChatLaunch {
   isPackaged: boolean
@@ -135,6 +137,11 @@ export interface ChatSessionState {
   busy: boolean
   /** The chat's shell switch (D-15). */
   allowShell: boolean
+  /**
+   * The session's last status text (D-12), kept outside every tree, or null
+   * when none is known. After a relaunch the card shows Idle with it.
+   */
+  lastStatus: string | null
 }
 
 interface Session {
@@ -173,12 +180,16 @@ interface Session {
   pendingDone: Extract<ChatEvent, { type: 'done' }> | null
   /** Bumped at each send; the least recently used idle engine is ended first. */
   lastUsed: number
+  /** The last status text (D-12): chrome, in memory and in chats.json, never in the tree. */
+  lastStatus: string | null
 }
 
 interface ChatsEntry {
   sessionId?: string
   /** The shell switch's last state; `on` is rewritten to false at each launch. */
   shell?: { on: boolean; changedAt: string }
+  /** The session's last status text (D-12), at most MAX_LAST_STATUS_CHARS. */
+  lastStatus?: string
 }
 
 /**
@@ -287,6 +298,7 @@ export class ChatService {
       live: session.live.map((entry) => ({ ...entry })),
       busy: (session.engine?.busy ?? false) || session.settling !== null,
       allowShell: session.allowShell,
+      lastStatus: session.lastStatus,
     }
   }
 
@@ -387,6 +399,11 @@ export class ChatService {
       needs,
       level: clampLevel(args.level ?? (needs ? 3 : 1)),
     })
+    const open = session.committed + 1
+    this.rememberStatus(
+      session,
+      statusTextAfterTurn(session.live.filter((entry) => entry.turn === open).map((entry) => entry.event)),
+    )
     return { ok: true, value: { shown: true } }
   }
 
@@ -473,7 +490,8 @@ export class ChatService {
     let session = this.sessions.get(key)
     if (!session) {
       const saved = persistKey(ws.realRoot, noteId)
-      const persisted = this.readChats().sessions[saved]?.sessionId ?? null
+      const entry = this.readChats().sessions[saved]
+      const persisted = entry?.sessionId ?? null
       session = {
         treeId,
         noteId,
@@ -496,6 +514,7 @@ export class ChatService {
         shellChange: Promise.resolve(),
         pendingDone: null,
         lastUsed: 0,
+        lastStatus: entry?.lastStatus ?? null,
       }
       this.sessions.set(key, session)
       if (this.shellResetKeys.delete(saved)) {
@@ -695,6 +714,9 @@ export class ChatService {
             ...extra,
           ]
 
+    // The last status text (D-12) is chrome: kept beside the tree, never in it.
+    this.rememberStatus(session, statusTextAfterTurn(turnEvents))
+
     const ws = this.workspaceFor(session.treeId)
     const { turn } = this.options.sessionNotes.appendTurn(
       ws.tree,
@@ -863,7 +885,12 @@ export class ChatService {
             changedAt: typeof shell.changedAt === 'string' ? shell.changedAt : '',
           }
         }
-        if (kept.sessionId !== undefined || kept.shell !== undefined) file.sessions[key] = kept
+        if (typeof entry.lastStatus === 'string' && entry.lastStatus.length > 0) {
+          kept.lastStatus = entry.lastStatus.slice(0, MAX_LAST_STATUS_CHARS)
+        }
+        if (kept.sessionId !== undefined || kept.shell !== undefined || kept.lastStatus !== undefined) {
+          file.sessions[key] = kept
+        }
       }
       return file
     } catch (err) {
@@ -883,7 +910,7 @@ export class ChatService {
     const file = this.readChats()
     const entry: ChatsEntry = { ...file.sessions[key] }
     change(entry)
-    if (entry.sessionId === undefined && entry.shell === undefined) {
+    if (entry.sessionId === undefined && entry.shell === undefined && entry.lastStatus === undefined) {
       delete file.sessions[key]
     } else {
       file.sessions[key] = entry
@@ -899,6 +926,24 @@ export class ChatService {
       })
     } catch (err) {
       // Losing this only means the next launch starts a new conversation.
+      console.error('[ChatService] could not write chats.json:', err)
+    }
+  }
+
+  /**
+   * Keep a session's last status text (D-12) in memory and in chats.json.
+   * An empty text is not kept; a write that fails only loses it for the next
+   * launch.
+   */
+  private rememberStatus(session: Session, text: string): void {
+    const kept = text.slice(0, MAX_LAST_STATUS_CHARS)
+    if (kept.length === 0 || kept === session.lastStatus) return
+    session.lastStatus = kept
+    try {
+      this.updateEntry(session, (entry) => {
+        entry.lastStatus = kept
+      })
+    } catch (err) {
       console.error('[ChatService] could not write chats.json:', err)
     }
   }
