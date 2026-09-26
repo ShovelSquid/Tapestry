@@ -35,6 +35,7 @@ import { WORKSPACE_REPLAY_REFUSAL, workspaceSubmitRefusal } from './workspace/gu
 import { AgentRegistry, agentSocketPath } from './agents/registry'
 import { AgentSocketServer } from './agents/socket-server'
 import { ChatService } from './chat/chat-service'
+import { SESSION_NOT_FOUND_MESSAGE, SESSION_NOTE_ID_RE, SessionNotes } from './chat/session-notes'
 import { SpaceRefusal, SpaceService } from './space/space-service'
 import { openWithRollback } from './space/open-into-space'
 import { SPACE_NOT_OPEN, type SpacePaths } from './space/migrate'
@@ -202,7 +203,7 @@ let space: SpaceService | null = null
 
 let pluginHost: PluginHost
 let agentServer: AgentSocketServer | null = null
-/** The in-app chat panel (02.7 D-12), one chat per open workspace. */
+/** The in-app chats (02.7 D-12, 02.8 D-02), one per session note. */
 let chatService: ChatService | null = null
 /** Kept at module level so will-quit can stop every workspace watcher. */
 let workspaceServiceRef: WorkspaceService | null = null
@@ -466,10 +467,12 @@ app.whenReady().then(async () => {
   }
 
   // -------------------------------------------------------------------------
-  // In-app chat (02.7 D-12..D-16): the person's own claude, confined to
-  // Tapestry's workspace tools, signing as agent.claude-chat
+  // In-app chats (02.7 D-12..D-16, 02.8 D-02): the person's own claude,
+  // confined to Tapestry's workspace tools. Each chat is a session note in its
+  // workspace tree and signs as its own agent, agent.claude-chat-<8 hex>-<note>
   // -------------------------------------------------------------------------
 
+  const sessionNotes = new SessionNotes({ hooks: commandHooks })
   const chat = new ChatService({
     userDataDir: app.getPath('userData'),
     agents,
@@ -481,11 +484,15 @@ app.whenReady().then(async () => {
       resourcesPath: process.resourcesPath,
     },
     isBridgeEnabled: () => settings.read().agentsEnabled,
-    emit: (treeId, event) => mainWindow?.webContents.send('chat-event', { treeId, event }),
+    sessionNotes,
+    humanActor: getHumanActor,
+    onAgentsChanged: notifyAgentsChanged,
+    emit: (treeId, noteId, turn, event) =>
+      mainWindow?.webContents.send('chat-event', { treeId, noteId, turn, event }),
   })
   chatService = chat
 
-  /** A chat is addressed by its workspace tree's id, checked like every tree id. */
+  /** A chat's workspace is addressed by its tree's id, checked like every tree id. */
   function chatTreeId(treeId: unknown): string {
     if (typeof treeId !== 'string' || !TREE_ID_PATTERN.test(treeId)) {
       throw new Error(`Unknown tree ${String(treeId)}`)
@@ -493,28 +500,49 @@ app.whenReady().then(async () => {
     return treeId
   }
 
-  ipcMain.handle('chat:open', (_event, treeId: unknown) => {
+  /**
+   * A chat is its session note (D-02). The shape is checked here; whether it
+   * is a live session note in that workspace is ChatService's check.
+   */
+  function chatNoteId(noteId: unknown): string {
+    if (typeof noteId !== 'string' || !SESSION_NOTE_ID_RE.test(noteId)) {
+      throw new Error(SESSION_NOT_FOUND_MESSAGE)
+    }
+    return noteId
+  }
+
+  // New chat (D-01: the only way a session note is made).
+  ipcMain.handle('chat:create', (_event, treeId: unknown, placement: unknown) => {
     try {
-      return { ok: true, value: chat.open(chatTreeId(treeId)) }
+      return { ok: true, value: chat.createSession(chatTreeId(treeId), placement) }
     } catch (err) {
       return { ok: false, error: errorMessage(err) }
     }
   })
 
-  ipcMain.handle('chat:send', async (_event, treeId: unknown, text: unknown) => {
+  ipcMain.handle('chat:open', (_event, treeId: unknown, noteId: unknown) => {
+    try {
+      return { ok: true, value: chat.open(chatTreeId(treeId), chatNoteId(noteId)) }
+    } catch (err) {
+      return { ok: false, error: errorMessage(err) }
+    }
+  })
+
+  ipcMain.handle('chat:send', async (_event, treeId: unknown, noteId: unknown, text: unknown) => {
     try {
       const id = chatTreeId(treeId)
+      const note = chatNoteId(noteId)
       if (typeof text !== 'string') return { ok: false, error: 'A message must be text' }
-      await chat.send(id, text)
+      await chat.send(id, note, text)
       return { ok: true, value: null }
     } catch (err) {
       return { ok: false, error: errorMessage(err) }
     }
   })
 
-  ipcMain.handle('chat:stop', async (_event, treeId: unknown) => {
+  ipcMain.handle('chat:stop', async (_event, treeId: unknown, noteId: unknown) => {
     try {
-      await chat.stop(chatTreeId(treeId))
+      await chat.stop(chatTreeId(treeId), chatNoteId(noteId))
       return { ok: true, value: null }
     } catch (err) {
       return { ok: false, error: errorMessage(err) }
@@ -523,20 +551,12 @@ app.whenReady().then(async () => {
 
   // The shell switch (D-15). The panel asks for confirmation before `on`; a
   // non-boolean is refused rather than read as either state.
-  ipcMain.handle('chat:setAllowShell', async (_event, treeId: unknown, on: unknown) => {
+  ipcMain.handle('chat:setAllowShell', async (_event, treeId: unknown, noteId: unknown, on: unknown) => {
     try {
       const id = chatTreeId(treeId)
+      const note = chatNoteId(noteId)
       if (typeof on !== 'boolean') return { ok: false, error: 'The shell switch must be on or off' }
-      await chat.setAllowShell(id, on)
-      return { ok: true, value: null }
-    } catch (err) {
-      return { ok: false, error: errorMessage(err) }
-    }
-  })
-
-  ipcMain.handle('chat:new', async (_event, treeId: unknown) => {
-    try {
-      await chat.newChat(chatTreeId(treeId))
+      await chat.setAllowShell(id, note, on)
       return { ok: true, value: null }
     } catch (err) {
       return { ok: false, error: errorMessage(err) }
