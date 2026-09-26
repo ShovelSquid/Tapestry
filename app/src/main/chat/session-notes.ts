@@ -21,6 +21,7 @@ import type { OpObject } from '../kernel-bridge'
 import { isValidActorName, type Actor } from '../commands/actor'
 import { prepareWriteFor, type CommandHooks } from '../commands/notes'
 import {
+  firstClearSpot,
   resolveNear,
   storedRect,
   type PlacementNode,
@@ -100,24 +101,80 @@ function unionOf(rects: readonly PlacementRect[]): PlacementRect {
 }
 
 /**
- * Where a new session goes in its workspace frame (frame-local): the first
- * clear spot `CHILD_GAP` right of everything in the frame, level with its top,
- * then `resolveNear`'s downward steps. "Everything" is the boxes the canvas
- * sizes a workspace frame with: the root's file cards and top-level folder
- * frames at default card sizes, plus every non-workspace node's stored rect.
- * An empty workspace gets (0, 0); null means no finite spot.
+ * What a new session must not overlap, frame-local: the boxes the canvas
+ * sizes a workspace frame with (the root's file cards and top-level folder
+ * frames at default card sizes), plus every non-workspace node's stored rect.
  */
-export function nextSessionSpot(nodes: readonly PlacementNode[], size: PlacementSize): PlacementPoint | null {
+function sessionObstacles(nodes: readonly PlacementNode[]): PlacementRect[] {
   const obstacles: PlacementRect[] = [...subspaceRects(nodes, () => undefined).rootBoxes]
   for (const node of nodes) {
     if (isWorkspaceNode(node)) continue
     const rect = storedRect(node)
     if (rect) obstacles.push(rect)
   }
+  return obstacles
+}
+
+/**
+ * Where a new session goes in its workspace frame (frame-local): the first
+ * clear spot `CHILD_GAP` right of everything in the frame, level with its top,
+ * then `resolveNear`'s downward steps. An empty workspace gets (0, 0); null
+ * means no finite spot.
+ */
+export function nextSessionSpot(nodes: readonly PlacementNode[], size: PlacementSize): PlacementPoint | null {
+  const obstacles = sessionObstacles(nodes)
   if (obstacles.length === 0) return { x: 0, y: 0 }
   const spot = resolveNear(unionOf(obstacles), size, obstacles)
   if (!spot.ok || !Number.isFinite(spot.x) || !Number.isFinite(spot.y)) return null
   return { x: spot.x, y: spot.y }
+}
+
+/**
+ * Where a new session asked for at a frame-local point goes (the pointer
+ * case): the first clear spot at or below `at`, in the same downward steps
+ * as `resolveNear`. Null means no finite clear spot.
+ */
+export function sessionSpotAt(
+  nodes: readonly PlacementNode[],
+  at: PlacementPoint,
+  size: PlacementSize,
+): PlacementPoint | null {
+  const spot = firstClearSpot(at, size, sessionObstacles(nodes))
+  if (!spot.ok || !Number.isFinite(spot.x) || !Number.isFinite(spot.y)) return null
+  return { x: spot.x, y: spot.y }
+}
+
+/** The largest magnitude a requested spot's coordinate may have. */
+export const MAX_SESSION_COORDINATE = 1_000_000
+
+/** Said when a new chat's placement is anything but `{ at: { x, y } }`. */
+export const SESSION_PLACEMENT_MESSAGE = 'A new chat can be placed only at a point'
+
+/** Said when a requested spot is not a finite point near the frame. */
+export const SESSION_SPOT_MESSAGE = `A new chat's spot must be two finite numbers within ${MAX_SESSION_COORDINATE.toLocaleString('en-US')} of the frame's origin`
+
+/** Where a new chat was asked to go: nothing (the next free spot) or a frame-local point. */
+export type SessionPlacement = { at: PlacementPoint }
+
+/**
+ * Check a requested placement from outside main (T-02.8-11): undefined, or
+ * exactly `{ at: { x, y } }` with finite numbers of magnitude at most
+ * MAX_SESSION_COORDINATE. Throws on anything else.
+ */
+export function checkSessionPlacement(placement: unknown): SessionPlacement | undefined {
+  if (placement === undefined || placement === null) return undefined
+  if (typeof placement !== 'object' || Array.isArray(placement)) throw new Error(SESSION_PLACEMENT_MESSAGE)
+  const keys = Object.keys(placement)
+  if (keys.length !== 1 || keys[0] !== 'at') throw new Error(SESSION_PLACEMENT_MESSAGE)
+  const at = (placement as { at: unknown }).at
+  if (!at || typeof at !== 'object' || Array.isArray(at)) throw new Error(SESSION_PLACEMENT_MESSAGE)
+  const { x, y } = at as { x?: unknown; y?: unknown }
+  if (typeof x !== 'number' || typeof y !== 'number') throw new Error(SESSION_PLACEMENT_MESSAGE)
+  if (!Number.isFinite(x) || !Number.isFinite(y)) throw new Error(SESSION_SPOT_MESSAGE)
+  if (Math.abs(x) > MAX_SESSION_COORDINATE || Math.abs(y) > MAX_SESSION_COORDINATE) {
+    throw new Error(SESSION_SPOT_MESSAGE)
+  }
+  return { at: { x, y } }
 }
 
 // ---------------------------------------------------------------------------
@@ -138,16 +195,20 @@ export class SessionNotes {
 
   /**
    * A new session note in a workspace tree, in one commit signed by `actor`
-   * (the person): type `tapestry.chat/session@1` at the next clear spot, titled
-   * "New chat", with an empty body, `chat.turns` 0 and its 360 × 440 size.
+   * (the person): type `tapestry.chat/session@1` at the next clear spot (or
+   * the first clear spot at or below `placement.at`), titled "New chat", with
+   * an empty body, `chat.turns` 0 and its 360 × 440 size.
    */
-  create(tree: OpenTree, actor: Actor): { noteId: string; seq: number } {
+  create(tree: OpenTree, actor: Actor, placement?: SessionPlacement): { noteId: string; seq: number } {
     if (tree.kind !== 'workspace') throw new Error(`${tree.name} is not a workspace, so it has no chats`)
+    const checked = checkSessionPlacement(placement)
     const { bridge } = tree
     prepareWriteFor(tree, actor, this.hooks)
 
     const size = { width: SESSION_WIDTH, height: SESSION_HEIGHT }
-    const spot = nextSessionSpot(bridge.getNodes(), size)
+    const spot = checked
+      ? sessionSpotAt(bridge.getNodes(), checked.at, size)
+      : nextSessionSpot(bridge.getNodes(), size)
     if (!spot) throw new Error(`No clear spot for a new chat in ${tree.name}`)
 
     const next = bridge.getNextIds()
@@ -200,5 +261,30 @@ export class SessionNotes {
     const result = bridge.submitAs(actor, `chat turn ${turn}`, ops)
     this.hooks.onCommitted?.(tree.id, actor, result)
     return { turn, seq: result.seq }
+  }
+
+  /**
+   * Delete a session note (chat:delete): one `deleteNode` commit signed by
+   * `actor` (the person), message `delete chat <nK> "<title>"`. Every edge
+   * touching the note goes with it. The conversation stays readable in the
+   * journal's history. Refuses any note that is not a session.
+   */
+  delete(tree: OpenTree, noteId: string, actor: Actor): { seq: number } {
+    if (typeof noteId !== 'string' || !SESSION_NOTE_ID_RE.test(noteId)) {
+      throw new Error(SESSION_NOT_FOUND_MESSAGE)
+    }
+    if (tree.kind !== 'workspace') throw new Error(SESSION_NOT_FOUND_MESSAGE)
+    const before = tree.bridge.getNode(noteId)
+    if (!before || !isSessionNode(before)) throw new Error(SESSION_NOT_FOUND_MESSAGE)
+
+    prepareWriteFor(tree, actor, this.hooks)
+    const node = tree.bridge.getNode(noteId)
+    if (!node || !isSessionNode(node)) throw new Error(SESSION_NOT_FOUND_MESSAGE)
+
+    const rawTitle = node.props['title']?.value
+    const title = typeof rawTitle === 'string' ? rawTitle.replace(/[\r\n]+/g, ' ') : ''
+    const result = tree.bridge.submitAs(actor, `delete chat ${noteId} "${title}"`, [{ op: 'deleteNode', id: noteId }])
+    this.hooks.onCommitted?.(tree.id, actor, result)
+    return { seq: result.seq }
   }
 }

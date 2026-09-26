@@ -865,6 +865,59 @@ describe('many sessions (02.8-02)', () => {
 })
 
 // ---------------------------------------------------------------------------
+// Delete a chat, and create one at a spot (02.8-02)
+// ---------------------------------------------------------------------------
+
+describe('deleting and placing chats (02.8-02)', () => {
+  it('deleteSession mid-turn ends the process group and removes its file, entry and note', async () => {
+    const h = await startHarness({ scenario: 'slow' })
+    await h.chat.send(h.tree.id, h.noteId, 'take your time')
+    const pids = await slowPids(h)
+    await waitFor(() => chatsEntry(h)?.sessionId !== undefined)
+    const configPath = h.chat.configPathFor(h.tree.id, h.noteId)
+    expect(existsSync(configPath)).toBe(true)
+    const before = commitBlocks(h).length
+
+    await h.chat.deleteSession(h.tree.id, h.noteId)
+
+    await expectAllDead(pids)
+    expect(existsSync(configPath)).toBe(false)
+    expect(chatsEntry(h)).toBeUndefined()
+    expect(h.tree.bridge.getNode(h.noteId)).toBeFalsy()
+    const blocks = commitBlocks(h)
+    expect(blocks).toHaveLength(before + 1)
+    expect(blocks.at(-1)).toContain(`message "delete chat ${h.noteId} \\"New chat\\""`)
+    expect(blocks.at(-1)).toContain('actor human user.test-person')
+    expect(blocks.some((b) => b.includes('message "chat turn'))).toBe(false)
+    // Its agent stays listed: its commits are attributed to it.
+    expect(h.agents.list().some((a) => a.name === h.agent)).toBe(true)
+    // The note is gone, so the chat is too.
+    expect(() => h.chat.open(h.tree.id, h.noteId)).toThrow(SESSION_NOT_FOUND_MESSAGE)
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 200))
+    expect(commitBlocks(h)).toHaveLength(before + 1)
+  }, 30000)
+
+  it('createSession at a point: there, then directly below; bad placements commit nothing', async () => {
+    const h = await startHarness({ scenario: 'text' })
+    const at = { x: 5000, y: 40 }
+    const position = (id: string): { x: number; y: number } => {
+      const node = h.tree.bridge.getNode(id)!
+      return { x: Number(node.props['position.x'].value), y: Number(node.props['position.y'].value) }
+    }
+    const first = h.chat.createSession(h.tree.id, { at })
+    expect(position(first.noteId)).toEqual(at)
+    const second = h.chat.createSession(h.tree.id, { at })
+    expect(position(second.noteId)).toEqual({ x: at.x, y: at.y + 440 + 24 })
+
+    const before = commitBlocks(h).length
+    for (const placement of [{ at: { x: NaN, y: 0 } }, { at: { x: 1e9, y: 0 } }, { near: 'n1' }]) {
+      expect(() => h.chat.createSession(h.tree.id, placement)).toThrow(/A new chat/)
+    }
+    expect(commitBlocks(h)).toHaveLength(before)
+  }, 30000)
+})
+
+// ---------------------------------------------------------------------------
 // The Allow shell switch (02.7-04, D-15)
 // ---------------------------------------------------------------------------
 

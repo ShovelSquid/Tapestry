@@ -410,8 +410,16 @@ interface TapestryChatEventPayload {
 
 /** The in-app chats (02.7 D-12, 02.8 D-02): each is a session note. No token or file path ever comes back. */
 interface TapestryChatAPI {
-  /** New chat: a session note in the workspace, at the next free spot. */
-  create(treeId: string): Promise<TapestryChatResult<{ noteId: string; agent: string }>>
+  /**
+   * New chat: a session note in the workspace, at the next free spot, or at
+   * the first clear spot at or below a frame-local point (the pointer).
+   */
+  create(
+    treeId: string,
+    placement?: { at: { x: number; y: number } },
+  ): Promise<TapestryChatResult<{ noteId: string; agent: string }>>
+  /** Delete a chat: its process and files go, and its note is removed in one commit. */
+  delete(treeId: string, noteId: string): Promise<TapestryChatResult<null>>
   open(treeId: string, noteId: string): Promise<TapestryChatResult<TapestryChatSessionState>>
   send(treeId: string, noteId: string, text: string): Promise<TapestryChatResult<null>>
   stop(treeId: string, noteId: string): Promise<TapestryChatResult<null>>

@@ -19,7 +19,10 @@ import { overlaps, rectAt } from '../../renderer/layout/placement'
 import { parseTranscript, SESSION_NODE_TYPE } from '../../shared/chat/transcript'
 import {
   CHAT_AGENT_NAME,
+  checkSessionPlacement,
   nextSessionSpot,
+  SESSION_PLACEMENT_MESSAGE,
+  SESSION_SPOT_MESSAGE,
   persistKey,
   SESSION_NOT_FOUND_MESSAGE,
   SessionNotes,
@@ -291,5 +294,92 @@ describe('journal growth per turn', () => {
         .map((r) => `turn ${r.turn}: body ${r.bodyBytes} B, commit ${r.commitBytes} B`)
         .join('; ')}; total ${rows.reduce((sum, r) => sum + r.commitBytes, 0)} B for 5 turns`,
     )
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Delete, and create at a spot (02.8-02)
+// ---------------------------------------------------------------------------
+
+function positionOf(tree: OpenTree, id: string): { x: number; y: number } {
+  const node = tree.bridge.getNode(id)!
+  return { x: Number(node.props['position.x'].value), y: Number(node.props['position.y'].value) }
+}
+
+describe('SessionNotes.delete', () => {
+  it('removes the note and every edge touching it in one commit signed by the person', async () => {
+    const s = await setup()
+    const { noteId } = s.notes.create(s.tree, person)
+    const file = s.tree.bridge.getNodes().find(isWorkspaceNode)!
+    s.tree.bridge.submitAs(person, 'connect', [
+      { op: 'createEdge', from: noteId, to: file.id, label: 'about' },
+      { op: 'createEdge', from: file.id, to: noteId, label: 'asked' },
+    ])
+    expect(s.tree.bridge.getEdges().filter((e) => e.from === noteId || e.to === noteId)).toHaveLength(2)
+    const before = commitBlocks(s.tree).length
+    s.committed.length = 0
+
+    s.notes.delete(s.tree, noteId, person)
+
+    const blocks = commitBlocks(s.tree)
+    expect(blocks).toHaveLength(before + 1)
+    expect(blocks.at(-1)).toContain('actor human user.test-person')
+    expect(blocks.at(-1)).toContain(`message "delete chat ${noteId} \\"New chat\\""`)
+    expect(s.tree.bridge.getNode(noteId)).toBeFalsy()
+    expect(s.tree.bridge.getEdges().filter((e) => e.from === noteId || e.to === noteId)).toEqual([])
+    expect(s.tree.bridge.getNode(file.id)).toBeTruthy()
+    expect(s.committed).toEqual([{ treeId: s.tree.id, actor: 'human user.test-person' }])
+  })
+
+  it('refuses a note that is not a session, and commits nothing', async () => {
+    const s = await setup()
+    const file = s.tree.bridge.getNodes().find(isWorkspaceNode)!
+    const before = commitBlocks(s.tree).length
+    for (const id of [file.id, 'n999', 'e1', '']) {
+      expect(() => s.notes.delete(s.tree, id, person)).toThrow(SESSION_NOT_FOUND_MESSAGE)
+    }
+    expect(commitBlocks(s.tree)).toHaveLength(before)
+    expect(s.tree.bridge.getNode(file.id)).toBeTruthy()
+  })
+})
+
+describe('SessionNotes.create at a spot', () => {
+  const at = { x: 5000, y: 40 }
+
+  it('puts the note at the spot, and a second one at the same spot directly below it', async () => {
+    const s = await setup()
+    const first = s.notes.create(s.tree, person, { at })
+    expect(positionOf(s.tree, first.noteId)).toEqual(at)
+    const second = s.notes.create(s.tree, person, { at })
+    const below = positionOf(s.tree, second.noteId)
+    expect(below.x).toBe(at.x)
+    expect(below.y).toBeGreaterThan(at.y)
+    const size = { width: 360, height: 440 }
+    expect(overlaps(rectAt(positionOf(s.tree, first.noteId), size), rectAt(below, size))).toBe(false)
+    expect(below.y).toBe(at.y + 440 + 24)
+  })
+
+  it('refuses a spot that is not a finite point within range, and commits nothing', async () => {
+    const s = await setup()
+    const before = commitBlocks(s.tree).length
+    const bad: Array<[unknown, string]> = [
+      [{ at: { x: NaN, y: 0 } }, SESSION_SPOT_MESSAGE],
+      [{ at: { x: 1e9, y: 0 } }, SESSION_SPOT_MESSAGE],
+      [{ at: { x: 0, y: -1_000_001 } }, SESSION_SPOT_MESSAGE],
+      [{ at: { x: Infinity, y: 0 } }, SESSION_SPOT_MESSAGE],
+      [{ near: 'n1' }, SESSION_PLACEMENT_MESSAGE],
+      [{ at: { x: '1', y: 0 } }, SESSION_PLACEMENT_MESSAGE],
+      [{ at: { x: 1, y: 0 }, near: 'n1' }, SESSION_PLACEMENT_MESSAGE],
+      ['here', SESSION_PLACEMENT_MESSAGE],
+    ]
+    for (const [placement, message] of bad) {
+      expect(() => checkSessionPlacement(placement)).toThrow(message)
+      expect(() => s.notes.create(s.tree, person, placement as never)).toThrow(message)
+    }
+    expect(commitBlocks(s.tree)).toHaveLength(before)
+    expect(checkSessionPlacement(undefined)).toBeUndefined()
+    expect(checkSessionPlacement({ at: { x: 1_000_000, y: -1_000_000 } })).toEqual({
+      at: { x: 1_000_000, y: -1_000_000 },
+    })
   })
 })

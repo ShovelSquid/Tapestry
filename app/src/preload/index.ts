@@ -291,9 +291,18 @@ const tapestryAPI = {
    * token and the config file, none of which ever reach the renderer.
    */
   chat: {
-    /** New chat: a session note in the workspace, at the next free spot. */
-    create: (treeId: string): Promise<ChatResult<{ noteId: string; agent: string }>> =>
-      ipcRenderer.invoke('chat:create', treeId),
+    /**
+     * New chat: a session note in the workspace, at the next free spot, or at
+     * the first clear spot at or below a frame-local point (the pointer).
+     */
+    create: (
+      treeId: string,
+      placement?: { at: { x: number; y: number } },
+    ): Promise<ChatResult<{ noteId: string; agent: string }>> =>
+      ipcRenderer.invoke('chat:create', treeId, placement),
+    /** Delete a chat: its process and files go, and its note is removed in one commit. */
+    delete: (treeId: string, noteId: string): Promise<ChatResult<null>> =>
+      ipcRenderer.invoke('chat:delete', treeId, noteId),
     open: (treeId: string, noteId: string): Promise<ChatResult<ChatSessionState>> =>
       ipcRenderer.invoke('chat:open', treeId, noteId),
     send: (treeId: string, noteId: string, text: string): Promise<ChatResult<null>> =>

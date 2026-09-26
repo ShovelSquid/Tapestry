@@ -515,10 +515,22 @@ app.whenReady().then(async () => {
     return noteId
   }
 
-  // New chat (D-01: the only way a session note is made).
+  // New chat (D-01: the only way a session note is made). The placement is
+  // checked in ChatService: undefined, or `{ at: { x, y } }` (the pointer).
   ipcMain.handle('chat:create', (_event, treeId: unknown, placement: unknown) => {
     try {
       return { ok: true, value: chat.createSession(chatTreeId(treeId), placement) }
+    } catch (err) {
+      return { ok: false, error: errorMessage(err) }
+    }
+  })
+
+  // Delete a chat (02.8-02): its engine, config file and chats.json entry go,
+  // and the note is removed in one commit signed by the person.
+  ipcMain.handle('chat:delete', async (_event, treeId: unknown, noteId: unknown) => {
+    try {
+      await chat.deleteSession(chatTreeId(treeId), chatNoteId(noteId))
+      return { ok: true, value: null }
     } catch (err) {
       return { ok: false, error: errorMessage(err) }
     }

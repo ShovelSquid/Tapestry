@@ -47,6 +47,7 @@ import { CHAT_MCP_SERVER, chatSystemPrompt, childEnv, notInstalledMessage, resol
 import { ClaudeCliEngine, STILL_ANSWERING_MESSAGE, type ClaudeCliEngineOptions } from './claude-cli-engine'
 import {
   CHAT_AGENT_NAME,
+  checkSessionPlacement,
   persistKey,
   SESSION_NOT_FOUND_MESSAGE,
   SESSION_NOTE_ID_RE,
@@ -220,6 +221,8 @@ export class ChatService {
   private readonly shellResetKeys = new Set<string>()
   /** The last send's number, for least-recently-used order. */
   private useCounter = 0
+  /** Sessions (session keys) being deleted: refused until the note is gone. */
+  private readonly deleting = new Set<string>()
 
   constructor(options: ChatServiceOptions) {
     this.options = options
@@ -230,21 +233,45 @@ export class ChatService {
   /**
    * Start a new chat in an open workspace (D-02): a session note written by
    * the person, and its agent issued a token at once so the agent is listed,
-   * with its colour, before any turn. Placement is the next free spot; a
-   * requested spot comes later (02.8-02).
+   * with its colour, before any turn. Placement is the next free spot, or
+   * `{ at: { x, y } }`, a frame-local point (the pointer), where the note goes
+   * at the first clear spot at or below it. Anything else is refused before
+   * any commit.
    */
   createSession(treeId: string, placement?: unknown): { noteId: string; agent: string } {
-    if (placement !== undefined) throw new Error('A new chat goes at the next free spot in its workspace')
+    const checked = checkSessionPlacement(placement)
     const ws = this.workspaceFor(treeId)
-    const { noteId } = this.options.sessionNotes.create(ws.tree, this.options.humanActor())
+    const { noteId } = this.options.sessionNotes.create(ws.tree, this.options.humanActor(), checked)
     const session = this.sessionFor(treeId, noteId)
     session.token = this.options.agents.issueToken(session.agent)
-    try {
-      this.options.onAgentsChanged?.()
-    } catch (err) {
-      console.error('[ChatService] agents-changed listener threw:', err)
-    }
+    this.agentsChanged()
     return { noteId, agent: session.agent }
+  }
+
+  /**
+   * Delete a chat (chat:delete): its engine is ended (the open turn is not
+   * committed, because the note is going), its MCP config file and chats.json
+   * entry are deleted, and the note is removed in one `deleteNode` commit
+   * signed by the person, with every edge touching it. Its agent stays in
+   * agents.json, because its commits are attributed to it. The conversation
+   * stays readable in the journal's history.
+   */
+  async deleteSession(treeId: string, noteId: unknown): Promise<void> {
+    const session = this.sessionFor(treeId, noteId)
+    const actor = this.options.humanActor()
+    const key = sessionKey(session.treeId, session.noteId)
+    this.deleting.add(key)
+    try {
+      session.turnOpen = false
+      this.sessions.delete(key)
+      await this.dropEngine(session)
+      this.removeConfigFile(key)
+      this.forgetEntry(session)
+      const ws = this.workspaceFor(treeId)
+      this.options.sessionNotes.delete(ws.tree, session.noteId, actor)
+    } finally {
+      this.deleting.delete(key)
+    }
   }
 
   /** A session, with what the panel needs to show it. */
@@ -409,6 +436,7 @@ export class ChatService {
     if (!node || !isSessionNode(node)) throw new Error(SESSION_NOT_FOUND_MESSAGE)
 
     const key = sessionKey(treeId, noteId)
+    if (this.deleting.has(key)) throw new Error(SESSION_NOT_FOUND_MESSAGE)
     let session = this.sessions.get(key)
     if (!session) {
       const saved = persistKey(ws.realRoot, noteId)
@@ -839,6 +867,27 @@ export class ChatService {
     } catch (err) {
       // Losing this only means the next launch starts a new conversation.
       console.error('[ChatService] could not write chats.json:', err)
+    }
+  }
+
+  /** Remove a session's chats.json entry (its note is being deleted). */
+  private forgetEntry(session: Session): void {
+    try {
+      const key = persistKey(session.realRoot, session.noteId)
+      const file = this.readChats()
+      if (!(key in file.sessions)) return
+      delete file.sessions[key]
+      this.writeChats(file)
+    } catch (err) {
+      console.error('[ChatService] could not write chats.json:', err)
+    }
+  }
+
+  private agentsChanged(): void {
+    try {
+      this.options.onAgentsChanged?.()
+    } catch (err) {
+      console.error('[ChatService] agents-changed listener threw:', err)
     }
   }
 

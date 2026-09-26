@@ -333,9 +333,15 @@ export type SpotResult = { ok: true; x: number; y: number } | { ok: false; reaso
 /**
  * From `start`, try each step down in turn — one card height plus
  * `STACK_GAP` each — and return the first spot whose rectangle overlaps no
- * obstacle. Bounded by `MAX_PLACE_STEPS`.
+ * obstacle. Bounded by `MAX_PLACE_STEPS`. The downward steps every resolver
+ * here ends with; exported so a caller with its own start point (a chat
+ * created at the pointer, 02.8-02) uses the same steps.
  */
-function stepDown(start: PlacementPoint, size: PlacementSize, obstacles: readonly PlacementRect[]): SpotResult {
+export function firstClearSpot(
+  start: PlacementPoint,
+  size: PlacementSize,
+  obstacles: readonly PlacementRect[],
+): SpotResult {
   const stride = size.height + STACK_GAP
   for (let k = 0; k < MAX_PLACE_STEPS; k++) {
     const x = start.x
@@ -360,7 +366,7 @@ function stepDown(start: PlacementPoint, size: PlacementSize, obstacles: readonl
  * down in steps until its footprint overlaps nothing.
  */
 export function resolveNear(anchor: PlacementRect, size: PlacementSize, obstacles: readonly PlacementRect[]): SpotResult {
-  return stepDown({ x: anchor.x + anchor.width + CHILD_GAP, y: anchor.y }, size, obstacles)
+  return firstClearSpot({ x: anchor.x + anchor.width + CHILD_GAP, y: anchor.y }, size, obstacles)
 }
 
 /**
@@ -391,7 +397,7 @@ export function resolveBeyond(
     x: through.x + dx * scale - size.width / 2,
     y: through.y + dy * scale - size.height / 2,
   }
-  return stepDown(start, size, obstacles)
+  return firstClearSpot(start, size, obstacles)
 }
 
 // ---------------------------------------------------------------------------
