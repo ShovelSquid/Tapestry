@@ -30,9 +30,11 @@ import { useEffect, useRef, useSyncExternalStore } from 'react'
 import { composeFirstMessage, type ChatAttachment, type LiveEntry } from './chat'
 import {
   attentionOf,
+  changeEffects,
   initialStatus,
   reduceStatus,
   type Attention,
+  type ChangeEffects,
   type SessionStatus,
 } from '../../shared/chat/session-status'
 import { authorToken, type AuthorToken } from '../threads/author-palette'
@@ -78,6 +80,18 @@ export interface ChatSessionSnapshot {
    * edge arrow instead of the camera moving (A-08). Renderer state only.
    */
   readonly isNew: boolean
+  /**
+   * What the latest change that showed on the card does there: move it
+   * (jiggle and flash) and raise it in its frame, under the threshold it
+   * arrived with (D-14, D-15). A new object each time, so the card can tell
+   * one change from the next. Renderer state only.
+   */
+  readonly lastEffects: SessionEffects
+}
+
+/** changeEffects, stamped with when the change arrived. */
+export interface SessionEffects extends ChangeEffects {
+  readonly at: number
 }
 
 /**
@@ -120,6 +134,7 @@ export const EMPTY_CHAT_SESSION: ChatSessionSnapshot = Object.freeze({
   focusPlace: 'card' as ComposerPlace,
   status: Object.freeze(initialStatus({ busy: false, lastStatus: null, turns: 1 })),
   isNew: false,
+  lastEffects: Object.freeze({ animate: false, raise: false, at: 0 }),
 })
 
 /** The store key for one session. */
@@ -151,17 +166,92 @@ export function applyChatPayload(
   snapshot: ChatSessionSnapshot,
   payload: { turn: number; event: TapestryChatEvent },
   now: number = Date.now(),
+  threshold: number = currentAlertThreshold(),
 ): ChatSessionSnapshot {
   const kept =
     payload.event.type === 'user'
       ? snapshot.entries.filter((entry) => entry.turn >= payload.turn - 1)
       : snapshot.entries
+  const status = reduceStatus(snapshot.status, { kind: 'event', event: payload.event }, now)
+  const effects = changeEffects(snapshot.status, status, threshold)
   return {
     ...snapshot,
     entries: [...kept, { turn: payload.turn, event: payload.event }],
     busy: busyAfter(snapshot.busy, payload.event),
-    status: reduceStatus(snapshot.status, { kind: 'event', event: payload.event }, now),
+    status,
+    lastEffects: effects.animate || effects.raise ? { ...effects, at: now } : snapshot.lastEffects,
   }
+}
+
+// ---------------------------------------------------------------------------
+// The Chat alerts threshold (D-15, A-06)
+// ---------------------------------------------------------------------------
+
+/** Where the threshold is kept: renderer localStorage, view state, never a tree. */
+export const ALERT_THRESHOLD_KEY = 'tapestry.chat.alertThreshold'
+/** Move for done and needs you. */
+export const DEFAULT_ALERT_THRESHOLD = 2
+
+function isAlertThreshold(value: number): boolean {
+  return value === 1 || value === 2 || value === 3
+}
+
+/**
+ * The stored threshold: 1, 2 or 3. Anything else (missing, garbage, out of
+ * range, a storage that throws, no storage) is the default 2.
+ */
+export function readAlertThreshold(storage: Pick<Storage, 'getItem'> | null): number {
+  if (!storage) return DEFAULT_ALERT_THRESHOLD
+  try {
+    const raw = storage.getItem(ALERT_THRESHOLD_KEY)
+    if (raw === null || raw.trim() === '') return DEFAULT_ALERT_THRESHOLD
+    const value = Number(raw)
+    return isAlertThreshold(value) ? value : DEFAULT_ALERT_THRESHOLD
+  } catch {
+    return DEFAULT_ALERT_THRESHOLD
+  }
+}
+
+/** The window's localStorage, or null where there is none (tests, a locked-down profile). */
+function browserThresholdStorage(): Pick<Storage, 'getItem' | 'setItem'> | null {
+  try {
+    return typeof window !== 'undefined' && window.localStorage ? window.localStorage : null
+  } catch {
+    return null
+  }
+}
+
+/** Read once, then kept here; setAlertThreshold changes it. */
+let alertThreshold: number | null = null
+
+/** The threshold in force: the next state change uses it, without a relaunch. */
+export function currentAlertThreshold(): number {
+  if (alertThreshold === null) alertThreshold = readAlertThreshold(browserThresholdStorage())
+  return alertThreshold
+}
+
+/**
+ * Set the threshold (1, 2 or 3; anything else is ignored) and remember it.
+ * Never throws: a storage that fails only forgets it at the next launch.
+ */
+export function setAlertThreshold(
+  value: number,
+  storage: Pick<Storage, 'setItem'> | null = browserThresholdStorage(),
+): void {
+  if (!isAlertThreshold(value)) return
+  try {
+    storage?.setItem(ALERT_THRESHOLD_KEY, String(value))
+  } catch {
+    // A convenience only: the threshold still holds for this session.
+  }
+  if (alertThreshold === value) return
+  alertThreshold = value
+  notify()
+}
+
+/** The threshold, live: the Agents panel's setting and the cards read it. */
+export function useAlertThreshold(): number {
+  return useSyncExternalStore(subscribe, currentAlertThreshold)
 }
 
 // ---------------------------------------------------------------------------

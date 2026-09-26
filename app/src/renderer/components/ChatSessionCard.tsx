@@ -46,9 +46,11 @@ import { ChatContext, foldChatEvents, liveAfter } from '../state/chat'
 import {
   acknowledgeSession,
   statusAnnouncement,
+  useAlertThreshold,
   useChatSession,
   useSessionAuthorToken,
 } from '../state/chat-sessions'
+import { STATUS_LEVEL_CEILING, shouldAnimate } from '../../shared/chat/session-status'
 import { screenDeltaToWorld } from '../layout/camera'
 import {
   browserCardViewStorage,
@@ -135,9 +137,11 @@ function ChevronGlyph({ closed }: { closed: boolean }): React.ReactElement {
  * card's top-left corner, with a white "!". Hidden from assistive tech: the
  * state word and the announcement carry it.
  */
-function NeedsYouBadge(): React.ReactElement {
+function NeedsYouBadge({ arrive }: { arrive: boolean }): React.ReactElement {
+  // The arrival scale is decided once, when the badge appears, and then it stays still.
+  const [arriving] = useState(arrive)
   return (
-    <span className="tapestry-needs-badge" aria-hidden="true">
+    <span className={arriving ? 'tapestry-needs-badge tapestry-needs-badge--arrive' : 'tapestry-needs-badge'} aria-hidden="true">
       <svg width={14} height={14} viewBox="0 0 16 16" fill="currentColor" focusable="false">
         <path d="M6.8 2.2h2.4l-.45 7.6h-1.5L6.8 2.2ZM8 11.2a1.4 1.4 0 1 1 0 2.8 1.4 1.4 0 0 1 0-2.8Z" />
       </svg>
@@ -147,6 +151,10 @@ function NeedsYouBadge(): React.ReactElement {
 
 /** How long the pointer rests on a Done or Failed card before it counts as looked at. */
 const ACK_REST_MS = 1000
+/** The jiggle (480 ms) and the flash (1200 ms) run together once; the class stays for the longer. */
+const ARRIVE_MS = 1200
+/** Done holds its author border this long, then fades it back over 2 s (CSS). */
+const DONE_HOLD_MS = 30_000
 
 /** Stop an event here, so the canvas never acts on it. */
 function stop(e: React.SyntheticEvent): void {
@@ -359,6 +367,41 @@ function ChatSessionCardView({
     return () => clearTimeout(timer)
   }, [pointerInside, waiting, acknowledge])
 
+  // ----- Motion (D-11, D-14, D-15): once per change, never a loop -----
+  // A change the store decided should move (its level at or over the
+  // threshold, never Failed) jiggles and flashes the card once. Effects that
+  // were already there when the card mounted are not replayed.
+  const threshold = useAlertThreshold()
+  const effects = session.lastEffects
+  const seenEffectsRef = useRef(effects)
+  const [arriving, setArriving] = useState(false)
+  useEffect(() => {
+    if (seenEffectsRef.current === effects) return undefined
+    seenEffectsRef.current = effects
+    if (!effects.animate) return undefined
+    setArriving(true)
+    const timer = setTimeout(() => setArriving(false), ARRIVE_MS)
+    return () => clearTimeout(timer)
+  }, [effects])
+
+  // Done holds its author border for 30 s, then settles (the border fades in
+  // CSS); the glyph and the word stay until the person looks.
+  const [doneSettled, setDoneSettled] = useState(false)
+  useEffect(() => {
+    if (status.state !== 'done') {
+      setDoneSettled(false)
+      return undefined
+    }
+    const left = DONE_HOLD_MS - (Date.now() - status.arrivedAt)
+    if (left <= 0) {
+      setDoneSettled(true)
+      return undefined
+    }
+    setDoneSettled(false)
+    const timer = setTimeout(() => setDoneSettled(true), left)
+    return () => clearTimeout(timer)
+  }, [status.state, status.arrivedAt])
+
   const announce = useAnnounce()
   const announcedRef = useRef(status)
   useEffect(() => {
@@ -396,6 +439,8 @@ function ChatSessionCardView({
   if (closed) className += ' tapestry-session-card--closed'
   // The state look; it shows on a closed card too.
   if (status.state !== 'idle') className += ` tapestry-session-card--${status.state}`
+  if (status.state === 'done' && doneSettled) className += ' tapestry-session-card--done-settled'
+  if (arriving) className += ' tapestry-session-card--arrive'
   const showControlsNow = showControls || isSelected
 
   return (
@@ -420,7 +465,7 @@ function ChatSessionCardView({
       onPointerDownCapture={acknowledge}
       onFocus={acknowledgeFocus}
     >
-      {status.needs && <NeedsYouBadge />}
+      {status.needs && <NeedsYouBadge arrive={shouldAnimate(STATUS_LEVEL_CEILING, threshold)} />}
 
       <div
         className="tapestry-note-drag-handle"

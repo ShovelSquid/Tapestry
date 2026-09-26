@@ -2342,6 +2342,51 @@ html, body, #root {
   background-color: color-mix(in srgb, var(--tap-author-underlay-color) 18%, transparent);
 }
 
+/* ----- Session motion (02.8-06, D-11, D-14, D-15; UI-SPEC § Motion) ------
+   Once per change, never a loop, and only when the change's level is at or
+   over the person's Chat alerts threshold (decided in the store). Failed
+   never moves. The jiggle uses the individual `rotate` property, so the
+   card's position is untouched. The global prefers-reduced-motion rule below
+   turns every one of these into an instant change. */
+.tapestry-session-card--arrive {
+  animation:
+    tapestry-jiggle 480ms ease-in-out 1,
+    tapestry-flash 1200ms ease-out 1;
+}
+
+@keyframes tapestry-jiggle {
+  0% { rotate: 0deg; }
+  20% { rotate: -1.5deg; }
+  40% { rotate: 1.5deg; }
+  60% { rotate: -1deg; }
+  80% { rotate: 1deg; }
+  100% { rotate: 0deg; }
+}
+
+@keyframes tapestry-flash {
+  0% { box-shadow: 0 2px 4px rgba(0, 0, 0, 0.06), 0 0 0 0 color-mix(in srgb, var(--tap-session-author, var(--tap-muted)) 35%, transparent); }
+  30% { box-shadow: 0 2px 4px rgba(0, 0, 0, 0.06), 0 0 0 8px color-mix(in srgb, var(--tap-session-author, var(--tap-muted)) 35%, transparent); }
+  100% { box-shadow: 0 2px 4px rgba(0, 0, 0, 0.06), 0 0 0 0 color-mix(in srgb, var(--tap-session-author, var(--tap-muted)) 0%, transparent); }
+}
+
+/* The "!" badge arrives with one scale, then stays still. */
+.tapestry-needs-badge--arrive {
+  animation: tapestry-badge-arrive 240ms ease-out 1;
+}
+
+@keyframes tapestry-badge-arrive {
+  from { scale: 0.6; }
+  to { scale: 1; }
+}
+
+/* Done decays: after 30 s its author border fades back to --tap-border over
+   2 s. The glyph and the word "Done" stay until the person looks. The width
+   stays 2px while Done lasts, so the card's content does not shift. */
+.tapestry-session-card--done.tapestry-session-card--done-settled:not(.tapestry-note-card--selected):not(.tapestry-note-card--connect-target) {
+  border-color: var(--tap-border);
+  transition: border-color 2000ms ease;
+}
+
 /* ----- Edge arrows (02.8-06, D-16; UI-SPEC § Edge arrows) ----------------
    Screen space over the canvas, under the forest bar, the ChatPanel and
    dialogs. A 32px disc in --tap-surface with a 2px author-colour border and
@@ -2397,26 +2442,6 @@ html, body, #root {
 @keyframes tapestry-edge-arrow-out {
   from { opacity: 1; }
   to { opacity: 0; }
-}
-
-/* 02.3-07: this phase's first prefers-reduced-motion rule (UI-SPEC "Motion
-   and prefers-reduced-motion": "No reduced-motion rule exists in the
-   renderer today ... this phase introduces the first one"). The stage's own
-   per-frame streaming and fly-to interpolation are gated in JS
-   (ThreadOverlay.tsx / navigation.ts's `flyTo` reducedMotion option); this
-   CSS rule covers everything else the renderer draws with a transition or
-   animation -- transient chips, hover/press easing, and any future
-   CSS-driven motion -- with the standard "kill all CSS motion" pattern, so a
-   new component never has to remember to add its own reduced-motion
-   exception (UI-SPEC: "Nothing is removed by reduced motion -- only the
-   movement between states"). */
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-    scroll-behavior: auto !important;
-  }
 }
 
 /* ------------------------------------------------------------------------ */
@@ -2652,4 +2677,27 @@ html, body, #root {
 
 .tapestry-selection-bar .tapestry-forest-button {
   height: 24px;
+}
+
+/* Kept last (02.8-06 moved it back here after the ws/ui merge appended
+   sections below it): the one rule that turns every CSS motion above into an
+   instant change. */
+/* 02.3-07: this phase's first prefers-reduced-motion rule (UI-SPEC "Motion
+   and prefers-reduced-motion": "No reduced-motion rule exists in the
+   renderer today ... this phase introduces the first one"). The stage's own
+   per-frame streaming and fly-to interpolation are gated in JS
+   (ThreadOverlay.tsx / navigation.ts's `flyTo` reducedMotion option); this
+   CSS rule covers everything else the renderer draws with a transition or
+   animation -- transient chips, hover/press easing, and any future
+   CSS-driven motion -- with the standard "kill all CSS motion" pattern, so a
+   new component never has to remember to add its own reduced-motion
+   exception (UI-SPEC: "Nothing is removed by reduced motion -- only the
+   movement between states"). */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

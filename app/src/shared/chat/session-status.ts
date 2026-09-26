@@ -285,3 +285,62 @@ export function attentionOf(status: SessionStatus, isNew: boolean): Attention | 
   if (isNew && status.state === 'idle') return { kind: 'new', level: NEW_LEVEL }
   return null
 }
+
+// ---------------------------------------------------------------------------
+// What a change does on the card (D-14, D-15, A-06)
+// ---------------------------------------------------------------------------
+
+/** Whether a change moves the card (jiggle, flash, the badge's arrival) and raises it in its frame. */
+export interface ChangeEffects {
+  animate: boolean
+  raise: boolean
+}
+
+const NO_EFFECTS: ChangeEffects = Object.freeze({ animate: false, raise: false })
+
+/** A set_status arrived in this change (only a status event changes the text once one has come this turn). */
+function isStatusChange(prev: SessionStatus, next: SessionStatus): boolean {
+  if (!next.statusThisTurn || next.turnLevel === null) return false
+  return !prev.statusThisTurn || prev.text !== next.text || prev.turnLevel !== next.turnLevel
+}
+
+/**
+ * What one change from `prev` to `next` does on the card, under the person's
+ * visibility threshold (D-15). Motion is decided by the level of the change:
+ * a Done by its level, Needs you by 3, a mid-turn set_status by its level.
+ * Failed never moves (it can never read as Done), and neither does a send
+ * (Working) or the person looking (Idle). Any change at level 1 or more
+ * raises the card in its frame; level 0 changes nothing on the card.
+ * The threshold turns off motion, never information.
+ */
+export function changeEffects(prev: SessionStatus, next: SessionStatus, threshold: number): ChangeEffects {
+  if (prev === next) return NO_EFFECTS
+  let level: number
+  let moves = true
+  if (next.state !== prev.state) {
+    switch (next.state) {
+      case 'done':
+        level = next.level
+        break
+      case 'needs':
+        level = STATUS_LEVEL_CEILING
+        break
+      case 'failed':
+        level = FAILED_LEVEL
+        moves = false
+        break
+      case 'working':
+        level = WORKING_LEVEL
+        moves = false
+        break
+      case 'idle':
+        return NO_EFFECTS
+    }
+  } else if (isStatusChange(prev, next)) {
+    level = next.turnLevel ?? 0
+  } else {
+    return NO_EFFECTS
+  }
+  if (level < 1) return NO_EFFECTS
+  return { animate: moves && shouldAnimate(level, threshold), raise: true }
+}

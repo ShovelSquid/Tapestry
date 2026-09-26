@@ -13,9 +13,10 @@
  * process says something changed.
  */
 
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useId, useRef, useState } from 'react'
 import Dialog from './Dialog'
 import ConnectAgentDialog from './ConnectAgentDialog'
+import { setAlertThreshold, useAlertThreshold } from '../state/chat-sessions'
 
 interface AgentsPanelProps {
   agents: TapestryAgentSummary[]
@@ -49,6 +50,47 @@ function statusLine(agent: TapestryAgentSummary): string {
   const when = new Date(agent.lastConnectedAt)
   if (Number.isNaN(when.getTime())) return 'Never connected'
   return `Last connected ${when.toLocaleString()}`
+}
+
+/** The Chat alerts choices: the lowest level that moves (UI-SPEC § Chat alerts setting). */
+const CHAT_ALERT_OPTIONS: ReadonlyArray<{ value: number; label: string }> = [
+  { value: 1, label: 'Move for every status' },
+  { value: 2, label: 'Move for done and needs you' },
+  { value: 3, label: 'Move for needs you only' },
+]
+
+/**
+ * Chat alerts (02.8 D-15, A-06): how much a chat card moves when its state
+ * changes. It turns off motion only, never the "!", the state word, the
+ * glyph or an edge arrow. Kept in renderer localStorage, never in a tree, and
+ * used by the next state change without a relaunch.
+ */
+function ChatAlertsSetting(): React.ReactElement {
+  const threshold = useAlertThreshold()
+  const id = useId()
+  return (
+    <div className="tapestry-chat-alerts">
+      <label className="tapestry-field-label" htmlFor={id}>
+        Chat alerts
+      </label>
+      <select
+        id={id}
+        className="tapestry-field-input"
+        value={threshold}
+        aria-describedby={`${id}-help`}
+        onChange={(e) => setAlertThreshold(Number(e.target.value))}
+      >
+        {CHAT_ALERT_OPTIONS.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+      <p className="tapestry-agents-note" id={`${id}-help`}>
+        Status text always updates. A &quot;!&quot; always shows when a chat needs you.
+      </p>
+    </div>
+  )
 }
 
 export default function AgentsPanel({
@@ -123,6 +165,8 @@ export default function AgentsPanel({
         </span>
         Let agents connect
       </button>
+
+      <ChatAlertsSetting />
 
       {!enabled && (
         <p className="tapestry-agents-body">
