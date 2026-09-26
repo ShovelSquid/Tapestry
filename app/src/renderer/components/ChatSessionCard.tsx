@@ -20,12 +20,12 @@
  * guard allows. Main refuses any renderer write to its body or `chat.*` keys.
  */
 
-import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import React, { memo, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import type { NodeInfo } from './Canvas'
 import NoteControls from './NoteControls'
 import ChatSessionTranscript from './ChatSessionTranscript'
 import ChatSessionComposer from './ChatSessionComposer'
-import { foldChatEvents, liveAfter } from '../state/chat'
+import { ChatContext, foldChatEvents, liveAfter } from '../state/chat'
 import { useChatSession } from '../state/chat-sessions'
 import { screenDeltaToWorld } from '../layout/camera'
 import {
@@ -71,6 +71,21 @@ function titleOf(node: NodeInfo): string {
   return typeof raw === 'string' ? raw : ''
 }
 
+/** Two arrows apart: open this chat beside the canvas. */
+function EnlargeGlyph(): React.ReactElement {
+  return (
+    <svg width={14} height={14} viewBox="0 0 16 16" fill="none" aria-hidden="true" focusable="false">
+      <path
+        d="M9.5 2.5h4v4M13.5 2.5 9 7M6.5 13.5h-4v-4M2.5 13.5 7 9"
+        stroke="currentColor"
+        strokeWidth={1.3}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
 /** Stop an event here, so the canvas never acts on it. */
 function stop(e: React.SyntheticEvent): void {
   e.stopPropagation()
@@ -99,6 +114,8 @@ function ChatSessionCardView({
 }: ChatSessionCardProps): React.ReactElement {
   const cardRef = useRef<HTMLDivElement>(null)
   const session = useChatSession(treeId, node.id)
+  const { openSession, enlarge } = useContext(ChatContext)
+  const isEnlarged = openSession?.treeId === treeId && openSession.noteId === node.id
 
   // ----- Position and drag (as WorkspaceFileCard, in the card's own axes) -----
   const storedX = numberProp(node, 'position.x')
@@ -270,6 +287,22 @@ function ChatSessionCardView({
           onDoubleClick={stop}
           onClick={stop}
         />
+        <button
+          type="button"
+          className="tapestry-ask-claude-button"
+          aria-label="Open beside the canvas"
+          title="Open beside the canvas"
+          aria-pressed={isEnlarged}
+          onPointerDown={stop}
+          onDoubleClick={stop}
+          onKeyDown={stop}
+          onClick={(e) => {
+            e.stopPropagation()
+            enlarge(treeId, node.id)
+          }}
+        >
+          <EnlargeGlyph />
+        </button>
       </div>
 
       {/* The conversation and the composer keep their input (PanelShell rule). */}

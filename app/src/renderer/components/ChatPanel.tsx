@@ -1,6 +1,13 @@
 /**
- * ChatPanel — Claude, docked beside the canvas, for one chat session note
- * (02.7 D-12, 02.8 D-02, D-04).
+ * ChatPanel — Claude, docked beside the canvas: the enlarged view of one
+ * session note (02.7 D-12, 02.8 D-02, D-04).
+ *
+ * It is not a second chat UI. It reads the same store as the session's card
+ * (state/chat-sessions.ts) and renders the same ChatSessionTranscript and
+ * ChatSessionComposer, so the card and the panel share one live turn and one
+ * draft. Back to card closes the panel only; a running turn keeps running
+ * (UI-SPEC A-12). The panel never opens without a session, and closes when
+ * its session is deleted or its workspace leaves the space.
  *
  * The panel runs the person's own Claude Code (main owns the process). Its
  * Claude reaches files only through Tapestry's workspace tools, so every edit
@@ -21,14 +28,9 @@ import React, { useContext, useEffect, useId, useMemo, useRef, useState } from '
 import { createPortal } from 'react-dom'
 import Dialog from './Dialog'
 import ChatSessionTranscript from './ChatSessionTranscript'
-import {
-  ChatContext,
-  composeFirstMessage,
-  foldChatEvents,
-  liveAfter,
-  useChat,
-  type ChatAttachment,
-} from '../state/chat'
+import ChatSessionComposer from './ChatSessionComposer'
+import { ChatContext, foldChatEvents, liveAfter, type ChatAttachment } from '../state/chat'
+import { requestComposerFocus, setChatShell, useChatSession } from '../state/chat-sessions'
 import {
   committedTurns,
   NEW_SESSION_TITLE,
@@ -37,9 +39,9 @@ import {
   type SessionNodeLike,
 } from '../../shared/chat/transcript'
 
-/** What the panel shows: a session note's chat, a chooser, or that none is open (D-19). */
+/** What the panel shows: a session note's enlarged view, a chooser, or that no workspace is open (D-19). */
 export type ChatPanelState =
-  | { kind: 'chat'; treeId: string; noteId: string; attachment: ChatAttachment | null; seq: number }
+  | { kind: 'chat'; treeId: string; noteId: string }
   | {
       kind: 'choose'
       options: Array<{ treeId: string; name: string }>
@@ -49,11 +51,6 @@ export type ChatPanelState =
 
 export const NO_WORKSPACE_CHAT_TEXT =
   'Open a workspace folder first (Add tree > Add Workspace Folder...). The chat runs inside a workspace.'
-
-/** How an attachment reads on its chip. */
-function attachmentLabel(attachment: ChatAttachment): string {
-  return attachment.kind === 'file' ? attachment.path : `"${attachment.title}"`
-}
 
 /**
  * The panel's frame. Keys, presses and wheel turns inside it stay inside it,
@@ -109,7 +106,7 @@ function PanelHeader({
           {title}
         </span>
         {children}
-        <CloseChatButton />
+        <BackToCardButton label="Close" />
       </div>
     </div>
   )
@@ -119,50 +116,37 @@ function Conversation({
   treeId,
   noteId,
   sessionNode,
-  attachment: initialAttachment,
-  seq,
 }: {
   treeId: string
   noteId: string
   /** The session note as the canvas has it, or null before the tree refreshes. */
   sessionNode: SessionNodeLike | null
-  attachment: ChatAttachment | null
-  seq: number
 }): React.ReactElement {
-  const { openChat } = useContext(ChatContext)
-  const { workspace, agent, live, busy, error, send, stop, allowShell, setAllowShell } = useChat(treeId, noteId)
-  const [draft, setDraft] = useState('')
-  const [attachment, setAttachment] = useState<ChatAttachment | null>(initialAttachment)
-
-  const inputRef = useRef<HTMLTextAreaElement>(null)
+  const { openChat, enlarge } = useContext(ChatContext)
+  const session = useChatSession(treeId, noteId)
+  const { workspace, agent, entries, error, allowShell } = session
 
   // Committed turns are the note's own text (D-09); only later turns are live.
   const body = sessionNode ? sessionBody(sessionNode) : ''
   const committed = sessionNode ? committedTurns(sessionNode) : 0
   const turns = useMemo(() => parseTranscript(body), [body])
   const liveItems = useMemo(
-    () => foldChatEvents(liveAfter(live, committed).map((entry) => entry.event)),
-    [live, committed],
+    () => foldChatEvents(liveAfter(entries, committed).map((entry) => entry.event)),
+    [entries, committed],
   )
   const rawTitle = sessionNode?.props['title']?.value
   const title = typeof rawTitle === 'string' && rawTitle.trim().length > 0 ? rawTitle : NEW_SESSION_TITLE
 
-  // Each Ask Claude… brings its own attachment.
+  // Opening the enlarged view puts the cursor in its composer, without
+  // scrolling anything behind it.
   useEffect(() => {
-    setAttachment(initialAttachment)
-    inputRef.current?.focus()
-    // Keyed on seq alone: the same attachment asked for twice still resets.
-  }, [seq])
+    requestComposerFocus(treeId, noteId, 'panel')
+  }, [treeId, noteId])
 
-  const submit = async (): Promise<void> => {
-    const text = draft
-    if (text.trim().length === 0 || busy) return
-    // The attachment goes nowhere but the text of this message.
-    const ok = await send(composeFirstMessage(attachment, text))
-    if (ok) {
-      setDraft('')
-      setAttachment(null)
-    }
+  // New chat here makes another session in this workspace and shows it.
+  const newChat = async (): Promise<void> => {
+    const made = await openChat({ treeId })
+    if (made) enlarge(made.treeId, made.noteId)
   }
 
   return (
@@ -172,15 +156,15 @@ function Conversation({
           <span className="tapestry-chat-title" title={`${title} — ${workspace}`}>
             {title}
           </span>
-          <button type="button" className="tapestry-button--secondary" onClick={() => openChat({ treeId })}>
+          <button type="button" className="tapestry-button--secondary" onClick={() => void newChat()}>
             New chat
           </button>
-          <CloseChatButton />
+          <BackToCardButton label="Back to card" />
         </div>
         <div className="tapestry-chat-subtitle">
           {agent ? `Edits go through Tapestry's workspace tools as agent.${agent}` : workspace}
         </div>
-        <ShellSwitch on={allowShell} onChange={setAllowShell} />
+        <ShellSwitch on={allowShell} onChange={(on) => setChatShell(treeId, noteId, on)} />
       </div>
       {allowShell && (
         <div className="tapestry-chat-shell-banner" role="status">
@@ -197,50 +181,7 @@ function Conversation({
       />
 
       <div className="tapestry-chat-composer">
-        {attachment && (
-          <div className="tapestry-chat-chip">
-            <span className="tapestry-chat-chip-text" title={attachmentLabel(attachment)}>
-              Attached: {attachmentLabel(attachment)}
-            </span>
-            <button
-              type="button"
-              className="tapestry-chat-chip-remove"
-              onClick={() => setAttachment(null)}
-            >
-              Remove attachment
-            </button>
-          </div>
-        )}
-        <textarea
-          ref={inputRef}
-          className="tapestry-chat-input"
-          value={draft}
-          placeholder="Message Claude"
-          aria-label="Message Claude"
-          rows={3}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-              e.preventDefault()
-              void submit()
-            }
-          }}
-        />
-        <div className="tapestry-chat-actions">
-          {busy && (
-            <button type="button" className="tapestry-button--secondary" onClick={() => void stop()}>
-              Stop
-            </button>
-          )}
-          <button
-            type="button"
-            className="tapestry-button--primary"
-            disabled={busy || draft.trim().length === 0}
-            onClick={() => void submit()}
-          >
-            Send
-          </button>
-        </div>
+        <ChatSessionComposer treeId={treeId} noteId={noteId} place="panel" />
       </div>
     </PanelShell>
   )
@@ -326,11 +267,12 @@ function ShellSwitch({
   )
 }
 
-function CloseChatButton(): React.ReactElement {
-  const { closeChat } = useContext(ChatContext)
+/** Closes the panel only: a running turn keeps running (A-12). */
+function BackToCardButton({ label }: { label: string }): React.ReactElement {
+  const { backToCard } = useContext(ChatContext)
   return (
-    <button type="button" className="tapestry-button--secondary" onClick={closeChat}>
-      Close chat
+    <button type="button" className="tapestry-button--secondary" onClick={backToCard}>
+      {label}
     </button>
   )
 }
@@ -343,7 +285,7 @@ export default function ChatPanel({
   /** The session note the panel shows, as the canvas has it (null until it is there). */
   sessionNode: SessionNodeLike | null
 }): React.ReactElement {
-  const { openChat } = useContext(ChatContext)
+  const { openChat, backToCard } = useContext(ChatContext)
 
   if (state.kind === 'chat') {
     return (
@@ -352,8 +294,6 @@ export default function ChatPanel({
         treeId={state.treeId}
         noteId={state.noteId}
         sessionNode={sessionNode}
-        attachment={state.attachment}
-        seq={state.seq}
       />
     )
   }
@@ -369,7 +309,11 @@ export default function ChatPanel({
               key={option.treeId}
               type="button"
               className="tapestry-button--secondary tapestry-chat-choice"
-              onClick={() => openChat({ treeId: option.treeId, attachment: state.attachment ?? undefined })}
+              onClick={() => {
+                // Choosing makes the chat in that workspace; the chooser closes.
+                backToCard()
+                void openChat({ treeId: option.treeId, attachment: state.attachment ?? undefined })
+              }}
             >
               {option.name}
             </button>

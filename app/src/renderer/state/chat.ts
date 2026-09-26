@@ -1,41 +1,50 @@
 /**
- * The renderer's side of the in-app chats (02.7 D-12, 02.8 D-02).
+ * The renderer's side of the in-app chats (02.7 D-12, 02.8 D-02, D-04).
  *
- * A chat is a session note in a workspace tree. ChatContext says which
- * session the docked panel shows and lets any component start one (a frame
- * header's New chat button) without threading props through the canvas.
- * useChat(treeId, noteId) loads one session from main and follows its live
- * events. Committed turns are not here: they are the note's own text (D-09),
- * and only the turn in progress comes from live events.
+ * A chat is a session note in a workspace tree, drawn on the canvas as its
+ * session card. ChatContext lets any component start one (a frame header's
+ * New chat, Ask Claude… on a note, a file or the canvas) and open one in the
+ * docked panel, its enlarged view, without threading props through the
+ * canvas. Each session's live state is in state/chat-sessions.ts, the one
+ * store the card and the panel both read. Committed turns are not there:
+ * they are the note's own text (D-09), and only the turn in progress comes
+ * from live events.
  *
  * The renderer never sees a token or a config path: it sends text, a tree id
  * and a note id, and main does the rest.
  */
 
-import { createContext, useCallback, useEffect, useState } from 'react'
+import { createContext } from 'react'
 
 // ---------------------------------------------------------------------------
 // Context
 // ---------------------------------------------------------------------------
 
 export interface ChatContextValue {
-  /** The session note the docked panel shows, or null. */
+  /** The session the enlarged view (the docked panel) shows, or null. */
   openSession: { treeId: string; noteId: string } | null
   /**
-   * Start a chat for where the person asked (D-19): a tree clicked in and
-   * what was clicked. Which workspace that means is chatWorkspaceFor's rule;
-   * in that workspace a new session note is made and the panel opens on it.
+   * Start a chat for where the person asked (D-19): which workspace that
+   * means is chatWorkspaceFor's rule. In that workspace a new session note is
+   * made (at `target.at`, or at the next free spot), its card's composer
+   * takes focus, and the camera does not move. Resolves to the new session,
+   * or null when the chooser or the no-workspace panel opened instead, or
+   * main refused.
    */
-  openChat: (target?: ChatTarget) => void
-  closeChat: () => void
+  openChat: (target?: ChatTarget) => Promise<{ treeId: string; noteId: string } | null>
+  /** Open a session in the enlarged view. */
+  enlarge: (treeId: string, noteId: string) => void
+  /** Close the enlarged view. A running turn keeps running (UI-SPEC A-12). */
+  backToCard: () => void
   /** A tree's name, for building an attachment; '' when it is not open. */
   treeName: (treeId: string) => string
 }
 
 export const ChatContext = createContext<ChatContextValue>({
   openSession: null,
-  openChat: () => undefined,
-  closeChat: () => undefined,
+  openChat: async () => null,
+  enlarge: () => undefined,
+  backToCard: () => undefined,
   treeName: () => '',
 })
 
@@ -52,6 +61,8 @@ export type ChatAttachment =
 export interface ChatTarget {
   treeId?: string
   attachment?: ChatAttachment
+  /** Where to put the new session, frame-local to `treeId` (the pointer). */
+  at?: { x: number; y: number }
 }
 
 /** One tree in the space, as far as choosing a chat is concerned. */
@@ -199,13 +210,6 @@ export function foldChatEvents(events: TapestryChatEvent[]): ChatItem[] {
   return items
 }
 
-/** Whether a turn is running after these events. */
-function busyAfter(busy: boolean, event: TapestryChatEvent): boolean {
-  if (event.type === 'user') return true
-  if (event.type === 'done') return false
-  return busy
-}
-
 /** One live event with the turn it belongs to. */
 export interface LiveEntry {
   turn: number
@@ -219,100 +223,4 @@ export interface LiveEntry {
  */
 export function liveAfter<E extends { turn: number }>(entries: readonly E[], committedTurns: number): E[] {
   return entries.filter((entry) => entry.turn > committedTurns)
-}
-
-// ---------------------------------------------------------------------------
-// useChat
-// ---------------------------------------------------------------------------
-
-export interface UseChat {
-  /** The workspace's name. */
-  workspace: string
-  /** The session's agent name, without the `agent.` prefix. */
-  agent: string
-  /** Events not yet committed into the note, each with its turn. */
-  live: LiveEntry[]
-  busy: boolean
-  /** Why the last request to main failed, if it did. */
-  error: string | null
-  send: (text: string) => Promise<boolean>
-  stop: () => Promise<void>
-  /** The chat's Allow shell (not sandboxed) switch (D-15). */
-  allowShell: boolean
-  /** Change the switch; the panel confirms before turning it on. */
-  setAllowShell: (on: boolean) => Promise<void>
-}
-
-export function useChat(treeId: string, noteId: string): UseChat {
-  const [live, setLive] = useState<LiveEntry[]>([])
-  const [busy, setBusy] = useState(false)
-  const [workspace, setWorkspace] = useState('')
-  const [agent, setAgent] = useState('')
-  const [error, setError] = useState<string | null>(null)
-  const [allowShell, setAllowShellState] = useState(false)
-
-  useEffect(() => {
-    let loaded = false
-    let cancelled = false
-    setLive([])
-    setBusy(false)
-    setWorkspace('')
-    setAgent('')
-    setError(null)
-    setAllowShellState(false)
-
-    // Subscribe first. Events that arrive before open answers are already in
-    // the live list it returns, so they are dropped rather than doubled.
-    const unsubscribe = window.tapestry.onChatEvent((payload) => {
-      if (payload.treeId !== treeId || payload.noteId !== noteId || !loaded) return
-      setLive((previous) => [...previous, { turn: payload.turn, event: payload.event }])
-      setBusy((previous) => busyAfter(previous, payload.event))
-    })
-
-    void window.tapestry.chat.open(treeId, noteId).then((result) => {
-      if (cancelled) return
-      loaded = true
-      if (result.ok) {
-        setWorkspace(result.value.workspace)
-        setAgent(result.value.agent)
-        setLive(result.value.live)
-        setBusy(result.value.busy)
-        setAllowShellState(result.value.allowShell)
-      } else {
-        setError(result.error)
-      }
-    })
-
-    return () => {
-      cancelled = true
-      unsubscribe()
-    }
-  }, [treeId, noteId])
-
-  const send = useCallback(
-    async (text: string): Promise<boolean> => {
-      setError(null)
-      const result = await window.tapestry.chat.send(treeId, noteId, text)
-      if (!result.ok) setError(result.error)
-      return result.ok
-    },
-    [treeId, noteId],
-  )
-
-  const stop = useCallback(async () => {
-    const result = await window.tapestry.chat.stop(treeId, noteId)
-    if (!result.ok) setError(result.error)
-  }, [treeId, noteId])
-
-  const setAllowShell = useCallback(
-    async (on: boolean) => {
-      setError(null)
-      const result = await window.tapestry.chat.setAllowShell(treeId, noteId, on)
-      if (result.ok) setAllowShellState(on)
-      else setError(result.error)
-    },
-    [treeId, noteId],
-  )
-
-  return { workspace, agent, live, busy, error, send, stop, allowShell, setAllowShell }
 }

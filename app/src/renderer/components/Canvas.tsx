@@ -1211,7 +1211,13 @@ function Canvas({
       const items: Array<{ label: string; run: () => void }> = [
         {
           label: 'Ask Claude…',
-          run: () => openChat(tree && tree.kind === 'workspace' ? { treeId: tree.id } : {}),
+          // Inside a workspace, the new chat goes at the pointer (frame-local).
+          run: () =>
+            void openChat(
+              tree && world && tree.kind === 'workspace'
+                ? { treeId: tree.id, at: { x: world.x - tree.frame.x, y: world.y - tree.frame.y } }
+                : {},
+            ),
         },
       ]
       if (onStartThread) {

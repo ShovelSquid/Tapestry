@@ -1888,6 +1888,12 @@ html, body, #root {
   white-space: nowrap;
 }
 
+/* Enlarge, pressed while this session is the one beside the canvas. */
+.tapestry-session-header .tapestry-ask-claude-button[aria-pressed='true'] {
+  color: var(--tap-ink);
+  background: var(--tap-surface-sunk);
+}
+
 .tapestry-session-body {
   flex: 1;
   min-height: 0;
@@ -1919,13 +1925,15 @@ html, body, #root {
 }
 
 .tapestry-chat-empty-heading {
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 600;
+  line-height: 1.5;
 }
 
+/* 02.8 typography: transcript text is Body 16, as note text is. */
 .tapestry-chat-empty-body,
 .tapestry-chat-other {
-  font-size: 14px;
+  font-size: 16px;
   line-height: 1.5;
   color: var(--tap-muted);
   white-space: pre-wrap;
@@ -1934,7 +1942,7 @@ html, body, #root {
 
 .tapestry-chat-user,
 .tapestry-chat-assistant {
-  font-size: 14px;
+  font-size: 16px;
   line-height: 1.5;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -1950,7 +1958,7 @@ html, body, #root {
 
 .tapestry-chat-tool {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.4;
   color: var(--tap-muted);
   overflow-wrap: anywhere;
@@ -1990,8 +1998,13 @@ html, body, #root {
   border: 1px solid var(--tap-border);
   border-radius: 8px;
   font-family: inherit;
-  font-size: 14px;
+  font-size: 16px;
   line-height: 1.5;
+  /* One line at rest, up to five while typing (ChatSessionComposer), then scrolls. */
+  max-height: 136px;
+  overflow-y: auto;
+  background: var(--tap-surface);
+  color: var(--tap-ink);
 }
 
 .tapestry-chat-input:focus-visible {
@@ -2016,7 +2029,7 @@ html, body, #root {
   border: 1px solid var(--tap-border);
   border-radius: 6px;
   font-family: inherit;
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.4;
   color: var(--tap-ink);
   cursor: pointer;
@@ -2040,7 +2053,7 @@ html, body, #root {
   border: 1px solid var(--tap-border);
   border-radius: 6px;
   background: var(--tap-paper);
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.4;
 }
 
@@ -2058,7 +2071,7 @@ html, body, #root {
   border: none;
   padding: 0;
   font-family: inherit;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--tap-accent);
   cursor: pointer;
 }
@@ -2069,7 +2082,7 @@ html, body, #root {
 }
 
 .tapestry-chat-choose-heading {
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 600;
 }
 
@@ -2132,7 +2145,7 @@ html, body, #root {
 }
 
 .tapestry-chat-shell-risk {
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.4;
   color: var(--tap-muted);
 }

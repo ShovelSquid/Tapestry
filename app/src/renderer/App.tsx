@@ -31,6 +31,7 @@ import {
   type SurfaceInfo,
 } from './components/PluginSurfaceLayer'
 import NamePromptDialog from './components/NamePromptDialog'
+import Dialog from './components/Dialog'
 import ChatPanel, { type ChatPanelState } from './components/ChatPanel'
 import { INSIDE_KEY, buildNesting, subtreeDeepestFirst, type NestingOp } from './layout/nesting'
 import { ContextMenuProvider } from './components/ContextMenu'
@@ -44,7 +45,13 @@ import {
 } from './state/undo-target'
 import { ChatContext, chatWorkspaceFor, type ChatContextValue, type ChatTarget } from './state/chat'
 import { isSessionNode } from '../shared/chat/transcript'
-import { ensureChatSessionsSubscribed } from './state/chat-sessions'
+import {
+  chatSessionFor,
+  createChatSession,
+  ensureChatSessionsSubscribed,
+  forgetChatSession,
+  retainChatSessions,
+} from './state/chat-sessions'
 import { COLLAPSED_KEY, revealExpanded, settleSubspace, type DimsOf, type Point } from './layout/subspaces'
 import ThreadOverlay from './threads/ThreadOverlay'
 import { THREAD_TYPE } from './threads/ThreadCard'
@@ -154,61 +161,67 @@ export default function App(): React.ReactElement {
   const chatTreeId = chatPanel?.kind === 'chat' ? chatPanel.treeId : null
   const chatNoteId = chatPanel?.kind === 'chat' ? chatPanel.noteId : null
 
-  const openChat = useCallback(
-    (target: ChatTarget = {}) => {
-      const openTrees = trees
-        .filter((tree) => tree.status === 'ok')
-        .map((tree) => ({ id: tree.id, name: tree.name, kind: tree.kind }))
-      const choice = chatWorkspaceFor(target, openTrees, lastChatTreeId)
-      const attachment = target.attachment ?? null
-      if ('treeId' in choice) {
-        const treeId = choice.treeId
-        setLastChatTreeId(treeId)
-        // New chat (D-02): main writes a session note into the workspace,
-        // then the panel opens on it once the canvas has it.
-        void (async () => {
-          const created = await window.tapestry.chat.create(treeId)
-          if (!created.ok) {
-            setNotice(created.error)
-            return
-          }
-          await refreshTree(treeId)
-          setChatPanel((previous) => ({
-            kind: 'chat',
-            treeId,
-            noteId: created.value.noteId,
-            attachment,
-            seq: (previous?.kind === 'chat' ? previous.seq : 0) + 1,
-          }))
-        })()
-      } else if ('choose' in choice) {
-        setChatPanel({ kind: 'choose', options: choice.choose, attachment })
-      } else {
-        setChatPanel({ kind: 'none' })
-      }
-    },
-    [trees, lastChatTreeId, refreshTree],
-  )
-
-  // Read through a ref so the context value does not change on every commit:
-  // every card in the space consumes it, and a new value re-renders them all.
+  // Read through refs so openChat, and with it the context value, does not
+  // change on every commit: every card in the space consumes the context,
+  // and a new value re-renders them all.
   const treesForNameRef = useRef(trees)
   treesForNameRef.current = trees
+  const lastChatTreeIdRef = useRef(lastChatTreeId)
+  lastChatTreeIdRef.current = lastChatTreeId
+
+  // Every way into a chat makes a session note (02.8 D-02): New chat on a
+  // frame, Ask Claude… on the canvas, a note or a file, and the chooser. The
+  // new card's composer takes focus; the camera does not move (D-16) and the
+  // panel does not open.
+  const openChat = useCallback(
+    async (target: ChatTarget = {}): Promise<{ treeId: string; noteId: string } | null> => {
+      const openTrees = treesForNameRef.current
+        .filter((tree) => tree.status === 'ok')
+        .map((tree) => ({ id: tree.id, name: tree.name, kind: tree.kind }))
+      const choice = chatWorkspaceFor(target, openTrees, lastChatTreeIdRef.current)
+      const attachment = target.attachment ?? null
+      if ('choose' in choice) {
+        setChatPanel({ kind: 'choose', options: choice.choose, attachment })
+        return null
+      }
+      if ('none' in choice) {
+        setChatPanel({ kind: 'none' })
+        return null
+      }
+      const treeId = choice.treeId
+      setLastChatTreeId(treeId)
+      // A spot only means something in the tree it was taken in.
+      const at = target.treeId === treeId ? target.at : undefined
+      const created = await createChatSession(treeId, at, attachment)
+      if (!created.ok) {
+        setNotice(created.error)
+        return null
+      }
+      await refreshTree(treeId)
+      return { treeId, noteId: created.noteId }
+    },
+    [refreshTree],
+  )
+
   const chatContext = React.useMemo<ChatContextValue>(
     () => ({
       openSession: chatTreeId !== null && chatNoteId !== null ? { treeId: chatTreeId, noteId: chatNoteId } : null,
       openChat,
-      // Closing the panel stops the chat's process; its session is kept, so
-      // the next message continues the conversation.
-      closeChat: () => {
-        if (chatTreeId !== null && chatNoteId !== null) void window.tapestry.chat.stop(chatTreeId, chatNoteId)
-        setChatPanel(null)
+      enlarge: (treeId: string, noteId: string) => {
+        setLastChatTreeId(treeId)
+        setChatPanel({ kind: 'chat', treeId, noteId })
       },
+      // Back to card closes the panel only: it never stops a turn (A-12).
+      backToCard: () => setChatPanel(null),
       treeName: (treeId: string) =>
         treesForNameRef.current.find((tree) => tree.id === treeId)?.name ?? '',
     }),
     [chatTreeId, chatNoteId, openChat],
   )
+
+  // A chat asked to be deleted while Claude is answering (the confirmation).
+  const [deleteChatAsk, setDeleteChatAsk] = useState<NodeRef | null>(null)
+  const keepChatRef = useRef<HTMLButtonElement>(null)
 
   // Plugin contributions: maps node types to component names from plugins
   const [pluginNodeViews, setPluginNodeViews] = useState<Record<string, string>>({})
@@ -939,6 +952,33 @@ export default function App(): React.ReactElement {
     [submitChange, refreshTree, reportSaveError],
   )
 
+  /**
+   * Delete a chat: main ends its process, removes its files and deletes its
+   * note in one commit (02.8-02). Undo is not available in a workspace; the
+   * conversation stays in history. The panel closes if it showed it.
+   */
+  const deleteChat = useCallback(
+    async (ref: NodeRef) => {
+      let result: TapestryChatResult<null>
+      try {
+        result = await window.tapestry.chat.delete(ref.treeId, ref.nodeId)
+      } catch (err) {
+        result = { ok: false, error: errorMessage(err) }
+      }
+      if (!result.ok) {
+        setNotice(`Couldn't delete this chat: ${result.error.replace(/\.+$/, '')}. Nothing was changed.`)
+        return
+      }
+      forgetChatSession(ref.treeId, ref.nodeId)
+      setChatPanel((panel) =>
+        panel?.kind === 'chat' && panel.treeId === ref.treeId && panel.noteId === ref.nodeId ? null : panel,
+      )
+      setEditingRef((prev) => (prev && prev.treeId === ref.treeId && prev.nodeId === ref.nodeId ? null : prev))
+      await refreshTree(ref.treeId)
+    },
+    [refreshTree],
+  )
+
   const handleDeleteNote = useCallback(
     async (ref: NodeRef) => {
       // A workspace note is what a file says (02.7 D-03): removing it from the
@@ -948,6 +988,13 @@ export default function App(): React.ReactElement {
         ?.nodes.find((node) => node.id === ref.nodeId)
       if (target?.type.startsWith('tapestry.workspace/')) {
         setNotice('Workspace files are deleted in their folder, not on the canvas. Nothing was changed.')
+        return
+      }
+      // A chat (02.8): asked first only while Claude is answering; either way
+      // one delete commit through main, which also ends its process.
+      if (target && isSessionNode(target)) {
+        if (chatSessionFor(ref.treeId, ref.nodeId).busy) setDeleteChatAsk(ref)
+        else await deleteChat(ref)
         return
       }
       try {
@@ -974,7 +1021,7 @@ export default function App(): React.ReactElement {
         reportSaveError('Failed to delete note', err)
       }
     },
-    [trees, submitChange, refreshTree, reportSaveError],
+    [trees, submitChange, refreshTree, reportSaveError, deleteChat],
   )
 
   // -----------------------------------------------------------------------
@@ -1301,6 +1348,12 @@ export default function App(): React.ReactElement {
     if (tree.nodes.length > 0 && chatSessionNode === null) setChatPanel(null)
   }, [trees, chatTreeId, chatSessionNode])
 
+  // A workspace that leaves the space takes its sessions' live state with it,
+  // so opening it again loads them afresh from main.
+  useEffect(() => {
+    retainChatSessions(new Set(trees.map((tree) => tree.id)))
+  }, [trees])
+
   // -----------------------------------------------------------------------
   // Render
   // -----------------------------------------------------------------------
@@ -1426,6 +1479,44 @@ export default function App(): React.ReactElement {
 
             {/* Claude beside the canvas, for one session note (02.7 D-12, 02.8 D-04) */}
             {chatPanel !== null && <ChatPanel state={chatPanel} sessionNode={chatSessionNode} />}
+
+            {/* Deleting a chat while Claude is answering (02.8): Keep chat is
+                the default and the Escape answer. */}
+            {deleteChatAsk && (
+              <Dialog
+                title="Delete this chat?"
+                onDismiss={() => setDeleteChatAsk(null)}
+                initialFocusRef={keepChatRef as React.RefObject<HTMLElement>}
+                buttons={
+                  <>
+                    <button
+                      ref={keepChatRef}
+                      type="button"
+                      className="tapestry-button--secondary"
+                      onClick={() => setDeleteChatAsk(null)}
+                    >
+                      Keep chat
+                    </button>
+                    <button
+                      type="button"
+                      className="tapestry-button--destructive"
+                      onClick={() => {
+                        const ref = deleteChatAsk
+                        setDeleteChatAsk(null)
+                        void deleteChat(ref)
+                      }}
+                    >
+                      Delete chat
+                    </button>
+                  </>
+                }
+              >
+                <p className="tapestry-dialog-text">
+                  Claude is still answering. Deleting stops it now. The conversation stays in history, and chats
+                  started from it stay on the canvas.
+                </p>
+              </Dialog>
+            )}
           </div>
         </ContextMenuProvider>
       </ChatContext.Provider>

@@ -195,10 +195,14 @@ export function loadChatSession(treeId: string, noteId: string): void {
 
 /** A session, live: the card and the panel both read this. */
 export function useChatSession(treeId: string, noteId: string): ChatSessionSnapshot {
+  const snapshot = useSyncExternalStore(subscribe, () => chatSessionFor(treeId, noteId))
+  // Once per key; checked again when the snapshot changes, so a session
+  // forgotten while its card stays drawn (its tree closed and reopened) loads
+  // afresh.
   useEffect(() => {
     loadChatSession(treeId, noteId)
-  }, [treeId, noteId])
-  return useSyncExternalStore(subscribe, () => chatSessionFor(treeId, noteId))
+  }, [treeId, noteId, snapshot])
+  return snapshot
 }
 
 // ---------------------------------------------------------------------------
