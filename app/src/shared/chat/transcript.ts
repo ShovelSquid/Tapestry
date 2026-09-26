@@ -133,6 +133,8 @@ export type TranscriptEvent =
   | { type: 'notice'; text: string }
   | { type: 'error'; kind: string; message: string }
   | { type: 'done'; ok: boolean; reason?: string }
+  /** set_status (D-13): chrome, never history, so never an item (D-10). */
+  | { type: 'status'; text: string; needs: boolean; level: number }
 
 // ---------------------------------------------------------------------------
 // Tool lines (D-08), shared by the note, the panel and the card
@@ -211,7 +213,8 @@ type Draft =
  * (never `set_status`), `notice` gives Note, `error` gives Error with its
  * kind, a stopped `done` gives Stopped, and a failed `done` with no error of
  * its own gives Error with DIDNT_FINISH_TEXT. Items with empty text are
- * dropped; `session` events are ignored.
+ * dropped; `session` and `status` events are ignored (status is not history,
+ * D-10).
  */
 export function turnItemsFromEvents(events: readonly TranscriptEvent[]): TurnItem[] {
   const drafts: Draft[] = []
@@ -276,6 +279,7 @@ export function turnItemsFromEvents(events: readonly TranscriptEvent[]): TurnIte
         }
         break
       case 'session':
+      case 'status':
         break
     }
   }

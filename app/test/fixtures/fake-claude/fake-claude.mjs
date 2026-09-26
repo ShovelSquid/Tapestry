@@ -11,7 +11,7 @@
  *                              and append the same line to <RECORD>.log; every
  *                              stdin user line is appended to <RECORD>.stdin
  *   FAKE_CLAUDE_SCENARIO       text | edit | signed-out | crash | slow | session-lost |
- *                              shell-edit | delayed-text
+ *                              shell-edit | delayed-text | status
  *   FAKE_CLAUDE_SCENARIO_FILE  if set and readable, its trimmed content
  *                              overrides FAKE_CLAUDE_SCENARIO for this spawn
  *
@@ -27,6 +27,9 @@
  *                 node fs (a stand-in for Bash, which a test must not need),
  *                 reported as a Bash tool_use, its tool_result, text and result
  *   delayed-text  the init line, then the text scenario 400 ms later
+ *   status        call set_status { text: 'Reading the parser', needs: true,
+ *                 level: 3 } through the real MCP shim, report it as a tool_use
+ *                 and its tool_result, then ask 'Which file should I read?'
  */
 
 import { spawn } from 'node:child_process'
@@ -148,27 +151,30 @@ function startMcp() {
   }
 }
 
-async function editTurn() {
-  if (!mcp) {
-    mcp = startMcp()
-    await mcp.request('initialize', {
-      protocolVersion: '2025-06-18',
-      capabilities: {},
-      clientInfo: { name: 'fake-claude', version: '0' },
-    })
-    mcp.notify('notifications/initialized')
-  }
-  const input = { path: 'src/hello.ts', old_string: "'hello'", new_string: "'hello from chat'" }
-  const toolUseId = 'toolu_fake_0001'
+/** Start the MCP client once per process. */
+async function ensureMcp() {
+  if (mcp) return
+  mcp = startMcp()
+  await mcp.request('initialize', {
+    protocolVersion: '2025-06-18',
+    capabilities: {},
+    clientInfo: { name: 'fake-claude', version: '0' },
+  })
+  mcp.notify('notifications/initialized')
+}
+
+/** Call one tapestry tool through the shim, reported as a tool_use and its tool_result. */
+async function callTool(name, input, toolUseId) {
+  await ensureMcp()
   emit({
     type: 'assistant',
     message: {
       role: 'assistant',
-      content: [{ type: 'tool_use', id: toolUseId, name: 'mcp__tapestry__edit_file', input }],
+      content: [{ type: 'tool_use', id: toolUseId, name: `mcp__tapestry__${name}`, input }],
     },
     session_id: sessionId,
   })
-  const called = await mcp.request('tools/call', { name: 'edit_file', arguments: input })
+  const called = await mcp.request('tools/call', { name, arguments: input })
   const text = called.error
     ? String(called.error.message ?? 'error')
     : (called.result?.content ?? []).map((c) => c.text ?? '').join('\n')
@@ -183,12 +189,26 @@ async function editTurn() {
     },
     session_id: sessionId,
   })
+}
+
+function reply(text) {
   emit({
     type: 'assistant',
-    message: { role: 'assistant', content: [{ type: 'text', text: 'I changed the greeting.' }] },
+    message: { role: 'assistant', content: [{ type: 'text', text }] },
     session_id: sessionId,
   })
-  result(false, 'I changed the greeting.')
+  result(false, text)
+}
+
+async function editTurn() {
+  const input = { path: 'src/hello.ts', old_string: "'hello'", new_string: "'hello from chat'" }
+  await callTool('edit_file', input, 'toolu_fake_0001')
+  reply('I changed the greeting.')
+}
+
+async function statusTurn() {
+  await callTool('set_status', { text: 'Reading the parser', needs: true, level: 3 }, 'toolu_fake_status_0001')
+  reply('Which file should I read?')
 }
 
 // ---------------------------------------------------------------------------
@@ -261,6 +281,11 @@ async function onUserLine() {
       if (!initialised) init()
       initialised = true
       await editTurn()
+      return
+    case 'status':
+      if (!initialised) init()
+      initialised = true
+      await statusTurn()
       return
     case 'shell-edit':
       if (!initialised) init()

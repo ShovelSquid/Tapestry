@@ -495,6 +495,9 @@ app.whenReady().then(async () => {
       mainWindow?.webContents.send('chat-event', { treeId, noteId, turn, event }),
   })
   chatService = chat
+  // set_status (02.8 D-13) reaches the chats through the agent dispatch. The
+  // dispatcher reads agentCommands at call time, so wiring it here is enough.
+  agentCommands.chat = { setStatus: (actor, args) => chat.setStatus(actor, args) }
 
   /** A chat's workspace is addressed by its tree's id, checked like every tree id. */
   function chatTreeId(treeId: unknown): string {

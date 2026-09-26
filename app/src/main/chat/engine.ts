@@ -43,6 +43,12 @@ export type ChatEvent =
   | { type: 'error'; kind: ChatErrorKind; message: string }
   /** The turn ended. */
   | { type: 'done'; ok: boolean; reason?: string }
+  /**
+   * What the session's agent says it is doing (`set_status`, D-13), with its
+   * level already clamped to the ceiling. ChatService records and emits it;
+   * an engine never does. Chrome, never history: no passage holds it (D-10).
+   */
+  | { type: 'status'; text: string; needs: boolean; level: number }
 
 export interface ChatStartOptions {
   /** The workspace root the engine works in. */

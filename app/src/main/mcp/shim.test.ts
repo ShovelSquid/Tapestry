@@ -177,7 +177,7 @@ describe('MCP shim over stdio', () => {
     }
   })
 
-  it('advertises exactly the twenty tools, with no actor argument anywhere', async () => {
+  it('advertises exactly the twenty-one tools, with no actor argument anywhere', async () => {
     const listed = await request(2, 'tools/list', {})
     expect(listed.error).toBeUndefined()
 
@@ -190,7 +190,7 @@ describe('MCP shim over stdio', () => {
     // Exactly these, so a tool added later has to be a deliberate decision
     // rather than something that appeared in the agent's reach unnoticed.
     // Plan 08 added the five D-20..D-24 thread tools alongside the original
-    // eight note/connection tools.
+    // eight note/connection tools; 02.8-04 added set_status (D-13).
     expect([...tools.map((t) => t.name)].sort()).toEqual([
       'append_to_thread',
       'connect_notes',
@@ -210,12 +210,13 @@ describe('MCP shim over stdio', () => {
       'rename_note',
       'replace_in_thread',
       'search_notes',
+      'set_status',
       'update_note',
       'write_file',
     ])
 
     const byName = new Map(tools.map((t) => [t.name, t]))
-    for (const readOnly of ['list_trees', 'search_notes', 'read_note', 'look']) {
+    for (const readOnly of ['list_trees', 'search_notes', 'read_note', 'look', 'set_status']) {
       expect(byName.get(readOnly)?.annotations?.readOnlyHint).toBe(true)
     }
     expect(byName.get('delete_note')?.annotations?.destructiveHint).toBe(true)

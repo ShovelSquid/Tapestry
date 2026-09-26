@@ -4,7 +4,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { chatWorkspaceFor, composeFirstMessage, formatAttachment, liveAfter, type ChatAttachment } from './chat'
+import { chatWorkspaceFor, composeFirstMessage, foldChatEvents, formatAttachment, liveAfter, type ChatAttachment } from './chat'
 
 const WS_A = `sha256:${'a'.repeat(64)}`
 const WS_B = `sha256:${'b'.repeat(64)}`
@@ -116,5 +116,20 @@ describe('liveAfter (02.8-01, D-09)', () => {
     expect(liveAfter(entries, 0)).toEqual(entries)
     expect(liveAfter(entries, 1)).toEqual(entries.slice(2))
     expect(liveAfter(entries, 2)).toEqual([])
+  })
+})
+
+describe('foldChatEvents and set_status (02.8-04, D-10)', () => {
+  it('draws no row for a set_status call, its result or a status event, as the passage records none', () => {
+    const items = foldChatEvents([
+      { type: 'user', text: 'hi' },
+      { type: 'tool-call', id: 't1', name: 'mcp__tapestry__set_status', input: { text: 'Reading' } },
+      { type: 'status', text: 'Reading', needs: false, level: 1 },
+      { type: 'tool-result', id: 't1', isError: false, text: '{"shown":true}' },
+      { type: 'tool-call', id: 't2', name: 'mcp__tapestry__read_file', input: { path: 'a.ts' } },
+      { type: 'text', text: 'ok' },
+    ])
+    expect(items.map((item) => item.kind)).toEqual(['user', 'tool', 'assistant'])
+    expect(items[1]).toMatchObject({ kind: 'tool', name: 'mcp__tapestry__read_file' })
   })
 })

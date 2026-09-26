@@ -17,7 +17,7 @@ import { TreeRegistry, type OpenTree } from '../trees/registry'
 import { NoteCommands } from '../commands/notes'
 import { ConnectionCommands } from '../commands/connections'
 import { SpatialCommands } from '../commands/spatial'
-import { runAgentTool } from '../commands/agent-tools'
+import { runAgentTool, SET_STATUS_REFUSAL, type AgentCommands } from '../commands/agent-tools'
 import { WorkspaceFileCommands } from '../commands/file-tools'
 import { AgentRegistry, agentSocketPath } from '../agents/registry'
 import { AgentSocketServer } from '../agents/socket-server'
@@ -52,6 +52,8 @@ interface Harness {
   /** False for a second service sharing another harness's workspace and server. */
   owned: boolean
   ws: TempWorkspace
+  /** The agent dispatch's commands; `chat` is the newest service's (as index.ts has one). */
+  commands: AgentCommands
   registry: TreeRegistry
   workspaces: WorkspaceService
   tree: OpenTree
@@ -98,12 +100,12 @@ interface HarnessOptions {
   userDataDir?: string
   turnTimeoutMs?: number
   claudeBinary?: () => { path: string } | { lookedIn: string[] }
-  existing?: Pick<Harness, 'ws' | 'registry' | 'workspaces' | 'tree' | 'agents' | 'server' | 'noteId'>
+  existing?: Pick<Harness, 'ws' | 'commands' | 'registry' | 'workspaces' | 'tree' | 'agents' | 'server' | 'noteId'>
   /** With `existing`: start a new session instead of reusing its note. */
   newSession?: boolean
 }
 
-type HarnessBase = Pick<Harness, 'ws' | 'registry' | 'workspaces' | 'tree' | 'agents' | 'server'>
+type HarnessBase = Pick<Harness, 'ws' | 'commands' | 'registry' | 'workspaces' | 'tree' | 'agents' | 'server'>
 
 async function startHarness(options: HarnessOptions = {}): Promise<Harness> {
   let base: HarnessBase | undefined = options.existing
@@ -113,7 +115,7 @@ async function startHarness(options: HarnessOptions = {}): Promise<Harness> {
     const workspaces = new WorkspaceService(registry, { treesDir: ws.treesDir })
     const tree = await workspaces.addWorkspace(ws.root)
     const agents = new AgentRegistry(join(ws.dir, 'agents.json'))
-    const commands = {
+    const commands: AgentCommands = {
       notes: new NoteCommands(registry),
       connections: new ConnectionCommands(registry),
       spatial: new SpatialCommands(registry),
@@ -125,7 +127,7 @@ async function startHarness(options: HarnessOptions = {}): Promise<Harness> {
       dispatch: (name, tool, args) => runAgentTool(commands, agentActor(name), tool, args),
     })
     await server.listen()
-    base = { ws, registry, workspaces, tree, agents, server }
+    base = { ws, commands, registry, workspaces, tree, agents, server }
   }
 
   const record = join(base.ws.dir, `record-${harnesses.length}.json`)
@@ -163,6 +165,9 @@ async function startHarness(options: HarnessOptions = {}): Promise<Harness> {
         ...(options.turnTimeoutMs !== undefined ? { turnTimeoutMs: options.turnTimeoutMs } : {}),
       }),
   })
+
+  // As index.ts wires it once the service exists (set_status, 02.8-04).
+  base.commands.chat = { setStatus: (actor, args) => chat.setStatus(actor, args) }
 
   const noteId =
     options.existing && !options.newSession ? options.existing.noteId : chat.createSession(base.tree.id).noteId
@@ -1298,5 +1303,101 @@ describe('the Allow shell switch at its edges', () => {
     const observed = commitBlocks(h).filter((b) => b.includes('observed change to src/nested/deep.txt'))
     expect(observed).toHaveLength(1)
     expect(observed[0]).toContain('actor plugin workspace.watcher')
+  }, 30000)
+})
+
+// ---------------------------------------------------------------------------
+// set_status: chrome, never history (02.8-04, D-10, D-13, SC4)
+// ---------------------------------------------------------------------------
+
+describe('set_status (02.8-04)', () => {
+  it("a chat's Claude calls set_status through the real shim; its session hears it and the tree does not", async () => {
+    const h = await startHarness({ scenario: 'status' })
+    const before = commitBlocks(h).length
+    await h.chat.send(h.tree.id, h.noteId, 'look at the parser')
+    await waitFor(() => doneCount(h.events) === 1, 20000)
+
+    const statuses = h.payloads.filter((p) => p.event.type === 'status')
+    expect(statuses).toHaveLength(1)
+    expect(statuses[0]).toMatchObject({
+      treeId: h.tree.id,
+      noteId: h.noteId,
+      turn: 1,
+      event: { type: 'status', text: 'Reading the parser', needs: true, level: 3 },
+    })
+
+    // Exactly one commit: the turn's passage. set_status wrote nothing.
+    const blocks = commitBlocks(h)
+    expect(blocks).toHaveLength(before + 1)
+    const passage = passageLines(blocks.at(-1)!)
+    expect(passage).toEqual(['Turn 1', 'You: look at the parser', 'Claude: Which file should I read?'])
+    const text = passage.join('\n')
+    expect(text).not.toContain('set_status')
+    expect(text).not.toContain('Reading the parser')
+    expect(text).not.toContain('Tool:')
+    expect(h.events.at(-1)).toMatchObject({ type: 'done', ok: true })
+  }, 30000)
+
+  it('refuses an agent that is not an in-app chat session, and a dispatch with no chats', async () => {
+    const h = await startHarness({ scenario: 'text' })
+    const before = commitBlocks(h).length
+    expect(runAgentTool(h.commands, agentActor('claude'), 'set_status', { text: 'hi' })).toEqual({
+      ok: false,
+      error: SET_STATUS_REFUSAL,
+    })
+    expect(runAgentTool(h.commands, agentActor('claude'), 'set_status', { text: 'hi', needs: true })).toEqual({
+      ok: false,
+      error: SET_STATUS_REFUSAL,
+    })
+    const { chat: _chat, ...withoutChat } = h.commands
+    expect(runAgentTool(withoutChat, agentActor(h.agent), 'set_status', { text: 'hi' })).toEqual({
+      ok: false,
+      error: SET_STATUS_REFUSAL,
+    })
+    expect(h.events).toEqual([])
+    expect(commitBlocks(h)).toHaveLength(before)
+  }, 30000)
+
+  it('clamps a level to 3, defaults it from needs, and reaches only the calling session', async () => {
+    const h = await startHarness({ scenario: 'text' })
+    const other = h.chat.createSession(h.tree.id)
+    h.chat.open(h.tree.id, other.noteId)
+    const before = commitBlocks(h).length
+
+    expect(runAgentTool(h.commands, agentActor(h.agent), 'set_status', { text: 'Loud', level: 50 })).toEqual({
+      ok: true,
+      value: { shown: true },
+    })
+    expect(runAgentTool(h.commands, agentActor(h.agent), 'set_status', { text: 'Quiet' })).toMatchObject({ ok: true })
+    expect(
+      runAgentTool(h.commands, agentActor(other.agent), 'set_status', { text: 'Asking', needs: true }),
+    ).toMatchObject({ ok: true })
+
+    const statuses = h.payloads.filter((p) => p.event.type === 'status')
+    expect(statuses.map((p) => [p.noteId, p.event])).toEqual([
+      [h.noteId, { type: 'status', text: 'Loud', needs: false, level: 3 }],
+      [h.noteId, { type: 'status', text: 'Quiet', needs: false, level: 1 }],
+      [other.noteId, { type: 'status', text: 'Asking', needs: true, level: 3 }],
+    ])
+    expect(commitBlocks(h)).toHaveLength(before)
+  }, 30000)
+
+  it('refuses text that is not one line, empty or too long, and an unknown key', async () => {
+    const h = await startHarness({ scenario: 'text' })
+    const actor = agentActor(h.agent)
+    const refused = (args: unknown): string => {
+      const result = runAgentTool(h.commands, actor, 'set_status', args)
+      expect(result.ok).toBe(false)
+      return result.ok ? '' : result.error
+    }
+    expect(refused({ text: 'one\ntwo' })).toContain('text must be one line')
+    expect(refused({ text: 'one\rtwo' })).toContain('text must be one line')
+    refused({ text: '' })
+    refused({ text: 'x'.repeat(121) })
+    refused({ text: 'hi', level: 1.5 })
+    refused({ text: 'hi', level: -1 })
+    refused({ text: 'hi', level: 101 })
+    refused({ text: 'hi', actor: 'agent.other' })
+    expect(h.events).toEqual([])
   }, 30000)
 })

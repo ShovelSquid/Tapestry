@@ -232,6 +232,20 @@ export const OpenFileArgs = z
   })
   .strict()
 
+// Chat status (02.8 D-13): chrome, never history. Only Tapestry's in-app
+// chats may use it; main refuses every other agent.
+export const SetStatusArgs = z
+  .object({
+    text: z
+      .string()
+      .min(1)
+      .max(120)
+      .regex(/^[^\r\n]*$/, 'text must be one line'),
+    needs: z.boolean().optional(),
+    level: z.number().int().min(0).max(100).optional(),
+  })
+  .strict()
+
 // ---------------------------------------------------------------------------
 // Tool table
 // ---------------------------------------------------------------------------
@@ -358,6 +372,14 @@ export const TOOL_DEFINITIONS: readonly ToolDefinition[] = Object.freeze([
     description:
       "Shows a workspace file in its window on the Tapestry canvas: the canvas pans to the file's note and opens it for reading and editing. Returns the note id. Paths follow the same rules as read_file.",
     schema: OpenFileArgs,
+    annotations: { readOnlyHint: true },
+  },
+  {
+    name: 'set_status',
+    title: 'Say what this chat is doing',
+    description:
+      "Shows a few words on this chat's card in Tapestry, such as 'Reading the parser'. Set needs to true when you ask the person something or wait for their answer. level 0-3 says how much attention it asks for: 0 silent, 1 text only, 2 noticeable, 3 needs the person. Writes nothing to any tree. Only Tapestry's in-app chats can use it.",
+    schema: SetStatusArgs,
     annotations: { readOnlyHint: true },
   },
 ])

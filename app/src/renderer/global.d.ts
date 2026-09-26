@@ -377,6 +377,8 @@ type TapestryChatEvent =
   | { type: 'notice'; text: string }
   | { type: 'error'; kind: TapestryChatErrorKind; message: string }
   | { type: 'done'; ok: boolean; reason?: string }
+  /** What the session's agent says it is doing (set_status, D-13); never history. */
+  | { type: 'status'; text: string; needs: boolean; level: number }
 
 type TapestryChatResult<T> = { ok: true; value: T } | { ok: false; error: string }
 

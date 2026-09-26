@@ -40,8 +40,11 @@ import { join } from 'node:path'
 import type { AgentRegistry } from '../agents/registry'
 import { chatShimLaunch } from '../agents/connect-command'
 import { agentActor, type Actor } from '../commands/actor'
+import { SET_STATUS_REFUSAL } from '../commands/agent-tools'
+import type { CommandResult } from '../commands/notes'
 import { NO_WORKSPACE_MESSAGE, type OpenWorkspace } from '../workspace/sandbox'
 import { isSessionNode, committedTurns, turnItemsFromEvents } from '../../shared/chat/transcript'
+import { clampLevel } from '../../shared/chat/session-status'
 import type { ChatEngine, ChatEvent } from './engine'
 import { CHAT_MCP_SERVER, chatSystemPrompt, childEnv, notInstalledMessage, resolveClaudeBinary } from './claude-cli'
 import { ClaudeCliEngine, STILL_ANSWERING_MESSAGE, type ClaudeCliEngineOptions } from './claude-cli-engine'
@@ -355,6 +358,36 @@ export class ChatService {
     }
     if (!this.isCurrent(session) || !session.turnOpen) return
     this.sendToEngine(session, engine, text)
+  }
+
+  /**
+   * `set_status` from a session's own agent (D-13): a few words about what it
+   * is doing, and whether it needs the person. The actor comes from the
+   * socket's token; the tool has no session argument, so a session can only
+   * ever set its own status (T-02.8-17), and any agent that is not a loaded
+   * session's is refused (T-02.8-18). The status is recorded into the open
+   * turn (or ahead of the next one, between turns) and sent to the renderer.
+   * Chrome, never history (D-10): nothing is written to any tree, and the
+   * turn's passage leaves it out.
+   */
+  setStatus(
+    actor: Actor,
+    args: { text: string; needs?: boolean; level?: number },
+  ): CommandResult<{ shown: true }> {
+    const session = [...this.sessions.values()].find(
+      (candidate) =>
+        agentActor(candidate.agent).id === actor.id &&
+        !this.deleting.has(sessionKey(candidate.treeId, candidate.noteId)),
+    )
+    if (!session) return { ok: false, error: SET_STATUS_REFUSAL }
+    const needs = args.needs === true
+    this.record(session, {
+      type: 'status',
+      text: args.text,
+      needs,
+      level: clampLevel(args.level ?? (needs ? 3 : 1)),
+    })
+    return { ok: true, value: { shown: true } }
   }
 
   async stop(treeId: string, noteId: unknown): Promise<void> {

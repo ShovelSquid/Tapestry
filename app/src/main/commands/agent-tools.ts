@@ -42,7 +42,21 @@ export interface AgentCommands {
    * refused with a clear message rather than this module throwing.
    */
   threads?: ThreadToolCommands
+  /**
+   * The in-app chats (02.8 D-13): `set_status` shows a few words on the
+   * calling session's card. Absent (a harness with no ChatService, or before
+   * index.ts wires it), every set_status call is refused.
+   */
+  chat?: {
+    setStatus(actor: Actor, args: { text: string; needs?: boolean; level?: number }): CommandResult<{ shown: true }>
+  }
 }
+
+/**
+ * Said to any agent that is not one of Tapestry's in-app chat sessions, so an
+ * outside agent can never raise Needs you or an edge arrow (T-02.8-18).
+ */
+export const SET_STATUS_REFUSAL = "set_status is only available to Tapestry's in-app chats"
 
 /** Flatten a zod failure into one readable line. */
 function zodMessage(issues: ReadonlyArray<{ path: PropertyKey[]; message: string }>): string {
@@ -184,6 +198,12 @@ export function runAgentTool(
           replace_all?: boolean
         },
       )
+
+    case 'set_status':
+      // Chrome, never history (D-10): it goes to the chat service, which
+      // matches the socket's actor to its session and writes no tree.
+      if (!commands.chat) return { ok: false, error: SET_STATUS_REFUSAL }
+      return commands.chat.setStatus(actor, parsed.data as { text: string; needs?: boolean; level?: number })
 
     default:
       return { ok: false, error: `Unknown tool: ${tool}` }

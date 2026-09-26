@@ -15,6 +15,7 @@
  */
 
 import { createContext } from 'react'
+import { isStatusTool } from '../../shared/chat/transcript'
 
 // ---------------------------------------------------------------------------
 // Context
@@ -144,7 +145,8 @@ export type ChatItem =
 /**
  * What the panel shows for a list of events. Text deltas accumulate into the
  * current assistant block until its complete `text` replaces them; tool calls
- * and their results pair by id.
+ * and their results pair by id. `set_status` calls and `status` events are
+ * left out, as the committed passage leaves them out (D-10).
  */
 export function foldChatEvents(events: TapestryChatEvent[]): ChatItem[] {
   const items: ChatItem[] = []
@@ -176,6 +178,9 @@ export function foldChatEvents(events: TapestryChatEvent[]): ChatItem[] {
         break
       }
       case 'tool-call': {
+        // set_status is status, never a transcript row: the committed
+        // passage leaves it out, so the live turn does too (D-10).
+        if (isStatusTool(event.name)) break
         const item: Extract<ChatItem, { kind: 'tool' }> = {
           kind: 'tool',
           id: event.id,
@@ -204,6 +209,7 @@ export function foldChatEvents(events: TapestryChatEvent[]): ChatItem[] {
         }
         break
       case 'session':
+      case 'status':
         break
     }
   }
