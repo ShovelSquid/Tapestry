@@ -1,0 +1,108 @@
+@tree 1 40
+world rook
+created 2026-09-30T06:00:00Z
+@end sha256:73673cbea2d877b93d91a88655e1ce017a0d097945c099dc8102a0e246fb42ac
+@commit 1 1040
+parent sha256:73673cbea2d877b93d91a88655e1ce017a0d097945c099dc8102a0e246fb42ac
+branch main
+recorded 2026-09-30T06:00:00Z
+tick 0
+actor human designer
+message "who Rook is"
+create-node n1 perihelion.npc/self@1
+set n1 name text "Rook"
+set n1 role text "hangar mechanic, second shift"
+set n1 voice text <<TEXT
+Terse, dry, talks to machines more kindly than to people. Never says more than three sentences. Swears by part numbers.
+TEXT
+create-node n2 perihelion.npc/person@1
+set n2 entity text "player"
+set n2 name text "Vesper"
+create-node n3 perihelion.npc/person@1
+set n3 entity text "pilot.kade"
+set n3 name text "Kade"
+create-node n4 perihelion.npc/sample@1
+set n4 line text "Left actuator's cooked. Again. You want it fixed or you want it fast?"
+set n4 mood text "irritated"
+create-node n5 perihelion.npc/sample@1
+set n5 line text "She'll fly. Don't ask her to do anything clever."
+set n5 mood text "neutral"
+create-node n6 perihelion.npc/sample@1
+set n6 line text "...Good landing. Don't tell anyone I said that."
+set n6 mood text "warm"
+@end sha256:fb70fd8b965a0239d922b94bc9e71fa66cf386ebed384cbe45af5cdc105d2166
+@commit 2 966
+parent sha256:fb70fd8b965a0239d922b94bc9e71fa66cf386ebed384cbe45af5cdc105d2166
+branch main
+recorded 2026-09-30T06:00:00Z
+tick 0
+actor human designer
+message "what Rook knows at start"
+create-node n7 perihelion.npc/fact@1
+set n7 confidence real 1
+set n7 source text "witnessed"
+set n7 text text "Vesper brought the Hauler back with both knee joints sheared"
+create-edge e1 n7 n2 about
+create-node n8 perihelion.npc/fact@1
+set n8 confidence real 0.6
+set n8 source text "told by Kade"
+set n8 text text "Vesper pulled Kade out of the ridge ambush"
+create-edge e2 n8 n2 about
+create-edge e3 n8 n3 about
+create-node n9 perihelion.npc/fact@1
+set n9 confidence real 0.9
+set n9 source text "witnessed"
+set n9 text text "Cell stocks are down to four days since the northern depot fell"
+create-node n10 perihelion.npc/fact@1
+set n10 confidence real 0.7
+set n10 source text "rumor"
+set n10 text text "Actuator parts come from the salvage yard; the yard stopped trading with us"
+@end sha256:78f7218a0a85a03e5df89a4c3efbaae1d6c1bffe81f96d098a31c82dc3804c86
+@commit 3 551
+parent sha256:78f7218a0a85a03e5df89a4c3efbaae1d6c1bffe81f96d098a31c82dc3804c86
+branch main
+recorded 2026-09-30T06:00:00Z
+tick 0
+actor plugin perihelion.mind
+message "Rook forms opinions of Vesper"
+create-node n11 perihelion.npc/opinion@1
+set n11 stance real -0.6
+set n11 text text "Vesper is hard on machines"
+create-edge e4 n11 n2 about
+create-edge e5 n11 n7 because
+create-node n12 perihelion.npc/opinion@1
+set n12 stance real 0.3
+set n12 text text "Vesper looks after the pilots, at least"
+create-edge e6 n12 n2 about
+create-edge e7 n12 n8 because
+@end sha256:bbc6aaf9e661d1f20c9c2a3033bfaa40fc76dd23641273c84db4b76cff99d994
+@commit 4 193
+parent sha256:bbc6aaf9e661d1f20c9c2a3033bfaa40fc76dd23641273c84db4b76cff99d994
+branch main
+recorded 2026-09-30T06:00:00Z
+tick 0
+actor system perihelion.clock
+message "shift change"
+advance 600
+@end sha256:e40acf0936fdf3184f01e28543f55da4548abb37c60108d51f274d8feb14eccb
+@commit 5 375
+parent sha256:e40acf0936fdf3184f01e28543f55da4548abb37c60108d51f274d8feb14eccb
+branch main
+recorded 2026-09-30T06:00:00Z
+tick 600
+actor plugin perihelion.speaker
+message "said to Vesper"
+create-node n13 perihelion.npc/utterance@1
+set n13 game_time int 600
+set n13 line text "Knees again. I'm not a miracle worker, I'm a mechanic with no parts."
+create-edge e8 n13 n2 said-to
+@end sha256:f36e40efe5bd592fb91c0076fdb2f73c393d47953222d414079a9a46e48d54fc
+@commit 6 231
+parent sha256:f36e40efe5bd592fb91c0076fdb2f73c393d47953222d414079a9a46e48d54fc
+branch main
+recorded 2026-09-30T06:00:00Z
+tick 600
+actor plugin perihelion.mind
+message "parts shortage sharpens Rook's view"
+set n11 stance real -0.75
+@end sha256:98c848829adbac6fdabf097edd9af82a2f485c0d82b075ca4cf3637458793529
