@@ -58,7 +58,15 @@ node 015-generative-vectors/serve.mjs     # then open /016-shared/index.html on 
    fillet; the bridge is one continuous object, with the ground anchor
    filleted into both stalks. Faint stair-step shading comes from normals
    averaged over thin triangles, not from the geometry.
-5. **Crease statistics weren't useful.** The largest angle between
+5. **Corrected by spike 017.** 016a padded its capsule buckets by
+   `r + k + 2h` from the axis, one radius short of its own reach test (which
+   is on distance to the surface). A capsule in that band counted in one
+   bucket and not the next, so the field depended on the bucket grid (by
+   about 3×10⁻⁵). Now padded by `2r + k + 2h`. All checks still pass after
+   the fix: watertight, deterministic and regional at every level. The
+   numbers below are from before the fix; after it the tree takes
+   2.3/2.7/3.3 s at levels 3/4/5.
+6. **Crease statistics weren't useful.** The largest angle between
    neighbouring faces (~170°) comes from near-degenerate slivers where the
    field is almost zero at a lattice point. Judge smoothness by eye;
    dihedral p99 is 57–77°.

@@ -18,7 +18,7 @@
         "dihedral_max": 60
       },
       "sdf": {
-        "ms": 2336,
+        "ms": 2309,
         "vertices": 106306,
         "triangles": 212620,
         "edges": 318930,
@@ -34,7 +34,7 @@
         "deterministic": true,
         "hash": "ea522eaf4bbe4b55",
         "region": {
-          "ms": 125,
+          "ms": 118,
           "inside": 4411,
           "missing": 0
         }
@@ -77,7 +77,7 @@
         "dihedral_max": 60
       },
       "sdf": {
-        "ms": 2498,
+        "ms": 2744,
         "vertices": 149932,
         "triangles": 299892,
         "edges": 449838,
@@ -93,13 +93,13 @@
         "deterministic": true,
         "hash": "db3110550b9aa385",
         "region": {
-          "ms": 153,
+          "ms": 95,
           "inside": 6161,
           "missing": 0
         }
       },
       "tubes": {
-        "ms": 59,
+        "ms": 18,
         "vertices": 20826,
         "triangles": 40680,
         "edges": 61020,
@@ -136,7 +136,7 @@
         "dihedral_max": 60
       },
       "sdf": {
-        "ms": 3987,
+        "ms": 3251,
         "vertices": 206214,
         "triangles": 412652,
         "edges": 618978,
@@ -152,13 +152,13 @@
         "deterministic": true,
         "hash": "926a3f96b9518f66",
         "region": {
-          "ms": 151,
+          "ms": 147,
           "inside": 7907,
           "missing": 0
         }
       },
       "tubes": {
-        "ms": 28,
+        "ms": 30,
         "vertices": 47556,
         "triangles": 93168,
         "edges": 139752,
@@ -195,7 +195,7 @@
         "dihedral_max": 60
       },
       "sdf": {
-        "ms": 1101,
+        "ms": 846,
         "vertices": 66994,
         "triangles": 133984,
         "edges": 200976,
@@ -211,7 +211,7 @@
         "deterministic": true,
         "hash": "e655a53eec7910b7",
         "region": {
-          "ms": 99,
+          "ms": 79,
           "inside": 7125,
           "missing": 0
         }
@@ -254,7 +254,7 @@
         "dihedral_max": 60
       },
       "sdf": {
-        "ms": 1235,
+        "ms": 1066,
         "vertices": 93574,
         "triangles": 187172,
         "edges": 280758,
@@ -270,13 +270,13 @@
         "deterministic": true,
         "hash": "f8630d40a8d5e874",
         "region": {
-          "ms": 123,
+          "ms": 143,
           "inside": 10946,
           "missing": 0
         }
       },
       "tubes": {
-        "ms": 10,
+        "ms": 14,
         "vertices": 10598,
         "triangles": 20760,
         "edges": 31140,
@@ -313,7 +313,7 @@
         "dihedral_max": 60
       },
       "sdf": {
-        "ms": 1402,
+        "ms": 1359,
         "vertices": 128542,
         "triangles": 257232,
         "edges": 385848,
@@ -329,13 +329,13 @@
         "deterministic": true,
         "hash": "dcccc1af95d78d17",
         "region": {
-          "ms": 153,
+          "ms": 142,
           "inside": 15361,
           "missing": 0
         }
       },
       "tubes": {
-        "ms": 17,
+        "ms": 14,
         "vertices": 22478,
         "triangles": 44088,
         "edges": 66132,

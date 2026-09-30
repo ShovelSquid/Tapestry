@@ -40,7 +40,12 @@ export function buildSdfMesh(vectors, { cell = 0.04, blend = 1.2, minRadius = 1.
   const buckets = new Map()
   const bkey = (x, y, z) => key(Math.floor(x / bucket), Math.floor(y / bucket), Math.floor(z / bucket))
   caps.forEach((c, i) => {
-    const pad = c.r + c.k + 2 * h
+    // The reach test below is on distance to the capsule's surface
+    // (axis distance - r), so from the axis the reach is r + (r + k + 2h).
+    // Padding by r + k + 2h (one radius short) made a capsule count in one
+    // bucket and not the next: the field depended on the bucket grid.
+    // Found by spike 017's independent per-brick index.
+    const pad = 2 * c.r + c.k + 2 * h
     const lo = [Math.min(c.ax, c.ax + c.bx) - pad, Math.min(c.ay, c.ay + c.by) - pad, Math.min(c.az, c.az + c.bz) - pad]
     const hi = [Math.max(c.ax, c.ax + c.bx) + pad, Math.max(c.ay, c.ay + c.by) + pad, Math.max(c.az, c.az + c.bz) + pad]
     for (let x = Math.floor(lo[0] / bucket); x <= Math.floor(hi[0] / bucket); x++)

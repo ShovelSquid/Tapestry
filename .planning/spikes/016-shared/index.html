@@ -31,6 +31,7 @@
     <option value="cylinders">015: separate cylinders</option>
     <option value="sdf">016a: distance-field blend</option>
     <option value="tubes">016b: swept tubes</option>
+    <option value="fast">017: fast distance field, gradient normals</option>
   </select>
   <label>Description</label><select id="preset"><option>tree</option><option>bridge</option><option>coral</option></select>
   <label>Levels <b id="levelV"></b></label><input id="level" type="range" min="1" max="6" value="4">
@@ -45,6 +46,7 @@ import { expand, end } from '../015-generative-vectors/gen.mjs'
 import { PRESETS } from '../015-generative-vectors/presets.mjs'
 import { buildSdfMesh } from '../016a-sdf-surface-nets/sdf.mjs'
 import { buildTubeMesh } from '../016b-swept-tubes/tubes.mjs'
+import { buildFastSdfMesh } from '../017-fast-sdf/fast.mjs'
 
 const $ = (id) => document.getElementById(id)
 const q = new URLSearchParams(location.search)
@@ -81,7 +83,8 @@ function toThree(built) {
   const geo = new THREE.BufferGeometry()
   geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(built.positions), 3))
   geo.setIndex(new THREE.BufferAttribute(built.indices, 1))
-  geo.computeVertexNormals()
+  if (built.normals) geo.setAttribute('normal', new THREE.BufferAttribute(built.normals, 3))
+  else geo.computeVertexNormals()
   return { object: new THREE.Mesh(geo, material), triangles: built.indices.length / 3 }
 }
 
@@ -95,6 +98,7 @@ async function build() {
   const method = $('method').value
   const out = method === 'cylinders' ? cylinderMesh(vectors)
     : method === 'sdf' ? toThree(buildSdfMesh(vectors, { cell: Number($('cell').value) }))
+    : method === 'fast' ? toThree(buildFastSdfMesh(vectors, { cell: Number($('cell').value), normals: true }))
     : toThree(buildTubeMesh(vectors))
   const ms = performance.now() - t0
   if (mesh) scene.remove(mesh)
