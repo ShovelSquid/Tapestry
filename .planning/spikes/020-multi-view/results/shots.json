@@ -1,0 +1,35 @@
+{
+  "errors": [],
+  "replay": {
+    "browser": "e65967bf6b3ae4a0",
+    "node": "e65967bf6b3ae4a0",
+    "same": true,
+    "stems": [
+      [
+        1,
+        2,
+        3
+      ]
+    ],
+    "views": [
+      [
+        {
+          "id": 1,
+          "residual": 0,
+          "weight": 0.333
+        },
+        {
+          "id": 2,
+          "residual": 0,
+          "weight": 0.333
+        },
+        {
+          "id": 3,
+          "residual": 0,
+          "weight": 0.333
+        }
+      ]
+    ],
+    "changedByThirdView": true
+  }
+}
