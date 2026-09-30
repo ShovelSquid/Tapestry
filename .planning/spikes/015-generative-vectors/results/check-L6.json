@@ -1,0 +1,95 @@
+{
+  "maxLevel": 6,
+  "presets": {
+    "tree": {
+      "expand_ms": 156,
+      "hash": "2c5aa1ad28273b93",
+      "deterministic": true,
+      "order_independent": true,
+      "additive": true,
+      "region_ms": 45.6,
+      "local": {
+        "inside": 38,
+        "missing": 0,
+        "differ": 0,
+        "regional_vectors": 893,
+        "whole_vectors": 1821
+      },
+      "description_bytes": 457,
+      "seeds": 3,
+      "knots": 2,
+      "vectors_per_level": [
+        3,
+        9,
+        27,
+        81,
+        243,
+        486,
+        972
+      ],
+      "vectors": 1821,
+      "vector_bytes": 116544,
+      "ratio": 255
+    },
+    "coral": {
+      "expand_ms": 253.1,
+      "hash": "8a6bc60333604e29",
+      "deterministic": true,
+      "order_independent": true,
+      "additive": true,
+      "region_ms": 96.1,
+      "local": {
+        "inside": 56,
+        "missing": 0,
+        "differ": 0,
+        "regional_vectors": 1193,
+        "whole_vectors": 2025
+      },
+      "description_bytes": 530,
+      "seeds": 5,
+      "knots": 0,
+      "vectors_per_level": [
+        5,
+        10,
+        30,
+        90,
+        270,
+        540,
+        1080
+      ],
+      "vectors": 2025,
+      "vector_bytes": 129600,
+      "ratio": 244.5
+    },
+    "bridge": {
+      "expand_ms": 61.6,
+      "hash": "6bb505155b17bfdd",
+      "deterministic": true,
+      "order_independent": true,
+      "additive": true,
+      "region_ms": 52,
+      "local": {
+        "inside": 88,
+        "missing": 0,
+        "differ": 0,
+        "regional_vectors": 777,
+        "whole_vectors": 837
+      },
+      "description_bytes": 437,
+      "seeds": 3,
+      "knots": 2,
+      "vectors_per_level": [
+        3,
+        6,
+        18,
+        54,
+        108,
+        216,
+        432
+      ],
+      "vectors": 837,
+      "vector_bytes": 53568,
+      "ratio": 122.6
+    }
+  }
+}

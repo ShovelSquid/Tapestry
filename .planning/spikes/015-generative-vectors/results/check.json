@@ -1,0 +1,92 @@
+{
+  "maxLevel": 4,
+  "presets": {
+    "tree": {
+      "expand_ms": 33.2,
+      "hash": "a7a302f39bdb95f4",
+      "deterministic": true,
+      "index_matches_brute_force": true,
+      "order_independent": true,
+      "additive": true,
+      "region_ms": 11,
+      "local": {
+        "inside": 46,
+        "missing": 0,
+        "differ": 0,
+        "regional_vectors": 288,
+        "whole_vectors": 363
+      },
+      "description_bytes": 457,
+      "seeds": 3,
+      "knots": 2,
+      "vectors_per_level": [
+        3,
+        9,
+        27,
+        81,
+        243
+      ],
+      "vectors": 363,
+      "vector_bytes": 23232,
+      "ratio": 50.8
+    },
+    "coral": {
+      "expand_ms": 25.5,
+      "hash": "dd4006e3440825f0",
+      "deterministic": true,
+      "index_matches_brute_force": true,
+      "order_independent": true,
+      "additive": true,
+      "region_ms": 12.4,
+      "local": {
+        "inside": 68,
+        "missing": 0,
+        "differ": 0,
+        "regional_vectors": 336,
+        "whole_vectors": 405
+      },
+      "description_bytes": 530,
+      "seeds": 5,
+      "knots": 0,
+      "vectors_per_level": [
+        5,
+        10,
+        30,
+        90,
+        270
+      ],
+      "vectors": 405,
+      "vector_bytes": 25920,
+      "ratio": 48.9
+    },
+    "bridge": {
+      "expand_ms": 4.3,
+      "hash": "90b2e081c18b77fc",
+      "deterministic": true,
+      "index_matches_brute_force": true,
+      "order_independent": true,
+      "additive": true,
+      "region_ms": 6.6,
+      "local": {
+        "inside": 51,
+        "missing": 0,
+        "differ": 0,
+        "regional_vectors": 189,
+        "whole_vectors": 189
+      },
+      "description_bytes": 437,
+      "seeds": 3,
+      "knots": 2,
+      "vectors_per_level": [
+        3,
+        6,
+        18,
+        54,
+        108
+      ],
+      "vectors": 189,
+      "vector_bytes": 12096,
+      "ratio": 27.7
+    }
+  }
+}

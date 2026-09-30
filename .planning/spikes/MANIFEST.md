@@ -59,6 +59,16 @@ Perihelion's NPCs (Kaelen, 2026-09-30) keep their minds in Tapestry worlds. An N
 - The sidecar keeps a live index, updated by replaying each accepted commit; context costs ~1 ms over HTTP at 5k lines this way, against 16 ms when the index is rebuilt per packet (spikes 013b, 014)
 - Ids for nodes created in a commit are predicted from `getNextIds()` and asserted after `submit`, because the addon always lets the kernel assign (spike 014)
 
+### generative-vectors
+Kaelen's "Generative Vector Neural Rendering" note (2026-09-30): store the rules that make an object (a few seed vectors, knots that are relationships between them, and generative rules), not its geometry, so detail can be regrown at any resolution and edited by moving a few structural vectors. A learned model may later infer the seeds from an image. Geometry is the consequence of relationships. The `data-drawing` branch (deterministic fixed-point strokes as nodes) is the closest prior art.
+
+**Requirements:**
+- Deterministic: the same description gives the same geometry, bit for bit; only correctly-rounded maths (`+ − × ÷ √`) touches geometry, and randomness is a hash of each vector's id (spike 015)
+- Additive: level N+1 never moves anything in level N (spike 015)
+- Local: detail grown in one region equals the whole expansion there (spike 015)
+- Ids are structural paths, never counters (spike 015, following data-drawing's STRK-03)
+- Any spatial index is checked against a brute-force reference; a rounding cell key once doubled forces silently (spike 015)
+
 ## Spikes
 
 | # | Idea | Name | Type | Validates | Verdict | Tags |
@@ -80,3 +90,4 @@ Perihelion's NPCs (Kaelen, 2026-09-30) keep their minds in Tapestry worlds. An N
 | 013a | npc-minds | per-npc-worlds | comparison | Given four NPCs who share events, when each mind is its own .tree world holding copies of the facts it believes, then packets are right, corrections are safe and cost stays acceptable | ⚠ PARTIAL (right runtime format: cheapest packet, 6 ms at 12.5k lines per NPC; wrong source of truth: a correction is 3 commits in 3 files matched by old text, and there's no canon, so false beliefs can't be seen) | npc, tree, story, comparison |
 | 013b | npc-minds | shared-story-world | comparison | Same four NPCs in one story world with believes-edges, canon apart from belief, and per-NPC slices exported for runtime | ✓ WINNER (96/96 packets identical three ways, before and after a correction; exported slices byte-identical to 013a's files; a correction is 1 commit; false beliefs are queryable; perspective query rewritten from a quadratic scan, 2.7 s → 56 ms at 50k lines) | npc, tree, story, comparison, canon |
 | 014 | npc-minds | mind-bridge | standard | Given the shared story world behind the kernel's Node addon, when a localhost sidecar serves context, say, observe and shift, then a page standing in for Unity can talk to NPCs, see their minds change, and every packet matches 013b's C++ while the journal stays Ok | ✓ VALIDATED (JS packets equal the C++ ones 240/240, before and after the bridge's own writes; context 1.2 ms p50 over HTTP at 5k lines with a live index; 60 simultaneous reads and writes leave the journal Ok and the mirror equal to a reload; one writer per world enforced by the journal lock; the addon needs -fPIC to link on Linux; feel of the loop with a real speaker model awaiting Kaelen's hand check) | npc, bridge, sidecar, node, http, ui |
+| 015 | generative-vectors | generative-vectors | standard | Given 3–10 seed vectors and four knot rules, when expanded for 4 levels, then the form is legible, re-expanding is identical, and level N+1 only adds to level N | ✓ VALIDATED (3 seeds and 457 B grow 3,765 vectors at L7, ×527; deterministic, additive, order-independent and local to L7 for all presets, each claim with a failing negative control; Chromium and Node hashes equal; the fast grid matched brute force only after fixing a cell key past 2⁵³ that doubled forces; a regional halo of about (reach + 2) × length per level; the surface is the open problem; look and feel awaiting Kaelen's hand check) | procedural, geometry, lod, determinism, three |

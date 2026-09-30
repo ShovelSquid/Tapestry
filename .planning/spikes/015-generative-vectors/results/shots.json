@@ -1,0 +1,83 @@
+{
+  "errors": [],
+  "shots": [
+    {
+      "name": "01-tree-L4",
+      "query": "preset=tree&level=4",
+      "hash": "a7a302f39bdb95f4",
+      "vectors": 363,
+      "ms": 28.700000000186265,
+      "regional": false
+    },
+    {
+      "name": "02-tree-L7",
+      "query": "preset=tree&level=7",
+      "hash": "1d8672a745ca97b1",
+      "vectors": 3765,
+      "ms": 399.8000000002794,
+      "regional": false
+    },
+    {
+      "name": "03-coral-L6",
+      "query": "preset=coral&level=6",
+      "hash": "8a6bc60333604e29",
+      "vectors": 2025,
+      "ms": 248.09999999962747,
+      "regional": false
+    },
+    {
+      "name": "04-bridge-L6",
+      "query": "preset=bridge&level=6",
+      "hash": "6bb505155b17bfdd",
+      "vectors": 837,
+      "ms": 84.10000000009313,
+      "regional": false
+    },
+    {
+      "name": "05-tree-L6-nudged",
+      "query": "preset=tree&level=6&nudge=0.8",
+      "hash": "b4a7bdbb2ca9412e",
+      "vectors": 1821,
+      "ms": 138.60000000009313,
+      "regional": false
+    },
+    {
+      "name": "06-tree-L7-region",
+      "query": "preset=tree&level=7",
+      "hash": "3c9a5f2c5e71b59f",
+      "vectors": 1525,
+      "ms": 117,
+      "regional": true
+    }
+  ],
+  "cross_engine": [
+    {
+      "preset": "tree",
+      "level": 4,
+      "chromium": "a7a302f39bdb95f4",
+      "node": "a7a302f39bdb95f4",
+      "same": true
+    },
+    {
+      "preset": "tree",
+      "level": 7,
+      "chromium": "1d8672a745ca97b1",
+      "node": "1d8672a745ca97b1",
+      "same": true
+    },
+    {
+      "preset": "coral",
+      "level": 6,
+      "chromium": "8a6bc60333604e29",
+      "node": "8a6bc60333604e29",
+      "same": true
+    },
+    {
+      "preset": "bridge",
+      "level": 6,
+      "chromium": "6bb505155b17bfdd",
+      "node": "6bb505155b17bfdd",
+      "same": true
+    }
+  ]
+}

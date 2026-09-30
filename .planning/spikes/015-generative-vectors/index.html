@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Generative Vectors</title>
+<link rel="icon" href="data:,">
+<style>
+  :root { --bg: #101215; --panel: rgba(24, 27, 32, .92); --ink: #e8e5df; --muted: #9a958c; --line: #2f343b; --accent: #7fb0e0; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font: 13px/1.4 system-ui, -apple-system, sans-serif; overflow: hidden; }
+  canvas { display: block; }
+  #panel { position: fixed; top: 12px; left: 12px; width: 280px; max-height: calc(100% - 24px); overflow: auto;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+  h1 { font-size: 15px; margin: 0 0 2px; } p.sub { margin: 0 0 10px; color: var(--muted); font-size: 12px; }
+  label { display: flex; justify-content: space-between; margin: 8px 0 2px; color: var(--muted); font-size: 12px; }
+  label b { color: var(--ink); font-weight: 600; }
+  input[type=range], select { width: 100%; }
+  select { background: #1b1e23; color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 4px; }
+  .check { display: flex; gap: 6px; align-items: center; justify-content: flex-start; color: var(--ink); }
+  #hud { position: fixed; right: 12px; bottom: 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+    padding: 10px 12px; font: 12px/1.5 ui-monospace, Menlo, monospace; min-width: 250px; }
+  #hud .big { font: 600 15px system-ui, sans-serif; }
+  @media (max-width: 640px) { #panel { width: calc(100% - 24px); max-height: 45%; } #hud { left: 12px; right: 12px; min-width: 0; } }
+</style>
+<script type="importmap">
+  { "imports": { "three": "../node_modules/three/build/three.module.js", "three/addons/": "../node_modules/three/examples/jsm/" } }
+</script>
+</head>
+<body>
+<div id="panel">
+  <h1>Generative Vectors</h1>
+  <p class="sub">A few seed vectors, knots and rules. Everything else is grown.</p>
+  <label>Description <b id="presetName"></b></label>
+  <select id="preset"></select>
+  <label>Levels <b id="levelV"></b></label><input id="level" type="range" min="0" max="7" step="1" value="5">
+  <label>Spread <b id="spreadV"></b></label><input id="spread" type="range" min="0" max="2" step="0.05">
+  <label>Attract (knots, light) <b id="attractV"></b></label><input id="attract" type="range" min="0" max="1.5" step="0.05">
+  <label>Repel <b id="repelV"></b></label><input id="repel" type="range" min="0" max="3" step="0.05">
+  <label>Align <b id="alignV"></b></label><input id="align" type="range" min="0" max="1" step="0.05">
+  <label>Curvature <b id="curvatureV"></b></label><input id="curvature" type="range" min="0" max="1.5" step="0.05">
+  <label>Nudge a seed <b id="nudgeV"></b></label><input id="nudge" type="range" min="-1" max="1" step="0.05" value="0">
+  <label class="check"><input id="knots" type="checkbox" checked> Show seeds and knots</label>
+  <label class="check"><input id="region" type="checkbox"> Detail only where I click</label>
+</div>
+<div id="hud"></div>
+<script type="module">
+import * as THREE from 'three'
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+import { DEFAULT_RULES, canonical, end, expand, expandRegion } from './gen.mjs'
+import { PRESETS } from './presets.mjs'
+
+const $ = (id) => document.getElementById(id)
+const params = new URLSearchParams(location.search)
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true })
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
+document.body.prepend(renderer.domElement)
+const scene = new THREE.Scene()
+scene.background = new THREE.Color(0x101215)
+scene.fog = new THREE.Fog(0x101215, 18, 40)
+const camera = new THREE.PerspectiveCamera(40, 1, 0.05, 200)
+camera.position.set(7, 5, 9)
+const controls = new OrbitControls(camera, renderer.domElement)
+controls.target.set(0, 3, 0)
+scene.add(new THREE.HemisphereLight(0xdfe8ff, 0x2a2118, 1.4))
+const sun = new THREE.DirectionalLight(0xffffff, 1.6); sun.position.set(5, 10, 6); scene.add(sun)
+const ground = new THREE.Mesh(new THREE.CircleGeometry(9, 64), new THREE.MeshStandardMaterial({ color: 0x1a1d22, roughness: 1 }))
+ground.rotation.x = -Math.PI / 2; scene.add(ground)
+
+let group = new THREE.Group(); scene.add(group)
+let focus = null
+const focusMarker = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 16), new THREE.MeshBasicMaterial({ color: 0x7fb0e0, wireframe: true, transparent: true, opacity: 0.25 }))
+focusMarker.visible = false; scene.add(focusMarker)
+
+for (const name of Object.keys(PRESETS)) $('preset').add(new Option(name, name))
+$('preset').value = params.get('preset') || 'tree'
+if (params.get('level')) $('level').value = params.get('level')
+if (params.get('nudge')) $('nudge').value = params.get('nudge')
+if (params.get('region')) $('region').checked = true
+
+const SLIDERS = ['spread', 'attract', 'repel', 'align', 'curvature']
+function loadRules() {
+  const rules = { ...DEFAULT_RULES, ...(PRESETS[$('preset').value].rules || {}) }
+  for (const k of SLIDERS) $(k).value = rules[k]
+}
+
+// The description as it stands: preset + slider overrides + the nudge.
+function description() {
+  const base = PRESETS[$('preset').value]
+  const rules = { ...(base.rules || {}) }
+  for (const k of SLIDERS) rules[k] = Number($(k).value)
+  const nudge = Number($('nudge').value)
+  const seeds = base.seeds.map((s, i) => (i === 1 || (base.seeds.length === 1 && i === 0))
+    ? { ...s, dir: [s.dir[0] + nudge, s.dir[1], s.dir[2] - nudge * 0.5] } : s)
+  return { ...base, seeds, rules }
+}
+
+const cylinder = new THREE.CylinderGeometry(1, 1, 1, 7, 1, false).translate(0, 0.5, 0)
+const up = new THREE.Vector3(0, 1, 0)
+function levelColor(level, max) {
+  const t = max ? level / max : 0
+  return new THREE.Color().setHSL(0.08 + 0.42 * t, 0.55, 0.55 - 0.12 * t)
+}
+
+async function sha16(levels) {
+  const digest = await crypto.subtle.digest('SHA-256', canonical(levels).buf.buffer)
+  return [...new Uint8Array(digest)].slice(0, 8).map((b) => b.toString(16).padStart(2, '0')).join('')
+}
+
+async function build() {
+  for (const k of SLIDERS) $(`${k}V`).textContent = Number($(k).value).toFixed(2)
+  $('levelV').textContent = $('level').value
+  $('nudgeV').textContent = Number($('nudge').value).toFixed(2)
+  $('presetName').textContent = ''
+  const desc = description()
+  const max = Number($('level').value)
+  const t0 = performance.now()
+  const regional = $('region').checked && focus
+  const out = regional ? expandRegion(desc, max, focus.center, focus.radius) : expand(desc, max)
+  const ms = performance.now() - t0
+  const all = out.levels.flat()
+
+  scene.remove(group); group = new THREE.Group(); scene.add(group)
+  const mesh = new THREE.InstancedMesh(cylinder, new THREE.MeshStandardMaterial({ roughness: 0.75, metalness: 0.05 }), all.length)
+  const m = new THREE.Matrix4(); const q = new THREE.Quaternion(); const dir = new THREE.Vector3()
+  all.forEach((v, i) => {
+    dir.set(...v.dir)
+    q.setFromUnitVectors(up, dir)
+    m.compose(new THREE.Vector3(...v.start), q, new THREE.Vector3(v.radius, v.len, v.radius))
+    mesh.setMatrixAt(i, m)
+    mesh.setColorAt(i, levelColor(v.level, max))
+  })
+  group.add(mesh)
+
+  if ($('knots').checked) {
+    const seeds = out.levels[0]
+    const seedGeo = new THREE.BufferGeometry().setFromPoints(seeds.flatMap((s) => [new THREE.Vector3(...s.start), new THREE.Vector3(...end(s))]))
+    group.add(new THREE.LineSegments(seedGeo, new THREE.LineBasicMaterial({ color: 0xffffff })))
+    const byId = new Map(seeds.map((s) => [s.id, s]))
+    const pts = []
+    for (const k of desc.knots || []) {
+      const a = byId.get(k.from); const b = byId.get(k.to)
+      if (!a || !b || a === b) continue
+      const mid = (s) => new THREE.Vector3(...s.start).lerp(new THREE.Vector3(...end(s)), 0.6)
+      pts.push(mid(a), mid(b))
+    }
+    if (pts.length) {
+      const g = new THREE.BufferGeometry().setFromPoints(pts)
+      const line = new THREE.LineSegments(g, new THREE.LineDashedMaterial({ color: 0xff9a5c, dashSize: 0.15, gapSize: 0.1 }))
+      line.computeLineDistances(); group.add(line)
+    }
+  }
+  focusMarker.visible = Boolean(regional)
+  if (regional) { focusMarker.position.set(...focus.center); focusMarker.scale.setScalar(focus.radius) }
+
+  const bytes = new Blob([JSON.stringify(PRESETS[$('preset').value])]).size
+  const hash = await sha16(out.levels)
+  const perLevel = out.levels.map((l) => l.length).join(' · ')
+  $('hud').innerHTML = `<div class="big">${all.length.toLocaleString()} vectors from ${desc.seeds.length} seeds</div>
+    description ${bytes} B → ${(all.length * 64).toLocaleString()} B of vectors (×${(all.length * 64 / bytes).toFixed(0)})<br>
+    per level ${perLevel}<br>
+    grown in ${ms.toFixed(1)} ms${regional ? ' (region only)' : ''}<br>
+    hash <span id="hash">${hash}</span>`
+  window.__state = { hash, vectors: all.length, ms, regional: Boolean(regional) }
+}
+
+// Click the object to grow detail only around that point.
+const ray = new THREE.Raycaster()
+renderer.domElement.addEventListener('dblclick', (e) => {
+  const r = renderer.domElement.getBoundingClientRect()
+  ray.setFromCamera(new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1), camera)
+  const hit = ray.intersectObjects(group.children, false)[0]
+  if (!hit) return
+  focus = { center: hit.point.toArray(), radius: 1.0 }
+  $('region').checked = true
+  build()
+})
+window.__setFocus = (center, radius) => { focus = { center, radius }; $('region').checked = true; return build() }
+
+function resize() {
+  renderer.setSize(innerWidth, innerHeight)
+  camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix()
+}
+addEventListener('resize', resize); resize()
+$('preset').onchange = () => { loadRules(); focus = null; $('region').checked = false; build() }
+for (const id of [...SLIDERS, 'level', 'nudge']) $(id).oninput = build
+$('knots').onchange = build
+$('region').onchange = build
+loadRules()
+if (params.get('preset') === 'bridge' || $('preset').value === 'bridge') { camera.position.set(0, 4, 12); controls.target.set(0, 2.5, 0) }
+window.__ready = build()
+;(function loop() { controls.update(); renderer.render(scene, camera); requestAnimationFrame(loop) })()
+</script>
+</body>
+</html>
