@@ -147,3 +147,27 @@ Every claim has a negative control that makes it fail. Relationships generate st
 - Edit reach: an edit reaches exactly the strokes related to it by knots or proximity, and 0 vectors elsewhere.
 
 Still open: a learned model for roles and knots, fusing two views into one 3D stem (spike 019, next), and Kaelen's real-pen hand check.
+
+---
+
+# Spike Wrap-Up Summary: generative-vectors, spike 019
+
+**Date:** 2026-09-30
+**Spikes processed:** 3 (019a, 019b, 019c)
+**Feature area:** two views, one stem (`references/two-view-stems.md`)
+
+| # | Name | Type | Verdict | Feature Area |
+|---|------|------|---------|--------------|
+| 019a | height-matching | comparison | ✗ INVALIDATED | Two views, one stem |
+| 019b | arc-length | comparison | ✗ INVALIDATED | Two views, one stem |
+| 019c | monotone-alignment | comparison | ✓ WINNER of 019 | Two views, one stem |
+
+## Key Findings
+
+**Drawing order along a stem is the one thing both views agree on.**
+- Monotone alignment on the shared axis fuses a front and a side stroke within 0.047 of the true curve on all five test curves.
+- Height lookup collapses on hooks (0.53), and arc length on helices (0.11) and flat runs (0.15).
+- The alignment's mismatch needs no ground truth and doubles as a pairing signal: pairing lowest mismatch first is right whenever the strokes can decide.
+- Identical heights and profiles are ambiguous, so the interface must show pairs.
+
+Next: any number of views as additional data (spike 020).

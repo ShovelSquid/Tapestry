@@ -95,6 +95,10 @@ All spikes wrapped in this session belong to one idea key, **thread-rendering**.
 **Pen strokes as seeds** (spike 018)
 - Pen input is data-drawing's action list unchanged; the plane frame per stroke gives 3D, pressure gives radius, and the brush gives the role (ink stem, lead anchor, clay mass, rust knot)
 - Fit at a tolerance of about one surface voxel (0.05); seed ids come from the stroke ordinal, so earlier seeds never change
+
+**Two views, one stem** (spike 019)
+- Fuse two views by monotone alignment on the shared axis, never by height lookup or arc length
+- Pair views by lowest alignment mismatch, and show the pairs so the artist can change them
 </requirements>
 
 <findings_index>
@@ -112,6 +116,7 @@ All spikes wrapped in this session belong to one idea key, **thread-rendering**.
 | Generative vectors | `references/generative-vectors-growth.md` | 3 seeds and 457 B grow 3,765 vectors (×527); deterministic, additive, order-independent and local to L7; knots generate structure (the bridge's arch); a cell key past 2⁵³ once doubled forces |
 | Surfaces from vectors | `references/vector-surfaces.md` | A narrow-band distance field meshed with marching tetrahedra welds joints and is watertight; 0.32 s for tree L4, 35 ms for a region; bit-identical to the reference; swept tubes and surface nets are dead ends |
 | Pen strokes as seeds | `references/strokes-as-seeds.md` | data-drawing actions fit into seeds, knots and mass (6 strokes → 9 seeds → 361 vectors), a surface 0.2 s after pen-up, identical when replayed in Node; tolerance 0.05 keeps the drawing; edits reach only related strokes |
+| Two views, one stem | `references/two-view-stems.md` | Monotone alignment fuses front and side strokes within 0.047 of the true curve on every test curve; pairing by mismatch is right whenever the strokes can decide; height lookup fails on hooks (0.53) |
 
 ## Open Risks Carried Into the Build
 
@@ -154,6 +159,9 @@ Original spike source files are preserved in `sources/` for complete reference �
 - 016b-swept-tubes
 - 017-fast-sdf
 - 018-strokes-as-seeds
+- 019a-height-matching
+- 019b-arc-length
+- 019c-monotone-alignment
 
 Not processed (proposed, never run): 009-deleted-letters-on-the-line, 010-two-twisted-strands.
 </metadata>
