@@ -161,6 +161,12 @@ their original coordinates and pressure samples.
 
 Zoom is cursor-pinned: the world point under the pointer stays under it.
 
+## iOS
+
+`ios/` holds a native iPhone/iPad build with the same UI and the same
+`.tapestry` document format — open `ios/Tapestry.xcodeproj` in Xcode 16+. See
+[ios/README.md](ios/README.md).
+
 ## Layout
 
 ```
@@ -171,6 +177,7 @@ tests/        invariants over core/, no display required
 third_party/  vendored nanovg (zlib) and stb_image_write (public domain)
 assets/       fonts (drop ui.ttf / ui-bold.ttf in fonts/ to override the
               system fallbacks)
+ios/          iPhone/iPad app: SwiftUI + Core Graphics port of the same UI
 ```
 
 ## Constraints worth knowing before you change things
