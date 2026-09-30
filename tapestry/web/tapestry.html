@@ -1,0 +1,1094 @@
+<title>Tapestry</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0e0f12">
+<style>
+/* Layout: full-bleed canvas, 44px header on top, tool palette in the header on
+   wide screens and floating at the bottom on phones. One committed dark look —
+   the desktop app's palette — so no light variant. */
+:root {
+  color-scheme: dark;
+  --ground: #0e0f12;          /* glClearColor(0.055, 0.058, 0.071) */
+  --header: rgba(18, 20, 27, 0.93);
+  --rule: rgba(100, 115, 150, 0.27);
+  --panel: rgba(27, 30, 39, 0.98);
+  --panel-edge: rgba(110, 126, 165, 0.39);
+  --card: #1e212b;
+  --ink-title: rgba(222, 229, 244, 0.92);
+  --ink-body: rgba(196, 205, 224, 0.78);
+  --ink-menu: rgba(214, 221, 238, 0.88);
+  --ink-soft: rgba(190, 205, 235, 0.6);
+  --tool-idle: rgba(48, 54, 70, 0.69);
+  --tool-active: rgba(92, 112, 175, 0.82);
+  --accent: #a88eeb;          /* settings violet */
+  --danger: #e8837a;
+  --ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+html, body { height: 100%; }
+body {
+  margin: 0; background: var(--ground); color: var(--ink-title);
+  font-family: var(--ui); font-size: 14px; overflow: hidden;
+  -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+  overscroll-behavior: none;
+}
+#stage { position: fixed; inset: 0; touch-action: none; display: block; }
+
+/* Header — drawHeader in app/main.cpp */
+header {
+  position: fixed; left: 0; right: 0; top: 0; z-index: 5;
+  padding-top: env(safe-area-inset-top, 0px);
+  background: var(--header); border-bottom: 1px solid var(--rule);
+}
+.bar {
+  height: 44px; display: flex; align-items: center; gap: 2px;
+  padding-inline: max(12px, env(safe-area-inset-left, 0px)) max(12px, env(safe-area-inset-right, 0px));
+}
+.menu-btn {
+  font: 13px var(--ui); color: var(--ink-menu); background: none; border: 0;
+  height: 28px; padding: 0 11px; border-radius: 5px; cursor: pointer;
+}
+.menu-btn[aria-expanded="true"] { background: rgba(75, 88, 120, 0.61); }
+#doc-title {
+  font: 700 15px var(--ui); color: rgba(200, 210, 232, 0.75); background: none; border: 0;
+  margin-left: 10px; padding: 0 8px; height: 28px; min-width: 0; flex: 0 1 auto;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: text; text-align: left;
+}
+#doc-title-input {
+  font: 700 15px var(--ui); color: var(--ink-title); background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(168, 142, 235, 0.6); border-radius: 5px; outline: none;
+  margin-left: 10px; padding: 0 8px; height: 28px; min-width: 0; flex: 1 1 auto;
+}
+.spacer { flex: 1 1 8px; }
+.menu {
+  position: fixed; z-index: 10; width: 220px; padding: 4px 0;
+  background: var(--panel); border: 1px solid var(--panel-edge); border-radius: 7px;
+  box-shadow: 0 12px 30px rgba(0,0,0,0.45);
+}
+.menu button {
+  display: flex; justify-content: space-between; align-items: center; width: 100%;
+  height: 34px; padding: 0 13px; background: none; border: 0; cursor: pointer;
+  font: 13px var(--ui); color: rgba(225, 230, 241, 0.92); text-align: left;
+}
+.menu button:hover, .menu button:focus-visible { background: rgba(75, 88, 120, 0.45); outline: none; }
+.menu button:disabled { color: rgba(145, 151, 168, 0.4); cursor: default; background: none; }
+.menu button.danger { color: var(--danger); }
+.menu kbd { font: 12px var(--ui); color: rgba(150, 160, 184, 0.63); }
+.menu hr { border: 0; border-top: 1px solid rgba(110, 126, 165, 0.2); margin: 4px 0; }
+
+/* Tools — A, H, Z, brush, then + and S */
+.tools { display: flex; align-items: center; gap: 6px; }
+.tool {
+  width: var(--tool-size, 32px); height: var(--tool-size, 32px); border-radius: 7px; border: 0;
+  background: var(--tool-idle); color: rgba(225, 231, 245, 0.92);
+  font: 700 13px var(--ui); display: grid; place-items: center; cursor: pointer; padding: 0;
+}
+.tool[aria-pressed="true"] { background: var(--tool-active); }
+.tool:focus-visible, .menu-btn:focus-visible, #doc-title:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.tool svg { width: 20px; height: 20px; }
+.tools .sep { width: 1px; height: 60%; background: var(--panel-edge); margin: 0 2px; align-self: center; }
+#palette {
+  position: fixed; left: 50%; transform: translateX(-50%); z-index: 5;
+  bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+  padding: 10px; border-radius: 14px; background: var(--panel); border: 1px solid var(--panel-edge);
+  --tool-size: 40px; box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+}
+#header-tools { display: none; }
+@media (min-width: 760px) {
+  #header-tools { display: flex; }
+  #palette { display: none; }
+}
+
+#readout {
+  position: fixed; z-index: 4; right: max(16px, env(safe-area-inset-right, 0px));
+  top: calc(env(safe-area-inset-top, 0px) + 54px);
+  font: 13px var(--ui); font-variant-numeric: tabular-nums; color: var(--ink-soft);
+  pointer-events: none;
+}
+#status {
+  position: fixed; z-index: 4; left: max(16px, env(safe-area-inset-left, 0px));
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 14px);
+  font: 13px var(--ui); color: var(--ink-soft); pointer-events: none;
+  transition: opacity 0.6s ease-out; max-width: calc(100% - 32px);
+}
+@media (max-width: 759px) { #status { bottom: calc(env(safe-area-inset-bottom, 0px) + 84px); } }
+
+/* Sheets: the page editor and small dialogs, styled as a page card */
+.scrim {
+  position: fixed; inset: 0; z-index: 20; background: rgba(5, 6, 9, 0.45);
+  display: flex; align-items: flex-end; justify-content: center;
+}
+.sheet {
+  width: 100%; max-width: 620px; max-height: 88%; display: flex; flex-direction: column;
+  background: var(--card); border: 1px solid rgba(255,255,255,0.11); border-bottom: 0;
+  border-radius: 14px 14px 0 0; box-shadow: 0 -10px 40px rgba(0,0,0,0.5);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  animation: rise 0.22s ease-out;
+}
+@media (min-width: 760px) {
+  .scrim { align-items: center; }
+  .sheet { border-radius: 10px; border-bottom: 1px solid rgba(255,255,255,0.11); max-height: 80%; }
+}
+@keyframes rise { from { transform: translateY(24px); opacity: 0.4; } }
+@media (prefers-reduced-motion: reduce) { .sheet { animation: none; } }
+.sheet-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 14px 0; }
+.sheet-top select, .sheet-top .link {
+  font: 600 13px var(--ui); background: rgba(255,255,255,0.05); color: var(--kind, var(--ink-title));
+  border: 1px solid rgba(255,255,255,0.12); border-radius: 6px; height: 30px; padding: 0 8px;
+}
+.sheet-top .actions { display: flex; gap: 6px; }
+.link { cursor: pointer; }
+.link.primary { background: var(--tool-active); border-color: transparent; color: #fff; }
+.link.danger { color: var(--danger); }
+.title-row { display: flex; align-items: center; gap: 12px; height: 52px; padding: 0 20px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--kind); opacity: 0.82; }
+.title-row input {
+  flex: 1; min-width: 0; background: none; border: 0; outline: none;
+  font: 700 17px var(--ui); color: var(--ink-title);
+}
+.divider { height: 1px; background: rgba(255,255,255,0.07); margin: 0 12px; }
+.sheet textarea {
+  flex: 1; min-height: 38vh; resize: none; background: none; border: 0; outline: none;
+  font: 16px/1.45 var(--ui); color: var(--ink-body); padding: 12px 20px 20px;
+  -webkit-user-select: text; user-select: text;
+}
+.sheet .note { padding: 16px 20px 22px; color: var(--ink-body); font-size: 15px; line-height: 1.45; max-width: 60ch; }
+.sheet .note p { margin: 0 0 10px; }
+.sheet .field {
+  margin: 4px 20px 0; width: calc(100% - 40px); box-sizing: border-box;
+  font: 16px var(--ui); color: var(--ink-title); background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.14); border-radius: 6px; padding: 10px 12px; outline: none;
+  -webkit-user-select: text; user-select: text;
+}
+.sheet .field:focus { border-color: rgba(168, 142, 235, 0.7); }
+.sheet textarea.field { min-height: 30vh; font: 12px/1.4 var(--mono); }
+.sheet .row { display: flex; gap: 8px; flex-wrap: wrap; padding: 14px 20px 20px; }
+.sheet h2 { font: 700 17px var(--ui); margin: 0; padding: 16px 20px 6px; text-wrap: balance; }
+input[type=file] { display: none; }
+</style>
+
+<canvas id="stage" aria-label="Tapestry workspace canvas"></canvas>
+
+<header>
+  <div class="bar">
+    <button class="menu-btn" data-menu="file" aria-expanded="false" aria-haspopup="menu">File</button>
+    <button class="menu-btn" data-menu="edit" aria-expanded="false" aria-haspopup="menu">Edit</button>
+    <button class="menu-btn" data-menu="view" aria-expanded="false" aria-haspopup="menu">View</button>
+    <button id="doc-title" title="Rename">Untitled tapestry</button>
+    <div class="spacer"></div>
+    <div class="tools" id="header-tools"></div>
+  </div>
+</header>
+<div class="tools" id="palette"></div>
+<div id="readout"></div>
+<div id="status" style="opacity:0"></div>
+<input type="file" id="file-input" accept=".tapestry,text/plain">
+
+<script>
+"use strict";
+// ---------------------------------------------------------------------------
+// Tapestry, web edition. A port of the desktop app's core/ and render/ to a
+// 2D canvas: same metrics, palette, LOD thresholds and .tapestry format.
+// ---------------------------------------------------------------------------
+
+// Page header layout, world units (core/Page.hpp).
+const TITLE_BAR = 40, MIN_BTN = 20, MIN_BTN_MARGIN = 10, MIN_W = 180, MIN_H = 120;
+// Page metrics (render/Pages.cpp).
+const CORNER = 6, PAD = 16, TITLE_SIZE = 15, BODY_SIZE = 14, LINE_H = 1.45;
+const ROW_H = 44, CTRL_H = 30, ZOOM_W = 96, CENTER_W = 150, TOGGLE_W = 46, TOGGLE_H = 26;
+const MIN_TITLE_PX = 5, MIN_BODY_PX = 5.5, MIN_GREEK_PX = 1.6, MAX_TEXT_PX = 1500;
+// Camera (core/Camera.hpp).
+const MIN_ZOOM = 0.05, MAX_ZOOM = 6, ABS_MIN = 1e-6, ABS_MAX = 1e6;
+// Touch.
+const DEAD_ZONE = 6, HANDLE_TOUCH = 22, DOUBLE_TAP_MS = 300, FINGER_PRESSURE = 0.55;
+const NEW_NOTE_W = 320, NEW_NOTE_H = 220;
+const STORE_KEY = "tapestry.workspace.v1";
+
+const ACCENT = {
+  conversation: [110, 150, 235], file: [126, 204, 158],
+  settings: [168, 142, 235], note: [232, 196, 120],
+};
+const KIND_LABEL = { note: "Note", conversation: "Conversation", file: "File", settings: "Settings" };
+const rgba = (c, a) => `rgba(${c[0]},${c[1]},${c[2]},${a / 255})`;
+const WHITE = [255, 255, 255], BODY_INK = [196, 205, 224], TITLE_INK = [222, 229, 244];
+const UI_FONT = getComputedStyle(document.documentElement).getPropertyValue("--ui").trim();
+
+// ---- Model ----------------------------------------------------------------
+
+const S = {
+  pages: [], strokes: [], nextId: 1, nextStrokeId: 1, ticks: 0,
+  title: "Untitled tapestry", invert: false,
+  cam: { x: 0, y: 0, z: 1 },
+  selected: null, tool: "select",
+};
+
+function addPage(kind, title, body, x, y, w, h) {
+  const page = { id: S.nextId++, kind, title, body, x, y, w, h, min: false };
+  S.pages.push(page);
+  return page;
+}
+const pageById = id => S.pages.find(p => p.id === id);
+const displayRect = p => ({ x: p.x, y: p.y, w: p.w, h: p.min ? TITLE_BAR : p.h });
+const minBtnRect = p => ({ x: p.x + p.w - MIN_BTN_MARGIN - MIN_BTN, y: p.y + (TITLE_BAR - MIN_BTN) / 2, w: MIN_BTN, h: MIN_BTN });
+const inRect = (r, px, py) => px >= r.x && px < r.x + r.w && py >= r.y && py < r.y + r.h;
+const intersects = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+function pageAt(wx, wy) {
+  for (let i = S.pages.length - 1; i >= 0; i--) if (inRect(displayRect(S.pages[i]), wx, wy)) return S.pages[i];
+  return null;
+}
+function bringToFront(id) {
+  const i = S.pages.findIndex(p => p.id === id);
+  if (i >= 0 && i < S.pages.length - 1) S.pages.push(S.pages.splice(i, 1)[0]);
+}
+function contentBounds() {
+  let b = null;
+  const inc = r => {
+    if (!b) { b = { ...r }; return; }
+    const x0 = Math.min(b.x, r.x), y0 = Math.min(b.y, r.y);
+    b = { x: x0, y: y0, w: Math.max(b.x + b.w, r.x + r.w) - x0, h: Math.max(b.y + b.h, r.y + r.h) - y0 };
+  };
+  S.pages.forEach(p => inc(displayRect(p)));
+  S.strokes.forEach(s => s.points.forEach(q => inc({ x: q.x, y: q.y, w: 0.001, h: 0.001 })));
+  return b;
+}
+function settingsLayout(p) {
+  const top = p.y + TITLE_BAR + 12, right = p.x + p.w - PAD;
+  const row = (i, w, h) => ({ x: right - w, y: top + ROW_H * i + (ROW_H - h) / 2, w, h });
+  return { zoom: row(0, ZOOM_W, CTRL_H), center: row(1, CENTER_W, CTRL_H), invert: row(2, TOGGLE_W, TOGGLE_H) };
+}
+const settingsRect = (x, y) => ({ x, y, w: 320, h: TITLE_BAR + 12 + ROW_H * 3 + 16 });
+const settingsInteractive = z => 13.5 * z >= MIN_BODY_PX;
+
+// ---- Camera ---------------------------------------------------------------
+
+const toWorld = (sx, sy) => ({ x: (sx - S.cam.x) / S.cam.z, y: (sy - S.cam.y) / S.cam.z });
+const toScreen = (wx, wy) => ({ x: wx * S.cam.z + S.cam.x, y: wy * S.cam.z + S.cam.y });
+const project = r => ({ x: r.x * S.cam.z + S.cam.x, y: r.y * S.cam.z + S.cam.y, w: r.w * S.cam.z, h: r.h * S.cam.z });
+function visibleWorld() { const a = toWorld(0, 0), b = toWorld(W, H); return { x: a.x, y: a.y, w: b.x - a.x, h: b.y - a.y }; }
+function applyZoom(target, sx, sy) {
+  const k = target / S.cam.z;
+  S.cam.x = sx - (sx - S.cam.x) * k; S.cam.y = sy - (sy - S.cam.y) * k; S.cam.z = target;
+}
+function zoomBy(factor, sx, sy) {
+  const lo = Math.min(MIN_ZOOM, S.cam.z), hi = Math.max(MAX_ZOOM, S.cam.z);
+  applyZoom(Math.min(Math.max(S.cam.z * factor, lo), hi), sx, sy);
+}
+const setZoom = (z, sx, sy) => applyZoom(Math.min(Math.max(z, ABS_MIN), ABS_MAX), sx, sy);
+function viewport() {
+  const hdr = document.querySelector("header").getBoundingClientRect().bottom;
+  const pal = document.getElementById("palette");
+  const bottom = getComputedStyle(pal).display !== "none" ? H - pal.getBoundingClientRect().top + 8 : 0;
+  return { x: 0, y: hdr, w: W, h: Math.max(1, H - hdr - bottom) };
+}
+function centerOn(wx, wy) { const v = viewport(); S.cam.x = v.x + v.w / 2 - wx * S.cam.z; S.cam.y = v.y + v.h / 2 - wy * S.cam.z; }
+function frameAll() {
+  const b = contentBounds(); if (!b) return resetView();
+  const v = viewport(), m = Math.min(60, Math.min(v.w, v.h) * 0.08);
+  const fit = Math.min(Math.max(1, v.w - 2 * m) / Math.max(1e-6, b.w), Math.max(1, v.h - 2 * m) / Math.max(1e-6, b.h));
+  S.cam.z = Math.min(Math.max(fit, MIN_ZOOM), MAX_ZOOM);
+  centerOn(b.x + b.w / 2, b.y + b.h / 2); changed();
+}
+function resetView() { S.cam.z = 1; centerOn(0, 0); changed(); }
+
+// ---- Rendering (render/Grid.cpp, Strokes.cpp, Pages.cpp) --------------------
+
+const canvas = document.getElementById("stage");
+const ctx = canvas.getContext("2d");
+let W = 0, H = 0, DPR = 1, needsDraw = true;
+
+function resize() {
+  DPR = window.devicePixelRatio || 1;
+  W = window.innerWidth; H = window.innerHeight;
+  canvas.width = Math.round(W * DPR); canvas.height = Math.round(H * DPR);
+  canvas.style.width = W + "px"; canvas.style.height = H + "px";
+  needsDraw = true;
+}
+
+function roundRect(x, y, w, h, r) {
+  r = Math.max(0, Math.min(r, w / 2, h / 2));
+  ctx.beginPath();
+  ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+}
+
+function draw() {
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.fillStyle = "#0e0f12"; ctx.fillRect(0, 0, W, H);
+  drawGrid(); drawStrokes(); drawPages();
+  document.getElementById("readout").textContent = `${S.pages.length} pages   ${fmtG(S.cam.z * 100)}%`;
+}
+
+function fmtG(v) { return String(Number(v.toPrecision(6))); }
+function coord(v) { return Math.abs(v - Math.round(v)) < 1e-9 ? String(Math.round(v)) : String(v); }
+
+function drawGrid() {
+  const z = S.cam.z; if (z <= 0) return;
+  let sp = 32; while (sp * z < 14) sp *= 4; while (sp * z > 112) sp /= 4;
+  const w = visibleWorld();
+  const t = Math.min(Math.max((sp * z - 14) / (112 - 14), 0), 1);
+  lattice(sp, w, rgba(WHITE, 10 + 26 * t));
+  lattice(sp * 4, w, rgba(WHITE, 30));
+  const o = toScreen(0, 0);
+  const xv = o.x >= 0 && o.x <= W, yv = o.y >= 0 && o.y <= H;
+  if (xv || yv) {
+    ctx.beginPath();
+    if (xv) { const sx = Math.floor(o.x) + 0.5; ctx.moveTo(sx, 0); ctx.lineTo(sx, H); }
+    if (yv) { const sy = Math.floor(o.y) + 0.5; ctx.moveTo(0, sy); ctx.lineTo(W, sy); }
+    ctx.strokeStyle = rgba([90, 130, 220], 70); ctx.lineWidth = 1; ctx.stroke();
+    if (xv && yv) { ctx.beginPath(); ctx.arc(o.x, o.y, 3, 0, 7); ctx.fillStyle = rgba([110, 150, 235], 160); ctx.fill(); }
+  }
+  // Axis labels, pinned to the nearest edge when the axis is off screen.
+  const major = sp * 4;
+  const rowY = Math.min(Math.max(o.y + 6, 4), H - 18), colX = Math.min(Math.max(o.x + 6, 6), W - 6);
+  ctx.font = `11px ${UI_FONT}`;
+  ctx.fillStyle = rgba([150, 168, 205], yv ? 120 : 160);
+  ctx.textAlign = "center"; ctx.textBaseline = "top";
+  for (let wx = Math.floor(w.x / major) * major; wx <= w.x + w.w; wx += major) {
+    if (wx === 0) continue;
+    const sx = toScreen(wx, 0).x; if (sx < 14 || sx > W - 14) continue;
+    ctx.fillText(coord(wx), sx, rowY);
+  }
+  ctx.fillStyle = rgba([150, 168, 205], xv ? 120 : 160);
+  ctx.textAlign = "left"; ctx.textBaseline = "middle";
+  for (let wy = Math.floor(w.y / major) * major; wy <= w.y + w.h; wy += major) {
+    if (wy === 0) continue;
+    const sy = toScreen(0, wy).y; if (sy < 12 || sy > H - 12) continue;
+    ctx.fillText(coord(wy), colX, sy);
+  }
+  if (xv && yv) { ctx.fillStyle = rgba([150, 168, 205], 120); ctx.textBaseline = "top"; ctx.fillText("0", o.x + 6, o.y + 6); }
+}
+function lattice(sp, w, color) {
+  ctx.beginPath();
+  for (let wx = Math.floor(w.x / sp) * sp; wx <= w.x + w.w; wx += sp) {
+    const sx = Math.floor(toScreen(wx, 0).x) + 0.5; ctx.moveTo(sx, 0); ctx.lineTo(sx, H);
+  }
+  for (let wy = Math.floor(w.y / sp) * sp; wy <= w.y + w.h; wy += sp) {
+    const sy = Math.floor(toScreen(0, wy).y) + 0.5; ctx.moveTo(0, sy); ctx.lineTo(W, sy);
+  }
+  ctx.strokeStyle = color; ctx.lineWidth = 1; ctx.stroke();
+}
+
+function drawStrokes() {
+  const z = S.cam.z, width = p => Math.max(0.8, (1.5 + Math.min(Math.max(p, 0), 1) * 10.5) * z);
+  ctx.strokeStyle = ctx.fillStyle = rgba([128, 157, 244], 220);
+  ctx.lineCap = "round"; ctx.lineJoin = "round";
+  for (const s of S.strokes) {
+    const pts = s.points; if (!pts.length) continue;
+    if (pts.length === 1) {
+      const a = toScreen(pts[0].x, pts[0].y);
+      ctx.beginPath(); ctx.arc(a.x, a.y, width(pts[0].p) / 2, 0, 7); ctx.fill(); continue;
+    }
+    for (let i = 1; i < pts.length; i++) {
+      const a = toScreen(pts[i - 1].x, pts[i - 1].y), b = toScreen(pts[i].x, pts[i].y);
+      if ((a.x < -50 && b.x < -50) || (a.y < -50 && b.y < -50) || (a.x > W + 50 && b.x > W + 50) || (a.y > H + 50 && b.y > H + 50)) continue;
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y);
+      ctx.lineWidth = width((pts[i - 1].p + pts[i].p) / 2); ctx.stroke();
+    }
+  }
+}
+
+// Word-wrapped body lines, laid out once at world scale (14-unit text) and
+// cached on text and width — never on zoom or pan.
+const layoutCache = new Map();
+function bodyLines(page, width) {
+  const key = page.body + "\u0000" + width;
+  let lines = layoutCache.get(key);
+  if (lines) return lines;
+  ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.font = `${BODY_SIZE}px ${UI_FONT}`;
+  lines = [];
+  for (const para of page.body.split("\n")) {
+    let line = "";
+    for (const word of para.split(/(\s+)/)) {
+      if (!word) continue;
+      const trial = line + word;
+      if (ctx.measureText(trial).width <= width || !line.trim()) {
+        if (ctx.measureText(trial).width > width) {
+          // A single word wider than the page: break it by character.
+          for (const ch of word) {
+            if (ctx.measureText(line + ch).width > width && line) { lines.push(line); line = ""; }
+            line += ch;
+          }
+        } else line = trial;
+      } else { lines.push(line.trimEnd()); line = /^\s+$/.test(word) ? "" : word; }
+    }
+    lines.push(line.trimEnd());
+  }
+  ctx.restore();
+  if (layoutCache.size > 400) layoutCache.clear();
+  layoutCache.set(key, lines);
+  return lines;
+}
+
+function drawPages() {
+  const v = visibleWorld(), slack = 24 / Math.max(S.cam.z, 1e-6);
+  const vis = { x: v.x - slack, y: v.y - slack, w: v.w + 2 * slack, h: v.h + 2 * slack };
+  for (const p of S.pages) {
+    if (!intersects(displayRect(p), vis)) continue;
+    drawPage(p);
+    if (p.id === S.selected && !p.min) drawHandles(p);
+  }
+}
+
+function drawPage(p) {
+  const z = S.cam.z, sel = p.id === S.selected, card = project(displayRect(p));
+  const accent = ACCENT[p.kind], radius = CORNER * z, spread = Math.max(2, 10 * z);
+
+  ctx.save();
+  ctx.shadowColor = "rgba(0,0,0,0.35)"; ctx.shadowBlur = spread; ctx.shadowOffsetY = spread * 0.35;
+  roundRect(card.x, card.y, card.w, card.h, radius);
+  ctx.fillStyle = "rgba(30,33,43,0.94)"; ctx.fill();
+  ctx.restore();
+  roundRect(card.x, card.y, card.w, card.h, radius);
+  ctx.strokeStyle = sel ? rgba(accent, 200) : rgba(WHITE, 28); ctx.lineWidth = sel ? 2 : 1; ctx.stroke();
+
+  const titlePx = TITLE_SIZE * z, dotR = Math.max(1.5, 4 * z), pad = PAD * z, bar = TITLE_BAR * z;
+  ctx.beginPath(); ctx.arc(card.x + pad, card.y + bar / 2, dotR, 0, 7); ctx.fillStyle = rgba(accent, 210); ctx.fill();
+
+  if (titlePx >= MIN_TITLE_PX && titlePx <= MAX_TEXT_PX && p.title) {
+    const btn = project(minBtnRect(p)), tx = card.x + pad + dotR * 3;
+    ctx.save();
+    ctx.beginPath(); ctx.rect(tx, card.y, Math.max(0, btn.x - tx), bar); ctx.clip();
+    ctx.font = `700 ${titlePx}px ${UI_FONT}`; ctx.fillStyle = rgba(TITLE_INK, 235);
+    ctx.textAlign = "left"; ctx.textBaseline = "middle";
+    ctx.fillText(p.title, tx, card.y + bar / 2);
+    ctx.restore();
+  }
+
+  // Minimize / restore: a minus when open, a plus when minimized.
+  const b = project(minBtnRect(p));
+  if (b.w >= 5) {
+    roundRect(b.x, b.y, b.w, b.h, b.w * 0.2); ctx.fillStyle = rgba(WHITE, 14); ctx.fill();
+    const cx = b.x + b.w / 2, cy = b.y + b.h / 2, arm = b.w * 0.28;
+    ctx.beginPath(); ctx.moveTo(cx - arm, cy); ctx.lineTo(cx + arm, cy);
+    if (p.min) { ctx.moveTo(cx, cy - arm); ctx.lineTo(cx, cy + arm); }
+    ctx.strokeStyle = rgba(BODY_INK, 180); ctx.lineWidth = Math.max(1, b.w * 0.09); ctx.lineCap = "butt"; ctx.stroke();
+  }
+  if (p.min) return;
+
+  if (card.h > bar * 1.5) {
+    ctx.beginPath(); ctx.moveTo(card.x + pad * 0.75, card.y + bar); ctx.lineTo(card.x + card.w - pad * 0.75, card.y + bar);
+    ctx.strokeStyle = rgba(WHITE, 18); ctx.lineWidth = 1; ctx.stroke();
+  }
+  const body = { x: card.x + pad, y: card.y + bar + pad / 2, w: card.w - pad * 2, h: card.h - bar - pad * 1.5 };
+  if (body.w <= 0 || body.h <= 0) return;
+
+  ctx.save();
+  ctx.beginPath(); ctx.rect(body.x, body.y, body.w, body.h); ctx.clip();
+  if (p.kind === "settings") drawSettings(p);
+  else if (p.body) {
+    const bodyPx = BODY_SIZE * z, step = bodyPx * LINE_H;
+    if (bodyPx >= MIN_BODY_PX && bodyPx <= MAX_TEXT_PX) {
+      // Lay out in world units, draw through the camera's scale.
+      const lines = bodyLines(p, p.w - PAD * 2);
+      ctx.translate(body.x, body.y); ctx.scale(z, z);
+      ctx.font = `${BODY_SIZE}px ${UI_FONT}`; ctx.fillStyle = rgba(BODY_INK, 200);
+      ctx.textAlign = "left"; ctx.textBaseline = "top";
+      const first = Math.max(0, Math.floor(-body.y / step)), maxLines = Math.ceil(body.h / step) + 1;
+      for (let i = first; i < Math.min(lines.length, maxLines); i++) {
+        ctx.fillText(lines[i], 0, i * BODY_SIZE * LINE_H + (BODY_SIZE * (LINE_H - 1)) / 2);
+      }
+    } else if (bodyPx >= MIN_GREEK_PX) {
+      // Greeked: translucent bars, varied per page and line.
+      const barH = Math.max(1, step * 0.5);
+      ctx.beginPath();
+      for (let y = body.y, line = 0; y + barH <= body.y + body.h; y += step, line++) {
+        let v = (Math.imul(p.id, 2654435761) + line) >>> 0; v ^= v >>> 13;
+        ctx.rect(body.x, y, body.w * (0.55 + 0.4 * ((v >>> 0) % 97) / 96), barH);
+      }
+      ctx.fillStyle = rgba(BODY_INK, 34); ctx.fill();
+    }
+  }
+  ctx.restore();
+}
+
+function drawSettings(p) {
+  const z = S.cam.z;
+  if (!settingsInteractive(z) || 13.5 * z > MAX_TEXT_PX) return;
+  const L = settingsLayout(p), r = 4 * z, font = `${13.5 * z}px ${UI_FONT}`;
+  const labelX = toScreen(p.x + PAD, 0).x;
+  ctx.font = font; ctx.textBaseline = "middle"; ctx.textAlign = "left"; ctx.fillStyle = rgba(BODY_INK, 200);
+  [["Zoom", L.zoom], ["View", L.center], ["Invert scroll", L.invert]].forEach(([t, c]) => {
+    const s = project(c); ctx.fillText(t, labelX, s.y + s.h / 2);
+  });
+  const chrome = s => {
+    roundRect(s.x, s.y, s.w, s.h, r); ctx.fillStyle = rgba(WHITE, 14); ctx.fill();
+    ctx.strokeStyle = rgba(WHITE, 34); ctx.lineWidth = 1; ctx.stroke();
+  };
+  ctx.textAlign = "center"; ctx.fillStyle = rgba(TITLE_INK, 230);
+  const zf = project(L.zoom); chrome(zf); ctx.fillStyle = rgba(TITLE_INK, 230); ctx.fillText(fmtG(z * 100) + "%", zf.x + zf.w / 2, zf.y + zf.h / 2);
+  const cb = project(L.center); chrome(cb); ctx.fillStyle = rgba(TITLE_INK, 230); ctx.fillText("Center at origin", cb.x + cb.w / 2, cb.y + cb.h / 2);
+  const tg = project(L.invert), pill = tg.h / 2;
+  roundRect(tg.x, tg.y, tg.w, tg.h, pill);
+  ctx.fillStyle = S.invert ? rgba([168, 142, 235], 120) : rgba(WHITE, 18); ctx.fill();
+  ctx.strokeStyle = rgba(WHITE, 34); ctx.lineWidth = 1; ctx.stroke();
+  ctx.beginPath(); ctx.arc(S.invert ? tg.x + tg.w - pill : tg.x + pill, tg.y + pill, pill * 0.72, 0, 7);
+  ctx.fillStyle = S.invert ? rgba(TITLE_INK, 235) : rgba(BODY_INK, 160); ctx.fill();
+}
+
+function drawHandles(p) {
+  const c = project(p), s = 11;
+  for (const [x, y] of [[c.x, c.y], [c.x + c.w, c.y], [c.x, c.y + c.h], [c.x + c.w, c.y + c.h]]) {
+    roundRect(x - s / 2, y - s / 2, s, s, 2.5);
+    ctx.fillStyle = rgba(TITLE_INK, 245); ctx.fill();
+    ctx.strokeStyle = rgba([92, 112, 175], 240); ctx.lineWidth = 1.5; ctx.stroke();
+  }
+}
+
+function frame() { if (needsDraw) { needsDraw = false; draw(); } requestAnimationFrame(frame); }
+let saveTimer = 0;
+function changed() {
+  needsDraw = true;
+  clearTimeout(saveTimer); saveTimer = setTimeout(persist, 400);
+}
+
+// ---- Input ----------------------------------------------------------------
+// One finger follows the active tool (desktop's mouse); two fingers always pan
+// and pinch-zoom, whatever the tool.
+
+const pointers = new Map();
+let drag = null, gesture = null, lastTap = { t: 0, x: -1e3, y: -1e3 };
+
+function pressureOf(e) { return e.pointerType === "pen" && e.pressure > 0 ? Math.min(1, e.pressure) : FINGER_PRESSURE; }
+
+function cornerAt(p, wx, wy, rad) {
+  const near = (x, y) => Math.abs(wx - x) <= rad && Math.abs(wy - y) <= rad;
+  if (near(p.x, p.y)) return "tl"; if (near(p.x + p.w, p.y)) return "tr";
+  if (near(p.x, p.y + p.h)) return "bl"; if (near(p.x + p.w, p.y + p.h)) return "br";
+  return null;
+}
+
+canvas.addEventListener("pointerdown", e => {
+  closeMenus();
+  canvas.setPointerCapture(e.pointerId);
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (pointers.size === 2) {
+    // Second finger: whatever the first started becomes a pinch. A stroke
+    // begun a moment ago was the pinch's first finger, not a mark.
+    if (drag && drag.mode === "brush" && performance.now() - drag.t0 < 300) {
+      S.strokes = S.strokes.filter(s => s.id !== drag.strokeId);
+    }
+    drag = null;
+    const [a, b] = [...pointers.values()];
+    gesture = { mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, dist: Math.hypot(a.x - b.x, a.y - b.y) };
+    changed(); return;
+  }
+  if (pointers.size > 2 || gesture) return;
+  if (e.pointerType === "mouse" && e.button === 1) { beginDrag(e, "pan"); return; }
+  if (e.pointerType === "mouse" && e.button !== 0) return;
+  beginDrag(e);
+});
+
+function beginDrag(e, force) {
+  const sx = e.clientX, sy = e.clientY, w = toWorld(sx, sy);
+  drag = { sx, sy, lx: sx, ly: sy, moved: false, t0: performance.now(), wasSelected: false, id: e.pointerId };
+  const tool = force || S.tool;
+  if (tool === "pan" || tool === "hand") { drag.mode = "pan"; return; }
+  if (tool === "zoom") { drag.mode = "zoom"; return; }
+  if (tool === "brush") {
+    const s = { id: S.nextStrokeId++, points: [{ x: w.x, y: w.y, p: pressureOf(e) }] };
+    S.strokes.push(s); drag.mode = "brush"; drag.strokeId = s.id; changed(); return;
+  }
+  const sel = S.selected != null && pageById(S.selected);
+  const corner = sel && !sel.min && cornerAt(sel, w.x, w.y, HANDLE_TOUCH / S.cam.z);
+  if (corner) {
+    const fx = corner[1] === "l" ? sel.x + sel.w : sel.x, fy = corner[0] === "t" ? sel.y + sel.h : sel.y;
+    Object.assign(drag, { mode: "resize", pageId: sel.id, corner, fx, fy, wasSelected: true }); return;
+  }
+  const p = pageAt(w.x, w.y);
+  if (p) {
+    drag.wasSelected = S.selected === p.id;
+    bringToFront(p.id); S.selected = p.id;
+    Object.assign(drag, { mode: "page", pageId: p.id, gx: w.x - p.x, gy: w.y - p.y });
+    changed();
+  } else drag.mode = "pan";
+}
+
+canvas.addEventListener("pointermove", e => {
+  if (!pointers.has(e.pointerId)) return;
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (gesture && pointers.size >= 2) {
+    const [a, b] = [...pointers.values()];
+    const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, dist = Math.hypot(a.x - b.x, a.y - b.y);
+    if (gesture.dist > 0 && dist > 0) zoomBy(dist / gesture.dist, mid.x, mid.y);
+    const sign = S.invert ? -1 : 1;
+    S.cam.x += (mid.x - gesture.mid.x) * sign; S.cam.y += (mid.y - gesture.mid.y) * sign;
+    gesture = { mid, dist }; changed(); return;
+  }
+  if (!drag || drag.id !== e.pointerId) return;
+  const sx = e.clientX, sy = e.clientY;
+  if (!drag.moved && Math.hypot(sx - drag.sx, sy - drag.sy) > DEAD_ZONE) drag.moved = true;
+  if (drag.mode === "brush") {
+    const s = S.strokes.find(s => s.id === drag.strokeId);
+    const events = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
+    for (const ev of (events.length ? events : [e])) {
+      const w = toWorld(ev.clientX, ev.clientY); s && s.points.push({ x: w.x, y: w.y, p: pressureOf(ev) });
+    }
+    changed();
+  } else if (drag.moved) {
+    const w = toWorld(sx, sy);
+    if (drag.mode === "pan") { S.cam.x += sx - drag.lx; S.cam.y += sy - drag.ly; }
+    else if (drag.mode === "page") { const p = pageById(drag.pageId); if (p) { p.x = w.x - drag.gx; p.y = w.y - drag.gy; } }
+    else if (drag.mode === "resize") {
+      const p = pageById(drag.pageId), left = drag.corner[1] === "l", top = drag.corner[0] === "t";
+      const x0 = left ? Math.min(w.x, drag.fx - MIN_W) : drag.fx, x1 = left ? drag.fx : Math.max(w.x, drag.fx + MIN_W);
+      const y0 = top ? Math.min(w.y, drag.fy - MIN_H) : drag.fy, y1 = top ? drag.fy : Math.max(w.y, drag.fy + MIN_H);
+      Object.assign(p, { x: x0, y: y0, w: x1 - x0, h: y1 - y0 });
+    } else if (drag.mode === "zoom") zoomBy(Math.exp((drag.ly - sy) * 0.01), drag.sx, drag.sy);
+    changed();
+  }
+  drag.lx = sx; drag.ly = sy;
+});
+
+function endPointer(e, cancelled) {
+  if (!pointers.has(e.pointerId)) return;
+  pointers.delete(e.pointerId);
+  if (gesture) { if (pointers.size === 0) gesture = null; return; }
+  if (!drag || drag.id !== e.pointerId) return;
+  if (!cancelled && !drag.moved) tap(e.clientX, e.clientY, e.altKey);
+  drag = null; changed();
+}
+canvas.addEventListener("pointerup", e => endPointer(e, false));
+canvas.addEventListener("pointercancel", e => endPointer(e, true));
+
+function tap(sx, sy, alt) {
+  const now = performance.now();
+  const dbl = now - lastTap.t < DOUBLE_TAP_MS && Math.hypot(sx - lastTap.x, sy - lastTap.y) < 30;
+  lastTap = { t: dbl ? 0 : now, x: sx, y: sy };
+  const w = toWorld(sx, sy);
+  if (drag.mode === "zoom") { zoomBy(alt ? 1 / 1.5 : 1.5, sx, sy); return; }
+  if (drag.mode === "pan" && S.tool === "select") {
+    S.selected = null;
+    if (dbl) createNote(sx, sy);
+    return;
+  }
+  if (drag.mode !== "page") return;
+  const p = pageById(drag.pageId); if (!p) return;
+  if (inRect(minBtnRect(p), w.x, w.y)) { p.min = !p.min; return; }
+  if (p.kind === "settings" && !p.min && settingsInteractive(S.cam.z)) {
+    const L = settingsLayout(p), slop = 6 / S.cam.z;
+    const hit = r => inRect({ x: r.x - slop, y: r.y - slop, w: r.w + 2 * slop, h: r.h + 2 * slop }, w.x, w.y);
+    if (hit(L.zoom)) return openZoomDialog();
+    if (hit(L.center)) { centerOn(0, 0); return; }
+    if (hit(L.invert)) { S.invert = !S.invert; return; }
+  }
+  if (drag.wasSelected) openEditor(p.id, w.y < p.y + TITLE_BAR || p.kind === "settings" ? "title" : "body");
+}
+
+// Trackpad and mouse wheel: pinch (ctrl+wheel) zooms, two-finger scroll pans.
+canvas.addEventListener("wheel", e => {
+  e.preventDefault();
+  if (e.ctrlKey || e.metaKey) zoomBy(Math.exp(-e.deltaY * 0.01), e.clientX, e.clientY);
+  else { const s = S.invert ? 1 : -1; S.cam.x += e.deltaX * s; S.cam.y += e.deltaY * s; }
+  changed();
+}, { passive: false });
+// Safari's trackpad pinch arrives as gesture events.
+let gestureScale = 1;
+window.addEventListener("gesturestart", e => { e.preventDefault(); gestureScale = 1; });
+window.addEventListener("gesturechange", e => {
+  e.preventDefault(); if (pointers.size) return;
+  zoomBy(e.scale / gestureScale, e.clientX, e.clientY); gestureScale = e.scale; changed();
+});
+
+window.addEventListener("keydown", e => {
+  if (e.target.closest("input, textarea, select") || document.querySelector(".scrim")) return;
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") { e.preventDefault(); persist(); showStatus("saved in this browser"); return; }
+  if (e.metaKey || e.ctrlKey) return;
+  const k = e.key.toLowerCase();
+  if (k === "n") createNote(W / 2, H / 2);
+  else if (k === "f") frameAll();
+  else if (k === "0") resetView();
+  else if (k === "a" || k === "v") setTool("select");
+  else if (k === "h") setTool("hand");
+  else if (k === "z") setTool("zoom");
+  else if (k === "b") setTool("brush");
+  else if (k === "escape") { S.selected = null; changed(); }
+  else if ((k === "backspace" || k === "delete") && S.selected != null) deletePage(S.selected);
+  else if (k === "+" || k === "=") { zoomBy(1.2, W / 2, H / 2); changed(); }
+  else if (k === "-") { zoomBy(1 / 1.2, W / 2, H / 2); changed(); }
+});
+
+// ---- Actions ----------------------------------------------------------------
+
+function createNote(sx, sy) {
+  const w = toWorld(sx, sy);
+  S.selected = addPage("note", "Untitled note", "", w.x - NEW_NOTE_W / 2, w.y - NEW_NOTE_H / 2, NEW_NOTE_W, NEW_NOTE_H).id;
+  changed();
+}
+function createNoteInView() {
+  const v = viewport(); createNote(v.x + v.w / 2, v.y + v.h / 2);
+  if (S.cam.z < 0.6) { setZoom(1, v.x + v.w / 2, v.y + v.h / 2); changed(); }
+}
+function deletePage(id) { S.pages = S.pages.filter(p => p.id !== id); if (S.selected === id) S.selected = null; changed(); }
+function revealSettings() {
+  let p = S.pages.find(p => p.kind === "settings");
+  if (!p) {
+    const v = viewport(), c = toWorld(v.x + v.w / 2, v.y + v.h / 2), r = settingsRect(c.x - 160, c.y - 90);
+    p = addPage("settings", "Settings", "", r.x, r.y, r.w, r.h);
+  }
+  bringToFront(p.id); p.min = false; S.selected = p.id;
+  const v = viewport();
+  if (S.cam.z < 0.75) S.cam.z = Math.min(1, v.w / (p.w + 32));
+  centerOn(p.x + p.w / 2, p.y + p.h / 2); changed();
+}
+function setTool(t) {
+  S.tool = t;
+  document.querySelectorAll("[data-tool]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.tool === t)));
+}
+
+let statusTimer = 0;
+function showStatus(text) {
+  const el = document.getElementById("status");
+  el.textContent = text; el.style.opacity = "1";
+  clearTimeout(statusTimer); statusTimer = setTimeout(() => { el.style.opacity = "0"; }, 3500);
+}
+
+// ---- .tapestry format (core/Document.cpp) -----------------------------------
+
+const esc = t => t.replace(/\\/g, "\\\\").replace(/\n/g, "\\n");
+function unesc(t) {
+  let out = "";
+  for (let i = 0; i < t.length; i++) {
+    if (t[i] === "\\" && i + 1 < t.length) { i++; out += t[i] === "n" ? "\n" : t[i]; } else out += t[i];
+  }
+  return out;
+}
+const num = v => { const s = String(v); return s === "-0" ? "0" : s; };
+
+function serialize() {
+  const out = ["tapestry 1", `snapshot ${S.ticks}`, `title ${esc(S.title)}`,
+    `camera ${num(S.cam.x)} ${num(S.cam.y)} ${num(S.cam.z)}`, `settings invert ${S.invert ? 1 : 0}`];
+  for (const p of S.pages) {
+    out.push(`page ${p.id} ${p.kind} ${p.min ? 1 : 0} ${num(p.x)} ${num(p.y)} ${num(p.w)} ${num(p.h)}`,
+      `ptitle ${esc(p.title)}`, `pbody ${esc(p.body)}`);
+  }
+  out.push(`strokes ${S.strokes.length}`);
+  for (const s of S.strokes) {
+    out.push(`stroke ${s.id} ${s.points.length}`);
+    for (const q of s.points) out.push(`spoint ${num(q.x)} ${num(q.y)} ${num(q.p)}`);
+  }
+  out.push("end");
+  return out.join("\n") + "\n";
+}
+
+// Replays baseline + deltas to the newest version. Returns null on a file
+// that is not a tapestry document; stops at the first corrupt block.
+function parseTapestry(text) {
+  const lines = text.split("\n");
+  if (lines[0] !== "tapestry 1") return null;
+  let acc = null, i = 1;
+  const after = (line, key) => line.startsWith(key + " ") ? line.slice(key.length + 1) : null;
+  const f = v => v.trim().split(/[ \t]+/);
+  while (i < lines.length) {
+    const line = lines[i++];
+    const snap = after(line, "snapshot"), delta = snap == null ? after(line, "delta") : null;
+    if (snap == null && delta == null) continue;
+    if (delta != null && !acc) return null;
+    const work = snap != null
+      ? { state: { title: "Untitled tapestry", invert: false, cam: { x: 0, y: 0, z: 1 } }, pages: [], strokes: [], ticks: 0 }
+      : structuredClone(acc);
+    work.ticks = Number(f(snap ?? delta)[0]) || 0;
+    let ok = false;
+    while (i < lines.length) {
+      const l = lines[i++]; let v;
+      if (l === "end") { ok = true; break; }
+      const find = id => work.pages.find(p => p.id === id);
+      if ((v = after(l, "title")) != null) work.state.title = unesc(v);
+      else if ((v = after(l, "camera")) != null) { const [x, y, z] = f(v).map(Number); work.state.cam = { x, y, z }; }
+      else if ((v = after(l, "settings")) != null) work.state.invert = f(v)[1] !== "0";
+      else if ((v = after(l, "page")) != null) {
+        const a = f(v), t = after(lines[i++] ?? "", "ptitle"), b = after(lines[i++] ?? "", "pbody");
+        if (a.length < 7 || t == null || b == null || !KIND_LABEL[a[1]]) break;
+        const page = { id: Number(a[0]), kind: a[1], min: a[2] !== "0", x: +a[3], y: +a[4], w: +a[5], h: +a[6], title: unesc(t), body: unesc(b) };
+        const k = work.pages.findIndex(p => p.id === page.id);
+        if (k >= 0) work.pages[k] = page; else work.pages.push(page);
+      } else if ((v = after(l, "pmove")) != null) { const a = f(v).map(Number), p = find(a[0]); if (!p) break; Object.assign(p, { x: a[1], y: a[2], w: a[3], h: a[4] }); }
+      else if ((v = after(l, "pfold")) != null) { const a = f(v), p = find(Number(a[0])); if (!p) break; p.min = a[1] !== "0"; }
+      else if ((v = after(l, "pname")) != null || (v = after(l, "ptext")) != null) {
+        const m = /^(\d+)\s*([\s\S]*)$/.exec(v), p = m && find(Number(m[1])); if (!p) break;
+        if (l.startsWith("pname")) p.title = unesc(m[2]); else p.body = unesc(m[2]);
+      } else if ((v = after(l, "drop")) != null) { const id = Number(f(v)[0]); work.pages = work.pages.filter(p => p.id !== id); }
+      else if ((v = after(l, "order")) != null) {
+        const ids = f(v).map(Number), re = ids.map(find);
+        if (re.some(p => !p) || re.length !== work.pages.length) break;
+        work.pages = re;
+      } else if ((v = after(l, "strokes")) != null) {
+        const n = Number(f(v)[0]), strokes = []; let bad = false;
+        for (let s = 0; s < n && !bad; s++) {
+          const h = after(lines[i++] ?? "", "stroke"); if (h == null) { bad = true; break; }
+          const [id, count] = f(h).map(Number), pts = [];
+          for (let q = 0; q < count; q++) {
+            const sp = after(lines[i++] ?? "", "spoint"); if (sp == null) { bad = true; break; }
+            const [x, y, p] = f(sp).map(Number); pts.push({ x, y, p: Math.min(Math.max(p, 0), 1) });
+          }
+          strokes.push({ id, points: pts });
+        }
+        if (bad) break;
+        work.strokes = strokes;
+      } else break; // unknown key: refuse rather than silently drop
+    }
+    if (!ok) break;
+    acc = work;
+  }
+  return acc;
+}
+
+function adopt(doc) {
+  S.pages = doc.pages; S.strokes = doc.strokes; S.ticks = doc.ticks;
+  S.title = doc.state.title; S.invert = doc.state.invert; S.cam = { ...doc.state.cam };
+  S.nextId = Math.max(0, ...S.pages.map(p => p.id)) + 1;
+  S.nextStrokeId = Math.max(0, ...S.strokes.map(s => s.id)) + 1;
+  S.selected = null; layoutCache.clear();
+  document.getElementById("doc-title").textContent = S.title;
+  // A document saved on a big desktop window can open with nothing on a
+  // phone screen; frame it instead of showing empty grid.
+  const v = visibleWorld();
+  if (!S.pages.some(p => intersects(displayRect(p), v))) frameAll();
+  changed();
+}
+
+// This browser's copy. Browser storage can be cleared, so File → Copy file
+// is the way to keep a workspace safe or move it to the desktop app.
+function persist() {
+  try { localStorage.setItem(STORE_KEY, serialize()); } catch (_) {}
+}
+function restore() {
+  try {
+    const text = localStorage.getItem(STORE_KEY);
+    const doc = text && parseTapestry(text);
+    if (doc) { adopt(doc); return true; }
+  } catch (_) {}
+  return false;
+}
+
+function seed() {
+  S.pages = []; S.strokes = []; S.nextId = 1; S.nextStrokeId = 1;
+  addPage("conversation", "Kickoff",
+    "You: What if plans were places?\n\nTapestry: Then planning would be arranging. Put the decision next to the notes that justify it, keep the open questions in view at the edge, and let distance mean what it means on a desk: relevance.\n\nYou: And the pages keep their positions?\n\nTapestry: Positions are the document.",
+    -560, -180, 440, 330);
+  addPage("note", "How this works",
+    "Pages occupy world space at real reading size. At 100% zoom this text is as big as text in any other app.\n\nZoom out and pages shrink to cards you arrange; zoom in and they become documents you read. The grid coordinates are real — a page's position is readable straight off the canvas.",
+    -40, -220, 360, 280);
+  addPage("note", "Try it",
+    "Drag a page to move it; the — button minimizes it.\nDrag empty space to pan; pinch to zoom.\nDouble-tap empty space for a new note.\nTap a selected page to edit its text.\nThe brush draws; Apple Pencil pressure sets the width.",
+    40, 120, 330, 210);
+  addPage("file", "README.md",
+    "tapestry/README.md — file pages will mirror documents on disk. For now this card is a placeholder for that link.",
+    -440, 230, 330, 160);
+  const r = settingsRect(420, -140);
+  addPage("settings", "Settings", "", r.x, r.y, r.w, r.h);
+}
+
+// ---- Chrome: menus, tools, sheets -------------------------------------------
+
+const BRUSH_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19 C4 14 8 13 10 15 L20 5" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+function buildTools(host) {
+  const tools = [["select", "A", "Select (A)"], ["hand", "H", "Hand (H)"], ["zoom", "Z", "Zoom (Z)"], ["brush", BRUSH_SVG, "Brush (B)"]];
+  host.innerHTML = tools.map(([t, g, l]) => `<button class="tool" data-tool="${t}" aria-pressed="false" title="${l}" aria-label="${l}">${g}</button>`).join("")
+    + '<span class="sep"></span>'
+    + '<button class="tool" data-act="note" title="New note (N)" aria-label="New note" style="font-size:18px">+</button>'
+    + '<button class="tool" data-act="settings" title="Settings" aria-label="Settings" style="font-size:14px">S</button>';
+}
+buildTools(document.getElementById("header-tools"));
+buildTools(document.getElementById("palette"));
+document.addEventListener("click", e => {
+  const t = e.target.closest("[data-tool]"); if (t) setTool(t.dataset.tool);
+  const a = e.target.closest("[data-act]");
+  if (a && a.dataset.act === "note") createNoteInView();
+  if (a && a.dataset.act === "settings") revealSettings();
+});
+
+const MENUS = {
+  file: [
+    ["New tapestry", () => confirmSheet("Start a new tapestry?", "The current workspace in this browser will be replaced. Copy it first (File → Copy .tapestry file) if you want to keep it.", "Start new", newDocument)],
+    ["Open .tapestry file…", () => document.getElementById("file-input").click()],
+    ["Paste .tapestry text…", () => pasteSheet()],
+    "-",
+    ["Copy .tapestry file", () => exportSheet()],
+  ],
+  edit: [
+    ["New note", createNoteInView, "N"],
+    ["Remove last stroke", () => { S.strokes.pop(); changed(); }, "", () => !S.strokes.length],
+    ["Clear ink", () => { S.strokes = []; changed(); }, "", () => !S.strokes.length, "danger"],
+  ],
+  view: [
+    ["Reset view", resetView, "0"],
+    ["Frame all", frameAll, "F"],
+    ["Settings", revealSettings],
+  ],
+};
+let openMenu = null;
+function closeMenus() {
+  document.querySelectorAll(".menu").forEach(m => m.remove());
+  document.querySelectorAll(".menu-btn").forEach(b => b.setAttribute("aria-expanded", "false"));
+  openMenu = null;
+}
+document.querySelectorAll(".menu-btn").forEach(btn => btn.addEventListener("click", e => {
+  e.stopPropagation();
+  const name = btn.dataset.menu, wasOpen = openMenu === name;
+  closeMenus(); if (wasOpen) return;
+  openMenu = name; btn.setAttribute("aria-expanded", "true");
+  const r = btn.getBoundingClientRect(), menu = document.createElement("div");
+  menu.className = "menu"; menu.setAttribute("role", "menu");
+  menu.style.left = Math.min(r.left, window.innerWidth - 228) + "px"; menu.style.top = (r.bottom + 6) + "px";
+  for (const item of MENUS[name]) {
+    if (item === "-") { menu.appendChild(document.createElement("hr")); continue; }
+    const [label, run, key, disabled, cls] = item, b = document.createElement("button");
+    b.setAttribute("role", "menuitem"); b.innerHTML = `<span>${label}</span><kbd>${key || ""}</kbd>`;
+    if (cls) b.className = cls;
+    if (disabled && disabled()) b.disabled = true;
+    b.addEventListener("click", ev => { ev.stopPropagation(); closeMenus(); run(); });
+    menu.appendChild(b);
+  }
+  document.body.appendChild(menu);
+  menu.querySelector("button:not(:disabled)")?.focus();
+}));
+document.addEventListener("click", e => { if (openMenu && !e.target.closest(".menu")) closeMenus(); });
+
+// Document title: click to rename in place, Enter commits, Esc cancels.
+document.getElementById("doc-title").addEventListener("click", () => {
+  const btn = document.getElementById("doc-title"), input = document.createElement("input");
+  input.id = "doc-title-input"; input.value = S.title; input.setAttribute("aria-label", "Tapestry title");
+  btn.hidden = true; btn.after(input); input.focus(); input.select();
+  const finish = commit => {
+    if (!input.isConnected) return;
+    const v = input.value.trim(); if (commit && v) { S.title = v; changed(); }
+    btn.textContent = S.title; btn.hidden = false; input.remove();
+  };
+  input.addEventListener("keydown", e => { if (e.key === "Enter") finish(true); if (e.key === "Escape") finish(false); });
+  input.addEventListener("blur", () => finish(true));
+});
+
+function sheet(html, onClose) {
+  const scrim = document.createElement("div");
+  scrim.className = "scrim"; scrim.innerHTML = `<div class="sheet" role="dialog" aria-modal="true">${html}</div>`;
+  const close = () => { scrim.remove(); onClose && onClose(); changed(); };
+  scrim.addEventListener("pointerdown", e => { if (e.target === scrim) close(); });
+  scrim.addEventListener("keydown", e => { if (e.key === "Escape") close(); });
+  document.body.appendChild(scrim);
+  return { el: scrim.firstElementChild, close };
+}
+const escHtml = s => s.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+// Page editor: a sheet styled as the page card. Edits apply live, so the
+// page redraws behind the sheet as you type.
+function openEditor(id, field) {
+  const p = pageById(id); if (!p) return;
+  const kinds = ["note", "conversation", "file"].map(k => `<option value="${k}"${p.kind === k ? " selected" : ""}>${KIND_LABEL[k]}</option>`).join("");
+  const { el, close } = sheet(`
+    <div class="sheet-top" style="--kind:${rgba(ACCENT[p.kind], 255)}">
+      ${p.kind === "settings" ? '<span class="link" style="border:0;background:none;padding:0">Settings</span>' : `<select id="ed-kind" aria-label="Page kind">${kinds}</select>`}
+      <div class="actions">
+        <button class="link" id="ed-min">${p.min ? "Restore" : "Minimize"}</button>
+        <button class="link danger" id="ed-del">Delete</button>
+        <button class="link primary" id="ed-done">Done</button>
+      </div>
+    </div>
+    <div class="title-row" style="--kind:${rgba(ACCENT[p.kind], 255)}"><span class="dot"></span><input id="ed-title" aria-label="Page title" value="${escHtml(p.title)}"></div>
+    <div class="divider"></div>
+    ${p.kind === "settings"
+      ? '<div class="note"><p>Settings is an ordinary page. Its controls live on the page itself: tap the zoom value to type one, the button to center on the origin, the switch to invert two-finger panning.</p></div>'
+      : `<textarea id="ed-body" aria-label="Page text" placeholder="Write here">${escHtml(p.body)}</textarea>`}
+  `);
+  const title = el.querySelector("#ed-title"), body = el.querySelector("#ed-body"), kind = el.querySelector("#ed-kind");
+  title.addEventListener("input", () => { p.title = title.value; changed(); });
+  body && body.addEventListener("input", () => { p.body = body.value; changed(); });
+  kind && kind.addEventListener("change", () => {
+    p.kind = kind.value;
+    el.querySelectorAll("[style*='--kind']").forEach(n => n.style.setProperty("--kind", rgba(ACCENT[p.kind], 255)));
+    changed();
+  });
+  el.querySelector("#ed-min").addEventListener("click", () => { p.min = !p.min; close(); });
+  el.querySelector("#ed-done").addEventListener("click", close);
+  el.querySelector("#ed-del").addEventListener("click", () => { deletePage(p.id); close(); });
+  title.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); body ? body.focus() : close(); } });
+  (field === "body" && body ? body : title).focus();
+}
+
+function openZoomDialog() {
+  const { el, close } = sheet(`
+    <h2>Zoom</h2>
+    <div class="note" style="padding-block:0 8px"><p>Any percentage from 0.0001% to 100,000,000%. Pinching from outside 5–600% walks back gradually.</p></div>
+    <input class="field" id="zoom-field" inputmode="decimal" aria-label="Zoom percent" value="${fmtG(S.cam.z * 100)}">
+    <div class="row"><button class="link primary" id="zoom-set">Set zoom</button><button class="link" id="zoom-cancel">Cancel</button></div>`);
+  const input = el.querySelector("#zoom-field");
+  const commit = () => {
+    const v = parseFloat(input.value.replace("%", ""));
+    if (!(v > 0 && isFinite(v))) { showStatus(`not a zoom: ${input.value}`); return; }
+    const vp = viewport(); setZoom(v / 100, vp.x + vp.w / 2, vp.y + vp.h / 2); close();
+  };
+  el.querySelector("#zoom-set").addEventListener("click", commit);
+  el.querySelector("#zoom-cancel").addEventListener("click", close);
+  input.addEventListener("keydown", e => { if (e.key === "Enter") commit(); });
+  input.focus(); input.select();
+}
+
+function confirmSheet(heading, text, action, run) {
+  const { el, close } = sheet(`<h2>${heading}</h2><div class="note" style="padding-block:0"><p>${text}</p></div>
+    <div class="row"><button class="link primary" id="cf-go">${action}</button><button class="link" id="cf-no">Cancel</button></div>`);
+  el.querySelector("#cf-go").addEventListener("click", () => { close(); run(); });
+  el.querySelector("#cf-no").addEventListener("click", close);
+}
+
+function exportSheet() {
+  const text = serialize();
+  const { el, close } = sheet(`<h2>Copy .tapestry file</h2>
+    <div class="note" style="padding-block:0 8px"><p>This is your workspace in the desktop app's file format. Copy it and save it as a <code>.tapestry</code> file (in Notes, Files, or on your Mac) to keep it safe or open it in Tapestry on desktop.</p></div>
+    <textarea class="field" id="ex-text" readonly aria-label="Workspace file contents">${escHtml(text)}</textarea>
+    <div class="row"><button class="link primary" id="ex-copy">Copy</button><button class="link" id="ex-close">Close</button></div>`);
+  const area = el.querySelector("#ex-text");
+  el.querySelector("#ex-copy").addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText(text); showStatus(`copied ${text.length.toLocaleString()} characters`); close(); }
+    catch (_) { area.focus(); area.select(); showStatus("select all and copy from the box"); }
+  });
+  el.querySelector("#ex-close").addEventListener("click", close);
+}
+
+function pasteSheet() {
+  const { el, close } = sheet(`<h2>Paste .tapestry text</h2>
+    <div class="note" style="padding-block:0 8px"><p>Paste the contents of a <code>.tapestry</code> file. It replaces the workspace in this browser.</p></div>
+    <textarea class="field" id="pa-text" aria-label="Tapestry file contents" placeholder="tapestry 1&#10;snapshot 0&#10;…"></textarea>
+    <div class="row"><button class="link primary" id="pa-open">Open</button><button class="link" id="pa-close">Cancel</button></div>`);
+  el.querySelector("#pa-open").addEventListener("click", () => {
+    const doc = parseTapestry(el.querySelector("#pa-text").value.replace(/\r\n/g, "\n"));
+    if (!doc) { showStatus("that isn't a tapestry document — it should start with “tapestry 1”"); return; }
+    close(); adopt(doc); persist(); showStatus("opened pasted tapestry");
+  });
+  el.querySelector("#pa-close").addEventListener("click", close);
+  el.querySelector("#pa-text").focus();
+}
+
+document.getElementById("file-input").addEventListener("change", async e => {
+  const file = e.target.files[0]; e.target.value = "";
+  if (!file) return;
+  const doc = parseTapestry(await file.text());
+  if (!doc) { showStatus(`could not open ${file.name}: not a tapestry document`); return; }
+  adopt(doc); persist(); showStatus(`opened ${file.name}`);
+});
+
+function newDocument() {
+  S.pages = []; S.strokes = []; S.nextId = 1; S.nextStrokeId = 1; S.ticks = 0;
+  const r = settingsRect(-160, -90); addPage("settings", "Settings", "", r.x, r.y, r.w, r.h);
+  S.title = "Untitled tapestry"; S.invert = false; S.selected = null;
+  document.getElementById("doc-title").textContent = S.title;
+  resetView(); persist(); showStatus("new tapestry");
+}
+
+// ---- Boot -----------------------------------------------------------------
+
+window.addEventListener("resize", resize);
+document.addEventListener("visibilitychange", () => { if (document.hidden) persist(); });
+resize();
+setTool("select");
+if (!restore()) {
+  seed(); frameAll();
+  // On a phone, fitting everything makes the cards unreadable; open on the
+  // "Try it" note at reading size instead.
+  if (S.cam.z < 0.5) {
+    const v = viewport(), tryIt = S.pages[2];
+    S.cam.z = Math.min(1, (v.w - 32) / tryIt.w);
+    centerOn(tryIt.x + tryIt.w / 2, tryIt.y + tryIt.h / 2 - 40);
+    S.selected = tryIt.id;
+  }
+}
+requestAnimationFrame(frame);
+</script>

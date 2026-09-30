@@ -167,6 +167,10 @@ Zoom is cursor-pinned: the world point under the pointer stays under it.
 `.tapestry` document format — open `ios/Tapestry.xcodeproj` in Xcode 16+. See
 [ios/README.md](ios/README.md).
 
+`web/tapestry.html` is a single-file browser build of the same UI (canvas,
+touch and Pencil input, `.tapestry` import and export) for phones without a
+Mac to build the iOS app.
+
 ## Layout
 
 ```

@@ -11,6 +11,11 @@ SwiftUI for the chrome, a UIKit view drawing with Core Graphics for the canvas.
 
 ## Build
 
+CI compiles the app on a macOS runner for every push that touches `ios/`
+(`.github/workflows/ios-build.yml`, simulator SDK, no signing), so the build
+is checked without a Mac.
+
+
 Requires Xcode 16 or newer (the project uses synchronized folders) and iOS 17.
 
 1. Open `ios/Tapestry.xcodeproj`.
