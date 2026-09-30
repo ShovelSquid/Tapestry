@@ -1,6 +1,6 @@
 ---
 name: spike-findings-tapestry
-description: Implementation blueprint from spike experiments. Requirements, proven patterns, and verified knowledge for building Tapestry's thread rendering. Auto-loaded during implementation work.
+description: Implementation blueprint from spike experiments. Requirements, proven patterns, and verified knowledge for building Tapestry's thread rendering and the NPC-minds story world (Perihelion). Auto-loaded during implementation work.
 ---
 
 <context>
@@ -10,7 +10,9 @@ description: Implementation blueprint from spike experiments. Requirements, prov
 
 Eleven spikes were run across three sessions on 2026-09-15, all on Kaelen's Apple M4 MacBook Air (60 Hz, 2560×1664, DPR 2) in the repo's Electron 32.3.3 / Chromium 128. The headline: **the thread is feasible.** Seven spikes validated outright, three landed partial with named fixes, one design was invalidated. The two open risks are both in the kernel and the atlas, not in the rendering.
 
-Spike sessions wrapped: 2026-09-15
+**npc-minds.** Perihelion's NPCs (Kaelen, 2026-09-30) keep their minds in Tapestry worlds: facts, opinions with `because` reasons, voice samples and spoken lines as plugin node types, with a mind-sim model updating them and a speaker model turning a bounded context packet into a line. Four spikes (012, 013a/b, 014) ran on 2026-09-30 in a 4-core Xeon cloud container. The headline: **author one shared story world, ship per-NPC slices, and serve them from one localhost bridge that owns the file.** The kernel scales to a long game unchanged, and the context packet costs about 1 ms over HTTP. Local models are the unspiked piece.
+
+Spike sessions wrapped: 2026-09-15 (thread-rendering), 2026-09-30 (npc-minds)
 </context>
 
 <requirements>
@@ -62,6 +64,19 @@ All spikes wrapped in this session belong to one idea key, **thread-rendering**.
 - Session markers are drawn at a constant screen size, weighted by how much was written in them; that is what makes a zoomed-out thread read as planets rather than an empty line
 - Gravity is suppressed while the user is moving the view and scaled by frame time, so it never fights the hand and does not pull twice as hard at 120 Hz
 - The date scrubber carries the sessions themselves, not just a position: it is the only view where hours of gaps and sessions are visible at once
+**NPC minds and the story world** (spikes 012, 013a/013b)
+- Built on the generic kernel with plugin node types only; no kernel change for NPCs (Kaelen, 2026-09-30)
+- The mind-sim and speaker roles run on local models, spiked on Kaelen's Mac rather than in the cloud (Kaelen, 2026-09-30)
+- The shared story world is the source of truth; per-NPC slices in spike 012's schema are generated from it for runtime, never authored by hand
+- Belief is a `believes` edge carrying confidence and source; canon is a bool on the fact, kept apart from belief
+- Queries walk outward from the speaker and index edges in one pass; scanning the world per query is quadratic
+- A mind is served only when its journal status is Ok; a torn or hand-edited file opens with only its verified prefix
+- Spoken lines are recorded outcomes; replay never asks a model again
+
+**The mind bridge** (spike 014)
+- One process owns a story world; the journal lock refuses a second writer and the addon has no read-only open
+- The owner keeps a live index, updated by replaying each accepted commit; never rebuild it per packet
+- Ids for nodes created in a commit are predicted from `getNextIds()` and asserted after `submit`
 </requirements>
 
 <findings_index>
@@ -74,17 +89,22 @@ All spikes wrapped in this session belong to one idea key, **thread-rendering**.
 | Editor and app integration | `references/editor-and-app-integration.md` | The real ProseMirror typer over a live thread inside the app's real canvas costs nothing measurable: 8.7 ms key→painted, 59.9 fps, no GL leak over 20 open/close cycles |
 | Persistence and replay | `references/persistence-and-replay.md` | The `.tree` round-trip is exact and readable, but reopening is O(commits²) in the kernel — 23 s for an 8 h thread at D-06's ⅓ s commits |
 | Navigation and feel | `references/navigation-and-feel.md` | Zoom as a span in seconds holds 60 fps from 8 hours to 0.25 s, with hover gravity suppressed while the hand is moving |
+| NPC minds and the story world | `references/npc-minds-story-world.md` | One shared story world with believes-edges and canon; per-NPC slices are byte-identical to hand-built files; packets identical three ways (96/96); the kernel scales linearly to 55k commits |
+| The mind bridge | `references/npc-mind-bridge.md` | A dependency-free Node sidecar on the kernel addon with a live index serves a packet in 1.2 ms over HTTP at 5k lines; JS equals C++ 240/240; one writer per world |
 
 ## Open Risks Carried Into the Build
 
-1. **`Kernel::fromJournal` copies the whole world per commit.** Opening any world is quadratic in its commit count; threads are simply the first feature to make it visible. A wider commit window buys one order of magnitude and does not change the curve.
+1. ~~**`Kernel::fromJournal` copies the whole world per commit.**~~ **Fixed by commit `7fed53f`** (copy only the nodes and edges a commit touches). Spike 012 measured reopen as linear: 55k commits in 745 ms. Spike 006's numbers predate the fix. `replayUpTo` still rebuilds from scratch on each call, so spike 008's renderer-side rebuild still stands.
 2. **Atlas paging is unsolved.** LRU eviction thrashes past 1024 cells, drives MSDF cells to zero and makes evicted letters vanish. A CJK thread reaches that limit quickly.
 3. **Two human checks are still open** — input-method composition (spike 004) and whether the navigation gravity feels right (spike 011). Both have checkpoints written in their READMEs.
 4. **Two spikes were proposed and never run:** 009 (deleted letters staying legible on the line, D-03/D-04) and 010 (two twisted author strands, D-21).
+5. **npc-minds: local models are unspiked.** The mind-sim and speaker roles, and whether the loop feels like conversation with a real model, need a spike on Kaelen's Mac (the cloud container has no GPU).
+6. **npc-minds: the addon doesn't link on Linux** until `tapestry_kernel` sets `POSITION_INDEPENDENT_CODE ON`.
+7. **npc-minds: the game and the Tapestry app can't both own a story file.** The journal lock allows one writer, so the build must pick which one serves the other.
 
 ## Source Files
 
-Original spike source files are preserved in `sources/` for complete reference — launchers, page scripts, the shared glyph layer and rasterizer, the hybrid worker fork, the kernel round-trip script, and each spike's full README with its investigation trail. Benchmark JSON and screenshots were left in `.planning/spikes/*/results/` rather than duplicated here.
+Original spike source files are preserved in `sources/` for complete reference — launchers, page scripts, the shared glyph layer and rasterizer, the hybrid worker fork, the kernel round-trip script, the npc-minds C++ spikes and the Node bridge, and each spike's full README with its investigation trail. Benchmark JSON and screenshots were left in `.planning/spikes/*/results/` rather than duplicated here.
 </findings_index>
 
 <metadata>
@@ -101,6 +121,10 @@ Original spike source files are preserved in `sources/` for complete reference �
 - 007-hybrid-glyph-worker
 - 008-scrub-to-any-moment
 - 011-navigation-feel
+- 012-npc-mind-kernel
+- 013a-per-npc-worlds
+- 013b-shared-story-world
+- 014-mind-bridge
 
 Not processed (proposed, never run): 009-deleted-letters-on-the-line, 010-two-twisted-strands.
 </metadata>

@@ -45,3 +45,39 @@
 ## Housekeeping
 
 Spike 005's frontmatter still read `verdict: PENDING` while its own Results section and `MANIFEST.md` both recorded VALIDATED. Corrected to `VALIDATED` during this wrap-up.
+
+---
+
+# Spike Wrap-Up Summary: npc-minds
+
+**Date:** 2026-09-30
+**Idea:** npc-minds (Perihelion's NPC minds on Tapestry worlds)
+**Spikes processed:** 4 (012, 013a, 013b, 014)
+**Feature areas:** NPC minds and the story world · the mind bridge
+**Skill output:** `./.claude/skills/spike-findings-tapestry/` (appended: `references/npc-minds-story-world.md`, `references/npc-mind-bridge.md`, `sources/012–014`)
+
+## Processed Spikes
+
+| # | Name | Type | Verdict | Feature Area |
+|---|------|------|---------|--------------|
+| 012 | npc-mind-kernel | standard | ✓ VALIDATED | NPC minds and the story world |
+| 013a | per-npc-worlds | comparison | ⚠ PARTIAL | NPC minds and the story world |
+| 013b | shared-story-world | comparison | ✓ WINNER of 013 | NPC minds and the story world |
+| 014 | mind-bridge | standard | ✓ VALIDATED | The mind bridge |
+
+## Key Findings
+
+**The kernel carries NPC minds unchanged.** Plugin node types are enough: facts, opinions with `because` reasons, voice samples and spoken lines, with the commit's actor recording who changed what (designer, world, mind-sim, speaker). Submit stays at 0.16 ms, and reopening is linear, 745 ms at 55k commits. Commit `7fed53f` fixed the quadratic reopen spike 006 measured, and the thread-rendering risk list has been corrected to say so.
+
+**Author one shared story world; ship slices.** A `believes` edge carries confidence and source, and canon sits on the fact, so one fact can be held differently by many characters and a character can be confidently wrong (Ines and Oda believe a rumor canon calls false). Every context packet was identical three ways (96/96, and again after a correction). Exported per-NPC slices were byte-identical to hand-built per-NPC files. A correction is 1 commit, against 3 commits in 3 files matched by old text.
+
+**Both first query designs were quadratic.** Asking the world edge by edge per node took 1.35 s at 5k lines, and scanning every node while searching the speaker's edges took 2.7 s at 50k. The fixes: index edges in one pass, walk outward from the speaker, and keep the index live in the owning process.
+
+**A dependency-free bridge works.** A Node sidecar on the app's kernel addon, with a live mirror updated from each accepted commit, serves a packet in 1.2 ms over HTTP at 5k lines. Its JS packets equal the C++ ones (240/240). Bursts of 60 simultaneous reads and writes leave the journal Ok and the mirror equal to a reload.
+
+**Landmines.**
+- A torn or hand-edited `.tree` opens silently with only its verified prefix, so an NPC would forget without error. Check `status()` before speaking.
+- The journal lock allows one writer, so the game and the Tapestry app can't both own a story file.
+- The addon doesn't link on Linux without position-independent code.
+
+**Still open.** The local-model spike (mind-sim and speaker roles) on Kaelen's Mac, and the hand check on whether the loop feels like conversation. The design question is whether the companion phases (6–7) share this story schema.

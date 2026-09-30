@@ -9,6 +9,7 @@ From the `thread-rendering` idea (MANIFEST.md):
 - Keystrokes are recorded as ordinary `set` properties, never `x-` extension lines: the codec supports extension lines but the addon's only path to the journal is `submit(ops)` (spike 006)
 - Each keystroke's time offset is measured from its batch anchor, never from the previous keystroke; cumulative deltas re-accumulate rounding and drift with batch length (spike 006)
 - Opening a world is quadratic in its commit count, because `Kernel::fromJournal`, `replayUpTo` and `submit` each copy the whole world per commit; threads are the first feature to make that visible (spike 006)
+  - **Superseded (spike 012, 2026-09-30):** commit `7fed53f` made `fromJournal` and `submit` copy only what a commit touches. Reopening is now linear (55k commits in 745 ms). `replayUpTo` still rebuilds from scratch on each call.
 - The commit window is a user-facing tradeoff between crash exposure, file size and reopen time (⅓ s: 8.0 MB and 23 s at 8 h; 5 s: 1.2 MB and 237 ms) — Kaelen's call, not a silent default (spike 006)
 - The document at a past moment is rebuilt in the renderer from keystroke records, never through the kernel's `replayUpTo`, which is quadratic in commit count (spike 008)
 - Document snapshots every ~1000 edits are kept as derived data — 2.6 MB and 108 ms for an 8 h thread — so a scrub costs 0.2 ms and leaves the frame free for the thread's rendering (spike 008)

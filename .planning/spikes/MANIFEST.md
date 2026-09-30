@@ -29,7 +29,7 @@ Tapestry's thread type (Kaelen, 2026-09-15; see `Tapestry Tales/Connections/Conc
 - Thread letters need a per-instance colour channel for D-21's author strands; the shared glyph shader currently hardcodes near-white with no colour uniform (spike 005)
 - Keystrokes are recorded as ordinary `set` properties, never `x-` extension lines: the codec supports extension lines but the addon's only path to the journal is `submit(ops)` (spike 006)
 - Each keystroke's time offset is measured from its batch anchor, never from the previous keystroke; cumulative deltas re-accumulate rounding and drift with batch length (spike 006)
-- Opening a world is quadratic in its commit count, because `Kernel::fromJournal`, `replayUpTo` and `submit` each copy the whole world per commit; threads are the first feature to make that visible (spike 006)
+- Opening a world is quadratic in its commit count, because `Kernel::fromJournal`, `replayUpTo` and `submit` each copy the whole world per commit; threads are the first feature to make that visible (spike 006) — **superseded:** commit `7fed53f` made reopen linear, 55k commits in 745 ms (spike 012)
 - The commit window is a user-facing tradeoff between crash exposure, file size and reopen time (⅓ s: 8.0 MB and 23 s at 8 h; 5 s: 1.2 MB and 237 ms) — Kaelen's call, not a silent default (spike 006)
 - Thread letters show a browser-SDF cell immediately and swap to an MSDF cell generated in a worker ~15 ms later; the swap costs 0.1 ms and satisfies D-19 without MSDF generation ever touching a frame (spike 007)
 - Replacing a glyph's cell means rewriting every instance that already drew it, because `write()` snapshots quad/uv/dist per instance rather than referencing the cache (spike 007)
