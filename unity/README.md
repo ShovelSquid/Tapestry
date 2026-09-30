@@ -27,22 +27,16 @@ sidecar down        → fall back to the existing Ink barks
   Tapestry's history rules require.
 - **Open the file in Tapestry** to inspect or hand-edit a mind.
 
-## The spike
+## The spikes
 
-`npc_mind/` is a headless CLI on `tapestry_kernel` (built from
-`phase-2-implementation-v1`, no SDL/GL):
+The work runs as GSD spikes under the idea key `npc-minds`. See
+`.planning/spikes/MANIFEST.md`.
 
-```bash
-cmake -S unity/npc_mind -B build/npc_mind && cmake --build build/npc_mind
-ctest --test-dir build/npc_mind            # seed matches examples/rook.tree byte for byte
-
-build/npc_mind/npc_mind context unity/examples/rook.tree player parts
-build/npc_mind/npc_mind say     some-copy.tree player 900 "Hauler's ready."
-```
-
-`examples/rook.tree` is Rook, a hangar mechanic, with two opinions of the
-player, each linked to the fact that caused it, one of them hardened by a
-later mind-sim commit.
+- **012 npc-mind-kernel** (`.planning/spikes/012-npc-mind-kernel/`) is the
+  headless `npc_mind` CLI on `tapestry_kernel`, with Rook's mind in
+  `examples/rook.tree`, a smoke test and a long-game benchmark.
+- **013a/013b** compare one world per NPC with a shared story world.
+- **014** is a clickable bridge standing in for Unity.
 
 ## Not built yet
 

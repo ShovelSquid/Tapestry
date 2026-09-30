@@ -39,26 +39,32 @@ std::string lower(std::string_view in) {
     return out;
 }
 
-// Every edge leaving `from` with `label`, as target node ids, in edge-id order.
-std::vector<k::NodeId> outgoing(const k::World& world, k::NodeId from, std::string_view label) {
-    std::vector<k::NodeId> out;
-    for (const k::EdgeId id : world.edgeIds()) {
-        const k::Edge* edge = world.edge(id);
-        if (edge->from == from && edge->label == label) {
-            out.push_back(edge->to);
+// Outgoing edges by (node, label), built in one pass over the edges. Asking
+// the world edge by edge for every node made context assembly quadratic in
+// the size of the mind: 1.35 s at 5,000 lines (spike 012).
+class EdgeIndex {
+public:
+    explicit EdgeIndex(const k::World& world) {
+        for (const k::EdgeId id : world.edgeIds()) {
+            const k::Edge* edge = world.edge(id);
+            m_out[{edge->from.value, edge->label}].push_back(edge->to);
         }
     }
-    return out;
-}
 
-bool pointsAt(const k::World& world, k::NodeId from, std::string_view label, k::NodeId to) {
-    for (const k::NodeId target : outgoing(world, from, label)) {
-        if (target == to) {
-            return true;
-        }
+    const std::vector<k::NodeId>& outgoing(k::NodeId from, std::string_view label) const {
+        static const std::vector<k::NodeId> none;
+        const auto it = m_out.find({from.value, std::string(label)});
+        return it == m_out.end() ? none : it->second;
     }
-    return false;
-}
+
+    bool pointsAt(k::NodeId from, std::string_view label, k::NodeId to) const {
+        const auto& targets = outgoing(from, label);
+        return std::find(targets.begin(), targets.end(), to) != targets.end();
+    }
+
+private:
+    std::map<std::pair<std::uint64_t, std::string>, std::vector<k::NodeId>> m_out;
+};
 
 std::string jsonString(std::string_view in) {
     std::string out = "\"";
@@ -143,6 +149,7 @@ ContextPacket assembleContext(const k::World& world, std::string_view listener, 
     packet.listenerKnown = who.has_value();
     packet.listenerName = who ? text(*world.node(*who), "name") : std::string(listener);
     const std::string topicNeedle = lower(topic);
+    const EdgeIndex edges(world);
 
     std::vector<ContextPacket::Item> topicFacts;
     std::vector<std::pair<std::int64_t, std::string>> lines;
@@ -153,22 +160,22 @@ ContextPacket assembleContext(const k::World& world, std::string_view listener, 
             packet.npcName = text(node, "name");
             packet.role = text(node, "role");
             packet.voice = text(node, "voice");
-        } else if (node.type == kOpinion && who && pointsAt(world, id, kAbout, *who)) {
+        } else if (node.type == kOpinion && who && edges.pointsAt(id, kAbout, *who)) {
             ContextPacket::Item item{text(node, "text"), real(node, "stance", 0.0), {}};
-            for (const k::NodeId reason : outgoing(world, id, kBecause)) {
+            for (const k::NodeId reason : edges.outgoing(id, kBecause)) {
                 item.because.push_back(text(*world.node(reason), "text"));
             }
             packet.opinionsOfListener.push_back(std::move(item));
         } else if (node.type == kFact) {
             ContextPacket::Item item{text(node, "text"), real(node, "confidence", 1.0), {}};
-            if (who && pointsAt(world, id, kAbout, *who)) {
+            if (who && edges.pointsAt(id, kAbout, *who)) {
                 packet.factsAboutListener.push_back(std::move(item));
             } else if (!topicNeedle.empty() && lower(item.text).find(topicNeedle) != std::string::npos) {
                 topicFacts.push_back(std::move(item));
             }
         } else if (node.type == kSample) {
             packet.voiceSamples.push_back(text(node, "line"));
-        } else if (node.type == kUtterance && who && pointsAt(world, id, kSaidTo, *who)) {
+        } else if (node.type == kUtterance && who && edges.pointsAt(id, kSaidTo, *who)) {
             lines.emplace_back(integer(node, "game_time"), text(node, "line"));
         }
     }

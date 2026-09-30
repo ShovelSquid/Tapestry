@@ -1,0 +1,7 @@
+[
+{"lines": 100, "commits": 116, "nodes": 113, "edges": 108, "file_mb": 0.05, "append_ms": 18.7, "submit_p50_ms": 0.156, "submit_p99_ms": 0.302, "reopen_ms": 1.4, "context_ms": 0.04, "packet_lines": 3},
+{"lines": 1000, "commits": 1106, "nodes": 1013, "edges": 1008, "file_mb": 0.51, "append_ms": 170.8, "submit_p50_ms": 0.150, "submit_p99_ms": 0.272, "reopen_ms": 13.2, "context_ms": 0.41, "packet_lines": 3},
+{"lines": 5000, "commits": 5506, "nodes": 5013, "edges": 5008, "file_mb": 2.56, "append_ms": 1008.9, "submit_p50_ms": 0.171, "submit_p99_ms": 0.332, "reopen_ms": 77.9, "context_ms": 2.68, "packet_lines": 3},
+{"lines": 20000, "commits": 22006, "nodes": 20013, "edges": 20008, "file_mb": 10.34, "append_ms": 3936.1, "submit_p50_ms": 0.162, "submit_p99_ms": 0.434, "reopen_ms": 286.4, "context_ms": 10.93, "packet_lines": 3},
+{"lines": 50000, "commits": 55006, "nodes": 50013, "edges": 50008, "file_mb": 25.99, "append_ms": 9900.2, "submit_p50_ms": 0.163, "submit_p99_ms": 0.396, "reopen_ms": 745.2, "context_ms": 30.61, "packet_lines": 3}
+]

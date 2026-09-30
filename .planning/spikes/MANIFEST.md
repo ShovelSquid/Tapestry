@@ -43,6 +43,16 @@ Tapestry's thread type (Kaelen, 2026-09-15; see `Tapestry Tales/Connections/Conc
 - Gravity is suppressed while the user is moving the view and scaled by frame time, so it never fights the hand and does not pull twice as hard at 120 Hz (spike 011)
 - The date scrubber carries the sessions themselves, not just a position: it is the only view where hours of gaps and sessions are visible at once (spike 011)
 
+### npc-minds
+Perihelion's NPCs (Kaelen, 2026-09-30) keep their minds in Tapestry worlds. An NPC's facts, its opinions of others (each linked by `because` edges to the facts behind them), voice samples and spoken lines are plugin node types in a `.tree` world. A mind-sim model updates them. A speaker model turns a bounded context packet, built for whoever the NPC is talking to, into a line. Spoken lines are recorded outcomes, so replay never asks a model again. The open question is whether this generalises into a story plugin that the companion phases (6–7) share.
+
+**Requirements:**
+- Built on the generic kernel with plugin node types only; no kernel change for NPCs (Kaelen, 2026-09-30, following Tapestry's plugin constraint)
+- Local models only for the mind-sim and speaker roles; they are spiked on Kaelen's Mac, not in the cloud container (Kaelen, 2026-09-30)
+- Scope for this session: kernel load (012), per-NPC vs shared story world (013a/013b) and a clickable bridge standing in for Unity (014) (Kaelen, 2026-09-30)
+- Context assembly indexes edges in one pass; asking the world edge by edge per node is quadratic (1.35 s at 5k lines) (spike 012)
+- A mind is served only when its journal status is Ok; a torn or hand-edited file opens with its verified prefix and would silently forget (spike 012)
+
 ## Spikes
 
 | # | Idea | Name | Type | Validates | Verdict | Tags |
@@ -60,3 +70,4 @@ Tapestry's thread type (Kaelen, 2026-09-15; see `Tapestry Tales/Connections/Conc
 | 009 | thread-rendering | deleted-letters-on-the-line | standard | Given heavy editing where nothing on the line is erased (D-03, D-04), when text is written, deleted, rewritten and undone, then the line stays readable rather than turning to mush | ○ PROPOSED (not run this session) | webgl, text, legibility |
 | 010 | thread-rendering | two-twisted-strands | standard | Given a person and an agent writing the same stretch, when each author has a coloured strand (D-21), then the strands twist legibly, drag apart (D-23), and simultaneous typing orders sensibly | ○ PROPOSED (not run this session) | webgl, multi-actor, geometry |
 | 011 | thread-rendering | navigation-feel | standard | Given the side view of a long thread, when zooming from the whole thread to single dots with hover gravity and a date scrubber (D-17), then navigation feels like "huge gaps broken up with small planets" | ✓ VALIDATED (60 fps and 0 dropped frames at every zoom from 8 h to 0.25 s, through a zoom sweep, panning, flying between sessions and a whole-history scrubber drag; gravity strength awaiting Kaelen's hand check) | webgl, navigation, ux, feel |
+| 012 | npc-minds | npc-mind-kernel | standard | Given an NPC mind stored as a Tapestry world of plugin node types, when it accumulates up to 50k spoken lines plus opinion updates, then it still reopens, stays readable and assembles a listener's context packet fast enough for dialogue | ✓ VALIDATED (submit 0.16 ms flat; reopen linear, 745 ms at 50k lines / 26 MB, so 7fed53f fixed 006's quadratic reopen; context packet 31 ms at 50k after indexing edges, 1.35 s at 5k before; damaged minds open silently with their verified prefix, so `context` now refuses them) | kernel, tree, npc, performance |
