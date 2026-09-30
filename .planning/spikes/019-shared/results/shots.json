@@ -1,0 +1,14 @@
+{
+  "errors": [],
+  "replay": {
+    "browser": "54653097c2cabad0",
+    "node": "54653097c2cabad0",
+    "same": true,
+    "pairs": [
+      "1+2"
+    ],
+    "mismatch": [
+      0
+    ]
+  }
+}

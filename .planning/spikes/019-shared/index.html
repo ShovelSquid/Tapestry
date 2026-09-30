@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Two Views, One Stem</title>
+<link rel="icon" href="data:,">
+<style>
+  :root { --bg: #101215; --panel: #181b20; --ink: #e8e5df; --muted: #9a958c; --line: #2f343b; --accent: #7fb0e0; --front: #8fd18a; --side: #e0b36a; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font: 13px/1.4 system-ui, -apple-system, sans-serif; }
+  body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); grid-template-rows: auto 1fr; height: 100vh; }
+  header { grid-column: 1 / -1; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 8px 12px; border-bottom: 1px solid var(--line); }
+  header h1 { font-size: 15px; margin: 0 8px 0 0; }
+  select, button { background: #1b1e23; color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; font: inherit; }
+  button { cursor: pointer; }
+  #views { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 8px; min-height: 0; }
+  .view { display: flex; flex-direction: column; min-height: 0; }
+  .view h2 { margin: 0 0 4px; font-size: 12px; color: var(--muted); font-weight: 600; }
+  .view h2 b.front { color: var(--front); } .view h2 b.side { color: var(--side); }
+  .view canvas { flex: 1; width: 100%; min-height: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; touch-action: none; cursor: crosshair; }
+  #three { position: relative; min-height: 0; }
+  #three canvas { display: block; }
+  #hud { position: absolute; left: 10px; bottom: 10px; right: 10px; background: rgba(24, 27, 32, .92); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font: 12px/1.5 ui-monospace, Menlo, monospace; }
+  label.check { display: flex; gap: 4px; align-items: center; }
+  @media (max-width: 800px) { body { grid-template-columns: 1fr; grid-template-rows: auto 45vh 1fr; } }
+</style>
+<script type="importmap">
+  { "imports": { "three": "../node_modules/three/build/three.module.js", "three/addons/": "../node_modules/three/examples/jsm/" } }
+</script>
+</head>
+<body>
+<header>
+  <h1>Two Views, One Stem</h1>
+  <select id="session"><option value="pair">helix + hook</option><option value="three">three stems, sides shuffled</option><option value="blank">blank</option></select>
+  <select id="method"><option value="align">019c alignment</option><option value="height">019a height</option><option value="arc">019b arc length</option></select>
+  <select id="rule"><option value="mismatch">pair by mismatch</option><option value="overlap">pair by overlap</option><option value="order">pair by drawing order</option></select>
+  <select id="level"><option>2</option><option selected>3</option><option>4</option></select>
+  <label class="check"><input type="checkbox" id="surface" checked> surface</label>
+  <button id="undo">Undo</button>
+</header>
+<section id="views">
+  <div class="view"><h2><b class="front">Front</b>: x across, height up</h2><canvas id="front"></canvas></div>
+  <div class="view"><h2><b class="side">Side</b>: z across, height up</h2><canvas id="side"></canvas></div>
+</section>
+<section id="three"><div id="hud"></div></section>
+<script type="module">
+import * as THREE from 'three'
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+import { expand, canonical } from '../015-generative-vectors/gen.mjs'
+import { buildFastSdfMesh } from '../017-fast-sdf/fast.mjs'
+import { BRUSHES, PLANES, stroke } from '../018-strokes-as-seeds/sessions.mjs'
+import { readActions } from '../018-strokes-as-seeds/strokes.mjs'
+import { fitSession } from './session.mjs'
+
+const $ = (id) => document.getElementById(id)
+const q = new URLSearchParams(location.search)
+const Q = 65536
+const U = [-3, 3], V = [-0.4, 4.6] // plane window shown in each 2D view
+const TAU = 6.283185307179586
+const helix = (s) => [0.6 * Math.cos(TAU * 1.2 * s) - 0.6 - 1.2, 3.2 * s, 0.6 * Math.sin(TAU * 1.2 * s) - 0.8]
+const hook = (s) => [1.6 * s * s + 0.6, 3.4 * Math.sin(Math.PI * 0.75 * s) / Math.sin(Math.PI * 0.75 * 0.667), 0.8 * s + 0.4]
+const pair = (c, a, b) => [...stroke(a, 'ink', 'front', (t) => { const p = c(t); return [p[0], p[1]] }), ...stroke(b, 'ink', 'side', (t) => { const p = c(t); return [p[2], p[1]] })]
+const three = [(s) => [-1.6 + 0.4 * s, 3 * Math.sqrt(s), 0.3 * s - 1], (s) => [0.3 * s, 3 * s * s, -0.4 * s], (s) => [1.6 - 0.3 * s, 3 * s, 0.5 * s + 1]]
+const SESSIONS = {
+  pair: () => [...BRUSHES, ...pair(helix, 1, 2), ...pair(hook, 3, 4)],
+  three: () => {
+    const a = [...BRUSHES]
+    three.forEach((c, k) => a.push(...stroke(k + 1, 'ink', 'front', (t) => { const p = c(t); return [p[0], p[1]] })))
+    ;[2, 0, 1].forEach((k, n) => a.push(...stroke(n + 4, 'ink', 'side', (t) => { const p = three[k](t); return [p[2], p[1]] })))
+    return a
+  },
+  blank: () => [...BRUSHES],
+}
+let actions = []
+
+// --- 2D views --------------------------------------------------------------
+const views = { front: $('front'), side: $('side') }
+const COLORS = { front: '#8fd18a', side: '#e0b36a' }
+function sizeViews() { for (const c of Object.values(views)) { const r = c.getBoundingClientRect(); c.width = r.width * devicePixelRatio; c.height = r.height * devicePixelRatio } }
+const toPx = (c, u, v) => [((u - U[0]) / (U[1] - U[0])) * c.width, c.height - ((v - V[0]) / (V[1] - V[0])) * c.height]
+const toUV = (c, e) => { const r = c.getBoundingClientRect(); return [U[0] + ((e.clientX - r.left) / r.width) * (U[1] - U[0]), V[0] + (1 - (e.clientY - r.top) / r.height) * (V[1] - V[0])] }
+function planeOf(s) { return s.right[2] === 1 ? 'side' : 'front' }
+function draw2d(pairs) {
+  const strokes = readActions(actions)
+  const pairOf = new Map()
+  pairs.forEach((p, i) => { pairOf.set(p.a.id, i); pairOf.set(p.b.id, i) })
+  for (const [name, c] of Object.entries(views)) {
+    const g = c.getContext('2d')
+    g.clearRect(0, 0, c.width, c.height)
+    g.strokeStyle = '#262a30'; g.lineWidth = 1
+    for (let v = 0; v <= 4; v++) { const [, y] = toPx(c, 0, v); g.beginPath(); g.moveTo(0, y); g.lineTo(c.width, y); g.stroke() }
+    const [x0] = toPx(c, 0, 0); g.beginPath(); g.moveTo(x0, 0); g.lineTo(x0, c.height); g.stroke()
+    // The other view's strokes, as height bands: where a partner can sit.
+    for (const s of strokes) {
+      if (planeOf(s) === name) continue
+      const vs = s.samples.map((x) => x.v / Q)
+      const [, y1] = toPx(c, 0, Math.max(...vs)), [, y0] = toPx(c, 0, Math.min(...vs))
+      g.fillStyle = 'rgba(127,176,224,0.05)'; g.fillRect(0, y1, c.width, y0 - y1)
+    }
+    for (const s of strokes) {
+      if (planeOf(s) !== name) continue
+      g.strokeStyle = COLORS[name]; g.lineWidth = 2.5 * devicePixelRatio; g.beginPath()
+      s.samples.forEach((x, i) => { const [px, py] = toPx(c, x.u / Q, x.v / Q); i ? g.lineTo(px, py) : g.moveTo(px, py) })
+      g.stroke()
+      const last = s.samples[s.samples.length - 1]
+      const [lx, ly] = toPx(c, last.u / Q, last.v / Q)
+      g.fillStyle = '#e8e5df'; g.font = `${11 * devicePixelRatio}px system-ui`
+      g.fillText(pairOf.has(s.id) ? `${s.id} ↔ pair ${pairOf.get(s.id) + 1}` : `${s.id} (single)`, lx + 6, ly)
+    }
+    if (live && live.view === name) {
+      g.strokeStyle = '#ffffff'; g.lineWidth = 2 * devicePixelRatio; g.beginPath()
+      live.samples.forEach((x, i) => { const [px, py] = toPx(c, x.u / Q, x.v / Q); i ? g.lineTo(px, py) : g.moveTo(px, py) })
+      g.stroke()
+    }
+  }
+}
+let live = null, tick = 0
+for (const [name, c] of Object.entries(views)) {
+  c.addEventListener('pointerdown', (e) => {
+    c.setPointerCapture(e.pointerId)
+    const id = actions.filter((a) => a.kind === 'StrokeBegin').reduce((m, a) => Math.max(m, a.strokeId), 0) + 1
+    live = { view: name, id, samples: [] }
+    add(e)
+  })
+  const add = (e) => {
+    for (const ce of (e.getCoalescedEvents ? e.getCoalescedEvents() : [e])) {
+      const [u, v] = toUV(c, ce)
+      live.samples.push({ tick: tick++, index: live.samples.length, pressure: Math.round(Math.min(1, ce.pressure || 0.5) * 65535), u: Math.round(u * Q), v: Math.round(v * Q), tiltX: 0, tiltY: 0, twist: 0, flags: 0 })
+    }
+    draw2d(lastPairs)
+  }
+  c.addEventListener('pointermove', (e) => { if (live && live.view === name) add(e) })
+  c.addEventListener('pointerup', () => {
+    if (!live) return
+    if (live.samples.length > 2) actions.push(
+      { kind: 'StrokeBegin', strokeId: live.id, brushVersionId: 1, startTick: live.samples[0].tick, pressureSource: 0, plane: PLANES[name].map((x) => Math.round(x * Q)) },
+      { kind: 'StrokeSamples', strokeId: live.id, samples: live.samples }, { kind: 'StrokeEnd', strokeId: live.id, endTick: tick })
+    live = null
+    rebuild()
+  })
+}
+
+// --- 3D ----------------------------------------------------------------------
+const host = $('three')
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true })
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
+host.prepend(renderer.domElement)
+const scene = new THREE.Scene(); scene.background = new THREE.Color(0x101215)
+const camera = new THREE.PerspectiveCamera(40, 1, 0.05, 100); camera.position.set(6, 4, 8)
+const controls = new OrbitControls(camera, renderer.domElement); controls.target.set(0, 1.8, 0)
+scene.add(new THREE.HemisphereLight(0xdfe8ff, 0x2a2118, 1.3))
+const sun = new THREE.DirectionalLight(0xffffff, 1.7); sun.position.set(5, 10, 6); scene.add(sun)
+scene.add(new THREE.GridHelper(8, 16, 0x2f343b, 0x22262b))
+let group = new THREE.Group(); scene.add(group)
+const material = new THREE.MeshStandardMaterial({ color: 0xb59a74, roughness: 0.7, transparent: true, opacity: 0.92 })
+let lastPairs = []
+async function sha16(buf) { const d = await crypto.subtle.digest('SHA-256', buf); return [...new Uint8Array(d)].slice(0, 8).map((b) => b.toString(16).padStart(2, '0')).join('') }
+
+async function rebuild() {
+  const t0 = performance.now()
+  const { description, fused, fit } = fitSession(actions, { method: $('method').value, rule: $('rule').value })
+  const t1 = performance.now()
+  const strokes = readActions(actions)
+  const { pairStrokes } = await import('./fuse.mjs')
+  lastPairs = pairStrokes(strokes, { rule: $('rule').value })
+  draw2d(lastPairs)
+  scene.remove(group); group = new THREE.Group(); scene.add(group)
+  // The planar strokes where they were drawn, and each fused stem in white.
+  for (const s of strokes) {
+    const pts = s.samples.map((x) => new THREE.Vector3(...s.origin).addScaledVector(new THREE.Vector3(...s.right), x.u / Q).addScaledVector(new THREE.Vector3(...s.up), x.v / Q))
+    group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: planeOf(s) === 'front' ? 0x8fd18a : 0xe0b36a, transparent: true, opacity: 0.45 })))
+  }
+  for (const f of fused) group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(f.points.map((x) => new THREE.Vector3(...x.p))), new THREE.LineBasicMaterial({ color: 0xffffff })))
+  let growMs = 0, surfaceMs = 0, vectors = 0, vh = '—'
+  if (description.seeds.length) {
+    const t2 = performance.now()
+    const levels = expand(description, Number($('level').value)).levels
+    growMs = performance.now() - t2
+    vectors = levels.flat().length
+    vh = await sha16(canonical(levels).buf.buffer)
+    if ($('surface').checked) {
+      const t3 = performance.now()
+      const m = buildFastSdfMesh(levels.flat(), { cell: 0.06, normals: true })
+      surfaceMs = performance.now() - t3
+      const geo = new THREE.BufferGeometry()
+      geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(m.positions), 3))
+      geo.setAttribute('normal', new THREE.BufferAttribute(m.normals, 3))
+      geo.setIndex(new THREE.BufferAttribute(m.indices, 1))
+      group.add(new THREE.Mesh(geo, material))
+    }
+  }
+  $('hud').innerHTML = `${strokes.length} strokes → ${fused.length} fused stem${fused.length === 1 ? '' : 's'}${fused.map((f) => ` · ${f.pair}${$('method').value === 'align' ? `: mismatch ${f.mismatch.toFixed(3)}` : ''}${f.reversed ? ', reversed' : ''}`).join('')}<br>
+    ${fit.seeds} seeds → ${vectors} vectors · fuse+fit ${(t1 - t0).toFixed(1)} ms · grow ${growMs.toFixed(0)} ms${surfaceMs ? ` · surface ${surfaceMs.toFixed(0)} ms` : ''}<br>vectors ${vh}`
+  window.__state = { strokes: strokes.length, pairs: fused.map((f) => f.pair), mismatch: fused.map((f) => +f.mismatch.toFixed(3)), seeds: fit.seeds, vectors, vh, actions }
+}
+function resize() {
+  sizeViews()
+  const r = host.getBoundingClientRect()
+  renderer.setSize(r.width, r.height); camera.aspect = r.width / r.height; camera.updateProjectionMatrix()
+  draw2d(lastPairs)
+}
+addEventListener('resize', resize)
+for (const id of ['method', 'rule', 'level', 'surface']) $(id).onchange = rebuild
+$('session').onchange = () => { actions = SESSIONS[$('session').value](); rebuild() }
+$('undo').onclick = () => { const last = actions.filter((a) => a.kind === 'StrokeBegin').pop(); if (last) { actions = actions.filter((a) => a.strokeId !== last.strokeId); rebuild() } }
+for (const k of ['session', 'method', 'rule', 'level']) if (q.get(k)) $(k).value = q.get(k)
+resize()
+actions = SESSIONS[$('session').value]()
+window.__ready = rebuild()
+;(function loop() { controls.update(); renderer.render(scene, camera); requestAnimationFrame(loop) })()
+</script>
+</body>
+</html>

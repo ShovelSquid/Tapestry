@@ -53,7 +53,7 @@ export function readActions(actions) {
   return [...strokes.values()].filter((s) => s.ended).sort((a, b) => a.id - b.id)
 }
 
-function points(stroke) {
+export function points(stroke) {
   const out = []
   for (const s of stroke.samples) {
     const p = add(stroke.origin, add(mul(stroke.right, s.u / Q), mul(stroke.up, s.v / Q)))
@@ -64,7 +64,7 @@ function points(stroke) {
   return out
 }
 
-function distToSegment(p, a, b) {
+export function distToSegment(p, a, b) {
   const ab = sub(b, a)
   const l2 = dot(ab, ab)
   const t = l2 > 0 ? Math.min(1, Math.max(0, dot(sub(p, a), ab) / l2)) : 0
@@ -73,7 +73,7 @@ function distToSegment(p, a, b) {
 
 // Ramer–Douglas–Peucker with an explicit stack: the indices of the points
 // kept, in order. Ties keep the first farthest point, so it's deterministic.
-function simplify(pts, tolerance) {
+export function simplify(pts, tolerance) {
   if (pts.length < 3) return pts.map((_, i) => i)
   const keep = new Uint8Array(pts.length)
   keep[0] = keep[pts.length - 1] = 1

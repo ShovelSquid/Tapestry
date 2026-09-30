@@ -1,0 +1,308 @@
+{
+  "curves": {
+    "lean": {
+      "height": {
+        "mean": 0.007,
+        "worst": 0.014,
+        "coverage_worst": 0.029,
+        "points": 118,
+        "ms": 16.9
+      },
+      "arc": {
+        "mean": 0.008,
+        "worst": 0.019,
+        "coverage_worst": 0.016,
+        "points": 120,
+        "ms": 11.3
+      },
+      "align": {
+        "mean": 0.008,
+        "worst": 0.015,
+        "coverage_worst": 0.012,
+        "points": 120,
+        "ms": 8.9,
+        "mismatch": 0.009
+      }
+    },
+    "helix": {
+      "height": {
+        "mean": 0.008,
+        "worst": 0.018,
+        "coverage_worst": 0.043,
+        "points": 118,
+        "ms": 7.2
+      },
+      "arc": {
+        "mean": 0.042,
+        "worst": 0.108,
+        "coverage_worst": 0.108,
+        "points": 120,
+        "ms": 6
+      },
+      "align": {
+        "mean": 0.009,
+        "worst": 0.023,
+        "coverage_worst": 0.021,
+        "points": 122,
+        "ms": 8.5,
+        "mismatch": 0.009
+      }
+    },
+    "hook": {
+      "height": {
+        "mean": 0.096,
+        "worst": 0.527,
+        "coverage_worst": 0.51,
+        "points": 117,
+        "ms": 6.4
+      },
+      "arc": {
+        "mean": 0.032,
+        "worst": 0.097,
+        "coverage_worst": 0.095,
+        "points": 120,
+        "ms": 6.2
+      },
+      "align": {
+        "mean": 0.01,
+        "worst": 0.045,
+        "coverage_worst": 0.035,
+        "points": 123,
+        "ms": 7.3,
+        "mismatch": 0.012
+      }
+    },
+    "flatRun": {
+      "height": {
+        "mean": 0.026,
+        "worst": 0.105,
+        "coverage_worst": 0.082,
+        "points": 119,
+        "ms": 8
+      },
+      "arc": {
+        "mean": 0.029,
+        "worst": 0.149,
+        "coverage_worst": 0.195,
+        "points": 120,
+        "ms": 7.2
+      },
+      "align": {
+        "mean": 0.016,
+        "worst": 0.044,
+        "coverage_worst": 0.041,
+        "points": 140,
+        "ms": 10.1,
+        "mismatch": 0.009
+      }
+    },
+    "uneven": {
+      "height": {
+        "mean": 0.007,
+        "worst": 0.014,
+        "coverage_worst": 0.03,
+        "points": 118,
+        "ms": 6
+      },
+      "arc": {
+        "mean": 0.013,
+        "worst": 0.032,
+        "coverage_worst": 0.03,
+        "points": 120,
+        "ms": 5.9
+      },
+      "align": {
+        "mean": 0.009,
+        "worst": 0.047,
+        "coverage_worst": 0.035,
+        "points": 141,
+        "ms": 9.6,
+        "mismatch": 0.016
+      }
+    }
+  },
+  "reversed": {
+    "detected": true,
+    "mean": 0.008,
+    "worst": 0.014,
+    "coverage_worst": 0.011
+  },
+  "pairing": {
+    "order": {
+      "pairs": [
+        "1+2",
+        "3+4",
+        "5+6"
+      ],
+      "correct": 3,
+      "of": 3
+    },
+    "overlap": {
+      "pairs": [
+        "5+6",
+        "1+2",
+        "3+4"
+      ],
+      "correct": 3,
+      "of": 3
+    },
+    "order_all_fronts_first": {
+      "pairs": [
+        "1+4",
+        "2+5",
+        "3+6"
+      ],
+      "correct": 3,
+      "of": 3
+    },
+    "overlap_all_fronts_first": {
+      "pairs": [
+        "2+5",
+        "1+4",
+        "3+6"
+      ],
+      "correct": 3,
+      "of": 3
+    },
+    "order_shuffled": {
+      "pairs": [
+        "1+4",
+        "2+5",
+        "3+6"
+      ],
+      "correct": 0,
+      "of": 3
+    },
+    "overlap_shuffled": {
+      "pairs": [
+        "2+6",
+        "3+4",
+        "1+5"
+      ],
+      "correct": 3,
+      "of": 3
+    },
+    "mismatch_shuffled": {
+      "pairs": [
+        "2+6",
+        "3+4",
+        "1+5"
+      ],
+      "correct": 3,
+      "of": 3
+    },
+    "order_shuffled_different_heights": {
+      "pairs": [
+        "1+5",
+        "2+6",
+        "3+4"
+      ],
+      "correct": 3,
+      "of": 3
+    },
+    "overlap_shuffled_different_heights": {
+      "pairs": [
+        "2+6",
+        "1+5",
+        "3+4"
+      ],
+      "correct": 3,
+      "of": 3
+    },
+    "mismatch_shuffled_different_heights": {
+      "pairs": [
+        "2+6",
+        "3+4",
+        "1+5"
+      ],
+      "correct": 3,
+      "of": 3
+    },
+    "order_same_heights_different_profiles": {
+      "pairs": [
+        "1+4",
+        "2+5",
+        "3+6"
+      ],
+      "correct": 0,
+      "of": 3
+    },
+    "overlap_same_heights_different_profiles": {
+      "pairs": [
+        "2+6",
+        "1+4",
+        "3+5"
+      ],
+      "correct": 1,
+      "of": 3
+    },
+    "mismatch_same_heights_different_profiles": {
+      "pairs": [
+        "2+6",
+        "1+5",
+        "3+4"
+      ],
+      "correct": 3,
+      "of": 3
+    },
+    "order_same_heights_same_linear_profile": {
+      "pairs": [
+        "1+4",
+        "2+5",
+        "3+6"
+      ],
+      "correct": 0,
+      "of": 3
+    },
+    "overlap_same_heights_same_linear_profile": {
+      "pairs": [
+        "2+6",
+        "1+4",
+        "3+5"
+      ],
+      "correct": 1,
+      "of": 3
+    },
+    "mismatch_same_heights_same_linear_profile": {
+      "pairs": [
+        "2+4",
+        "3+6",
+        "1+5"
+      ],
+      "correct": 1,
+      "of": 3
+    },
+    "mismatch": {
+      "right": [
+        0.007,
+        0.007,
+        0.007
+      ],
+      "wrong": [
+        0.015,
+        0.017,
+        0.037,
+        0.018,
+        0.016,
+        0.037
+      ]
+    }
+  },
+  "pipeline": {
+    "strokes": 0,
+    "samples": 0,
+    "byRole": {},
+    "seeds": 20,
+    "knots": 0,
+    "attractors": 0,
+    "pairs": 2,
+    "vectors": 900,
+    "watertight": true,
+    "deterministic": true,
+    "ms": {
+      "fuse_and_fit": 2,
+      "grow": 78,
+      "surface": 287
+    }
+  }
+}
