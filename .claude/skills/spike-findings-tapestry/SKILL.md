@@ -12,7 +12,7 @@ Eleven spikes were run across three sessions on 2026-09-15, all on Kaelen's Appl
 
 **npc-minds.** Perihelion's NPCs (Kaelen, 2026-09-30) keep their minds in Tapestry worlds: facts, opinions with `because` reasons, voice samples and spoken lines as plugin node types, with a mind-sim model updating them and a speaker model turning a bounded context packet into a line. Four spikes (012, 013a/b, 014) ran on 2026-09-30 in a 4-core Xeon cloud container. The headline: **author one shared story world, ship per-NPC slices, and serve them from one localhost bridge that owns the file.** The kernel scales to a long game unchanged, and the context packet costs about 1 ms over HTTP. Local models are the unspiked piece.
 
-**generative-vectors.** Kaelen's "Generative Vector Neural Rendering" note (2026-09-30): store the rules that make an object (a few seed vectors, knots that are relationships, and generative rules), not its geometry, and regrow detail at any resolution. Four spikes (015, 016a/b, 017) ran on 2026-09-30. The headline: **3 seeds and a 457-byte description grow a legible 3,765-vector tree that is deterministic, additive and local, and a narrow-band distance field turns it into one welded, watertight surface in 0.3–1 s, or tens of milliseconds for a region.** Surfaces are regenerated views, never stored. The neural-inference half of the note is unspiked.
+**generative-vectors.** Kaelen's "Generative Vector Neural Rendering" note (2026-09-30): store the rules that make an object (a few seed vectors, knots that are relationships, and generative rules), not its geometry, and regrow detail at any resolution. Four spikes (015, 016a/b, 017) ran on 2026-09-30. The headline: **3 seeds and a 457-byte description grow a legible 3,765-vector tree that is deterministic, additive and local, and a narrow-band distance field turns it into one welded, watertight surface in 0.3–1 s, or tens of milliseconds for a region.** Surfaces are regenerated views, never stored. The neural-inference half of the note is unspiked, but its input path is: spike 018 fits data-drawing's pen strokes into seeds, knots and mass, and grows them into a surface 0.2 s after pen-up.
 
 Spike sessions wrapped: 2026-09-15 (thread-rendering), 2026-09-30 (npc-minds, generative-vectors)
 </context>
@@ -91,6 +91,10 @@ All spikes wrapped in this session belong to one idea key, **thread-rendering**.
 - The surface is a regenerated view per level of detail and region, never stored
 - Build only in a narrow band of bricks, keeping the reference traversal order, so the output is bit-identical
 - A capsule's index reach is `2r + k + 2h` from its axis
+
+**Pen strokes as seeds** (spike 018)
+- Pen input is data-drawing's action list unchanged; the plane frame per stroke gives 3D, pressure gives radius, and the brush gives the role (ink stem, lead anchor, clay mass, rust knot)
+- Fit at a tolerance of about one surface voxel (0.05); seed ids come from the stroke ordinal, so earlier seeds never change
 </requirements>
 
 <findings_index>
@@ -107,6 +111,7 @@ All spikes wrapped in this session belong to one idea key, **thread-rendering**.
 | The mind bridge | `references/npc-mind-bridge.md` | A dependency-free Node sidecar on the kernel addon with a live index serves a packet in 1.2 ms over HTTP at 5k lines; JS equals C++ 240/240; one writer per world |
 | Generative vectors | `references/generative-vectors-growth.md` | 3 seeds and 457 B grow 3,765 vectors (×527); deterministic, additive, order-independent and local to L7; knots generate structure (the bridge's arch); a cell key past 2⁵³ once doubled forces |
 | Surfaces from vectors | `references/vector-surfaces.md` | A narrow-band distance field meshed with marching tetrahedra welds joints and is watertight; 0.32 s for tree L4, 35 ms for a region; bit-identical to the reference; swept tubes and surface nets are dead ends |
+| Pen strokes as seeds | `references/strokes-as-seeds.md` | data-drawing actions fit into seeds, knots and mass (6 strokes → 9 seeds → 361 vectors), a surface 0.2 s after pen-up, identical when replayed in Node; tolerance 0.05 keeps the drawing; edits reach only related strokes |
 
 ## Open Risks Carried Into the Build
 
@@ -117,7 +122,7 @@ All spikes wrapped in this session belong to one idea key, **thread-rendering**.
 5. **npc-minds: local models are unspiked.** The mind-sim and speaker roles, and whether the loop feels like conversation with a real model, need a spike on Kaelen's Mac (the cloud container has no GPU).
 6. **npc-minds: the addon doesn't link on Linux** until `tapestry_kernel` sets `POSITION_INDEPENDENT_CODE ON`.
 7. **npc-minds: the game and the Tapestry app can't both own a story file.** The journal lock allows one writer, so the build must pick which one serves the other.
-8. **generative-vectors: the neural half is unspiked.** Nothing yet infers seeds and knots from an image or strokes. data-drawing's pen strokes are the natural first input.
+8. **generative-vectors: the neural half is unspiked.** Spike 018's fitter is explicit, not learned: nothing yet proposes roles or knots from strokes or infers seeds from an image. Its fitted descriptions are the data path a model would sit on.
 9. **generative-vectors: the surface cost.** 0.3–1.4 s single-threaded for a whole tree. Workers per brick range, gradient normals through the per-brick lists, and the field on the GPU or in WASM are the next steps. Bulging rings at continuation joints need a plain minimum there.
 10. **generative-vectors: determinism across engines is unproven.** Only V8 (Node and Chromium) was compared; a Firefox or Safari run is owed.
 
@@ -148,6 +153,7 @@ Original spike source files are preserved in `sources/` for complete reference �
 - 016a-sdf-surface-nets
 - 016b-swept-tubes
 - 017-fast-sdf
+- 018-strokes-as-seeds
 
 Not processed (proposed, never run): 009-deleted-letters-on-the-line, 010-two-twisted-strands.
 </metadata>

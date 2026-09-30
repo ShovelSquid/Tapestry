@@ -123,3 +123,27 @@ Every claim has a negative control that makes it fail. Relationships generate st
 - Bulging rings where a branch meets its continuation.
 - Determinism across engines beyond V8.
 - Kaelen's hand check on the look and feel.
+
+---
+
+# Spike Wrap-Up Summary: generative-vectors, spike 018
+
+**Date:** 2026-09-30
+**Spikes processed:** 1 (018)
+**Feature area:** pen strokes as seeds (`references/strokes-as-seeds.md`)
+
+| # | Name | Type | Verdict | Feature Area |
+|---|------|------|---------|--------------|
+| 018 | strokes-as-seeds | standard | ✓ VALIDATED | Pen strokes as seeds |
+
+## Key Findings
+
+**data-drawing's action list is a sufficient input to generative vectors.**
+- The plane frame per stroke gives 3D, pressure gives radius, and the brush gives the role: ink stems, lead anchors, clay mass, and rust strokes as drawn relationships (knots).
+- Speed: 6 strokes become 9 seeds, then 361 vectors, then 127k triangles, 0.2 s after pen-up.
+- Determinism: strokes drawn by pointer in Chromium replay in Node to identical vector and mesh hashes.
+- Fidelity: fitting at a tolerance of about one voxel (0.05) keeps every sample within 0.05 of the chain; 0.18 flattened the drawing.
+- Stable ids: seeds are named by stroke ordinal, so appending strokes never changes earlier seeds.
+- Edit reach: an edit reaches exactly the strokes related to it by knots or proximity, and 0 vectors elsewhere.
+
+Still open: a learned model for roles and knots, fusing two views into one 3D stem (spike 019, next), and Kaelen's real-pen hand check.

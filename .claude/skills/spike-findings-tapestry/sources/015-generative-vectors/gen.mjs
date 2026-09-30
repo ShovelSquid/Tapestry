@@ -216,7 +216,11 @@ function grow(v, parentOf, frozen, desc, order) {
 
 function prepare(desc) {
   const rules = { ...DEFAULT_RULES, ...(desc.rules || {}) }
-  if (desc.seeds.length > 16) throw new Error('at most 16 seeds')
+  // The order key reads a path in bijective base `fanout`: children and seeds
+  // must each number fewer than it. 16 by default (every spike 015 hash);
+  // drawn descriptions (spike 018) pass more.
+  const fanout = desc.fanout ?? 16
+  if (desc.seeds.length > fanout) throw new Error(`at most ${fanout} seeds`)
   const seeds = desc.seeds.map((s, i) => ({
     id: s.id, level: 0, parent: null, seed: s.id, kind: s.kind || 'stem',
     start: s.start, dir: unit(s.dir), len: s.len, radius: s.radius ?? 0.12, order: i,
@@ -224,7 +228,7 @@ function prepare(desc) {
     // seeks it, but never branches itself: a ground, a wall, a skeleton.
     grows: s.grow !== false,
   }))
-  return { ...desc, rules, seeds, seedById: new Map(seeds.map((s) => [s.id, s])), knots: desc.knots || [] }
+  return { ...desc, fanout, rules, seeds, seedById: new Map(seeds.map((s) => [s.id, s])), knots: desc.knots || [] }
 }
 
 // Grows the whole object to maxLevel. Returns every vector, level by level.
@@ -253,7 +257,7 @@ export function expandWhere(description, maxLevel, wanted, { reverse = false, br
     const parents = reverse ? [...levels[level]].reverse() : levels[level]
     for (const v of parents) {
       if (!wanted(v, level)) continue
-      for (const c of grow(v, parentOf, frozen, desc, (v.order + 1) * 16)) next.push(c)
+      for (const c of grow(v, parentOf, frozen, desc, (v.order + 1) * desc.fanout)) next.push(c)
     }
     // Freeze the whole level only after it is built, so siblings in other
     // parents never see each other mid-level (that would make the result
