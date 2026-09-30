@@ -58,3 +58,8 @@ Patterns and stack choices established across spike sessions. New spikes follow 
 - **Comparison spikes compare outputs three ways and run a negative control:** once a comparison reports zero mismatches, break one side on purpose and confirm the mismatches appear, then restore (spike 013).
 - **Node spikes load the app's kernel addon** through `014-mind-bridge/paths.cjs` (`TAPESTRY_ADDON`, else `app/native/build/Release`). On Linux the addon needs `--CDCMAKE_POSITION_INDEPENDENT_CODE=ON` until `tapestry_kernel` sets it (spike 014).
 - **A second writer can't open a world;** a checker reloads a byte copy of the journal rather than the live file (spike 014).
+
+## Browser spikes without Electron (spike 015)
+- **In a cloud container with no Electron,** a browser spike serves `.planning/spikes` with a tiny Node static server (`015-generative-vectors/serve.mjs`) and drives Chromium through `playwright-core` (`shots.mjs`, `CHROMIUM=` path). This is a deviation from the Electron convention, taken only because the container has no Electron. On Kaelen's Mac, prefer the Electron launcher.
+- **Logic that must be proven lives in a plain `.mjs` module** shared by the page and a Node `check.mjs`, so the same code is measured headless and seen in the browser, and a hash computed in both proves they agree (spikes 014, 015).
+- **Every correctness claim gets a negative control,** a deliberate break that must make the check fail, and **every spatial index a brute-force reference** (spikes 013, 015).
