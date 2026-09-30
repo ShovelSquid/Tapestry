@@ -51,3 +51,10 @@ Patterns and stack choices established across spike sessions. New spikes follow 
 - **One ProseMirror instance, always.** Two copies of `prosemirror-model` make a schema built by one unreadable to the other (`Schema is missing its top node type ('doc')`). Under a bundler, `resolve.dedupe` every ProseMirror package plus react, react-dom and `orderedmap` (spike 005).
 - **Fonts:** macOS Verdana served from `/System/Library/Fonts/Supplemental/Verdana.ttf`; never copied into the repo. For broad Unicode from a font file, Arial Unicode (`/System/Library/Fonts/Supplemental/Arial Unicode.ttf`) is the only single-file option — macOS ships CJK faces as `.ttc` collections, which msdfgen-wasm can't read.
 - **The page reaches Node modules by absolute path.** Pages are served over HTTP, so `main.cjs` passes the spikes directory in `process.env.TAPESTRY_SPIKES_DIR` before requiring the launcher.
+
+## Native kernel spikes (npc-minds, spikes 012–014)
+- **Headless C++ spikes build the kernel straight from source:** a spike-local `CMakeLists.txt` sets `TAPESTRY_BUILD_APP/TESTS/RENDER` off and `add_subdirectory(../../../tapestry)`, so no SDL, GL or network is needed and it builds anywhere with a C++20 compiler (spikes 012, 013).
+- **Example worlds are seeded under `FixedClock`** (`2026-09-30T06:00:00Z`) so the committed `.tree` is byte-stable and a smoke test can compare a fresh seed byte for byte (spikes 012, 013).
+- **Comparison spikes compare outputs three ways and run a negative control:** once a comparison reports zero mismatches, break one side on purpose and confirm the mismatches appear, then restore (spike 013).
+- **Node spikes load the app's kernel addon** through `014-mind-bridge/paths.cjs` (`TAPESTRY_ADDON`, else `app/native/build/Release`). On Linux the addon needs `--CDCMAKE_POSITION_INDEPENDENT_CODE=ON` until `tapestry_kernel` sets it (spike 014).
+- **A second writer can't open a world;** a checker reloads a byte copy of the journal rather than the live file (spike 014).
