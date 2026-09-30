@@ -157,13 +157,13 @@ final class Workspace: ObservableObject {
     // Brings the settings page forward and into view, creating one if the
     // document has none.
     func revealSettings() {
-        var id = world.pages.first(where: { $0.kind == .settings })?.id
-        if id == nil {
+        var found = world.pages.first(where: { $0.kind == .settings })?.id
+        if found == nil {
             let center = camera.screenToWorld(CGPoint(x: viewport.midX, y: viewport.midY))
             let rect = Renderer.settingsPageRect(topLeft: CGPoint(x: center.x - 160, y: center.y - 90))
-            id = world.addPage(kind: .settings, title: "Settings", body: "", rect: rect)
+            found = world.addPage(kind: .settings, title: "Settings", body: "", rect: rect)
         }
-        guard let id else { return }
+        guard let id = found else { return }
         world.bringToFront(id: id)
         world.updatePage(id: id) { $0.minimized = false }
         selectedId = id
