@@ -81,3 +81,45 @@ Spike 005's frontmatter still read `verdict: PENDING` while its own Results sect
 - The addon doesn't link on Linux without position-independent code.
 
 **Still open.** The local-model spike (mind-sim and speaker roles) on Kaelen's Mac, and the hand check on whether the loop feels like conversation. The design question is whether the companion phases (6–7) share this story schema.
+
+---
+
+# Spike Wrap-Up Summary: generative-vectors
+
+**Date:** 2026-09-30
+**Idea:** generative-vectors (Kaelen's "Generative Vector Neural Rendering" note)
+**Spikes processed:** 4 (015, 016a, 016b, 017)
+**Feature areas:** generative vectors · surfaces from vectors
+**Skill output:** `./.claude/skills/spike-findings-tapestry/` (appended: `references/generative-vectors-growth.md`, `references/vector-surfaces.md`, `sources/015–017`)
+
+## Processed Spikes
+
+| # | Name | Type | Verdict | Feature Area |
+|---|------|------|---------|--------------|
+| 015 | generative-vectors | standard | ✓ VALIDATED | Generative vectors |
+| 016a | sdf-surface-nets | comparison | ✓ WINNER of 016 | Surfaces from vectors |
+| 016b | swept-tubes | comparison | ⚠ PARTIAL | Surfaces from vectors |
+| 017 | fast-sdf | standard | ⚠ PARTIAL | Surfaces from vectors |
+
+## Key Findings
+
+**A few vectors and rules grow a legible object, and it behaves like data.** Three seeds, two knots and a 457-byte description grow 3,765 vectors (×527). The growth is:
+- deterministic: Node and Chromium hash the same
+- additive: level N+1 never moves level N
+- independent of visiting order
+- local: a region grown alone is bit-identical to the whole expansion there
+
+Every claim has a negative control that makes it fail. Relationships generate structure: two stalks with one `attract` knot grow into an arch, and nudging one seed reorganises the crown.
+
+**The surface is a field of the vectors.** A smooth union of capsules, meshed with marching tetrahedra on a global lattice, welds forks into fillets and is watertight at every level. It rebuilds identically, and a region lands exactly on the whole surface's vertices. Surface nets was a dead end (33–257 non-manifold edges), and swept tubes only fix seams along a limb (forks overlap).
+
+**Fast by not visiting empty space.** A narrow band of bricks, culled by the field's Lipschitz bound, with dense per-brick corners and per-brick capsule lists, builds the bit-identical mesh 4–11× faster: tree L4 in 0.32 s, level 7 in 1.1 s, a region in tens of milliseconds.
+
+**Two silent index bugs, each caught only by an independent twin.** Spike 015's grid keys past 2⁵³ doubled forces, and 016a's capsule buckets were padded one radius short, so its field depended on the bucket grid. Neither was visible to the spike's own determinism or regional tests.
+
+**Still open.**
+- The neural half: inferring seeds and knots, probably from data-drawing's pen strokes first.
+- Surface cost: workers, normals through the per-brick lists, the GPU or WASM.
+- Bulging rings where a branch meets its continuation.
+- Determinism across engines beyond V8.
+- Kaelen's hand check on the look and feel.
