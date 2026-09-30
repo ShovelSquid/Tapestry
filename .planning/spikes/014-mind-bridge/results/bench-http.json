@@ -1,0 +1,56 @@
+[
+  {
+    "spoken_lines": 10,
+    "say_http_ms": null,
+    "context_http_ms": {
+      "p50": 0.64,
+      "p99": 3.39
+    },
+    "burst_60_requests_wall_ms": 43.7,
+    "burst_context_ms": {
+      "p50": 31.9,
+      "p99": 34.15
+    },
+    "journal": "Ok",
+    "mirror_matches_kernel": true,
+    "nodes": 39
+  },
+  {
+    "spoken_lines": 1010,
+    "say_http_ms": {
+      "p50": 1.23,
+      "p99": 3.41
+    },
+    "context_http_ms": {
+      "p50": 0.7,
+      "p99": 1.08
+    },
+    "burst_60_requests_wall_ms": 31.1,
+    "burst_context_ms": {
+      "p50": 7.59,
+      "p99": 13.58
+    },
+    "journal": "Ok",
+    "mirror_matches_kernel": true,
+    "nodes": 1039
+  },
+  {
+    "spoken_lines": 5010,
+    "say_http_ms": {
+      "p50": 1.16,
+      "p99": 3.1
+    },
+    "context_http_ms": {
+      "p50": 1.18,
+      "p99": 3.18
+    },
+    "burst_60_requests_wall_ms": 57.6,
+    "burst_context_ms": {
+      "p50": 27.23,
+      "p99": 47.95
+    },
+    "journal": "Ok",
+    "mirror_matches_kernel": true,
+    "nodes": 5039
+  }
+]

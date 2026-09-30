@@ -2,6 +2,9 @@
 //
 //   story_compare verify <dir>         same packets? byte-identical slices? what does a correction cost?
 //   story_compare bench <dir> <lines>  cost at <lines> extra lines per NPC
+//   story_compare seed <dir>           write only the shared hangar story (013b) to <dir>/story.tree
+//   story_compare packet <story.tree> <speaker> <listener> [topic]
+//                                      print 013b's packet (spike 014 checks its JS port against this)
 
 #include "PerNpc.hpp"
 #include "Story.hpp"
@@ -167,11 +170,21 @@ int bench(const std::string& dir, std::uint64_t extra) {
 int main(int argc, char** argv) {
     try {
         if (argc == 3 && std::string(argv[1]) == "verify") return verify(argv[2]);
+        if (argc == 3 && std::string(argv[1]) == "seed") {
+            std::filesystem::create_directories(argv[2]);
+            std::printf("%s\n", shared::build(hangar(), argv[2]).c_str());
+            return 0;
+        }
+        if ((argc == 5 || argc == 6) && std::string(argv[1]) == "packet") {
+            auto story = open(argv[2]);
+            std::fputs(npc::toJson(shared::assembleFor(story->world(), argv[3], argv[4], argc == 6 ? argv[5] : "")).c_str(), stdout);
+            return 0;
+        }
         if (argc == 4 && std::string(argv[1]) == "bench") return bench(argv[2], std::strtoull(argv[3], nullptr, 10));
     } catch (const std::exception& e) {
         std::fprintf(stderr, "error: %s\n", e.what());
         return 1;
     }
-    std::fputs("usage: story_compare verify <dir> | bench <dir> <lines>\n", stderr);
+    std::fputs("usage: story_compare verify <dir> | bench <dir> <lines> | seed <dir> | packet <story.tree> <speaker> <listener> [topic]\n", stderr);
     return 2;
 }

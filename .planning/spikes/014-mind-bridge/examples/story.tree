@@ -1,0 +1,246 @@
+@tree 1 41
+world story
+created 2026-09-30T06:00:00Z
+@end sha256:21d812253ba13eba0826bb1f99553ba5d1b1c8c6c66926896837c7026924138c
+@commit 1 2331
+parent sha256:21d812253ba13eba0826bb1f99553ba5d1b1c8c6c66926896837c7026924138c
+branch main
+recorded 2026-09-30T06:00:00Z
+tick 0
+actor human designer
+message "the cast"
+create-node n1 perihelion.story/character@1
+set n1 entity text "npc.rook"
+set n1 name text "Rook"
+set n1 npc bool true
+set n1 role text "hangar mechanic, second shift"
+set n1 voice text <<TEXT
+Terse, dry, talks to machines more kindly than to people. Never says more than three sentences.
+TEXT
+create-node n2 perihelion.story/character@1
+set n2 entity text "pilot.kade"
+set n2 name text "Kade"
+set n2 npc bool true
+set n2 role text "pilot"
+set n2 voice text "Quick and warm; deflects anything serious with a joke."
+create-node n3 perihelion.story/character@1
+set n3 entity text "npc.ines"
+set n3 name text "Ines"
+set n3 npc bool true
+set n3 role text "quartermaster"
+set n3 voice text "Precise, suspicious, counts everything aloud."
+create-node n4 perihelion.story/character@1
+set n4 entity text "npc.oda"
+set n4 name text "Oda"
+set n4 npc bool true
+set n4 role text "base commander"
+set n4 voice text "Formal and clipped; speaks in orders and dates."
+create-node n5 perihelion.story/character@1
+set n5 entity text "player"
+set n5 name text "Vesper"
+set n5 npc bool false
+set n5 role text ""
+set n5 voice text ""
+create-node n6 perihelion.story/sample@1
+set n6 line text "Left actuator's cooked. Again. You want it fixed or you want it fast?"
+create-edge e1 n6 n1 sample-of
+create-node n7 perihelion.story/sample@1
+set n7 line text "...Good landing. Don't tell anyone I said that."
+create-edge e2 n7 n1 sample-of
+create-node n8 perihelion.story/sample@1
+set n8 line text "If I die out there, tell Rook it was the actuator."
+create-edge e3 n8 n2 sample-of
+create-node n9 perihelion.story/sample@1
+set n9 line text "Buy you a drink? Buy me a drink."
+create-edge e4 n9 n2 sample-of
+create-node n10 perihelion.story/sample@1
+set n10 line text "Four cells. Four. Sign here."
+create-edge e5 n10 n3 sample-of
+create-node n11 perihelion.story/sample@1
+set n11 line text "I don't do favors. I do inventory."
+create-edge e6 n11 n3 sample-of
+create-node n12 perihelion.story/sample@1
+set n12 line text "Report at oh-six-hundred."
+create-edge e7 n12 n4 sample-of
+create-node n13 perihelion.story/sample@1
+set n13 line text "Noted. Dismissed."
+create-edge e8 n13 n4 sample-of
+@end sha256:f2c4ab9c4193819464523eca3dcf98e38ccfbe7ccc27d476252e052b197b5df3
+@commit 2 1215
+parent sha256:f2c4ab9c4193819464523eca3dcf98e38ccfbe7ccc27d476252e052b197b5df3
+branch main
+recorded 2026-09-30T06:00:00Z
+tick 0
+actor human designer
+message "what happened, and what is only said to have happened"
+create-node n14 perihelion.story/fact@1
+set n14 canon bool true
+set n14 text text "Vesper brought the Hauler back with both knee joints sheared"
+create-edge e9 n14 n5 about
+create-node n15 perihelion.story/fact@1
+set n15 canon bool true
+set n15 text text "Vesper held the ridge until Kade was pulled out"
+create-edge e10 n15 n5 about
+create-edge e11 n15 n2 about
+create-node n16 perihelion.story/fact@1
+set n16 canon bool false
+set n16 text text "Vesper pulled out of the ridge before the extraction"
+create-edge e12 n16 n5 about
+create-node n17 perihelion.story/fact@1
+set n17 canon bool true
+set n17 text text "Cell stocks are down to four days since the northern depot fell"
+create-node n18 perihelion.story/fact@1
+set n18 canon bool true
+set n18 text text "The salvage yard stopped trading with us, so there are no actuator parts"
+create-node n19 perihelion.story/fact@1
+set n19 canon bool true
+set n19 text text "Oda cut the mechanics' rations to keep the pilots fed"
+create-edge e13 n19 n4 about
+@end sha256:44ac6507f323ae0a4db8f009eaea46f32b24cd089060f9c5b0eb774171294623
+@commit 3 1458
+parent sha256:44ac6507f323ae0a4db8f009eaea46f32b24cd089060f9c5b0eb774171294623
+branch main
+recorded 2026-09-30T06:00:00Z
+tick 0
+actor human designer
+message "who knows what"
+create-edge e14 n1 n14 believes
+set e14 confidence real 1
+set e14 source text "witnessed"
+create-edge e15 n1 n15 believes
+set e15 confidence real 0.6
+set e15 source text "told by Kade"
+create-edge e16 n1 n17 believes
+set e16 confidence real 0.9
+set e16 source text "witnessed"
+create-edge e17 n1 n18 believes
+set e17 confidence real 0.7
+set e17 source text "rumor"
+create-edge e18 n1 n19 believes
+set e18 confidence real 1
+set e18 source text "witnessed"
+create-edge e19 n2 n14 believes
+set e19 confidence real 0.8
+set e19 source text "told by Rook"
+create-edge e20 n2 n15 believes
+set e20 confidence real 1
+set e20 source text "witnessed"
+create-edge e21 n3 n16 believes
+set e21 confidence real 0.5
+set e21 source text "told by Oda"
+create-edge e22 n3 n17 believes
+set e22 confidence real 1
+set e22 source text "witnessed"
+create-edge e23 n3 n18 believes
+set e23 confidence real 1
+set e23 source text "witnessed"
+create-edge e24 n3 n19 believes
+set e24 confidence real 1
+set e24 source text "witnessed"
+create-edge e25 n4 n15 believes
+set e25 confidence real 0.5
+set e25 source text "after-action report"
+create-edge e26 n4 n16 believes
+set e26 confidence real 0.4
+set e26 source text "rumor"
+create-edge e27 n4 n17 believes
+set e27 confidence real 1
+set e27 source text "witnessed"
+@end sha256:7e76e915931cadb29629c2e2e0ea8666b8a72d553181c094ceca91315f5cc25f
+@commit 4 1450
+parent sha256:7e76e915931cadb29629c2e2e0ea8666b8a72d553181c094ceca91315f5cc25f
+branch main
+recorded 2026-09-30T06:00:00Z
+tick 0
+actor plugin perihelion.mind
+message "opinions"
+create-node n20 perihelion.story/opinion@1
+set n20 stance real -0.6
+set n20 text text "Vesper is hard on machines"
+create-edge e28 n1 n20 holds
+create-edge e29 n20 n5 about
+create-edge e30 n20 n14 because
+create-node n21 perihelion.story/opinion@1
+set n21 stance real 0.3
+set n21 text text "Vesper looks after the pilots, at least"
+create-edge e31 n1 n21 holds
+create-edge e32 n21 n5 about
+create-edge e33 n21 n15 because
+create-node n22 perihelion.story/opinion@1
+set n22 stance real -0.4
+set n22 text text "Oda feeds pilots before mechanics"
+create-edge e34 n1 n22 holds
+create-edge e35 n22 n4 about
+create-edge e36 n22 n19 because
+create-node n23 perihelion.story/opinion@1
+set n23 stance real 0.9
+set n23 text text "Vesper saved my life"
+create-edge e37 n2 n23 holds
+create-edge e38 n23 n5 about
+create-edge e39 n23 n15 because
+create-node n24 perihelion.story/opinion@1
+set n24 stance real -0.5
+set n24 text text "Vesper runs when it gets hot"
+create-edge e40 n3 n24 holds
+create-edge e41 n24 n5 about
+create-edge e42 n24 n16 because
+create-node n25 perihelion.story/opinion@1
+set n25 stance real -0.1
+set n25 text text "Vesper's record is mixed"
+create-edge e43 n4 n25 holds
+create-edge e44 n25 n5 about
+create-edge e45 n25 n15 because
+create-edge e46 n25 n16 because
+@end sha256:ecce02f17e789d86168df228da022680697b9f28bd0ecf41687b2f2ba9ebd356
+@commit 5 405
+parent sha256:ecce02f17e789d86168df228da022680697b9f28bd0ecf41687b2f2ba9ebd356
+branch main
+recorded 2026-09-30T06:00:00Z
+tick 0
+actor plugin perihelion.speaker
+message "said to Vesper"
+create-node n26 perihelion.story/utterance@1
+set n26 game_time int 600
+set n26 line text "Knees again. I'm not a miracle worker, I'm a mechanic with no parts."
+create-edge e47 n1 n26 spoke
+create-edge e48 n26 n5 said-to
+@end sha256:887efa90e958aa2565398c48e33814ec2f5a10b12ae7afc4db7bb5b1931db6ca
+@commit 6 384
+parent sha256:887efa90e958aa2565398c48e33814ec2f5a10b12ae7afc4db7bb5b1931db6ca
+branch main
+recorded 2026-09-30T06:00:00Z
+tick 0
+actor plugin perihelion.speaker
+message "said to Vesper"
+create-node n27 perihelion.story/utterance@1
+set n27 game_time int 650
+set n27 line text "Drinks are on me. Well. On you. But I'm buying."
+create-edge e49 n2 n27 spoke
+create-edge e50 n27 n5 said-to
+@end sha256:d991b1873e00025d8bdf57a263876368660967683693e59629129ca1928a398c
+@commit 7 379
+parent sha256:d991b1873e00025d8bdf57a263876368660967683693e59629129ca1928a398c
+branch main
+recorded 2026-09-30T06:00:00Z
+tick 0
+actor plugin perihelion.speaker
+message "said to Vesper"
+create-node n28 perihelion.story/utterance@1
+set n28 game_time int 700
+set n28 line text "Sign for the cells. All four days of them."
+create-edge e51 n3 n28 spoke
+create-edge e52 n28 n5 said-to
+@end sha256:a397b7872bff6c0fa6a7f2313453f0b99f445f09bf0a07efdc0498fb04796d10
+@commit 8 387
+parent sha256:a397b7872bff6c0fa6a7f2313453f0b99f445f09bf0a07efdc0498fb04796d10
+branch main
+recorded 2026-09-30T06:00:00Z
+tick 0
+actor plugin perihelion.speaker
+message "said to Oda"
+create-node n29 perihelion.story/utterance@1
+set n29 game_time int 720
+set n29 line text "Rations. For the people who keep your mechs standing."
+create-edge e53 n1 n29 spoke
+create-edge e54 n29 n4 said-to
+@end sha256:9ab20ab9eff6393bcabd687216e01993957d52a0deb05b4830326e92d0bf6b15

@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mind Bridge</title>
+<style>
+  :root {
+    --bg: #f6f3ee; --panel: #fffdf9; --ink: #1d1b18; --muted: #6d665c; --line: #e2dcd2;
+    --accent: #2f5d8a; --good: #2e7d4f; --bad: #b3423a; --chip: #efe9df;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #16181b; --panel: #1f2226; --ink: #e9e6e1; --muted: #9a958d; --line: #33373d;
+      --accent: #7fb0e0; --good: #6cc394; --bad: #e0827a; --chip: #2a2e33; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 system-ui, -apple-system, sans-serif; }
+  header { padding: 14px 16px; border-bottom: 1px solid var(--line); display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
+  header h1 { margin: 0; font-size: 17px; }
+  header span { color: var(--muted); font-size: 13px; }
+  main { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; padding: 12px 16px; }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px; min-width: 0; }
+  h2 { margin: 0 0 8px; font-size: 14px; }
+  h3 { margin: 12px 0 4px; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+  label { display: block; font-size: 12px; color: var(--muted); margin: 6px 0 2px; }
+  select, input[type=text], textarea { width: 100%; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px;
+    background: var(--bg); color: var(--ink); font: inherit; }
+  textarea { min-height: 54px; resize: vertical; }
+  button { margin-top: 8px; padding: 6px 12px; border: 0; border-radius: 6px; background: var(--accent); color: #fff; font: inherit; cursor: pointer; }
+  button.quiet { background: var(--chip); color: var(--ink); }
+  .row { display: flex; gap: 8px; } .row > * { flex: 1; min-width: 0; }
+  ul { margin: 0; padding-left: 18px; } li { margin: 3px 0; }
+  .chip { display: inline-block; margin: 3px 4px 0 0; padding: 2px 8px; border-radius: 999px; background: var(--chip); cursor: pointer; font-size: 12px; }
+  .meta { color: var(--muted); font-size: 12px; }
+  .false { color: var(--bad); font-weight: 600; font-size: 11px; }
+  .stance { display: inline-block; width: 60px; height: 6px; background: var(--chip); border-radius: 3px; position: relative; vertical-align: middle; margin-right: 6px; }
+  .stance i { position: absolute; top: 0; bottom: 0; border-radius: 3px; }
+  pre { margin: 0; white-space: pre-wrap; word-break: break-word; font: 12px/1.4 ui-monospace, Menlo, monospace; max-height: 340px; overflow: auto; }
+  .wide { grid-column: 1 / -1; }
+  .checks label { display: inline-flex; gap: 4px; align-items: center; margin-right: 10px; color: var(--ink); font-size: 13px; }
+  input[type=range] { width: 100%; }
+  #toast { position: fixed; bottom: 12px; left: 16px; right: 16px; max-width: 520px; padding: 8px 12px; border-radius: 8px;
+    background: var(--ink); color: var(--bg); opacity: 0; transition: opacity .2s; pointer-events: none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Mind Bridge</h1>
+  <span>Stands in for Unity: one story world, served per NPC. No model here, so you speak for the speaker model and nudge the mind-sim yourself.</span>
+</header>
+<main>
+  <section>
+    <h2>Conversation</h2>
+    <div class="row">
+      <div><label>Speaker (NPC)</label><select id="speaker"></select></div>
+      <div><label>Listener</label><select id="listener"></select></div>
+    </div>
+    <label>Topic (optional)</label><input id="topic" type="text" placeholder="parts, cells, ridge…">
+    <button id="ask">Ask for context</button> <span id="asked" class="meta"></span>
+    <div id="packet"></div>
+    <h3>What the speaker says</h3>
+    <textarea id="line" placeholder="Type the line the speaker model would produce, or pick a voice sample"></textarea>
+    <div id="samples"></div>
+    <button id="say">Say it (records a commit)</button>
+  </section>
+
+  <section>
+    <h2 id="mindTitle">Mind</h2>
+    <div id="mind"></div>
+  </section>
+
+  <section>
+    <h2>Something happens</h2>
+    <label>Event</label><textarea id="event" placeholder="The depot convoy was ambushed at the pass; Vesper drove it off"></textarea>
+    <label><input type="checkbox" id="canon" checked> It really happened (canon). Untick for a rumor or lie.</label>
+    <h3>About</h3><div id="about" class="checks"></div>
+    <h3>Who learns it</h3><div id="witnesses" class="checks"></div>
+    <div class="row">
+      <div><label>Confidence</label><input id="conf" type="text" value="0.9"></div>
+      <div><label>Source</label><input id="source" type="text" value="witnessed"></div>
+    </div>
+    <button id="observe">Record the event</button>
+  </section>
+
+  <section class="wide">
+    <h2>The .tree file, newest records</h2>
+    <div class="row" style="flex:0">
+      <button class="quiet" id="check">Check mirror vs kernel</button>
+      <button class="quiet" id="export">Export log</button>
+    </div>
+    <p id="checkResult" class="meta"></p>
+    <pre id="tree"></pre>
+  </section>
+</main>
+<div id="toast"></div>
+<script>
+const $ = (id) => document.getElementById(id)
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
+let cast = []
+let lastPacket = null
+
+async function api(path, body) {
+  const t0 = performance.now()
+  const res = await fetch(path, body ? { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) } : {})
+  const data = await res.json()
+  if (!res.ok) { toast(data.error || res.statusText); throw new Error(data.error) }
+  data.__ms = performance.now() - t0
+  return data
+}
+function toast(msg) { const t = $('toast'); t.textContent = msg; t.style.opacity = 1; setTimeout(() => (t.style.opacity = 0), 2400) }
+
+function stanceBar(v) {
+  const w = Math.abs(v) * 30, color = v < 0 ? 'var(--bad)' : 'var(--good)'
+  return `<span class="stance"><i style="left:${v < 0 ? 30 - w : 30}px;width:${w}px;background:${color}"></i></span>`
+}
+
+function renderPacket(p) {
+  lastPacket = p
+  const list = (items, f) => items.length ? `<ul>${items.map(f).join('')}</ul>` : '<p class="meta">none</p>'
+  $('packet').innerHTML = `
+    <h3>${esc(p.npc)} → ${esc(p.listener)}${p.listener_known ? '' : ' <span class="meta">(a stranger to them)</span>'}</h3>
+    <p class="meta">${esc(p.role)}: ${esc(p.voice)}</p>
+    <h3>Opinions of ${esc(p.listener)}</h3>${list(p.opinions_of_listener, (o) => `<li>${stanceBar(o.stance)}${esc(o.text)} <span class="meta">(${o.stance})${o.because ? ' because ' + o.because.map(esc).join('; ') : ''}</span></li>`)}
+    <h3>Facts about ${esc(p.listener)}</h3>${list(p.facts_about_listener, (f) => `<li>${esc(f.text)} <span class="meta">(${f.confidence})</span></li>`)}
+    <h3>On the topic</h3>${list(p.topic_facts, (f) => `<li>${esc(f.text)} <span class="meta">(${f.confidence})</span></li>`)}
+    <h3>Last lines to them</h3>${list(p.recent_lines_to_listener, (l) => `<li>${esc(l)}</li>`)}
+    <details><summary class="meta">Raw packet (what the speaker model gets)</summary><pre>${esc(JSON.stringify(p, (k, v) => (k === '__ms' ? undefined : v), 2))}</pre></details>`
+  $('samples').innerHTML = p.voice_samples.map((s) => `<span class="chip" data-s="${esc(s)}">${esc(s)}</span>`).join('')
+  for (const c of $('samples').children) c.onclick = () => ($('line').value = c.dataset.s)
+}
+
+async function renderMind() {
+  const npc = $('speaker').value
+  const m = await api(`/api/mind?npc=${encodeURIComponent(npc)}`)
+  $('mindTitle').textContent = `Mind of ${m.name}`
+  const beliefOpts = m.beliefs.map((b) => `<option value="${b.fact}">${esc(b.text)}</option>`).join('')
+  $('mind').innerHTML = `
+    <h3>Believes</h3><ul>${m.beliefs.map((b) => `<li>${esc(b.text)} ${b.canon ? '' : '<span class="false">NOT CANON</span>'}
+      <span class="meta">(${b.confidence}, ${esc(b.source)}${b.about.length ? '; about ' + b.about.map(esc).join(', ') : ''})</span></li>`).join('')}</ul>
+    <h3>Opinions (drag = the mind-sim's move)</h3>
+    ${m.opinions.map((o) => `<div style="margin:6px 0">
+      <div>${stanceBar(o.stance)}${esc(o.text)} <span class="meta">about ${o.about.map(esc).join(', ')} · <b id="v-${o.id}">${o.stance}</b></span></div>
+      <input type="range" min="-1" max="1" step="0.05" value="${o.stance}" data-op="${o.id}">
+      <select data-because="${o.id}"><option value="">(no new reason)</option>${beliefOpts}</select>
+      <div class="meta">because ${o.because.map(esc).join('; ') || '—'}</div></div>`).join('') || '<p class="meta">none</p>'}
+    <p class="meta">${m.lines} lines spoken</p>`
+  for (const r of $('mind').querySelectorAll('input[type=range]')) {
+    r.oninput = () => ($(`v-${r.dataset.op}`).textContent = r.value)
+    r.onchange = async () => {
+      const because = $('mind').querySelector(`select[data-because="${r.dataset.op}"]`).value || undefined
+      await api('/api/shift', { opinion: r.dataset.op, stance: Number(r.value), because })
+      toast('Opinion shifted (plugin perihelion.mind)')
+      await refresh()
+    }
+  }
+}
+
+async function ask() {
+  const q = new URLSearchParams({ speaker: $('speaker').value, listener: $('listener').value, topic: $('topic').value })
+  const p = await api(`/api/context?${q}`)
+  $('asked').textContent = `${p.__ms.toFixed(1)} ms round trip`
+  renderPacket(p)
+}
+
+async function refreshTree() {
+  const records = await api('/api/tree?records=6')
+  $('tree').textContent = records.slice().reverse().join('\n\n')
+}
+async function refresh() { await Promise.all([renderMind(), ask(), refreshTree()]) }
+
+async function init() {
+  cast = await api('/api/cast')
+  const npcs = cast.filter((c) => c.npc)
+  $('speaker').innerHTML = npcs.map((c) => `<option>${esc(c.name)}</option>`).join('')
+  $('listener').innerHTML = cast.map((c) => `<option value="${esc(c.entity)}">${esc(c.name)}${c.npc ? '' : ' (player)'}</option>`).join('') +
+    '<option value="stranger">a stranger</option>'
+  $('listener').value = 'player'
+  $('about').innerHTML = cast.map((c) => `<label><input type="checkbox" value="${esc(c.name)}">${esc(c.name)}</label>`).join('')
+  $('witnesses').innerHTML = npcs.map((c) => `<label><input type="checkbox" value="${esc(c.name)}">${esc(c.name)}</label>`).join('')
+  $('speaker').onchange = refresh
+  $('listener').onchange = ask
+  $('ask').onclick = ask
+  $('topic').onkeydown = (e) => e.key === 'Enter' && ask()
+  $('say').onclick = async () => {
+    const line = $('line').value.trim()
+    if (!line) return toast('Type a line first')
+    const r = await api('/api/say', { speaker: $('speaker').value, listener: $('listener').value, line })
+    $('line').value = ''
+    toast(`Recorded as commit ${r.seq}`)
+    await refresh()
+  }
+  $('observe').onclick = async () => {
+    const text = $('event').value.trim()
+    if (!text) return toast('Describe the event first')
+    const checked = (id) => [...$(id).querySelectorAll('input:checked')].map((i) => i.value)
+    const witnesses = checked('witnesses').map((name) => ({ name, confidence: Number($('conf').value || 1), source: $('source').value || 'witnessed' }))
+    const r = await api('/api/observe', { text, canon: $('canon').checked, about: checked('about'), witnesses })
+    $('event').value = ''
+    for (const box of document.querySelectorAll('#about input, #witnesses input')) box.checked = false
+    toast(`Event recorded as commit ${r.seq}; ${witnesses.length} NPC(s) now believe it`)
+    await refresh()
+  }
+  $('check').onclick = async () => {
+    const c = await api('/api/check')
+    $('checkResult').textContent = `journal ${c.status.kind} at commit ${c.status.lastGoodSeq}; live mirror ${c.mirror.same ? 'matches' : 'DIFFERS FROM'} a fresh reload (${c.mirror.nodes} nodes, ${c.mirror.edges} edges)`
+  }
+  $('export').onclick = async () => {
+    const data = await api('/api/log')
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }))
+    a.download = `mind-bridge-log-${Date.now()}.json`
+    a.click()
+  }
+  await refresh()
+}
+init()
+</script>
+</body>
+</html>
