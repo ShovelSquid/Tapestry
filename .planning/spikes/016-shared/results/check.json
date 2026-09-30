@@ -1,0 +1,359 @@
+{
+  "cell": 0.04,
+  "rows": [
+    {
+      "preset": "tree",
+      "level": 3,
+      "vectors": 120,
+      "chains": 81,
+      "cylinders": {
+        "triangles": 1440,
+        "vertices": 1440,
+        "edges": 2880,
+        "boundary": 1440,
+        "nonManifold": 0,
+        "watertight": false,
+        "dihedral_p50": 60,
+        "dihedral_p99": 60,
+        "dihedral_max": 60
+      },
+      "sdf": {
+        "ms": 2336,
+        "vertices": 106306,
+        "triangles": 212620,
+        "edges": 318930,
+        "boundary": 0,
+        "nonManifold": 0,
+        "watertight": true,
+        "dihedral_p50": 3.8,
+        "dihedral_p99": 64.8,
+        "dihedral_max": 173.1,
+        "capsules": 120,
+        "cells": 554589,
+        "fieldEvaluations": 592924,
+        "deterministic": true,
+        "hash": "ea522eaf4bbe4b55",
+        "region": {
+          "ms": 125,
+          "inside": 4411,
+          "missing": 0
+        }
+      },
+      "tubes": {
+        "ms": 12,
+        "vertices": 6894,
+        "triangles": 13464,
+        "edges": 20196,
+        "boundary": 0,
+        "nonManifold": 0,
+        "watertight": true,
+        "dihedral_p50": 1.8,
+        "dihedral_p99": 98.1,
+        "dihedral_max": 102.7,
+        "chains": 81,
+        "joints": 78,
+        "deterministic": true,
+        "hash": "54d5ac5b65159c21",
+        "region": {
+          "inside": 298,
+          "missing": 0
+        }
+      }
+    },
+    {
+      "preset": "tree",
+      "level": 4,
+      "vectors": 363,
+      "chains": 243,
+      "cylinders": {
+        "triangles": 4356,
+        "vertices": 4356,
+        "edges": 8712,
+        "boundary": 4356,
+        "nonManifold": 0,
+        "watertight": false,
+        "dihedral_p50": 60,
+        "dihedral_p99": 60,
+        "dihedral_max": 60
+      },
+      "sdf": {
+        "ms": 2498,
+        "vertices": 149932,
+        "triangles": 299892,
+        "edges": 449838,
+        "boundary": 0,
+        "nonManifold": 0,
+        "watertight": true,
+        "dihedral_p50": 5.2,
+        "dihedral_p99": 73.7,
+        "dihedral_max": 168.1,
+        "capsules": 363,
+        "cells": 634054,
+        "fieldEvaluations": 681230,
+        "deterministic": true,
+        "hash": "db3110550b9aa385",
+        "region": {
+          "ms": 153,
+          "inside": 6161,
+          "missing": 0
+        }
+      },
+      "tubes": {
+        "ms": 59,
+        "vertices": 20826,
+        "triangles": 40680,
+        "edges": 61020,
+        "boundary": 0,
+        "nonManifold": 0,
+        "watertight": true,
+        "dihedral_p50": 1.8,
+        "dihedral_p99": 98.3,
+        "dihedral_max": 104.8,
+        "chains": 243,
+        "joints": 240,
+        "deterministic": true,
+        "hash": "a890d2c354bc667e",
+        "region": {
+          "inside": 781,
+          "missing": 0
+        }
+      }
+    },
+    {
+      "preset": "tree",
+      "level": 5,
+      "vectors": 849,
+      "chains": 486,
+      "cylinders": {
+        "triangles": 10188,
+        "vertices": 10188,
+        "edges": 20376,
+        "boundary": 10188,
+        "nonManifold": 0,
+        "watertight": false,
+        "dihedral_p50": 60,
+        "dihedral_p99": 60,
+        "dihedral_max": 60
+      },
+      "sdf": {
+        "ms": 3987,
+        "vertices": 206214,
+        "triangles": 412652,
+        "edges": 618978,
+        "boundary": 0,
+        "nonManifold": 0,
+        "watertight": true,
+        "dihedral_p50": 6.3,
+        "dihedral_p99": 77.3,
+        "dihedral_max": 175.6,
+        "capsules": 849,
+        "cells": 712368,
+        "fieldEvaluations": 768249,
+        "deterministic": true,
+        "hash": "926a3f96b9518f66",
+        "region": {
+          "ms": 151,
+          "inside": 7907,
+          "missing": 0
+        }
+      },
+      "tubes": {
+        "ms": 28,
+        "vertices": 47556,
+        "triangles": 93168,
+        "edges": 139752,
+        "boundary": 0,
+        "nonManifold": 0,
+        "watertight": true,
+        "dihedral_p50": 1.8,
+        "dihedral_p99": 98,
+        "dihedral_max": 106.5,
+        "chains": 486,
+        "joints": 483,
+        "deterministic": true,
+        "hash": "7392e3bede981aa3",
+        "region": {
+          "inside": 1467,
+          "missing": 0
+        }
+      }
+    },
+    {
+      "preset": "bridge",
+      "level": 3,
+      "vectors": 81,
+      "chains": 55,
+      "cylinders": {
+        "triangles": 972,
+        "vertices": 972,
+        "edges": 1944,
+        "boundary": 972,
+        "nonManifold": 0,
+        "watertight": false,
+        "dihedral_p50": 60,
+        "dihedral_p99": 60,
+        "dihedral_max": 60
+      },
+      "sdf": {
+        "ms": 1101,
+        "vertices": 66994,
+        "triangles": 133984,
+        "edges": 200976,
+        "boundary": 0,
+        "nonManifold": 0,
+        "watertight": true,
+        "dihedral_p50": 3.6,
+        "dihedral_p99": 56.7,
+        "dihedral_max": 169.2,
+        "capsules": 81,
+        "cells": 276329,
+        "fieldEvaluations": 302917,
+        "deterministic": true,
+        "hash": "e655a53eec7910b7",
+        "region": {
+          "ms": 99,
+          "inside": 7125,
+          "missing": 0
+        }
+      },
+      "tubes": {
+        "ms": 2,
+        "vertices": 4658,
+        "triangles": 9096,
+        "edges": 13644,
+        "boundary": 0,
+        "nonManifold": 0,
+        "watertight": true,
+        "dihedral_p50": 1.8,
+        "dihedral_p99": 96.2,
+        "dihedral_max": 98.9,
+        "chains": 55,
+        "joints": 52,
+        "deterministic": true,
+        "hash": "5ac3086265fccbc3",
+        "region": {
+          "inside": 1030,
+          "missing": 0
+        }
+      }
+    },
+    {
+      "preset": "bridge",
+      "level": 4,
+      "vectors": 189,
+      "chains": 109,
+      "cylinders": {
+        "triangles": 2268,
+        "vertices": 2268,
+        "edges": 4536,
+        "boundary": 2268,
+        "nonManifold": 0,
+        "watertight": false,
+        "dihedral_p50": 60,
+        "dihedral_p99": 60,
+        "dihedral_max": 60
+      },
+      "sdf": {
+        "ms": 1235,
+        "vertices": 93574,
+        "triangles": 187172,
+        "edges": 280758,
+        "boundary": 0,
+        "nonManifold": 0,
+        "watertight": true,
+        "dihedral_p50": 4.9,
+        "dihedral_p99": 64.4,
+        "dihedral_max": 170.3,
+        "capsules": 189,
+        "cells": 320579,
+        "fieldEvaluations": 349694,
+        "deterministic": true,
+        "hash": "f8630d40a8d5e874",
+        "region": {
+          "ms": 123,
+          "inside": 10946,
+          "missing": 0
+        }
+      },
+      "tubes": {
+        "ms": 10,
+        "vertices": 10598,
+        "triangles": 20760,
+        "edges": 31140,
+        "boundary": 0,
+        "nonManifold": 0,
+        "watertight": true,
+        "dihedral_p50": 1.6,
+        "dihedral_p99": 95.8,
+        "dihedral_max": 99.7,
+        "chains": 109,
+        "joints": 106,
+        "deterministic": true,
+        "hash": "85c2fef685e261b2",
+        "region": {
+          "inside": 2286,
+          "missing": 0
+        }
+      }
+    },
+    {
+      "preset": "bridge",
+      "level": 5,
+      "vectors": 405,
+      "chains": 217,
+      "cylinders": {
+        "triangles": 4860,
+        "vertices": 4860,
+        "edges": 9720,
+        "boundary": 4860,
+        "nonManifold": 0,
+        "watertight": false,
+        "dihedral_p50": 60,
+        "dihedral_p99": 60,
+        "dihedral_max": 60
+      },
+      "sdf": {
+        "ms": 1402,
+        "vertices": 128542,
+        "triangles": 257232,
+        "edges": 385848,
+        "boundary": 0,
+        "nonManifold": 0,
+        "watertight": true,
+        "dihedral_p50": 5.8,
+        "dihedral_p99": 68.5,
+        "dihedral_max": 170.3,
+        "capsules": 405,
+        "cells": 352791,
+        "fieldEvaluations": 382704,
+        "deterministic": true,
+        "hash": "dcccc1af95d78d17",
+        "region": {
+          "ms": 153,
+          "inside": 15361,
+          "missing": 0
+        }
+      },
+      "tubes": {
+        "ms": 17,
+        "vertices": 22478,
+        "triangles": 44088,
+        "edges": 66132,
+        "boundary": 0,
+        "nonManifold": 0,
+        "watertight": true,
+        "dihedral_p50": 1.5,
+        "dihedral_p99": 95.5,
+        "dihedral_max": 99.7,
+        "chains": 217,
+        "joints": 214,
+        "deterministic": true,
+        "hash": "33354e5e2590cb2b",
+        "region": {
+          "inside": 4257,
+          "missing": 0
+        }
+      }
+    }
+  ]
+}
