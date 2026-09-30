@@ -1,0 +1,59 @@
+{
+  "errors": [],
+  "results": [
+    {
+      "name": "01-sapling-vectors",
+      "strokes": 6,
+      "seeds": 9,
+      "knots": 6,
+      "vectors": 361,
+      "fitMs": 2.199999999254942,
+      "growMs": 38.30000000074506,
+      "surfaceMs": 0,
+      "vecHash": "1831d65a57b46214",
+      "meshHash": "—"
+    },
+    {
+      "name": "02-sapling-surface",
+      "strokes": 6,
+      "seeds": 9,
+      "knots": 6,
+      "vectors": 361,
+      "fitMs": 1,
+      "growMs": 31.200000000186265,
+      "surfaceMs": 415.8999999994412,
+      "vecHash": "1831d65a57b46214",
+      "meshHash": "52425d409ddeba05"
+    },
+    {
+      "name": "03-lantern-surface",
+      "strokes": 7,
+      "seeds": 35,
+      "knots": 16,
+      "vectors": 739,
+      "fitMs": 1.2000000001862645,
+      "growMs": 77,
+      "surfaceMs": 1045.5,
+      "vecHash": "b16cc978ffd643ca",
+      "meshHash": "20c62d45580548ee"
+    }
+  ],
+  "drawn": {
+    "strokes": 4,
+    "seeds": 5,
+    "knots": 4,
+    "vectors": 181,
+    "fitMs": 2.199999999254942,
+    "growMs": 8,
+    "surfaceMs": 289,
+    "vecHash": "86d2f410e6f97cc9",
+    "meshHash": "7f9ece77ed0c527d"
+  },
+  "replay": {
+    "browserVec": "86d2f410e6f97cc9",
+    "nodeVec": "86d2f410e6f97cc9",
+    "browserMesh": "7f9ece77ed0c527d",
+    "nodeMesh": "7f9ece77ed0c527d",
+    "same": true
+  }
+}

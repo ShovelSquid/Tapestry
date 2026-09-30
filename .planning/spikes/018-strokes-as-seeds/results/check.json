@@ -1,0 +1,165 @@
+{
+  "sapling": {
+    "strokes": 6,
+    "samples": 600,
+    "action_bytes": 63372,
+    "byRole": {
+      "stem": 3,
+      "anchor": 1,
+      "mass": 1,
+      "knot": 1
+    },
+    "seeds": 9,
+    "knots": 6,
+    "attractors": 24,
+    "vectors": 361,
+    "triangles": 127168,
+    "deterministic": true,
+    "vectors_hash": "1831d65a57b46214",
+    "mesh_hash": "52425d409ddeba05",
+    "pen_up_ms": {
+      "fit": 3.9,
+      "grow": 38,
+      "surface": 194
+    },
+    "fidelity": [
+      {
+        "tolerance": 0.02,
+        "seeds": 16,
+        "mean": 0.006,
+        "worst": 0.019
+      },
+      {
+        "tolerance": 0.05,
+        "seeds": 9,
+        "mean": 0.015,
+        "worst": 0.041
+      },
+      {
+        "tolerance": 0.1,
+        "seeds": 7,
+        "mean": 0.02,
+        "worst": 0.052
+      },
+      {
+        "tolerance": 0.18,
+        "seeds": 5,
+        "mean": 0.056,
+        "worst": 0.148
+      },
+      {
+        "tolerance": 0.3,
+        "seeds": 4,
+        "mean": 0.081,
+        "worst": 0.186
+      }
+    ],
+    "append_keeps_earlier_seeds": true,
+    "edit_stroke_2": {
+      "seeds_changed": [
+        "s2.0",
+        "s2.1",
+        "s2.2"
+      ],
+      "vectors_changed": 325,
+      "of": 361,
+      "vectors_changed_outside_stroke_2": 190,
+      "outside_via": [
+        "s1.0",
+        "s3.0",
+        "s3.1",
+        "s3.2",
+        "s1.1"
+      ]
+    },
+    "remove_knot_stroke": {
+      "knots_before": 6,
+      "knots_after": 0,
+      "vectors_changed": 316,
+      "of": 361
+    }
+  },
+  "lantern": {
+    "strokes": 7,
+    "samples": 744,
+    "action_bytes": 78444,
+    "byRole": {
+      "stem": 4,
+      "anchor": 1,
+      "knot": 2
+    },
+    "seeds": 35,
+    "knots": 16,
+    "attractors": 0,
+    "vectors": 739,
+    "triangles": 265664,
+    "deterministic": true,
+    "vectors_hash": "b16cc978ffd643ca",
+    "mesh_hash": "20c62d45580548ee",
+    "pen_up_ms": {
+      "fit": 0.5,
+      "grow": 65,
+      "surface": 412
+    },
+    "fidelity": [
+      {
+        "tolerance": 0.02,
+        "seeds": 53,
+        "mean": 0.006,
+        "worst": 0.02
+      },
+      {
+        "tolerance": 0.05,
+        "seeds": 35,
+        "mean": 0.01,
+        "worst": 0.048
+      },
+      {
+        "tolerance": 0.1,
+        "seeds": 24,
+        "mean": 0.033,
+        "worst": 0.074
+      },
+      {
+        "tolerance": 0.18,
+        "seeds": 18,
+        "mean": 0.051,
+        "worst": 0.178
+      },
+      {
+        "tolerance": 0.3,
+        "seeds": 12,
+        "mean": 0.147,
+        "worst": 0.266
+      }
+    ],
+    "append_keeps_earlier_seeds": true,
+    "edit_stroke_2": {
+      "seeds_changed": [
+        "s2.0",
+        "s2.1",
+        "s2.2",
+        "s2.3"
+      ],
+      "vectors_changed": 441,
+      "of": 739,
+      "vectors_changed_outside_stroke_2": 261,
+      "outside_via": [
+        "s1.0",
+        "s1.1",
+        "s1.2",
+        "s1.3",
+        "s3.0",
+        "s4.0",
+        "s3.1",
+        "s4.1"
+      ]
+    },
+    "remove_knot_stroke": {
+      "knots_before": 16,
+      "knots_after": 8,
+      "vectors_changed": 393,
+      "of": 739
+    }
+  }
+}
