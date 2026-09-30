@@ -1,0 +1,42 @@
+name: iOS build
+
+# Compiles the iOS app on a macOS runner so it can be checked without a Mac.
+# Builds for the simulator with signing off: no Apple account or secrets needed.
+on:
+  push:
+    paths:
+      - "tapestry/ios/**"
+      - ".github/workflows/ios-build.yml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: xcodebuild -version && swift --version
+
+      - name: Build for iOS Simulator
+        working-directory: tapestry/ios
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -project Tapestry.xcodeproj \
+            -scheme Tapestry \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            2>&1 | tee build.log | grep -E "error:|warning: .*(isolat|Sendable)|BUILD (SUCCEEDED|FAILED)" || true
+          grep -q "BUILD SUCCEEDED" build.log
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: tapestry/ios/build.log
