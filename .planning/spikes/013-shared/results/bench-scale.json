@@ -1,0 +1,6 @@
+[
+{"extra_lines_per_npc": 0, "total_lines": 4, "a_build_ms": 6, "b_build_ms": 2, "a_mb": 0.01, "b_mb": 0.01, "a_reopen_all_ms": 0.4, "a_reopen_one_npc_ms": 0.1, "b_reopen_ms": 0.3, "a_context_ms": 0.00, "b_context_ms": 0.01},
+{"extra_lines_per_npc": 1000, "total_lines": 4004, "a_build_ms": 739, "b_build_ms": 644, "a_mb": 1.86, "b_mb": 2.01, "a_reopen_all_ms": 54.1, "a_reopen_one_npc_ms": 13.0, "b_reopen_ms": 62.3, "a_context_ms": 0.37, "b_context_ms": 2.76},
+{"extra_lines_per_npc": 5000, "total_lines": 20004, "a_build_ms": 3804, "b_build_ms": 3499, "a_mb": 9.37, "b_mb": 10.18, "a_reopen_all_ms": 259.2, "a_reopen_one_npc_ms": 67.4, "b_reopen_ms": 292.8, "a_context_ms": 2.42, "b_context_ms": 16.43},
+{"extra_lines_per_npc": 12500, "total_lines": 50004, "a_build_ms": 9448, "b_build_ms": 9293, "a_mb": 23.53, "b_mb": 25.57, "a_reopen_all_ms": 695.7, "a_reopen_one_npc_ms": 180.9, "b_reopen_ms": 811.4, "a_context_ms": 6.03, "b_context_ms": 55.80}
+]
