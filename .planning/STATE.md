@@ -5,10 +5,10 @@ current_phase: "02.2"
 current_phase_name: Obsidian Bridge
 status: executing
 stopped_at: Completed 02.2-07-PLAN.md
-last_updated: "2026-09-23T06:50:00.000Z"
-last_activity: 2026-09-23
+last_updated: "2026-10-03T03:53:18.564Z"
+last_activity: 2026-09-24
 last_activity_desc: Phase 02.4 Lock Model complete and rebased onto the main line; Phase 02.2 still executing
-state_head: c3f4f3d6c993f90c55415c6117705b124bb9667a
+state_head: 7b8818b543bfe4c993afd8bf5a539d91bb2b7e53
 progress:
   total_phases: 11
   completed_phases: 1
@@ -158,6 +158,7 @@ Recent decisions affecting current work:
 | 260915-v51 | Fix the kernel copy-per-commit quadratic: Kernel::replayUpTo and Kernel::submit copied the entire World once per commit, making reopen O(n^2) in commit count | 2026-09-15 | 7fed53f | [260915-v51-fix-the-kernel-copy-per-commit-quadratic](./quick/260915-v51-fix-the-kernel-copy-per-commit-quadratic/) |
 | 260924-0ii | Add layout as a third lock aspect (lock.layout), text-aspect defaults, not yet gating any command | 2026-09-24 | 4d78287 | [260924-0ii-add-layout-as-a-third-lock-aspect-lock-l](./quick/260924-0ii-add-layout-as-a-third-lock-aspect-lock-l/) |
 | 260924-dwq | Make pan and zoom far more sensitive: exponential zoom with pinch/wheel rate split, 1.6x pan multiplier, deltaMode normalization | 2026-09-24 | a146b7f | [260924-dwq-make-pan-and-zoom-far-more-sensitive-in-](./quick/260924-dwq-make-pan-and-zoom-far-more-sensitive-in-/) |
+| 8 | Fix Linux npm install: build tapestry_kernel as PIC so tapestry_addon.node links | 2026-10-03 | 7b8818b | — |
 
 ### Roadmap Evolution
 
