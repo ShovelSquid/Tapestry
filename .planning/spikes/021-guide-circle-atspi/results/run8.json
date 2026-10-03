@@ -1,0 +1,60 @@
+{
+ "events": [
+  {
+   "t": "2026-10-02T21:54:42.313",
+   "cat": "atspi.path",
+   "ms": 150,
+   "path": [
+    "File",
+    "Save As\u2026"
+   ]
+  },
+  {
+   "t": "2026-10-02T21:54:42.328",
+   "cat": "kwin.window",
+   "ms": 15,
+   "client": null,
+   "elsewhere": [
+    [
+     "Alpha Centauri"
+    ]
+   ]
+  },
+  {
+   "t": "2026-10-02T21:54:42.328",
+   "cat": "guide.notice",
+   "msg": "kate is open on another desktop: ['Alpha Centauri']"
+  },
+  {
+   "t": "2026-10-02T21:54:42.334",
+   "cat": "kwin.follow",
+   "plugin": "tapestry_guide_42780"
+  },
+  {
+   "t": "2026-10-02T21:54:42.357",
+   "cat": "overlay.shown",
+   "size": [
+    500,
+    500
+   ],
+   "dpr": 2.0
+  },
+  {
+   "t": "2026-10-02T21:54:42.380",
+   "cat": "kwin.event",
+   "kind": "initial",
+   "client": [
+    553.37556891485,
+    197.20625783509985,
+    1011.7647058823529,
+    570
+   ],
+   "onCurrent": false
+  }
+ ],
+ "summary": {
+  "count": 6,
+  "app": "kate",
+  "name": "Save As\u2026"
+ }
+}

@@ -1,0 +1,9 @@
+atspi.path {'ms': 98, 'path': ['File', 'Save As…']}
+kwin.window {'ms': 13, 'client': None, 'elsewhere': [['Alpha Centauri']]}
+guide.notice {'msg': "kate is open on another desktop: ['Alpha Centauri']"}
+kwin.follow {'plugin': 'tapestry_guide_41034'}
+overlay.shown {'size': [500, 500], 'dpr': 2.0}
+kwin.event {'kind': 'initial', 'client': [890.5770736151283, 322.6768460703939, 640, 484.1176470588236], 'onCurrent': False}
+qt.accessibility.atspi: AtSpiAdaptor::applicationInterface does not implement "GetApplicationBusAddress" "/org/a11y/atspi/accessible/root"
+kwin.event {'kind': 'geometry', 'client': [885.5770736151283, 322.6768460703939, 640, 484.1176470588236], 'onCurrent': False}
+kwin.event {'kind': 'geometry', 'client': [875.5770736151283, 322.6768460703939, 640, 484.1176470588236], 'onCurrent': False}

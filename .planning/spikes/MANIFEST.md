@@ -82,6 +82,18 @@ Kaelen's "Generative Vector Neural Rendering" note (2026-09-30): store the rules
 - Views are weighted by an absolute drawing tolerance (0.1, falloff (τ/residual)⁴), never relative to the other views; with few views an outlier masks itself (spike 020)
 - Strokes join a stem generously (reach 0.3) and are weighted strictly (0.1), so a sloppy view is down-weighted rather than grown as its own stem (spike 020)
 
+### desktop-layer
+Kaelen's reframe (2026-10-02, `.planning/notes/desktop-layer-vision.md`): Tapestry's core becomes a file manager and notes app that lives on the desktop. Edge tabs summon notes, notes anchor to things on screen, and an AI guide looks at the real screen and points with a green highlight, not from memory of some other app version. `.tree` files become a special world file type. Target first: KDE Plasma 6.6 on Wayland (Kaelen's machine), then macOS.
+
+**Requirements:**
+- Anchors are the content (file, document, region), not the window or app; the fallback anchor is a picture plus an AI-written summary (explore, 2026-10-02)
+- The guide uses whatever model works best, cloud included, as long as the user can see and control what is sent (explore, 2026-10-02)
+- On KDE Wayland the overlay is a layer-shell surface from a helper; Electron cannot make one (spike 021)
+- Named controls come from AT-SPI first; on Wayland its positions are window-relative, and the window origin comes from a KWin script matched by pid (spike 021)
+- Window state is pushed by a persistent KWin script, never polled; the helper never moves the user between desktops or raises windows on its own (spike 021)
+- A layer-shell overlay shows on every virtual desktop, so the guide clears its highlight when the target window is not on the current desktop or is minimised (spike 021)
+- Never screenshot a desktop the user is using for automated checks; verify visually with the user, keep only crops around the target (spike 021)
+
 ## Spikes
 
 | # | Idea | Name | Type | Validates | Verdict | Tags |
@@ -115,3 +127,4 @@ Kaelen's "Generative Vector Neural Rendering" note (2026-09-30): store the rules
 | 019c | generative-vectors | monotone-alignment | comparison | Same, by monotone alignment on the shared axis, with pairs found automatically, then fitted, grown and surfaced | ✓ WINNER (worst ≤0.047 on all 5 curves; reversed strokes detected; pairing by lowest mismatch 3/3 in every case the strokes can decide, while drawing order got 0/3 on shuffled sides; pointer-drawn stems replay in Node with identical hashes; fuse and fit in 2 ms) | two-view, fusion, dtw, pairing |
 
 | 020 | generative-vectors | multi-view | standard | Given strokes of one stem in any number of views, when each is added as more data to one least-squares solve, then each view keeps or improves accuracy, oblique planes work, a sloppy view is down-weighted, adding a view refines, and strokes group into stems | ✓ VALIDATED (mean error 0.060 → 0.042 → 0.037 → 0.035 for 2 → 5 views with ±0.06 hand drift, 0.009 → 0.005 without; a 5×-sloppy view down to 1.6–3.9% weight, within 0.006 of the good-only result; four weighting rules rejected, because relative rules are masked with few views; quantized frames silently re-seeded the stem until normalised; 2 stems × 4 views drawn shuffled grouped purely; pointer-drawn three-view stem replays identically in Node) | multi-view, least-squares, robust, sketch |
+| 021 | desktop-layer | guide-circle-atspi | standard | Given a real Qt app on the current desktop, when the guide is asked for a control by name, then AT-SPI finds it and its menu path, a KWin script supplies the window origin, and a layer-shell overlay highlights each step | ✓ VALIDATED (Kaelen saw it land on Kate's File menu above every window and step to Save As…; follows drags one frame behind; hides on other desktops; AT-SPI off by default but enabling at runtime wakes running apps; closed menus are in the tree; Wayland AT-SPI coords are window-relative, fixed by KWin clientGeometry by pid; does not follow mid desktop-swipe) | kde, wayland, at-spi, layer-shell, kwin-script, guide |

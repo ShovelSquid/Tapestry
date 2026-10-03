@@ -1,0 +1,5 @@
+atspi.path {'ms': 123, 'path': ['File', 'Save As…']}
+kwin.window {'ms': 15, 'client': [1096, 246, 640, 480]}
+overlay.shown {'size': [500, 500], 'dpr': 2.0}
+overlay.target {'targets': [{'x': 1096, 'y': 246, 'w': 41, 'h': 30, 'label': 'File', 'step': 1}]}
+qt.accessibility.atspi: AtSpiAdaptor::applicationInterface does not implement "GetApplicationBusAddress" "/org/a11y/atspi/accessible/root"

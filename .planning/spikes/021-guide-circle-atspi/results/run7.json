@@ -1,0 +1,84 @@
+{
+ "events": [
+  {
+   "t": "2026-10-02T21:51:14.226",
+   "cat": "atspi.path",
+   "ms": 98,
+   "path": [
+    "File",
+    "Save As\u2026"
+   ]
+  },
+  {
+   "t": "2026-10-02T21:51:14.240",
+   "cat": "kwin.window",
+   "ms": 13,
+   "client": null,
+   "elsewhere": [
+    [
+     "Alpha Centauri"
+    ]
+   ]
+  },
+  {
+   "t": "2026-10-02T21:51:14.240",
+   "cat": "guide.notice",
+   "msg": "kate is open on another desktop: ['Alpha Centauri']"
+  },
+  {
+   "t": "2026-10-02T21:51:14.245",
+   "cat": "kwin.follow",
+   "plugin": "tapestry_guide_41034"
+  },
+  {
+   "t": "2026-10-02T21:51:14.266",
+   "cat": "overlay.shown",
+   "size": [
+    500,
+    500
+   ],
+   "dpr": 2.0
+  },
+  {
+   "t": "2026-10-02T21:51:14.290",
+   "cat": "kwin.event",
+   "kind": "initial",
+   "client": [
+    890.5770736151283,
+    322.6768460703939,
+    640,
+    484.1176470588236
+   ],
+   "onCurrent": false
+  },
+  {
+   "t": "2026-10-02T21:51:15.919",
+   "cat": "kwin.event",
+   "kind": "geometry",
+   "client": [
+    885.5770736151283,
+    322.6768460703939,
+    640,
+    484.1176470588236
+   ],
+   "onCurrent": false
+  },
+  {
+   "t": "2026-10-02T21:51:15.919",
+   "cat": "kwin.event",
+   "kind": "geometry",
+   "client": [
+    875.5770736151283,
+    322.6768460703939,
+    640,
+    484.1176470588236
+   ],
+   "onCurrent": false
+  }
+ ],
+ "summary": {
+  "count": 8,
+  "app": "kate",
+  "name": "Save As\u2026"
+ }
+}

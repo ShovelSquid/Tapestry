@@ -1,0 +1,9 @@
+atspi.path {'ms': 211, 'path': ['File', 'Save As…']}
+kwin.window {'ms': 17, 'client': [1096, 246, 640, 480]}
+overlay.shown {'size': [500, 500], 'dpr': 2.0}
+overlay.target {'targets': [{'x': 1096, 'y': 246, 'w': 41, 'h': 30, 'label': 'File', 'step': 1}]}
+qt.accessibility.atspi: AtSpiAdaptor::applicationInterface does not implement "GetApplicationBusAddress" "/org/a11y/atspi/accessible/root"
+qt.accessibility.atspi: AtSpiAdaptor::applicationInterface does not implement "GetApplicationBusAddress" "/org/a11y/atspi/accessible/root"
+overlay.target {'targets': [{'x': 1100, 'y': 493, 'w': 275, 'h': 29, 'label': 'Save As…', 'step': 2}]}
+overlay.target {'targets': [{'x': 1096, 'y': 246, 'w': 41, 'h': 30, 'label': 'File', 'step': 1}]}
+file:///home/kaelen/Tapestrees/unity/.planning/spikes/021-guide-circle-atspi/overlay.qml:19: TypeError: Cannot read property 'targets' of null

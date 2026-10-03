@@ -1,0 +1,43 @@
+{
+ "events": [
+  {
+   "t": "2026-10-02T21:46:12.999",
+   "cat": "atspi.path",
+   "ms": 123,
+   "path": [
+    "File",
+    "Save As\u2026"
+   ]
+  },
+  {
+   "t": "2026-10-02T21:46:13.018",
+   "cat": "kwin.window",
+   "ms": 19,
+   "client": null,
+   "elsewhere": [
+    [
+     "Alpha Centauri"
+    ]
+   ]
+  },
+  {
+   "t": "2026-10-02T21:46:13.018",
+   "cat": "guide.notice",
+   "msg": "kate is open on another desktop: ['Alpha Centauri']"
+  },
+  {
+   "t": "2026-10-02T21:46:13.046",
+   "cat": "overlay.shown",
+   "size": [
+    500,
+    500
+   ],
+   "dpr": 2.0
+  }
+ ],
+ "summary": {
+  "count": 4,
+  "app": "kate",
+  "name": "Save As\u2026"
+ }
+}
