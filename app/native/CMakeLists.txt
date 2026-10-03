@@ -22,6 +22,10 @@ set(TAPESTRY_BUILD_APP OFF CACHE BOOL "" FORCE)
 set(TAPESTRY_BUILD_RENDER OFF CACHE BOOL "" FORCE)
 set(TAPESTRY_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 
+# The static kernel is linked into a shared .node library, so it must be
+# position-independent. macOS defaults to PIC; Linux does not.
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
 # The kernel source tree is at ../../tapestry relative to this file.
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../../tapestry
                  ${CMAKE_CURRENT_BINARY_DIR}/tapestry)
