@@ -1,0 +1,21 @@
+{
+ "events": [
+  {
+   "t": "2026-10-02T22:03:19.794",
+   "cat": "portal.version",
+   "version": 2
+  },
+  {
+   "t": "2026-10-02T22:03:21.042",
+   "cat": "portal.shot",
+   "n": 1,
+   "code": 0,
+   "ms": 1224,
+   "size": [
+    2880,
+    1800
+   ],
+   "saved_to_dir": "/home/kaelen/Pictures"
+  }
+ ]
+}
