@@ -1,6 +1,6 @@
 ---
 name: spike-findings-tapestry
-description: Implementation blueprint from spike experiments. Requirements, proven patterns, and verified knowledge for building Tapestry's thread rendering, the NPC-minds story world (Perihelion), and generative vectors (seeds, knots and rules grown into geometry and meshed into surfaces). Auto-loaded during implementation work.
+description: Implementation blueprint from spike experiments. Requirements, proven patterns, and verified knowledge for building Tapestry's thread rendering, the NPC-minds story world (Perihelion), generative vectors (seeds, knots and rules grown into geometry and meshed into surfaces), and the desktop layer (KDE Wayland overlay guide, edge-tab desktop notes, screen capture, window and document identity). Auto-loaded during implementation work.
 ---
 
 <context>
@@ -12,15 +12,17 @@ Eleven spikes were run across three sessions on 2026-09-15, all on Kaelen's Appl
 
 **npc-minds.** Perihelion's NPCs (Kaelen, 2026-09-30) keep their minds in Tapestry worlds: facts, opinions with `because` reasons, voice samples and spoken lines as plugin node types, with a mind-sim model updating them and a speaker model turning a bounded context packet into a line. Four spikes (012, 013a/b, 014) ran on 2026-09-30 in a 4-core Xeon cloud container. The headline: **author one shared story world, ship per-NPC slices, and serve them from one localhost bridge that owns the file.** The kernel scales to a long game unchanged, and the context packet costs about 1 ms over HTTP. Local models are the unspiked piece.
 
-**generative-vectors.** Kaelen's "Generative Vector Neural Rendering" note (2026-09-30): store the rules that make an object (a few seed vectors, knots that are relationships, and generative rules), not its geometry, and regrow detail at any resolution. Four spikes (015, 016a/b, 017) ran on 2026-09-30. The headline: **3 seeds and a 457-byte description grow a legible 3,765-vector tree that is deterministic, additive and local, and a narrow-band distance field turns it into one welded, watertight surface in 0.3–1 s, or tens of milliseconds for a region.** Surfaces are regenerated views, never stored. The neural-inference half of the note is unspiked, but its input path is: spike 018 fits data-drawing's pen strokes into seeds, knots and mass, and grows them into a surface 0.2 s after pen-up.
+**generative-vectors.** Kaelen's "Generative Vector Neural Rendering" note (2026-09-30): store the rules that make an object (a few seed vectors, knots that are relationships, and generative rules), not its geometry, and regrow detail at any resolution. Four spikes (015, 016a/b, 017) ran on 2026-09-30. The headline: **3 seeds and a 457-byte description grow a legible 3,765-vector tree that is deterministic, additive and local, and a narrow-band distance field turns it into one welded, watertight surface in 0.3–1 s, or tens of milliseconds for a region.** Surfaces are regenerated views, never stored. The neural-inference half of the note is unspiked, but its input path is: spike 018 fits data-drawing's pen strokes into seeds, knots and mass, and grows them into a surface 0.2 s after pen-up. Spikes 019–020 turn strokes drawn in two or more views into one 3D stem.
 
-Spike sessions wrapped: 2026-09-15 (thread-rendering), 2026-09-30 (npc-minds, generative-vectors)
+**desktop-layer.** Kaelen's reframe (2026-10-02, `.planning/notes/desktop-layer-vision.md`): Tapestry's core becomes a file manager and notes app that lives on the desktop. Edge tabs summon notes, notes anchor to the content on screen, and an AI guide looks at the real screen and points with a green highlight. `.tree` files become a special world file type. Four spikes (021–024) ran on 2026-10-02 on Kaelen's Kubuntu 26.04 laptop (KDE Plasma/KWin 6.6.6, Wayland, fractional scale 1.7), each checked on screen by Kaelen. The headline: **all of it works from a small Python/Qt helper with nothing compiled, and Electron can't build any of the on-screen pieces on KDE Wayland.** Layer-shell surfaces give the overlay and the tab, AT-SPI plus KWin scripts locate real controls and windows, and the portals give capture. Which file a window shows has no single source and is resolved per app. macOS is unspiked.
+
+Spike sessions wrapped: 2026-09-15 (thread-rendering), 2026-09-30 (npc-minds, generative-vectors), 2026-10-02 (generative-vectors spike 020, desktop-layer)
 </context>
 
 <requirements>
 ## Requirements
 
-All spikes wrapped in this session belong to one idea key, **thread-rendering**. These are non-negotiable design decisions that emerged from Kaelen's choices and from measured evidence while spiking it. Every feature-area reference honors these.
+Grouped by idea key: **thread-rendering** (Platform through Navigation and feel), **npc-minds**, **generative-vectors** (Generative vectors through Two views, one stem) and **desktop-layer**. These are non-negotiable design decisions that emerged from Kaelen's choices and from measured evidence while spiking each idea. Every feature-area reference honors the requirements of its own idea key only.
 
 **Platform**
 - Runs in Electron (the repo's Electron 32.3.3 / Chromium 128), not a plain browser (Kaelen, 2026-09-15)
@@ -99,6 +101,35 @@ All spikes wrapped in this session belong to one idea key, **thread-rendering**.
 **Two views, one stem** (spike 019)
 - Fuse two views by monotone alignment on the shared axis, never by height lookup or arc length
 - Pair views by lowest alignment mismatch, and show the pairs so the artist can change them
+- Any number of views is more data in one least-squares solve per point, along a parameter fixed by the best-conditioned pair, which stays fixed as views are added (spike 020)
+- Weight views by an absolute drawing tolerance (0.1, falloff `(τ/residual)⁴`), never relative to the other views; join strokes to a stem generously (reach 0.3) (spike 020)
+
+**Desktop layer: product decisions** (explore, 2026-10-02)
+- Anchors are the content (file, document, region), not the window or app; the fallback anchor is a picture plus an AI-written summary
+- The guide uses whatever model works best, cloud included, as long as the user can see and control what is sent
+
+**Desktop overlay and guide** (spike 021)
+- On KDE Wayland the overlay is a layer-shell surface from a helper; Electron cannot make one
+- Named controls come from AT-SPI first; on Wayland its positions are window-relative, and the window origin comes from a KWin script matched by pid
+- Window state is pushed by a persistent KWin script, never polled; the helper never moves the user between desktops or raises windows on its own
+- A layer-shell overlay shows on every virtual desktop, so the guide clears its highlight when the target window is not on the current desktop or is minimised
+- Never screenshot a desktop the user is using for automated checks; verify visually with the user
+
+**Screen capture** (spike 022)
+- Picture anchors capture through the Screenshot portal (no dialog, ~1–1.4 s) and delete the file it writes into `~/Pictures`
+- The guide sees the screen through the ScreenCast portal with `persist_mode=2` and caches the newest PipeWire frame; after restoring, check the stream covers the whole screen
+- Crop with `physical = round(logical × image_width / logical_width)`
+
+**Edge tab and desktop notes** (spike 023)
+- A faint green sliver at the bottom middle peeks out, then becomes "+ new note"; minimal and green, as Kaelen loved it
+- Notes are dragged out with Wayland's implicit pointer grab; placed notes take the keyboard only on click (`OnDemand`)
+- The hover strip stays small, because it blocks desktop clicks inside it; a saved note records the window the user was in
+- Note text, window titles and file paths are gitignored; only counts and positions are committed
+
+**Window feed and document identity** (spike 024)
+- Focus and title changes come from a persistent KWin script stamped with KWin's clock; never poll
+- Which file a window shows is resolved per app: AT-SPI field → title matched against recent files → open files incl. editor swap files → title only → picture plus summary
+- KDE's activity database is never used for an app's *current* document or folder: it lags one step
 </requirements>
 
 <findings_index>
@@ -116,7 +147,11 @@ All spikes wrapped in this session belong to one idea key, **thread-rendering**.
 | Generative vectors | `references/generative-vectors-growth.md` | 3 seeds and 457 B grow 3,765 vectors (×527); deterministic, additive, order-independent and local to L7; knots generate structure (the bridge's arch); a cell key past 2⁵³ once doubled forces |
 | Surfaces from vectors | `references/vector-surfaces.md` | A narrow-band distance field meshed with marching tetrahedra welds joints and is watertight; 0.32 s for tree L4, 35 ms for a region; bit-identical to the reference; swept tubes and surface nets are dead ends |
 | Pen strokes as seeds | `references/strokes-as-seeds.md` | data-drawing actions fit into seeds, knots and mass (6 strokes → 9 seeds → 361 vectors), a surface 0.2 s after pen-up, identical when replayed in Node; tolerance 0.05 keeps the drawing; edits reach only related strokes |
-| Two views, one stem | `references/two-view-stems.md` | Monotone alignment fuses front and side strokes within 0.047 of the true curve on every test curve; pairing by mismatch is right whenever the strokes can decide; height lookup fails on hooks (0.53) |
+| Two views, one stem (and any number) | `references/two-view-stems.md` | Monotone alignment fuses front and side strokes within 0.047 of the true curve on every test curve; any number of views is one least-squares solve (mean error 0.060 → 0.035 from 2 to 5 views), with a 5×-sloppy view down to 1.6–3.9% by absolute-tolerance weights |
+| Desktop overlay and guide | `references/desktop-overlay-and-guide.md` | AT-SPI finds Kate's File → Save As… (closed menus included), KWin gives the window origin by pid, and a layer-shell overlay highlights each step above every window; follows drags, hides off-desktop, not mid-swipe |
+| Screen capture | `references/screen-capture.md` | Screenshot portal: no dialog, 1–1.4 s, drops a file in ~/Pictures. ScreenCast with restore token: one consent, then silent 8 ms starts and 0.1 ms cached-frame grabs. Crops accurate to ≤1 px at 1.7× |
+| Edge tab and desktop notes | `references/edge-tab-and-desktop-notes.md` | Layer-shell sliver → peek → "+ new note" → drag a note anywhere (implicit grab) → type (`OnDemand`) → save, tagged with the window in use; Kaelen: "fantastic … I LOVE how minimalist it is" |
+| Window feed and document identity | `references/window-feed-and-document-identity.md` | KWin focus feed in 0.8 ms median; Dolphin's exact folder from its AT-SPI location button, images via title + recent files, Kate via swap file; the activity database lags one step; browsers, Unity and Blender fall back to picture + summary |
 
 ## Open Risks Carried Into the Build
 
@@ -125,15 +160,20 @@ All spikes wrapped in this session belong to one idea key, **thread-rendering**.
 3. **Two human checks are still open** — input-method composition (spike 004) and whether the navigation gravity feels right (spike 011). Both have checkpoints written in their READMEs.
 4. **Two spikes were proposed and never run:** 009 (deleted letters staying legible on the line, D-03/D-04) and 010 (two twisted author strands, D-21).
 5. **npc-minds: local models are unspiked.** The mind-sim and speaker roles, and whether the loop feels like conversation with a real model, need a spike on Kaelen's Mac (the cloud container has no GPU).
-6. **npc-minds: the addon doesn't link on Linux** until `tapestry_kernel` sets `POSITION_INDEPENDENT_CODE ON`.
+6. ~~**npc-minds: the addon doesn't link on Linux.**~~ **Fixed by commit `7b8818b`** (`CMAKE_POSITION_INDEPENDENT_CODE ON` in `app/native/CMakeLists.txt`); `npm install` builds and loads the addon on Kaelen's Kubuntu machine.
 7. **npc-minds: the game and the Tapestry app can't both own a story file.** The journal lock allows one writer, so the build must pick which one serves the other.
 8. **generative-vectors: the neural half is unspiked.** Spike 018's fitter is explicit, not learned: nothing yet proposes roles or knots from strokes or infers seeds from an image. Its fitted descriptions are the data path a model would sit on.
 9. **generative-vectors: the surface cost.** 0.3–1.4 s single-threaded for a whole tree. Workers per brick range, gradient normals through the per-brick lists, and the field on the GPU or in WASM are the next steps. Bulging rings at continuation joints need a plain minimum there.
 10. **generative-vectors: determinism across engines is unproven.** Only V8 (Node and Chromium) was compared; a Firefox or Safari run is owed.
+11. **desktop-layer: macOS is unspiked.** Research suggests it's easier there: Electron's `setAlwaysOnTop` levels and `setIgnoreMouseEvents(…, {forward: true})`, ScreenCaptureKit, and `kAXDocumentAttribute`. None of it was run.
+12. **desktop-layer: the vision fallback is unbuilt.** Apps without an accessibility tree (games, Electron, custom UIs) need a model to find controls on a ScreenCast frame; no model was tried.
+13. **desktop-layer: the highlight doesn't follow KWin's desktop-swipe and Overview animations.** Fade it during switches, or draw it as a KWin effect.
+14. **desktop-layer: the session accessibility flag.** The guide needs `org.a11y.Status.IsEnabled = true`; turning it on system-wide is a user-visible choice the build must ask for.
+15. **desktop-layer: how Electron and the helper talk is undesigned.** The spikes ran the helper standalone.
 
 ## Source Files
 
-Original spike source files are preserved in `sources/` for complete reference — launchers, page scripts, the shared glyph layer and rasterizer, the hybrid worker fork, the kernel round-trip script, the npc-minds C++ spikes and the Node bridge, the generative-vector grower and its surface builders, and each spike's full README with its investigation trail. Benchmark JSON and screenshots were left in `.planning/spikes/*/results/` rather than duplicated here.
+Original spike source files are preserved in `sources/` for complete reference — launchers, page scripts, the shared glyph layer and rasterizer, the hybrid worker fork, the kernel round-trip script, the npc-minds C++ spikes and the Node bridge, the generative-vector grower and its surface builders, the multi-view solver, the desktop-layer helper scripts (overlay, KWin scripts, portal capture, edge tab, window feed), and each spike's full README with its investigation trail. Benchmark JSON and screenshots were left in `.planning/spikes/*/results/` rather than duplicated here.
 </findings_index>
 
 <metadata>
@@ -162,6 +202,11 @@ Original spike source files are preserved in `sources/` for complete reference �
 - 019a-height-matching
 - 019b-arc-length
 - 019c-monotone-alignment
+- 020-multi-view
+- 021-guide-circle-atspi
+- 022-region-capture-portal
+- 023-edge-tab-layershell
+- 024-active-window-feed
 
 Not processed (proposed, never run): 009-deleted-letters-on-the-line, 010-two-twisted-strands.
 </metadata>

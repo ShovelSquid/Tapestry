@@ -171,3 +171,56 @@ Still open: a learned model for roles and knots, fusing two views into one 3D st
 - Identical heights and profiles are ambiguous, so the interface must show pairs.
 
 Next: any number of views as additional data (spike 020).
+
+---
+
+# Spike Wrap-Up Summary: generative-vectors, spike 020
+
+**Date:** 2026-10-02
+**Spikes processed:** 1 (020)
+**Feature area:** two views, one stem (extended to any number of views)
+**Skill output:** `./.claude/skills/spike-findings-tapestry/` (`references/two-view-stems.md` extended, `sources/020-multi-view/`)
+
+## Key Findings
+
+**A view is data.** Any number of views fuse in one least-squares solve per point along a parameter fixed by the best-conditioned pair, so a later view is one more commit that sharpens the stem. Mean error falls 0.060 → 0.042 → 0.037 → 0.035 from 2 to 5 views with hand drift. **Weights must be absolute** (`min(1, (0.1/residual)⁴)`): four relative rules failed, because with few views an outlier hides behind the median. Quantized Q16.16 frames silently re-seeded the stem until the normals were normalised and the seed pair made sticky.
+
+---
+
+# Spike Wrap-Up Summary: desktop-layer
+
+**Date:** 2026-10-02
+**Idea:** desktop-layer (`.planning/notes/desktop-layer-vision.md`)
+**Spikes processed:** 4 (021–024)
+**Feature areas:** desktop overlay and guide · screen capture · edge tab and desktop notes · window feed and document identity
+**Skill output:** `./.claude/skills/spike-findings-tapestry/` (four new references, `sources/021…024`)
+
+## Processed Spikes
+
+| # | Name | Type | Verdict | Feature Area |
+|---|------|------|---------|--------------|
+| 021 | guide-circle-atspi | standard | ✓ VALIDATED | Desktop overlay and guide |
+| 022 | region-capture-portal | comparison | ✓ VALIDATED | Screen capture |
+| 023 | edge-tab-layershell | standard | ✓ VALIDATED | Edge tab and desktop notes |
+| 024 | active-window-feed | standard | ⚠ PARTIAL | Window feed and document identity |
+
+## Key Findings
+
+**The desktop layer is feasible on KDE Plasma 6.6 Wayland, from a small Python/Qt helper with nothing compiled.** Every on-screen piece is a layer-shell surface (`org.kde.layershell` from PyQt6/QML). Electron can't make any of them on Wayland, so the build is Electron for the spatial app plus a native helper.
+
+**The guide points at real controls.** AT-SPI exposes whole menu structures, closed menus included. On Wayland its positions are window-relative, and a KWin script supplies the window origin by pid. Kaelen saw the highlight land on Kate's File menu above every window, step to Save As…, follow drags and hide on other desktops. It doesn't follow KWin's desktop-swipe animation.
+
+**Capture has two routes.** The Screenshot portal (no dialog, 1–1.4 s, leaves a file in `~/Pictures`) suits picture anchors. ScreenCast with a restore token (one consent, then silent 8 ms starts and 0.1 ms grabs from a cached frame) suits the guide. Logical-coordinate crops are accurate to ≤ 1 px at 1.7×.
+
+**The edge tab feels right.** Kaelen: "it's fantastic … I LOVE how minimalist it is". Wayland's implicit grab drags a note out of a small surface, and `OnDemand` keyboard never steals typing. The trade-off: a bigger "near" zone blocks right-clicking the desktop, so it stays shy.
+
+**Which file a window shows has no single source.** The focus feed is 0.8 ms median. Dolphin's exact folder comes from its AT-SPI location button (the activity database lags one step), images resolve through title + recent files, and Kate through its swap file. Browsers, Unity and Blender fall back to picture plus summary.
+
+## What Is Still Open
+
+- macOS (unspiked; research says easier).
+- The vision fallback for apps without accessibility trees.
+- The highlight during desktop-switch animations.
+- Asking the user to turn on the session accessibility flag.
+- The Electron ↔ helper protocol.
+- Candidate designs from Kaelen's feedback: a wider, shorter hover strip, and the tab staying out after a drop as a notes-list button.
