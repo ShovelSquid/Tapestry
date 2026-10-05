@@ -1,6 +1,6 @@
 # Tapestry Narrative Engine: Core Spec
 
-**Status:** Draft 0.1 · 2026-10-04
+**Status:** Draft 0.2 · 2026-10-04
 **Scope:** The core simulation only. This covers how the spatial and temporal world works, how it changes, and how it reports what it doesn't know. Text extraction, companions, gap-filling policies, rendering and narrative time are deliberately out of scope (see [Deferred](#11-deferred)).
 
 ---
@@ -236,6 +236,17 @@ Unexplained state keys are not enforced. The world shows what the causes produce
 - The state at any time is computed by replaying from the nearest snapshot.
 - Snapshots are a cache. They are never the source of truth.
 
+### 8.4 Determinism contract
+
+*(Decided in log 0002.)*
+
+- **The history stores inputs:** keys and rules, never simulated outputs.
+- **Simulation math uses deterministic IEEE floats.** That means no FMA contraction, no fast-math, a deterministic math library for transcendental functions, fixed iteration and reduction order, and no GPU for authoritative results.
+- **Key times are exact rationals.** Nested frames keep simulation values local.
+- **Snapshots** are verified by state hash and can be regenerated at any time.
+- **Rule versions** are recorded in the history, so that replay uses the rules that produced it.
+- **Baked rules** are the exception: a rule too costly to make deterministic may store its outputs as a cache, while staying scrubbable.
+
 ---
 
 ## 9. Gaps
@@ -333,10 +344,23 @@ These are recognized and intentionally postponed until the core is settled:
 
 ## 12. Open questions
 
-1. **Numeric representation.** Should times within spans be exact rationals and positions fixed-point, so that replay is exact on any machine, or floats with snapshot-based replay?
+1. ~~**Numeric representation.**~~ Resolved in log 0002: deterministic floats for simulation, exact rationals for key times. See §8.4.
 2. **Span length when unitless.** If a child span's length in its parent is unknown, can rules that cross the boundary still run, or is that always a gap?
 3. **Neighborhoods.** How do rules find the points that overlap or link to the point they're acting on, efficiently, across nested frames?
 4. **Competing causes.** When two causes act on the same property at the same moment, do their effects combine, or does one win? Is that per rule or global?
 5. **Agents.** What exactly can an intention cause directly (moving their own body, changing their own properties) and what must go through the physical world?
 6. **State-key granularity.** Must a state key always name one property, or can it describe a whole situation ("the room was in chaos") that then breaks down into properties?
 7. **Rule locality.** Can a rule key be limited to a region of space as well as an interval of time, and how does a rule behave at the boundary?
+
+---
+
+## 13. Implementation
+
+*(Decided in log 0002.)*
+
+- **Language:** Rust. Physics and geometry build on Dimforge (Rapier with `enhanced-determinism`, parry, nalgebra). Plugin rules run as deterministic WASM.
+- **Layers:**
+  - `core`: pure, with no I/O, required threads or GPU;
+  - `render`: a splat renderer on wgpu;
+  - `hosts`: per-platform shells.
+- **First host:** undecided. The web is recommended because of uniform stylus input.
