@@ -361,6 +361,9 @@ These are recognized and intentionally postponed until the core is settled:
 6. **State-key granularity.** Must a state key always name one property, or can it describe a whole situation ("the room was in chaos") that then breaks down into properties?
 7. **Rule locality.** Can a rule key be limited to a region of space as well as an interval of time, and how does a rule behave at the boundary?
 8. **Painting on the preview.** Strokes are made while looking at the preview, but applied to the authoritative state. How should a visible difference between the two be handled? *(Log 0004.)*
+9. **Tolerance for emergent results.** How closely must a state key about an emergent result (such as a crack's path) match to count as satisfied? *(Log 0005.)*
+10. **Promoting overlays.** Can a per-object overlay on a shared shape become a new shared shape? *(Log 0005.)*
+11. **Identity of created points.** How do points created by rules (shards, droplets, grown branches) keep stable IDs across replays and upstream edits? Leading idea: structural-path IDs, never counters. *(Log 0005.)*
 
 ---
 
