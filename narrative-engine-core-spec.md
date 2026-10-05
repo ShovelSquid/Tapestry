@@ -1,6 +1,6 @@
 # Tapestry Narrative Engine: Core Spec
 
-**Status:** Draft 0.2 · 2026-10-04
+**Status:** Draft 0.3 · 2026-10-05
 **Scope:** The core simulation only. This covers how the spatial and temporal world works, how it changes, and how it reports what it doesn't know. Text extraction, companions, gap-filling policies, rendering and narrative time are deliberately out of scope (see [Deferred](#11-deferred)).
 
 ---
@@ -40,6 +40,7 @@ Text, direct manipulation in the world, and companions are all *authors*. They p
 7. **Units are optional.** Frames are unitless by default. Units are annotations that are added when something, such as a physical rule, needs them.
 8. **Deterministic.** The same keys and rules always produce the same world history.
 9. **Readable and traceable.** Every key records where it came from. Every gap points at the keys involved.
+10. **Authority vs appearance.** The authoritative simulation decides what happens. Everything else, including GPU previews, render styles and neural rendering, decides only how it looks and never feeds back into the world. Simulation detail is authored; rendering detail may depend on the view. *(Log 0004.)*
 
 ---
 
@@ -247,6 +248,14 @@ Unexplained state keys are not enforced. The world shows what the causes produce
 - **Rule versions** are recorded in the history, so that replay uses the rules that produced it.
 - **Baked rules** are the exception: a rule too costly to make deterministic may store its outputs as a cache, while staying scrubbable.
 
+### 8.5 Preview and settle
+
+*(Decided in log 0004.)*
+
+- A GPU **preview simulation** may run ahead of the authoritative one and be shown immediately. When the authoritative result arrives, the view blends into it.
+- The preview is appearance: it is never recorded and never feeds back.
+- **Simulation resolution is authored**, as a property of points or rules. It never depends on the view.
+
 ---
 
 ## 9. Gaps
@@ -259,7 +268,7 @@ The engine reports gaps. It never ranks them and never fills them on its own.
 | **Unplaced key** | A key has only order constraints. | Yes |
 | **Unspecified parameter** | A cause or rule is missing a value it needs to act ("bumped, but how hard?"). | Yes |
 | **Missing unit** | A rule requires units that a frame lacks. | Yes |
-| **Contradiction** | Order constraints form a cycle, two state keys disagree at the same time, or a placement violates its constraints. | Yes |
+| **Contradiction / conflict** | Order constraints form a cycle, two state keys disagree at the same time, incompatible causes coincide, or a placement violates its constraints. Can be dismissed (log 0003). | Yes |
 | **Open surface** | Anything unspecified: a point's unset properties, a span with no authored detail, a relationship nobody has defined. | **No.** Only examined on request. |
 
 Notes:
@@ -346,11 +355,12 @@ These are recognized and intentionally postponed until the core is settled:
 
 1. ~~**Numeric representation.**~~ Resolved in log 0002: deterministic floats for simulation, exact rationals for key times. See §8.4.
 2. **Span length when unitless.** If a child span's length in its parent is unknown, can rules that cross the boundary still run, or is that always a gap?
-3. **Neighborhoods.** How do rules find the points that overlap or link to the point they're acting on, efficiently, across nested frames?
-4. **Competing causes.** When two causes act on the same property at the same moment, do their effects combine, or does one win? Is that per rule or global?
+3. **Neighborhoods.** How do rules find the points that overlap or link to the point they're acting on, efficiently, across nested frames? *Proposal in log 0003: rules declare a filter and a relation; sparse-set storage; relations ranked implicit grid, then links, then spatial index; a BVH per frame and per overlap channel; field grids for large auras.*
+4. **Competing causes.** Partly resolved in log 0003. Overlapping causes combine. Incompatible ones are conflicts, shown as dismissable errors. *Proposed:* dismissal is a key; each property declares how effects combine (add, or a deterministic tie-break).
 5. **Agents.** What exactly can an intention cause directly (moving their own body, changing their own properties) and what must go through the physical world?
 6. **State-key granularity.** Must a state key always name one property, or can it describe a whole situation ("the room was in chaos") that then breaks down into properties?
 7. **Rule locality.** Can a rule key be limited to a region of space as well as an interval of time, and how does a rule behave at the boundary?
+8. **Painting on the preview.** Strokes are made while looking at the preview, but applied to the authoritative state. How should a visible difference between the two be handled? *(Log 0004.)*
 
 ---
 
