@@ -255,6 +255,7 @@ Unexplained state keys are not enforced. The world shows what the causes produce
 - A GPU **preview simulation** may run ahead of the authoritative one and be shown immediately. When the authoritative result arrives, the view blends into it.
 - The preview is appearance: it is never recorded and never feeds back.
 - **Simulation resolution is authored**, as a property of points or rules. It never depends on the view.
+- *Proposed (log 0006):* a third tier, **derivable detail**. Detail that is deterministic, additive and local may be grown on demand wherever the view needs it, provided nothing causal reads it below the authored causal level.
 
 ---
 
@@ -355,7 +356,7 @@ These are recognized and intentionally postponed until the core is settled:
 
 1. ~~**Numeric representation.**~~ Resolved in log 0002: deterministic floats for simulation, exact rationals for key times. See §8.4.
 2. **Span length when unitless.** If a child span's length in its parent is unknown, can rules that cross the boundary still run, or is that always a gap?
-3. **Neighborhoods.** How do rules find the points that overlap or link to the point they're acting on, efficiently, across nested frames? *Proposal in log 0003: rules declare a filter and a relation; sparse-set storage; relations ranked implicit grid, then links, then spatial index; a BVH per frame and per overlap channel; field grids for large auras.*
+3. **Neighborhoods.** How do rules find the points that overlap or link to the point they're acting on, efficiently, across nested frames? *Proposal in log 0003: rules declare a filter and a relation; sparse-set storage; relations ranked implicit grid, then links, then spatial index; a BVH per frame and per overlap channel; field grids for large auras; every spatial index tested against brute force (log 0006).*
 4. **Competing causes.** Partly resolved in log 0003. Overlapping causes combine. Incompatible ones are conflicts, shown as dismissable errors. *Proposed:* dismissal is a key; each property declares how effects combine (add, or a deterministic tie-break).
 5. **Agents.** What exactly can an intention cause directly (moving their own body, changing their own properties) and what must go through the physical world?
 6. **State-key granularity.** Must a state key always name one property, or can it describe a whole situation ("the room was in chaos") that then breaks down into properties?
@@ -363,7 +364,7 @@ These are recognized and intentionally postponed until the core is settled:
 8. **Painting on the preview.** Strokes are made while looking at the preview, but applied to the authoritative state. How should a visible difference between the two be handled? *(Log 0004.)*
 9. **Tolerance for emergent results.** How closely must a state key about an emergent result (such as a crack's path) match to count as satisfied? *(Log 0005.)*
 10. **Promoting overlays.** Can a per-object overlay on a shared shape become a new shared shape? *(Log 0005.)*
-11. **Identity of created points.** How do points created by rules (shards, droplets, grown branches) keep stable IDs across replays and upstream edits? Leading idea: structural-path IDs, never counters. *(Log 0005.)*
+11. **Identity of created points.** How do points created by rules (shards, droplets, grown branches) keep stable IDs across replays and upstream edits? Leading idea: structural-path IDs, never counters. *(Logs 0005, 0006.)*
 
 ---
 
