@@ -134,11 +134,18 @@ mod tests {
         parent.rotation = Quat::from_rotation_y(std::f32::consts::FRAC_PI_2);
         parent.scale = 2.0;
         let child = PointView::new("table/top", Some(0), Vec3::new(1.0, 0.0, 0.0));
-        let frame = Frame { time: 0.0, points: vec![parent, child] };
+        let frame = Frame {
+            time: 0.0,
+            points: vec![parent, child],
+        };
 
         let world = resolve(&frame);
         // One unit along the parent's x, doubled, then turned to -z.
-        assert!(world[1].translation.abs_diff_eq(Vec3::new(1.0, 0.0, -2.0), 1e-6));
+        assert!(
+            world[1]
+                .translation
+                .abs_diff_eq(Vec3::new(1.0, 0.0, -2.0), 1e-6)
+        );
         assert_eq!(world[1].scale, 2.0);
     }
 }

@@ -62,8 +62,15 @@ impl CupScene {
         let mut top = PointView::new("table/top", Some(table), Vec3::new(0.0, 0.76, 0.0));
         top.blob = blob(Vec3::new(0.85, 0.035, 0.55), wood);
         Self::push(points, top);
-        for (i, (lx, lz)) in [(-0.7, -0.4), (0.7, -0.4), (-0.7, 0.4), (0.7, 0.4)].into_iter().enumerate() {
-            let mut leg = PointView::new(format!("table/leg-{i}"), Some(table), Vec3::new(lx, 0.38, lz));
+        for (i, (lx, lz)) in [(-0.7, -0.4), (0.7, -0.4), (-0.7, 0.4), (0.7, 0.4)]
+            .into_iter()
+            .enumerate()
+        {
+            let mut leg = PointView::new(
+                format!("table/leg-{i}"),
+                Some(table),
+                Vec3::new(lx, 0.38, lz),
+            );
             leg.blob = blob(Vec3::new(0.045, 0.38, 0.045), wood);
             Self::push(points, leg);
         }
@@ -81,13 +88,17 @@ impl CupScene {
             pos.y += (((t - 25.0) * 9.0).sin().abs() * 0.03) as f32;
         }
         let heading = (at_table - window).normalize();
-        let facing = if t < 25.0 { -std::f32::consts::FRAC_PI_2 } else { heading.x.atan2(heading.z) };
+        let facing = if t < 25.0 {
+            -std::f32::consts::FRAC_PI_2
+        } else {
+            heading.x.atan2(heading.z)
+        };
         // She lurches into the table at the bump, then rights herself.
         let lurch = (smooth(t, BUMP - 0.15, BUMP) - smooth(t, BUMP + 0.2, BUMP + 1.2)) * 0.18;
 
         let mut mara = PointView::new("mara", Some(kitchen), pos);
-        mara.rotation = Quat::from_rotation_y(facing + std::f32::consts::PI)
-            * Quat::from_rotation_x(-lurch);
+        mara.rotation =
+            Quat::from_rotation_y(facing + std::f32::consts::PI) * Quat::from_rotation_x(-lurch);
         mara.label = Some("mara".into());
         let mara = Self::push(points, mara);
 
@@ -100,7 +111,11 @@ impl CupScene {
         head.blob = blob(Vec3::splat(0.12), skin);
         Self::push(points, head);
         for (side, x) in [("left", -0.27), ("right", 0.27)] {
-            let mut hand = PointView::new(format!("mara/{side}-hand"), Some(mara), Vec3::new(x, 0.8, 0.0));
+            let mut hand = PointView::new(
+                format!("mara/{side}-hand"),
+                Some(mara),
+                Vec3::new(x, 0.8, 0.0),
+            );
             hand.blob = blob(Vec3::splat(0.055), skin);
             Self::push(points, hand);
         }
@@ -139,7 +154,11 @@ impl CupScene {
             let a = i as f32 / SHARDS as f32 * std::f32::consts::TAU + 0.4;
             let reach = 0.12 + 0.09 * ((i * 7 % 5) as f32 / 4.0);
             let out = Vec3::new(a.cos() * reach, 0.0, a.sin() * reach) * spread;
-            let mut shard = PointView::new(format!("cup/shard-{i}"), Some(cup), out - Vec3::new(0.0, 0.05, 0.0));
+            let mut shard = PointView::new(
+                format!("cup/shard-{i}"),
+                Some(cup),
+                out - Vec3::new(0.0, 0.05, 0.0),
+            );
             shard.rotation = Quat::from_rotation_y(a) * Quat::from_rotation_x(1.2 * spread);
             let s = 0.018 + 0.01 * ((i * 3 % 4) as f32 / 3.0);
             shard.blob = blob(Vec3::new(s * 1.6, s * 0.5, s), glaze);
@@ -172,12 +191,37 @@ impl WorldView for CupScene {
     }
 
     fn keys(&self) -> Vec<KeyMark> {
-        let mark = |id: &str, kind, time, text: &str| KeyMark { id: id.into(), kind, time, text: text.into() };
+        let mark = |id: &str, kind, time, text: &str| KeyMark {
+            id: id.into(),
+            kind,
+            time,
+            text: text.into(),
+        };
         vec![
-            mark("k1", KeyKind::State, Some(0.0), "cup.position = on(table) — \"The cup sat on the table.\""),
-            mark("k3", KeyKind::Cause, Some(BUMP), "mara → push(table), hard — answer to the gap on k2"),
-            mark("k2", KeyKind::State, Some(40.0), "cup on floor, intact = false — \"Later, it lay shattered on the floor.\""),
-            mark("k4", KeyKind::Rule, None, "gravity, rigid-contact in kitchen (meters, seconds)"),
+            mark(
+                "k1",
+                KeyKind::State,
+                Some(0.0),
+                "cup.position = on(table) — \"The cup sat on the table.\"",
+            ),
+            mark(
+                "k3",
+                KeyKind::Cause,
+                Some(BUMP),
+                "mara → push(table), hard — answer to the gap on k2",
+            ),
+            mark(
+                "k2",
+                KeyKind::State,
+                Some(40.0),
+                "cup on floor, intact = false — \"Later, it lay shattered on the floor.\"",
+            ),
+            mark(
+                "k4",
+                KeyKind::Rule,
+                None,
+                "gravity, rigid-contact in kitchen (meters, seconds)",
+            ),
         ]
     }
 
@@ -210,6 +254,9 @@ mod tests {
         assert!(cup_y(40.0) < 0.1);
         assert!(frame.points.iter().any(|p| p.id == "cup/shard-0"));
         let cup = frame.points.iter().find(|p| p.id == "cup").unwrap();
-        assert!(cup.blob.is_none(), "the whole cup is gone once it has shattered");
+        assert!(
+            cup.blob.is_none(),
+            "the whole cup is gone once it has shattered"
+        );
     }
 }

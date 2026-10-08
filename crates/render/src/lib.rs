@@ -61,7 +61,12 @@ pub fn instances(frame: &Frame) -> Vec<Instance> {
         .iter()
         .zip(&world)
         .filter_map(|(p, w)| {
-            p.blob.map(|b| Instance { center: w.translation, rotation: w.rotation, radii: b.radii * w.scale, color: b.color })
+            p.blob.map(|b| Instance {
+                center: w.translation,
+                rotation: w.rotation,
+                radii: b.radii * w.scale,
+                color: b.color,
+            })
         })
         .collect()
 }
@@ -120,7 +125,10 @@ impl BlobRenderer {
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("blob globals"),
             layout: &layout,
-            entries: &[wgpu::BindGroupEntry { binding: 0, resource: globals.as_entire_binding() }],
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: globals.as_entire_binding(),
+            }],
         });
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("blobs"),
@@ -178,7 +186,12 @@ impl BlobRenderer {
             instances: Self::instance_buffer(device, capacity),
             capacity,
             target: None,
-            clear: wgpu::Color { r: 0.035, g: 0.04, b: 0.05, a: 1.0 },
+            clear: wgpu::Color {
+                r: 0.035,
+                g: 0.04,
+                b: 0.05,
+                a: 1.0,
+            },
         }
     }
 
@@ -197,15 +210,19 @@ impl BlobRenderer {
         }
         let make = |label, format, usage| {
             device.create_texture(&wgpu::TextureDescriptor {
-                    label: Some(label),
-                    size: wgpu::Extent3d { width: size[0], height: size[1], depth_or_array_layers: 1 },
-                    mip_level_count: 1,
-                    sample_count: 1,
-                    dimension: wgpu::TextureDimension::D2,
-                    format,
-                    usage,
-                    view_formats: &[],
-                })
+                label: Some(label),
+                size: wgpu::Extent3d {
+                    width: size[0],
+                    height: size[1],
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format,
+                usage,
+                view_formats: &[],
+            })
         };
         let usage = wgpu::TextureUsages::RENDER_ATTACHMENT;
         let texture = make(
@@ -256,7 +273,9 @@ impl BlobRenderer {
         queue.write_buffer(&self.instances, 0, bytemuck::cast_slice(&raw));
 
         let target = self.target.as_ref().expect("target was just ensured");
-        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("blobs") });
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("blobs"),
+        });
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("blobs"),
@@ -264,11 +283,17 @@ impl BlobRenderer {
                     view: &target.color,
                     depth_slice: None,
                     resolve_target: None,
-                    ops: wgpu::Operations { load: wgpu::LoadOp::Clear(self.clear), store: wgpu::StoreOp::Store },
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(self.clear),
+                        store: wgpu::StoreOp::Store,
+                    },
                 })],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                     view: &target.depth,
-                    depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(1.0), store: wgpu::StoreOp::Discard }),
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Discard,
+                    }),
                     stencil_ops: None,
                 }),
                 timestamp_writes: None,
@@ -288,11 +313,16 @@ impl BlobRenderer {
 
     /// Reads the last rendered image back as tightly packed sRGB RGBA8 rows.
     /// Blocks until the GPU is done. Meant for snapshots and tests, not per frame.
-    pub fn read_pixels(&self, device: &wgpu::Device, queue: &wgpu::Queue) -> Option<([u32; 2], Vec<u8>)> {
+    pub fn read_pixels(
+        &self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+    ) -> Option<([u32; 2], Vec<u8>)> {
         let target = self.target.as_ref()?;
         let [w, h] = target.size;
         let row = w * 4;
-        let padded = row.div_ceil(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT) * wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
+        let padded =
+            row.div_ceil(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT) * wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
         let buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("blob readback"),
             size: (padded * h) as u64,
@@ -304,15 +334,29 @@ impl BlobRenderer {
             target.texture.as_image_copy(),
             wgpu::TexelCopyBufferInfo {
                 buffer: &buffer,
-                layout: wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(padded), rows_per_image: Some(h) },
+                layout: wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(padded),
+                    rows_per_image: Some(h),
+                },
             },
-            wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+            wgpu::Extent3d {
+                width: w,
+                height: h,
+                depth_or_array_layers: 1,
+            },
         );
         queue.submit([encoder.finish()]);
-        buffer.slice(..).map_async(wgpu::MapMode::Read, |r| r.expect("readback mapping failed"));
+        buffer
+            .slice(..)
+            .map_async(wgpu::MapMode::Read, |r| r.expect("readback mapping failed"));
         device.poll(wgpu::PollType::wait_indefinitely()).ok()?;
         let data = buffer.slice(..).get_mapped_range().ok()?;
-        let pixels = data.chunks(padded as usize).flat_map(|r| &r[..row as usize]).copied().collect();
+        let pixels = data
+            .chunks(padded as usize)
+            .flat_map(|r| &r[..row as usize])
+            .copied()
+            .collect();
         Some(([w, h], pixels))
     }
 }

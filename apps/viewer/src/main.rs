@@ -39,7 +39,11 @@ impl Orbit {
             self.pitch.sin(),
             self.pitch.cos() * self.yaw.cos(),
         );
-        Camera { eye: self.target + dir * self.distance, target: self.target, fov_y: 45f32.to_radians() }
+        Camera {
+            eye: self.target + dir * self.distance,
+            target: self.target,
+            fov_y: 45f32.to_radians(),
+        }
     }
 }
 
@@ -58,7 +62,10 @@ struct Viewer {
 
 impl Viewer {
     fn new(cc: &eframe::CreationContext<'_>, world: Box<dyn WorldView>) -> Self {
-        let gpu = cc.wgpu_render_state.clone().expect("the viewer needs the wgpu renderer");
+        let gpu = cc
+            .wgpu_render_state
+            .clone()
+            .expect("the viewer needs the wgpu renderer");
         let renderer = BlobRenderer::new(&gpu.device);
         let keys = world.keys();
         Self {
@@ -67,7 +74,12 @@ impl Viewer {
             gpu,
             renderer,
             texture: None,
-            orbit: Orbit { target: Vec3::new(0.6, 0.6, 0.0), yaw: 0.65, pitch: 0.38, distance: 5.2 },
+            orbit: Orbit {
+                target: Vec3::new(0.6, 0.6, 0.0),
+                yaw: 0.65,
+                pitch: 0.38,
+                distance: 5.2,
+            },
             time: 30.0,
             playing: true,
             speed: 1.0,
@@ -96,7 +108,11 @@ impl Viewer {
     fn timeline(&mut self, ui: &mut egui::Ui) {
         let (start, end) = self.world.time_range();
         ui.horizontal(|ui| {
-            let label = if self.playing { "⏸ Pause" } else { "▶ Play" };
+            let label = if self.playing {
+                "⏸ Pause"
+            } else {
+                "▶ Play"
+            };
             if ui.button(label).clicked() {
                 if !self.playing && self.time >= end {
                     self.time = start;
@@ -113,7 +129,8 @@ impl Viewer {
             ui.checkbox(&mut self.labels, "labels");
         });
 
-        let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), 44.0), Sense::click_and_drag());
+        let (rect, response) =
+            ui.allocate_exact_size(vec2(ui.available_width(), 44.0), Sense::click_and_drag());
         let x_of = |t: f64| rect.left() + ((t - start) / (end - start)) as f32 * rect.width();
         if let Some(p) = response.interact_pointer_pos() {
             let f = ((p.x - rect.left()) / rect.width()).clamp(0.0, 1.0) as f64;
@@ -122,10 +139,17 @@ impl Viewer {
 
         let painter = ui.painter_at(rect.expand(2.0));
         let track_y = rect.center().y + 6.0;
-        painter.rect_filled(Rect::from_x_y_ranges(rect.x_range(), track_y - 2.0..=track_y + 2.0), 2.0, Color32::from_gray(55));
+        painter.rect_filled(
+            Rect::from_x_y_ranges(rect.x_range(), track_y - 2.0..=track_y + 2.0),
+            2.0,
+            Color32::from_gray(55),
+        );
         for s in (start as i64..=end as i64).step_by(5) {
             let x = x_of(s as f64);
-            painter.line_segment([pos2(x, track_y + 5.0), pos2(x, track_y + 9.0)], Stroke::new(1.0, Color32::from_gray(90)));
+            painter.line_segment(
+                [pos2(x, track_y + 5.0), pos2(x, track_y + 9.0)],
+                Stroke::new(1.0, Color32::from_gray(90)),
+            );
         }
 
         let mut hovered: Option<&KeyMark> = None;
@@ -136,8 +160,17 @@ impl Viewer {
                 // Always-on rules hold across the whole span.
                 None => {
                     let y = rect.top() + 4.0;
-                    painter.line_segment([pos2(rect.left(), y), pos2(rect.right(), y)], Stroke::new(3.0, color.gamma_multiply(0.6)));
-                    painter.text(pos2(rect.left() + 4.0, y + 3.0), Align2::LEFT_TOP, &key.id, FontId::monospace(10.0), color);
+                    painter.line_segment(
+                        [pos2(rect.left(), y), pos2(rect.right(), y)],
+                        Stroke::new(3.0, color.gamma_multiply(0.6)),
+                    );
+                    painter.text(
+                        pos2(rect.left() + 4.0, y + 3.0),
+                        Align2::LEFT_TOP,
+                        &key.id,
+                        FontId::monospace(10.0),
+                        color,
+                    );
                     if pointer.is_some_and(|p| (p.y - y).abs() < 5.0) {
                         hovered = Some(key);
                     }
@@ -151,12 +184,23 @@ impl Viewer {
                             Stroke::NONE,
                         )),
                         _ => painter.add(egui::Shape::convex_polygon(
-                            vec![c + vec2(0.0, -6.0), c + vec2(6.0, 0.0), c + vec2(0.0, 6.0), c + vec2(-6.0, 0.0)],
+                            vec![
+                                c + vec2(0.0, -6.0),
+                                c + vec2(6.0, 0.0),
+                                c + vec2(0.0, 6.0),
+                                c + vec2(-6.0, 0.0),
+                            ],
                             color,
                             Stroke::NONE,
                         )),
                     };
-                    painter.text(c + vec2(0.0, -9.0), Align2::CENTER_BOTTOM, &key.id, FontId::monospace(10.0), color);
+                    painter.text(
+                        c + vec2(0.0, -9.0),
+                        Align2::CENTER_BOTTOM,
+                        &key.id,
+                        FontId::monospace(10.0),
+                        color,
+                    );
                     if pointer.is_some_and(|p| p.distance(c) < 9.0) {
                         hovered = Some(key);
                     }
@@ -165,9 +209,14 @@ impl Viewer {
         }
 
         let x = x_of(self.time);
-        painter.line_segment([pos2(x, rect.top()), pos2(x, rect.bottom())], Stroke::new(2.0, Color32::WHITE));
+        painter.line_segment(
+            [pos2(x, rect.top()), pos2(x, rect.bottom())],
+            Stroke::new(2.0, Color32::WHITE),
+        );
 
-        let note = hovered.map_or(String::new(), |k| format!("{} · {:?} · {}", k.id, k.kind, k.text));
+        let note = hovered.map_or(String::new(), |k| {
+            format!("{} · {:?} · {}", k.id, k.kind, k.text)
+        });
         ui.label(egui::RichText::new(note).small().weak());
     }
 
@@ -225,15 +274,26 @@ impl Viewer {
         let ppp = ui.ctx().pixels_per_point();
         let size = [(rect.width() * ppp) as u32, (rect.height() * ppp) as u32];
         let camera = self.orbit.camera();
-        let recreated = self.renderer.render(&self.gpu.device, &self.gpu.queue, size, &camera, &instances);
+        let recreated =
+            self.renderer
+                .render(&self.gpu.device, &self.gpu.queue, size, &camera, &instances);
         let view = self.renderer.target_view().expect("rendered at least once");
         let mut egui_renderer = self.gpu.renderer.write();
         match self.texture {
             None => {
-                self.texture = Some(egui_renderer.register_native_texture(&self.gpu.device, view, wgpu::FilterMode::Linear));
+                self.texture = Some(egui_renderer.register_native_texture(
+                    &self.gpu.device,
+                    view,
+                    wgpu::FilterMode::Linear,
+                ));
             }
             Some(id) if recreated => {
-                egui_renderer.update_egui_texture_from_wgpu_texture(&self.gpu.device, view, wgpu::FilterMode::Linear, id);
+                egui_renderer.update_egui_texture_from_wgpu_texture(
+                    &self.gpu.device,
+                    view,
+                    wgpu::FilterMode::Linear,
+                    id,
+                );
             }
             Some(_) => {}
         }
@@ -251,10 +311,18 @@ impl Viewer {
             let view_proj = camera.view_proj(rect.width() / rect.height());
             let tops = blob_tops(frame, &world);
             for (i, p) in frame.points.iter().enumerate() {
-                let (Some(label), Some(top)) = (&p.label, tops[i]) else { continue };
+                let (Some(label), Some(top)) = (&p.label, tops[i]) else {
+                    continue;
+                };
                 let anchor = Vec3::new(world[i].translation.x, top + 0.08, world[i].translation.z);
                 if let Some(pos) = project(view_proj, anchor, rect) {
-                    painter.text(pos, Align2::CENTER_BOTTOM, label, FontId::proportional(13.0), Color32::from_gray(225));
+                    painter.text(
+                        pos,
+                        Align2::CENTER_BOTTOM,
+                        label,
+                        FontId::proportional(13.0),
+                        Color32::from_gray(225),
+                    );
                 }
             }
         }
@@ -270,9 +338,11 @@ impl eframe::App for Viewer {
             ui.add_space(4.0);
             self.timeline(ui);
         });
-        egui::Panel::right("keys").default_size(300.0).show(ui, |ui| {
-            egui::ScrollArea::vertical().show(ui, |ui| self.sidebar(ui, &frame));
-        });
+        egui::Panel::right("keys")
+            .default_size(300.0)
+            .show(ui, |ui| {
+                egui::ScrollArea::vertical().show(ui, |ui| self.sidebar(ui, &frame));
+            });
         egui::CentralPanel::no_frame().show(ui, |ui| self.scene(ui, &frame));
     }
 }
@@ -306,5 +376,11 @@ fn project(view_proj: glam::Mat4, p: Vec3, rect: Rect) -> Option<Pos2> {
         return None;
     }
     let ndc = clip.truncate() / clip.w;
-    Some(rect.min + Vec2::new((ndc.x * 0.5 + 0.5) * rect.width(), (0.5 - ndc.y * 0.5) * rect.height()))
+    Some(
+        rect.min
+            + Vec2::new(
+                (ndc.x * 0.5 + 0.5) * rect.width(),
+                (0.5 - ndc.y * 0.5) * rect.height(),
+            ),
+    )
 }

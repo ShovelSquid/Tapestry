@@ -91,20 +91,30 @@ fn bake(world: &dyn WorldView, fps: u32) -> Result<Bake, String> {
         for p in &frame.points {
             let parent = p.parent.map(|j| frame.points[j].id.clone());
             let i = *index.entry(p.id.clone()).or_insert_with(|| {
-                tracks.push(Track { id: p.id.clone(), parent: parent.clone(), ..Default::default() });
+                tracks.push(Track {
+                    id: p.id.clone(),
+                    parent: parent.clone(),
+                    ..Default::default()
+                });
                 samples.push(vec![None; count]);
                 tracks.len() - 1
             });
             let track = &mut tracks[i];
             if track.parent != parent {
-                return Err(format!("{} changes parent; reparenting isn't baked yet", p.id));
+                return Err(format!(
+                    "{} changes parent; reparenting isn't baked yet",
+                    p.id
+                ));
             }
             if track.label.is_none() {
                 track.label = p.label.clone();
             }
             if let (None, Some(b)) = (&track.blob, p.blob) {
                 // One shape per point: meshed once by the host, then only moved (spec §5.3).
-                track.blob = Some(BlobOut { radii: b.radii.into(), color: b.color });
+                track.blob = Some(BlobOut {
+                    radii: b.radii.into(),
+                    color: b.color,
+                });
             }
             samples[i][f] = Some(Sample {
                 location: p.translation,
@@ -117,16 +127,27 @@ fn bake(world: &dyn WorldView, fps: u32) -> Result<Bake, String> {
 
     for (track, s) in tracks.iter_mut().zip(&samples) {
         // Before a point exists and after it's gone, hold its nearest pose, hidden.
-        let first = s.iter().flatten().next().copied().expect("every tracked point was seen");
+        let first = s
+            .iter()
+            .flatten()
+            .next()
+            .copied()
+            .expect("every tracked point was seen");
         let mut filled = Vec::with_capacity(count);
-        let mut last = Sample { visible: false, ..first };
+        let mut last = Sample {
+            visible: false,
+            ..first
+        };
         for x in s {
             match x {
                 Some(x) => {
                     last = *x;
                     filled.push(*x);
                 }
-                None => filled.push(Sample { visible: false, ..last }),
+                None => filled.push(Sample {
+                    visible: false,
+                    ..last
+                }),
             }
         }
 
@@ -139,7 +160,9 @@ fn bake(world: &dyn WorldView, fps: u32) -> Result<Bake, String> {
                 let x = filled[f];
                 track.frames.push(frame_start + f as i64);
                 track.location.extend(x.location.to_array());
-                track.rotation.extend([x.rotation.w, x.rotation.x, x.rotation.y, x.rotation.z]);
+                track
+                    .rotation
+                    .extend([x.rotation.w, x.rotation.x, x.rotation.y, x.rotation.z]);
                 track.scale.push(x.scale);
                 track.visible.push(x.visible);
             }
@@ -161,7 +184,16 @@ fn bake(world: &dyn WorldView, fps: u32) -> Result<Bake, String> {
         })
         .collect();
 
-    Ok(Bake { format: FORMAT, up: "y", fps, frame_start, frame_end, keys, gaps: world.gaps(), points: tracks })
+    Ok(Bake {
+        format: FORMAT,
+        up: "y",
+        fps,
+        frame_start,
+        frame_end,
+        keys,
+        gaps: world.gaps(),
+        points: tracks,
+    })
 }
 
 fn main() {
@@ -170,7 +202,12 @@ fn main() {
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
         match a.as_str() {
-            "--fps" => fps = args.next().and_then(|v| v.parse().ok()).expect("--fps takes a number"),
+            "--fps" => {
+                fps = args
+                    .next()
+                    .and_then(|v| v.parse().ok())
+                    .expect("--fps takes a number")
+            }
             "--out" => out = args.next(),
             other => panic!("unknown argument {other}"),
         }
@@ -201,7 +238,11 @@ mod tests {
     #[test]
     fn still_points_keep_only_their_ends() {
         let bake = bake(&tapestry_mock::CupScene, 24).unwrap();
-        let floor = bake.points.iter().find(|t| t.id == "kitchen/floor").unwrap();
+        let floor = bake
+            .points
+            .iter()
+            .find(|t| t.id == "kitchen/floor")
+            .unwrap();
         assert_eq!(floor.frames, vec![bake.frame_start, bake.frame_end]);
     }
 
