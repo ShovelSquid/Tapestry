@@ -338,7 +338,10 @@ slider("grabsize", (v) => (settings.grab = v));
 slider("goo", (v) => (blob.k = uniforms.uK.value = v));
 
 // How hands aim the cursor; hands.js reads this every frame. Tuning persists in this browser.
-const AIM_DEFAULTS = { startX: 1, startY: 0.5, sensX: 1, sensY: 1.8, panX: 1.8, panY: 1.8, mirrorX: false, mirrorY: false };
+// Turning sensitivity is a multiple of the calibrated range: 1 = the calibrated sweep spans the
+// screen and the calibrated tilt reaches top and bottom.
+const AIM_DEFAULTS = { startX: 1, startY: 0.5, sensX: 1, sensY: 1, panX: 1.8, panY: 1.8, mirrorX: false, mirrorY: false };
+const AIM_STORE = "blob-hands.aim.v2"; // v1 measured turning per 45 degrees
 // One-click starting points; each only sets the values it names.
 const AIM_PRESETS = {
   both: {},
@@ -347,12 +350,12 @@ const AIM_PRESETS = {
 };
 const aim = { ...AIM_DEFAULTS };
 try {
-  const saved = JSON.parse(localStorage.getItem("blob-hands.aim") ?? "{}");
+  const saved = JSON.parse(localStorage.getItem(AIM_STORE) ?? "{}");
   for (const k in AIM_DEFAULTS) if (k in saved) aim[k] = saved[k];
 } catch {}
 const saveAim = () => {
   try {
-    localStorage.setItem("blob-hands.aim", JSON.stringify(aim));
+    localStorage.setItem(AIM_STORE, JSON.stringify(aim));
   } catch {}
 };
 const aimInputs = {};
@@ -392,6 +395,53 @@ document.querySelectorAll("[data-preset]").forEach((b) =>
 const recenter = () => hands?.recenter();
 document.getElementById("recenter").addEventListener("click", recenter);
 
+// Calibration: a guided overlay; hands.js walks the poses and captures each once held still.
+const calibBtn = document.getElementById("calibrate");
+const calibBox = document.getElementById("calib");
+const CALIB_TEXT = {
+  rest: ["Hold your hand up, palm facing the camera", "Fingers open. This is where the cursor starts."],
+  turn: ["Turn your hand toward the other side", "As far as is comfortable: that becomes the far edge."],
+  up: ["Face the camera again, then tilt your palm up", "That becomes the top edge."],
+  down: ["Now tilt your palm down", "That becomes the bottom edge."],
+};
+const CALIB_ERRORS = {
+  "small-turn": "That was a small turn. Turn further.",
+  "small-tilt": "Tilt a bit further.",
+  "same-way": "That tilted the same way as up. Tilt down.",
+};
+const STEPS = Object.keys(CALIB_TEXT);
+let calibHide = 0;
+function showCalibration(s) {
+  clearTimeout(calibHide);
+  if (!s) return calibBox.classList.remove("on");
+  calibBox.classList.add("on");
+  if (s.done) {
+    calibBox.querySelector("h2").textContent = `Calibrated (${s.hand} hand)`;
+    calibBox.querySelector("p").textContent = "Saved in this browser. The other hand uses a mirror of it until you calibrate it too.";
+    calibBox.querySelector(".bar i").style.width = "100%";
+    calibBox.querySelector(".err").textContent = "";
+    calibHide = setTimeout(() => calibBox.classList.remove("on"), 2200);
+    showCalibrated();
+    return;
+  }
+  const [title, sub] = CALIB_TEXT[s.step];
+  calibBox.querySelector(".step").textContent = `Step ${STEPS.indexOf(s.step) + 1} of ${STEPS.length}`;
+  calibBox.querySelector("h2").textContent = title;
+  calibBox.querySelector("p").textContent = s.progress > 0 ? "Hold still…" : sub;
+  calibBox.querySelector(".bar i").style.width = `${Math.round(s.progress * 100)}%`;
+  calibBox.querySelector(".err").textContent = CALIB_ERRORS[s.error] ?? "";
+}
+function showCalibrated() {
+  const list = hands?.calibratedHands() ?? [];
+  document.getElementById("calibrated").textContent = list.length ? `Calibrated: ${list.join(", ")}` : "Not calibrated: aiming uses the rougher 3D estimate.";
+}
+calibBtn.addEventListener("click", () => hands?.calibrate());
+calibBox.querySelector("button").addEventListener("click", () => hands?.cancelCalibration());
+document.getElementById("forget").addEventListener("click", () => {
+  hands?.forgetCalibration();
+  showCalibrated();
+});
+
 function reset(count) {
   for (const c of cursors.values()) c.held = [];
   blob.reset(count);
@@ -406,6 +456,8 @@ addEventListener("keydown", (e) => {
   if (e.key === "r") reset(1);
   if (e.key === "t") reset(2);
   if (e.key === "c") recenter();
+  if (e.key === "k") hands?.calibrate();
+  if (e.key === "Escape") hands?.cancelCalibration();
 });
 
 function resize() {
@@ -524,6 +576,7 @@ startBtn.addEventListener("click", async () => {
     for (const id of [...cursors.keys()]) if (id.startsWith("hand:")) dropCursor(id);
     startBtn.textContent = "Start hand tracking";
     status.textContent = "";
+    showCalibration(null);
     document.body.classList.remove("tracking");
     return;
   }
@@ -535,6 +588,7 @@ startBtn.addEventListener("click", async () => {
       canvas: document.getElementById("overlay"),
       aim,
       onStatus: (s) => (status.textContent = s),
+      onCalibrate: showCalibration,
       onHands: (list) => {
         for (const h of list)
           feed(`hand:${h.id}`, h.x * innerWidth, h.y * innerHeight, h.closed, true, h.pickX * innerWidth, h.pickY * innerHeight);
@@ -542,7 +596,7 @@ startBtn.addEventListener("click", async () => {
           .map((h) => {
             const pct = Math.min(100, (h.openness / 2.2) * 100);
             const f = (v) => (v >= 0 ? "+" : "") + v.toFixed(2);
-            const angles = ` · turn ${f(h.turnX)} ${f(h.turnY)} · move ${f(h.panX)} ${f(h.panY)}`;
+            const angles = ` · turn ${f(h.turnX)} ${f(h.turnY)} · move ${f(h.panX)} ${f(h.panY)}${h.calibrated ? "" : " · uncalibrated"}`;
             return `<div class="meter ${h.closed ? "closed" : ""}"><span>${h.id}${angles}</span><i style="width:${pct}%"></i>
               <b style="left:${(CLOSE_BELOW / 2.2) * 100}%"></b><b style="left:${(OPEN_ABOVE / 2.2) * 100}%"></b></div>`;
           })
@@ -551,6 +605,7 @@ startBtn.addEventListener("click", async () => {
     });
     startBtn.textContent = "Stop hand tracking";
     document.body.classList.add("tracking");
+    showCalibrated();
   } catch (err) {
     console.error(err);
     status.textContent = `couldn't start: ${err.message ?? err}`;

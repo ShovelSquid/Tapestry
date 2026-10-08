@@ -77,7 +77,11 @@ and pushing pieces together merges them. **Start hand tracking** turns each hand
 aimed by turning it: your right hand facing the camera is the right edge, turned 45° the left
 edge (left hand mirrored), tilt for up/down, and moving the hand pans on top. Both add up;
 **Hand tuning** sets the start point, turning and moving sensitivity per axis, and mirroring
-(saved per browser), with presets for turn + move, turn only and move only. `C` recenters. A fist grabs, an open hand lets go. Mouse and multi-touch work without a camera.
+(saved per browser), with presets for turn + move, turn only and move only. `C` recenters.
+**Calibrate** (`K`) walks through four held poses (facing the camera, turned, tilted up, tilted
+down); after it, the turn is read from how the palm outline foreshortens in the 2D image, which
+is far steadier than MediaPipe's depth estimate (`aim.js`, pure JS, runs under node). The cursor
+holds still while the fingers curl, so grabbing and letting go don't knock the aim. A fist grabs, an open hand lets go. Mouse and multi-touch work without a camera.
 Three renderers of the same smooth-min SDF: `1` ray-marched, `2` gaussian surface splats, `3` a
 surface-nets mesh built in a worker with procedurally wobbling vertices (`W` wireframe).
 `blob.js` is pure JS and runs under node.
