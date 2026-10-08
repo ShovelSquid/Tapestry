@@ -5,5 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+serde_json = "1.0.151"
 tapestry-core = { version = "0.1.0", path = "../../crates/core" }
 tapestry-dungeon = { version = "0.1.0", path = "../../crates/dungeon" }
+ureq = { version = "3.4.2", features = ["json"] }

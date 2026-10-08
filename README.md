@@ -26,7 +26,14 @@ core arrives it implements `WorldView`, replaces the mock, and nothing downstrea
 cargo run -p tapestry-dungeon-cli
 ```
 
-Play with typed commands (`take key`, `unlock door`, `n`, `attack guard`). Author commands
+With `ANTHROPIC_API_KEY` set, Claude narrates: write anything in plain English. Claude can
+only act through the engine's verbs, and every refusal comes back for it to tell as story.
+Under each turn a trace shows what the AI understood and what the core decided, so a mistake
+can be pinned on one or the other (`!trace` hides it). Model `claude-opus-5-5`; set
+`TAPESTRY_EFFORT` (default `low`) for slower, more careful turns.
+
+Without a key, or after `!typed`, play with typed commands (`take key`, `unlock door`, `n`,
+`attack guard`). Author commands
 start with `!`: `!state guard.alive = true` says something is true (it holds, but if nothing
 caused it, it's flagged), `!why door.locked` traces a value to the key that caused it,
 `!gaps`, `!undo`. The rules refuse anything that isn't possible: things that aren't there,

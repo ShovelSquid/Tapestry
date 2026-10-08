@@ -1,26 +1,58 @@
-//! Play the dungeon in a terminal. Typed commands for now; an LLM turning prose
-//! into keys and keys into prose comes next, on the same game (log 0008).
+//! Play the dungeon in a terminal.
+//!
+//! With `ANTHROPIC_API_KEY` set, Claude narrates: write anything, and it turns
+//! your words into actions the engine judges (see `ai.rs`). Without a key, or
+//! after `!typed`, it's a classic verb-noun parser.
 //!
 //! Lines starting with `!` are author commands: say what's true, set things by
 //! fiat, ask why something is the way it is, see the gap report, or undo.
+
+mod ai;
 
 use std::io::{BufRead, Write};
 use tapestry_core::*;
 use tapestry_dungeon::{Game, Offer, PLAYER, Scene, perceive};
 
 const HELP: &str = "\
-Play:    look · inventory · go <dir> (or n/s/e/w) · take/drop <thing>
+Play:    with Claude narrating, just write what you do, in any words.
+         typed mode: look · inventory · go <dir> (or n/s/e/w) · take/drop <thing>
          open/close/unlock/lock <door> · attack <someone> · quit
 Author:  !state <point>.<property> = <value>   say something is true (it holds, but may be flagged)
          !fiat  <point>.<property> = <value>   set something directly, as the author
          !why   <point>.<property>             what made it so
          !gaps · !keys · !undo · !help
+View:    !trace  show or hide what the AI understood and what the core decided
+         !typed  switch between Claude and typed commands
 Values:  true, false, numbers, \"text\", or a point id such as hall";
+
+const DIM: &str = "\x1b[2m";
+const RED: &str = "\x1b[31m";
+const RESET: &str = "\x1b[0m";
 
 fn main() {
     let mut game = Game::default();
-    println!("TAPESTRY — a small dungeon. Type !help for commands.\n");
-    println!("{}", narrate(&game));
+    let mut narrator = ai::Narrator::from_env();
+    let mut use_ai = narrator.is_some();
+    let mut trace = true;
+
+    println!("TAPESTRY — a small dungeon. Type !help for commands.");
+    match &narrator {
+        Some(n) => println!(
+            "{DIM}Narrated by {} (effort {}). Write anything. Under each turn, the trace shows what\n\
+             the AI understood and what the core decided; !trace hides it.{RESET}\n",
+            n.model(),
+            n.effort()
+        ),
+        None => println!(
+            "{DIM}No ANTHROPIC_API_KEY set, so this is typed-command mode. Set the key and restart\n\
+             to play in plain English with Claude narrating.{RESET}\n"
+        ),
+    }
+    if let (true, Some(n)) = (use_ai, narrator.as_mut()) {
+        ai_turn(n, &mut game, "(The story begins. Set the scene.)", trace);
+    } else {
+        println!("{}", narrate(&game));
+    }
 
     let stdin = std::io::stdin();
     loop {
@@ -37,12 +69,72 @@ fn main() {
         if matches!(line, "quit" | "q" | "exit") {
             break;
         }
-        let reply = if let Some(cmd) = line.strip_prefix('!') {
-            author(&mut game, cmd)
+        match line {
+            "!trace" => {
+                trace = !trace;
+                println!("Trace {}.", if trace { "on" } else { "off" });
+                continue;
+            }
+            "!typed" => {
+                if narrator.is_none() {
+                    println!("Claude isn't available: no ANTHROPIC_API_KEY.");
+                } else {
+                    use_ai = !use_ai;
+                    println!(
+                        "{}",
+                        if use_ai {
+                            "Claude is narrating."
+                        } else {
+                            "Typed commands."
+                        }
+                    );
+                }
+                continue;
+            }
+            _ => {}
+        }
+        if let Some(cmd) = line.strip_prefix('!') {
+            let reply = author(&mut game, cmd);
+            println!("{reply}");
+            // Claude can't see author edits happen, so it's told with its next turn.
+            let changes_world = ["state", "fiat", "undo"].iter().any(|c| cmd.starts_with(c));
+            if let (true, Some(n)) = (changes_world, narrator.as_mut())
+                && !reply.starts_with("Use")
+                && !reply.starts_with("Nothing")
+            {
+                n.note(format!("The author used: !{cmd}"));
+            }
+        } else if let (true, Some(n)) = (use_ai, narrator.as_mut()) {
+            ai_turn(n, &mut game, line, trace);
         } else {
-            play(&mut game, line)
-        };
-        println!("{reply}");
+            println!("{}", play(&mut game, line));
+        }
+    }
+}
+
+fn ai_turn(narrator: &mut ai::Narrator, game: &mut Game, words: &str, trace: bool) {
+    print!("{DIM}…{RESET}");
+    std::io::stdout().flush().unwrap();
+    match narrator.turn(game, words) {
+        Ok(log) => {
+            println!("\r{}", log.narration);
+            if trace {
+                println!();
+                if log.calls.is_empty() {
+                    println!("{DIM}┆ AI understood: no action{RESET}");
+                }
+                for c in &log.calls {
+                    let colour = if c.refused { RED } else { DIM };
+                    println!("{DIM}┆ AI understood: {}{RESET}", c.input);
+                    println!("{colour}┆   core decided: {}{RESET}", c.verdict);
+                }
+                println!(
+                    "{DIM}┆ {} · {} tokens in ({} cached) · {} out{RESET}",
+                    log.model, log.tokens_in, log.tokens_cached, log.tokens_out
+                );
+            }
+        }
+        Err(e) => println!("\r{RED}Narrator error: {e}{RESET}"),
     }
 }
 
