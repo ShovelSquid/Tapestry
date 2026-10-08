@@ -1,0 +1,11 @@
+[package]
+name = "tapestry-viewer"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+eframe = { version = "0.36.2", default-features = false, features = ["wgpu", "default_fonts", "wayland", "x11"] }
+glam = "0.34.1"
+tapestry-mock = { version = "0.1.0", path = "../../crates/mock" }
+tapestry-render = { version = "0.1.0", path = "../../crates/render" }
+tapestry-view = { version = "0.1.0", path = "../../crates/view" }

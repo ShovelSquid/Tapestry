@@ -1,0 +1,15 @@
+schema_version = "1.0.0"
+
+id = "tapestry"
+version = "0.1.0"
+name = "Tapestry"
+tagline = "Play back a Tapestry world in Blender"
+maintainer = "Kaelen"
+type = "add-on"
+
+blender_version_min = "4.4.0"
+
+license = ["SPDX:GPL-3.0-or-later"]
+
+[permissions]
+files = "Runs the Tapestry bake tool and reads the bake it writes"

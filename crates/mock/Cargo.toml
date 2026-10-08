@@ -1,0 +1,8 @@
+[package]
+name = "tapestry-mock"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+glam = "0.34.1"
+tapestry-view = { version = "0.1.0", path = "../view" }
