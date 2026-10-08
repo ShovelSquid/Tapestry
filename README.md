@@ -13,6 +13,7 @@ crates/render   L0 renderer: one ray-cast ellipsoid per point, drawn offscreen w
 apps/viewer     Window, timeline scrubber, keys and gap report (eframe/egui). Paused for now.
 apps/bake       Samples a WorldView into JSON for hosts, keeping only frames where something changes.
 blender/        Blender 5.2 add-on: runs tapestry-bake and plays the result as native animation.
+demos/blob-hands  Browser toy: a metaball blob you grab with your hands (camera) to drag and tear apart.
 ```
 
 **The one rule:** everything that shows the world (`render`, `viewer`, `bake`, and through it
@@ -64,3 +65,16 @@ cargo test
 
 Viewer: drag to orbit, right-drag to pan, scroll to zoom, space to play. Hover a key on the
 timeline to read it.
+
+## Blob hands (browser toy)
+
+```sh
+cd demos/blob-hands && python3 -m http.server 8765   # then open http://localhost:8765
+```
+
+A soft body of metaball particles; springs snap when stretched, so a fast yank tears a piece off
+and pushing pieces together merges them. **Start hand tracking** turns each hand into a cursor
+(palm centre); a fist grabs, an open hand lets go. Mouse and multi-touch work without a camera.
+Three renderers of the same smooth-min SDF: `1` ray-marched, `2` gaussian surface splats, `3` a
+surface-nets mesh built in a worker with procedurally wobbling vertices (`W` wireframe).
+`blob.js` is pure JS and runs under node.
