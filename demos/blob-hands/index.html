@@ -73,16 +73,19 @@
   .meter span { position: relative; z-index: 1; padding-left: 6px; font-size: 11px; }
 
   .hands-only { display: none; }
-  .head-only, .uses-head, .fused-only { display: none; }
+  .head-only, .uses-head, .fused-only, .point-only { display: none; }
   body.tracking[data-source="head"] .head-only,
-  body.tracking[data-source="fused"] .fused-only { display: block; margin-bottom: 6px; }
+  body.tracking[data-source="fused"] .fused-only,
+  body.tracking[data-source="point"] .point-only { display: block; margin-bottom: 6px; }
   body.tracking[data-source="head"] label.uses-head,
   body.tracking[data-source="fused"] label.uses-head,
-  body.tracking[data-source="fused"] label.fused-only { display: grid; margin-bottom: 0; }
+  body.tracking[data-source="fused"] label.fused-only,
+  body.tracking[data-source="point"] label.point-only { display: grid; margin-bottom: 0; }
   body.tracking[data-source="head"] .hand-aim { display: none !important; }
-  body.tracking[data-source="fused"] .presets button[data-preset] { display: none; }
+  body.tracking[data-source="fused"] .presets button[data-preset],
+  body.tracking[data-source="point"] .presets button[data-preset] { display: none; }
   .leash { position: absolute; border: 1px dashed rgba(255, 211, 110, 0.35); border-radius: 50%; pointer-events: none; display: none; }
-  body.tracking[data-source="fused"] .leash.on { display: block; }
+  body:not(.tracking) .leash { display: none !important; }
   .lbl { color: var(--dim); font-size: 12px; align-self: center; }
   .meter.head { background: rgba(255, 211, 110, 0.15); }
   kbd { font: 11px ui-monospace, monospace; opacity: 0.8; }
@@ -124,7 +127,7 @@
 </head>
 <body>
 <canvas id="view"></canvas>
-<div id="cursors"><div class="leash"></div></div>
+<div id="cursors"></div>
 
 <div id="controls" class="panel">
   <h1>Blob Hands</h1>
@@ -133,10 +136,14 @@
   <div id="status"></div>
   <div class="row hands-only" style="margin-top: 8px">
     <span class="lbl">Aim with</span>
+    <button data-source="point">Hand pointing</button>
     <button data-source="hands">Hands</button>
     <button data-source="head">Head</button>
     <button data-source="fused">Head + hands</button>
   </div>
+  <div class="point-only note">Point your palm roughly where you want to go; move your hand to fine-tune (slow moves are finer). Each cursor stays inside the dashed leash around where its hand points. Calibrate (K) to point more precisely.</div>
+  <label class="point-only">Reach <input id="reach" type="range" min="0.3" max="3" step="0.05" /><output for="reach"></output></label>
+  <label class="point-only">Leash <input id="pointLeash" type="range" min="0.04" max="0.4" step="0.01" /><output for="pointLeash"></output></label>
   <div class="fused-only note">Look roughly where you want to go; your hand moves the cursor from there (slow moves are finer). The cursor stays inside the dashed leash around where your head points. No face visible? The leash follows your hand's own aim instead.</div>
   <label class="fused-only">Leash <input id="leash" type="range" min="0.04" max="0.4" step="0.01" /><output for="leash"></output></label>
   <label class="fused-only">Angle reach <input id="angleReach" type="range" min="0" max="1" step="0.05" /><output for="angleReach"></output></label>

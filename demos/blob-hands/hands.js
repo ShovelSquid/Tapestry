@@ -11,7 +11,14 @@
 // model's head pose matrix, and a fist on either hand grabs.
 //
 // Or both (aim.source = "fused", see fusion.js): each hand moves its cursor relatively, and the
-// cursor is kept on a leash around where the head points. Every source ends in the same physics
+// cursor is kept on a leash around where the head points.
+//
+// Or hand pointing (aim.source = "point"): the same, but each hand's leash is around where that
+// hand points: a ray from the palm centre along the way the (rigid) palm faces. Moving the hand
+// shifts the ray and turning it swings it; palm travel does the fine aiming. No head needed, and
+// two hands point independently.
+//
+// Every source ends in the same physics
 // (dead zone sized to the input's jitter, then a damped spring), so nothing is 1:1 with
 // MediaPipe's raw numbers.
 //
@@ -19,7 +26,7 @@
 
 import { HandLandmarker, FaceLandmarker, FilesetResolver, DrawingUtils } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.17";
 import { PALM, palmPose, aimFractions, captureRest, mirrorCalibration, Calibrator, UNCALIBRATED } from "./aim.js";
-import { OneEuro, FusedPointer, Spring2, Steady } from "./fusion.js";
+import { OneEuro, FusedPointer, Spring2, Steady, rayPoint } from "./fusion.js";
 
 const HAND_MODEL =
   "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task";
@@ -91,7 +98,8 @@ function loadCalibrations() {
 //   mirrorX: swap which way each hand sweeps, mirrorY: flip tilt }.
 //   source: "hands" | "head" | "fused", headRangeX, headRangeY: degrees of head turn from centre
 //   to edge, leash: fused cursor's leash radius (screens), angleReach: 0..1 share of hand angle
-//   in fused motion, steadiness: dead zone size multiplier }.
+//   in fused motion, steadiness: dead zone size multiplier,
+//   reach: how far a turn swings the pointing ray (1 = 45 degrees per screen), pointLeash }.
 // In head mode the list has one cursor ({ id: "Head", cursor: true, ... }, closed when any hand
 // is a fist) and the hands come along with cursor: false, for display.
 // onCalibrate({ hand, step, progress, error, done }) reports calibration; null when cancelled.
@@ -235,6 +243,9 @@ export async function startHands({ video, canvas, onHands, onStatus, onCalibrate
         // Pan is relative to where the hand showed up, so its resting spot doesn't skew the aim.
         tr = {
           fx: new OneEuro(), fy: new OneEuro(), steady: new Steady(), fused: new FusedPointer(), spring: new Spring2(),
+          // The pointing ray swings tens of pixels per frame with angle noise: smoothed hard, it
+          // only says roughly where the hand points.
+          ray: [new OneEuro(0.25, 0.5), new OneEuro(0.25, 0.5)],
           closed: false, trail: [], origin: { px, py }, cal: calibrationFor(id), lastT: now - 16,
         };
         tracks.set(id, tr);
@@ -287,19 +298,35 @@ export async function startHands({ video, canvas, onHands, onStatus, onCalibrate
       const absY = Math.min(1, Math.max(0, startY + turnY + panY));
       const curling = open > CURLING[0] && open < CURLING[1];
       const steadiness = aim?.steadiness ?? 1;
-      let x, y;
-      if (aim?.source === "fused") {
-        // The hand moves the cursor; the head (or the hand's own absolute aim) holds the leash.
+      let x, y, anchor = null, leashScale = 1;
+      if (aim?.source === "point") {
+        const ray = rayPoint(
+          [px, py],
+          { yaw: pose.yaw * (aim.mirrorX ? -1 : 1), pitch: pose.pitch * (aim.mirrorY ? -1 : 1) },
+          { pan: [aim.panX ?? 1.8, aim.panY ?? 1.8], reach: aim.reach ?? 1.2 }
+        );
+        // Not clamped to the screen: pointing past the edge is still pointing, and palm travel
+        // has to move this and the cursor alike, or the leash fights the hand at the edges.
+        anchor = [tr.ray[0].filter(ray.point[0], t), tr.ray[1].filter(ray.point[1], t)];
+      } else if (aim?.source === "fused") {
+        anchor = headAim ?? [absX, absY];
+        leashScale = headAim ? 1 : 1.6;
+      }
+      if (anchor) {
+        // The hand moves the cursor; where it points (or the head) holds the leash.
         tr.fused.palm.scale = steadiness;
+        const point = aim.source === "point";
         const target = tr.fused.update({
           dt,
           palm: [px, py],
-          angle: [startX + turnX, startY + turnY],
-          anchor: headAim ?? [absX, absY],
-          radius: (aim.leash ?? 0.12) * (headAim ? 1 : 1.6),
+          angle: point ? null : [startX + turnX, startY + turnY],
+          anchor,
+          radius: (point ? aim.pointLeash ?? 0.12 : aim.leash ?? 0.12) * leashScale,
           hold: curling, // fingers curling: that motion is the grab, not aiming
           pan: [aim.panX ?? 1.8, aim.panY ?? 1.8],
-          angleWeight: aim.angleReach ?? 0,
+          // Turning as direct motion was tried for pointing: tens of pixels of jitter. It only
+          // moves the leash.
+          angleWeight: point ? 0 : aim.angleReach ?? 0,
         });
         [x, y] = tr.spring.update(target[0], target[1], dt);
       } else {
@@ -334,8 +361,8 @@ export async function startHands({ video, canvas, onHands, onStatus, onCalibrate
         closed: tr.closed && !calib, // no grabbing mid-calibration
         openness: open, turnX, turnY, panX, panY,
         calibrated: !!tr.cal.calibrated, precise: pose.weight2d,
-        anchor: aim?.source === "fused" ? headAim ?? [absX, absY] : null,
-        leashScale: headAim ? 1 : 1.6,
+        anchor, leashScale,
+        leash: aim?.source === "point" ? aim.pointLeash ?? 0.12 : aim?.leash ?? 0.12,
       });
 
       const color = tr.closed ? "#ff5c8a" : "#7ee0ff";

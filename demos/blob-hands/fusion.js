@@ -177,3 +177,15 @@ export class Steady {
     return this.spring.update(hx, hy, dt);
   }
 }
+
+// Where a hand points: a ray from the palm centre along the way the palm faces, landing on a
+// virtual screen `reach` screens away (reach 1 = a 45 degree turn swings one screen width).
+// Moving the hand shifts the ray, turning it swings it. palm: [x, y] image fraction (mirrored);
+// angles: { yaw, pitch } in degrees, yaw < 0 toward the screen's left, pitch > 0 up.
+// Returns the landing point and the swing (the turning part alone), in screens.
+export function rayPoint(palm, angles, { pan = [1.8, 1.8], reach = 1.2 } = {}) {
+  const r = Math.PI / 180;
+  const lim = (a) => Math.max(-60, Math.min(60, a)) * r; // tan runs away past this
+  const swing = [reach * Math.tan(lim(angles.yaw)), -reach * Math.tan(lim(angles.pitch))];
+  return { swing, point: [0.5 + (palm[0] - 0.5) * pan[0] + swing[0], 0.5 + (palm[1] - 0.5) * pan[1] + swing[1]] };
+}

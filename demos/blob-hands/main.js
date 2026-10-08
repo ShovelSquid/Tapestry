@@ -344,7 +344,10 @@ const AIM_DEFAULTS = { startX: 1, startY: 0.5, sensX: 1, sensY: 1, panX: 1.8, pa
 // Head aiming: degrees of head turn from centre to the screen edge.
 // Fused aiming: the leash radius around the head's aim (screens), how much hand angle adds to
 // hand motion, and the dead zone multiplier every source shares.
-const HEAD_DEFAULTS = { source: "fused", headRangeX: 18, headRangeY: 12, leash: 0.12, angleReach: 0, steadiness: 1 };
+// Hand pointing: how far a turn swings the pointing ray (1 = 45 degrees per screen) and its leash.
+const HEAD_DEFAULTS = {
+  source: "point", headRangeX: 18, headRangeY: 12, leash: 0.12, angleReach: 0, steadiness: 1, reach: 1.2, pointLeash: 0.12,
+};
 const AIM_STORE = "blob-hands.aim.v2"; // v1 measured turning per 45 degrees
 // One-click starting points; each only sets the values it names.
 const AIM_PRESETS = {
@@ -383,7 +386,7 @@ function aimCheck(key) {
     saveAim();
   });
 }
-["startX", "startY", "sensX", "sensY", "panX", "panY", "headRangeX", "headRangeY", "leash", "angleReach", "steadiness"].forEach(aimSlider);
+["startX", "startY", "sensX", "sensY", "panX", "panY", "headRangeX", "headRangeY", "leash", "angleReach", "steadiness", "reach", "pointLeash"].forEach(aimSlider);
 ["mirrorX", "mirrorY"].forEach(aimCheck);
 function setAim(values) {
   Object.assign(aim, values);
@@ -599,6 +602,8 @@ const startBtn = document.getElementById("start");
 const status = document.getElementById("status");
 const meters = document.getElementById("meters");
 let hands = null;
+const leashes = new Map(); // cursor id -> dashed leash ellipse
+let frameNo = 0;
 startBtn.addEventListener("click", async () => {
   if (hands) {
     hands.stop();
@@ -620,18 +625,26 @@ startBtn.addEventListener("click", async () => {
       onStatus: (s) => (status.textContent = s),
       onCalibrate: showCalibration,
       onHands: (list) => {
-        // Fused: show the leash around where the head points (shared by both hands).
-        const anchored = list.find((h) => h.anchor);
-        const leash = document.querySelector(".leash");
-        leash.classList.toggle("on", !!anchored);
-        if (anchored) {
+        // Show each cursor's leash: around where the head points (fused) or the hand points.
+        const shown = new Set();
+        for (const h of list) {
+          if (!h.anchor || !h.cursor) continue;
+          const key = `${h.anchor[0].toFixed(3)},${h.anchor[1].toFixed(3)}`; // fused hands share the head's
+          if (shown.has(key)) continue;
+          shown.add(key);
+          let el = leashes.get(h.id);
+          if (!el) leashes.set(h.id, (el = Object.assign(document.createElement("div"), { className: "leash" })), cursorLayer.append(el));
           // The leash is measured in screen fractions per axis, so it's an ellipse on screen.
-          const rx = aim.leash * anchored.leashScale * innerWidth, ry = aim.leash * anchored.leashScale * innerHeight;
-          Object.assign(leash.style, {
-            left: `${anchored.anchor[0] * innerWidth - rx}px`, top: `${anchored.anchor[1] * innerHeight - ry}px`,
+          const rx = h.leash * h.leashScale * innerWidth, ry = h.leash * h.leashScale * innerHeight;
+          Object.assign(el.style, {
+            display: "block",
+            left: `${h.anchor[0] * innerWidth - rx}px`, top: `${h.anchor[1] * innerHeight - ry}px`,
             width: `${2 * rx}px`, height: `${2 * ry}px`,
           });
+          el.dataset.frame = frameNo;
         }
+        frameNo++;
+        for (const [id, el] of leashes) if (+el.dataset.frame !== frameNo - 1) el.style.display = "none";
         for (const h of list) {
           if (!h.cursor) continue;
           const closed = h.closed || (h.id === "Head" && spaceHeld);
