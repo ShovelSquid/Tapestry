@@ -82,7 +82,10 @@ edge (left hand mirrored), tilt for up/down, and moving the hand pans on top. Bo
 down); after it, the turn is read from how the palm outline foreshortens in the 2D image, which
 is far steadier than MediaPipe's depth estimate (`aim.js`, pure JS, runs under node). The cursor
 holds still while the fingers curl, so grabbing and letting go don't knock the aim. **Aim with: Head** points the cursor where your nose points (the face model's head pose);
-a fist on either hand, or holding `Space`, grabs. A fist grabs, an open hand lets go. Mouse and multi-touch work without a camera.
+a fist on either hand, or holding `Space`, grabs. **Head + hands** (`fusion.js`, the default) lets each hand move its cursor
+relatively, with slow motion finer than fast, on a soft leash around where the head points.
+Every source ends in the same physics: a dead zone sized to that input's own jitter (a still
+hand gives a dead-still cursor), then a critically damped spring. A fist grabs, an open hand lets go. Mouse and multi-touch work without a camera.
 Three renderers of the same smooth-min SDF: `1` ray-marched, `2` gaussian surface splats, `3` a
 surface-nets mesh built in a worker with procedurally wobbling vertices (`W` wireframe).
 `blob.js` is pure JS and runs under node.

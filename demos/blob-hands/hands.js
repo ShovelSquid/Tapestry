@@ -10,10 +10,16 @@
 // Or the head aims (aim.source = "head"): where the nose points is the cursor, from the face
 // model's head pose matrix, and a fist on either hand grabs.
 //
+// Or both (aim.source = "fused", see fusion.js): each hand moves its cursor relatively, and the
+// cursor is kept on a leash around where the head points. Every source ends in the same physics
+// (dead zone sized to the input's jitter, then a damped spring), so nothing is 1:1 with
+// MediaPipe's raw numbers.
+//
 // Same MediaPipe Tasks Vision build as ws/hands-face-voice, hands only.
 
 import { HandLandmarker, FaceLandmarker, FilesetResolver, DrawingUtils } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.17";
 import { PALM, palmPose, aimFractions, captureRest, mirrorCalibration, Calibrator, UNCALIBRATED } from "./aim.js";
+import { OneEuro, FusedPointer, Spring2, Steady } from "./fusion.js";
 
 const HAND_MODEL =
   "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task";
@@ -47,31 +53,6 @@ function palmCentre(lm) {
 }
 
 const TIPS = [8, 12, 16, 20];
-
-// One Euro filter: smooth when still, responsive when moving fast.
-class OneEuro {
-  constructor(minCutoff = 1.2, beta = 8, dCutoff = 1.0) {
-    Object.assign(this, { minCutoff, beta, dCutoff, x: null, dx: 0, t: 0 });
-  }
-  alpha(cutoff, dt) {
-    const tau = 1 / (2 * Math.PI * cutoff);
-    return 1 / (1 + tau / dt);
-  }
-  filter(x, t) {
-    if (this.x === null) {
-      this.x = x;
-      this.t = t;
-      return x;
-    }
-    const dt = Math.max(1e-3, t - this.t);
-    this.t = t;
-    const dx = (x - this.x) / dt;
-    this.dx += (dx - this.dx) * this.alpha(this.dCutoff, dt);
-    const cutoff = this.minCutoff + this.beta * Math.abs(this.dx);
-    this.x += (x - this.x) * this.alpha(cutoff, dt);
-    return this.x;
-  }
-}
 
 function openness(lm) {
   const d = (a, b) => Math.hypot(lm[a].x - lm[b].x, lm[a].y - lm[b].y, lm[a].z - lm[b].z);
@@ -108,7 +89,9 @@ function loadCalibrations() {
 //   sensX, sensY: multiples of the calibrated sweep / tilt (1 = calibrated edge to edge),
 //   panX, panY: screens per camera image the hand moves,
 //   mirrorX: swap which way each hand sweeps, mirrorY: flip tilt }.
-//   source: "hands" | "head", headRangeX, headRangeY: degrees of head turn from centre to edge }.
+//   source: "hands" | "head" | "fused", headRangeX, headRangeY: degrees of head turn from centre
+//   to edge, leash: fused cursor's leash radius (screens), angleReach: 0..1 share of hand angle
+//   in fused motion, steadiness: dead zone size multiplier }.
 // In head mode the list has one cursor ({ id: "Head", cursor: true, ... }, closed when any hand
 // is a fist) and the hands come along with cursor: false, for display.
 // onCalibrate({ hand, step, progress, error, done }) reports calibration; null when cancelled.
@@ -160,7 +143,7 @@ export async function startHands({ video, canvas, onHands, onStatus, onCalibrate
   const tracks = new Map();
   // The face model loads the first time head aiming is picked.
   let face = null, faceLoading = null;
-  const head = { fx: new OneEuro(), fy: new OneEuro(), zero: { yaw: 0, pitch: 0 }, recenter: null, raw: null };
+  const head = { fx: new OneEuro(), fy: new OneEuro(), steady: new Steady(), zero: { yaw: 0, pitch: 0 }, recenter: null, raw: null, lastT: 0 };
   const ensureFace = () =>
     (faceLoading ??= (async () => {
       onStatus?.("loading face model…");
@@ -171,7 +154,7 @@ export async function startHands({ video, canvas, onHands, onStatus, onCalibrate
         numFaces: 1,
         outputFacialTransformationMatrixes: true,
       });
-      onStatus?.(`tracking · camera ${W}×${H}${fps ? ` @ ${fps}fps` : ""} · head`);
+      onStatus?.(`tracking · camera ${W}×${H}${fps ? ` @ ${fps}fps` : ""} · head + hands`);
     })().catch((err) => {
       faceLoading = null;
       onStatus?.(`couldn't load the face model: ${err.message ?? err}`);
@@ -191,6 +174,56 @@ export async function startHands({ video, canvas, onHands, onStatus, onCalibrate
     const t = now / 1000;
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+    // Head first: in fused mode it's where the hands' cursors are leashed to.
+    const useHead = aim?.source === "head" || aim?.source === "fused";
+    let headAim = null, headEntry = null;
+    if (useHead) {
+      ensureFace();
+      const res = face?.detectForVideo(video, now);
+      const m = res?.facialTransformationMatrixes?.[0];
+      if (m) {
+        const a = (head.raw = headAngles(m));
+        if (head.recenter) {
+          head.recenter.samples.push(a);
+          if (now >= head.recenter.until) {
+            const n = head.recenter.samples.length;
+            head.zero = {
+              yaw: head.recenter.samples.reduce((s, v) => s + v.yaw, 0) / n,
+              pitch: head.recenter.samples.reduce((s, v) => s + v.pitch, 0) / n,
+            };
+            head.recenter = null;
+          }
+        }
+        // Your left is the screen's left (the view is a mirror), up is up.
+        const yaw = (a.yaw - head.zero.yaw) * (aim.mirrorX ? -1 : 1);
+        const pitch = (a.pitch - head.zero.pitch) * (aim.mirrorY ? -1 : 1);
+        const hx = head.fx.filter(Math.min(1, Math.max(0, 0.5 - yaw / (aim.headRangeX ?? 18) / 2)), t);
+        const hy = head.fy.filter(Math.min(1, Math.max(0, 0.5 - pitch / (aim.headRangeY ?? 12) / 2)), t);
+        headAim = [hx, hy];
+        const hdt = Math.min(0.1, Math.max(0.001, (now - (head.lastT || now - 16)) / 1000));
+        head.lastT = now;
+        head.steady.band.scale = aim.steadiness ?? 1;
+        const [x, y] = head.steady.update(hx, hy, hdt);
+        headEntry = { id: "Head", x, y, pickX: x, pickY: y, cursor: true, yaw, pitch };
+
+        // Show it: a line from the nose tip the way the face points.
+        const nose = res.faceLandmarks?.[0]?.[1];
+        if (nose) {
+          const r = Math.PI / 180;
+          ctx.strokeStyle = "#ffd36e";
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.moveTo(nose.x * W, nose.y * H);
+          ctx.lineTo(nose.x * W + Math.sin(a.yaw * r) * 120, nose.y * H - Math.sin(a.pitch * r) * 120);
+          ctx.stroke();
+          ctx.fillStyle = "#ffd36e";
+          ctx.beginPath();
+          ctx.arc(nose.x * W, nose.y * H, 5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    }
+
     const out = [];
     (result.landmarks ?? []).forEach((lm, h) => {
       const world = result.worldLandmarks?.[h];
@@ -200,10 +233,15 @@ export async function startHands({ video, canvas, onHands, onStatus, onCalibrate
       let tr = tracks.get(id);
       if (!tr) {
         // Pan is relative to where the hand showed up, so its resting spot doesn't skew the aim.
-        tr = { fx: new OneEuro(), fy: new OneEuro(), closed: false, trail: [], origin: { px, py }, cal: calibrationFor(id) };
+        tr = {
+          fx: new OneEuro(), fy: new OneEuro(), steady: new Steady(), fused: new FusedPointer(), spring: new Spring2(),
+          closed: false, trail: [], origin: { px, py }, cal: calibrationFor(id), lastT: now - 16,
+        };
         tracks.set(id, tr);
       }
       tr.lastSeen = now;
+      const dt = Math.min(0.1, Math.max(0.001, (now - tr.lastT) / 1000));
+      tr.lastT = now;
       const frame = { lm, world, width: W, height: H, px, py };
 
       const open = openness(lm);
@@ -245,23 +283,45 @@ export async function startHands({ video, canvas, onHands, onStatus, onCalibrate
       // Moving: how far the palm has travelled across the image since it showed up, in screens.
       const panX = (px - tr.origin.px) * (aim?.panX ?? 1.8);
       const panY = (py - tr.origin.py) * (aim?.panY ?? 1.8);
-      let x = tr.fx.filter(Math.min(1, Math.max(0, startX + turnX + panX)), t);
-      let y = tr.fy.filter(Math.min(1, Math.max(0, startY + turnY + panY)), t);
-
-      // Hold still while the fingers curl, then catch up smoothly.
+      const absX = Math.min(1, Math.max(0, startX + turnX + panX));
+      const absY = Math.min(1, Math.max(0, startY + turnY + panY));
       const curling = open > CURLING[0] && open < CURLING[1];
-      if (curling && !tr.freeze) tr.freeze = { at: now, x: tr.x ?? x, y: tr.y ?? y };
-      if (tr.freeze && !tr.freeze.over && (!curling || now - tr.freeze.at > FREEZE_MAX_MS)) {
-        tr.catchUp = { at: now, dx: tr.freeze.x - x, dy: tr.freeze.y - y };
-        tr.freeze.over = true;
-      }
-      if (!curling) tr.freeze = null;
-      if (tr.freeze && !tr.freeze.over) (x = tr.freeze.x), (y = tr.freeze.y);
-      else if (tr.catchUp) {
-        const k = Math.max(0, 1 - (now - tr.catchUp.at) / CATCH_UP_MS);
-        x += tr.catchUp.dx * k;
-        y += tr.catchUp.dy * k;
-        if (k === 0) tr.catchUp = null;
+      const steadiness = aim?.steadiness ?? 1;
+      let x, y;
+      if (aim?.source === "fused") {
+        // The hand moves the cursor; the head (or the hand's own absolute aim) holds the leash.
+        tr.fused.palm.scale = steadiness;
+        const target = tr.fused.update({
+          dt,
+          palm: [px, py],
+          angle: [startX + turnX, startY + turnY],
+          anchor: headAim ?? [absX, absY],
+          radius: (aim.leash ?? 0.12) * (headAim ? 1 : 1.6),
+          hold: curling, // fingers curling: that motion is the grab, not aiming
+          pan: [aim.panX ?? 1.8, aim.panY ?? 1.8],
+          angleWeight: aim.angleReach ?? 0,
+        });
+        [x, y] = tr.spring.update(target[0], target[1], dt);
+      } else {
+        x = tr.fx.filter(absX, t);
+        y = tr.fy.filter(absY, t);
+
+        // Hold still while the fingers curl, then catch up smoothly.
+        if (curling && !tr.freeze) tr.freeze = { at: now, x: tr.x ?? x, y: tr.y ?? y };
+        if (tr.freeze && !tr.freeze.over && (!curling || now - tr.freeze.at > FREEZE_MAX_MS)) {
+          tr.catchUp = { at: now, dx: tr.freeze.x - x, dy: tr.freeze.y - y };
+          tr.freeze.over = true;
+        }
+        if (!curling) tr.freeze = null;
+        if (tr.freeze && !tr.freeze.over) (x = tr.freeze.x), (y = tr.freeze.y);
+        else if (tr.catchUp) {
+          const k = Math.max(0, 1 - (now - tr.catchUp.at) / CATCH_UP_MS);
+          x += tr.catchUp.dx * k;
+          y += tr.catchUp.dy * k;
+          if (k === 0) tr.catchUp = null;
+        }
+        tr.steady.band.scale = steadiness;
+        [x, y] = tr.steady.update(x, y, dt);
       }
       tr.x = x;
       tr.y = y;
@@ -274,6 +334,8 @@ export async function startHands({ video, canvas, onHands, onStatus, onCalibrate
         closed: tr.closed && !calib, // no grabbing mid-calibration
         openness: open, turnX, turnY, panX, panY,
         calibrated: !!tr.cal.calibrated, precise: pose.weight2d,
+        anchor: aim?.source === "fused" ? headAim ?? [absX, absY] : null,
+        leashScale: headAim ? 1 : 1.6,
       });
 
       const color = tr.closed ? "#ff5c8a" : "#7ee0ff";
@@ -283,46 +345,8 @@ export async function startHands({ video, canvas, onHands, onStatus, onCalibrate
     // Forget a hand after it's been gone a moment (that also lets go of what it held).
     for (const [id, tr] of tracks) if (now - tr.lastSeen > 400) tracks.delete(id);
     if (aim?.source === "head") {
-      ensureFace();
       for (const h of out) h.cursor = false;
-      const res = face?.detectForVideo(video, now);
-      const m = res?.facialTransformationMatrixes?.[0];
-      if (m) {
-        const a = (head.raw = headAngles(m));
-        if (head.recenter) {
-          head.recenter.samples.push(a);
-          if (now >= head.recenter.until) {
-            const n = head.recenter.samples.length;
-            head.zero = {
-              yaw: head.recenter.samples.reduce((s, v) => s + v.yaw, 0) / n,
-              pitch: head.recenter.samples.reduce((s, v) => s + v.pitch, 0) / n,
-            };
-            head.recenter = null;
-          }
-        }
-        // Your left is the screen's left (the view is a mirror), up is up.
-        const yaw = (a.yaw - head.zero.yaw) * (aim.mirrorX ? -1 : 1);
-        const pitch = (a.pitch - head.zero.pitch) * (aim.mirrorY ? -1 : 1);
-        const x = head.fx.filter(Math.min(1, Math.max(0, 0.5 - yaw / (aim.headRangeX ?? 18) / 2)), t);
-        const y = head.fy.filter(Math.min(1, Math.max(0, 0.5 - pitch / (aim.headRangeY ?? 12) / 2)), t);
-        out.unshift({ id: "Head", x, y, pickX: x, pickY: y, cursor: true, closed: !calib && out.some((h) => h.closed), yaw, pitch });
-
-        // Show it: a line from the nose tip the way the face points.
-        const nose = res.faceLandmarks?.[0]?.[1];
-        if (nose) {
-          const r = Math.PI / 180;
-          ctx.strokeStyle = "#ffd36e";
-          ctx.lineWidth = 3;
-          ctx.beginPath();
-          ctx.moveTo(nose.x * W, nose.y * H);
-          ctx.lineTo(nose.x * W + Math.sin(a.yaw * r) * 120, nose.y * H - Math.sin(a.pitch * r) * 120);
-          ctx.stroke();
-          ctx.fillStyle = "#ffd36e";
-          ctx.beginPath();
-          ctx.arc(nose.x * W, nose.y * H, 5, 0, Math.PI * 2);
-          ctx.fill();
-        }
-      }
+      if (headEntry) out.unshift({ ...headEntry, closed: !calib && out.some((h) => h.closed) });
     }
     onHands(out);
   };

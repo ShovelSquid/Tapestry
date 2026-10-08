@@ -73,16 +73,23 @@
   .meter span { position: relative; z-index: 1; padding-left: 6px; font-size: 11px; }
 
   .hands-only { display: none; }
-  .head-help { display: none; }
-  body.tracking[data-source="head"] .head-help { display: grid; }
-  body.tracking[data-source="head"] div.head-help { display: block; margin-bottom: 6px; }
+  .head-only, .uses-head, .fused-only { display: none; }
+  body.tracking[data-source="head"] .head-only,
+  body.tracking[data-source="fused"] .fused-only { display: block; margin-bottom: 6px; }
+  body.tracking[data-source="head"] label.uses-head,
+  body.tracking[data-source="fused"] label.uses-head,
+  body.tracking[data-source="fused"] label.fused-only { display: grid; margin-bottom: 0; }
   body.tracking[data-source="head"] .hand-aim { display: none !important; }
+  body.tracking[data-source="fused"] .presets button[data-preset] { display: none; }
+  .leash { position: absolute; border: 1px dashed rgba(255, 211, 110, 0.35); border-radius: 50%; pointer-events: none; display: none; }
+  body.tracking[data-source="fused"] .leash.on { display: block; }
   .lbl { color: var(--dim); font-size: 12px; align-self: center; }
   .meter.head { background: rgba(255, 211, 110, 0.15); }
   kbd { font: 11px ui-monospace, monospace; opacity: 0.8; }
   body.tracking .hands-only { display: block; }
   body.tracking button.hands-only { display: inline-block; }
   body.tracking .row.hands-only { display: flex; }
+  body.tracking label.hands-only { display: grid; }
   #calib {
     display: none; left: 50%; top: 18%; transform: translateX(-50%);
     width: min(420px, calc(100vw - 32px)); box-sizing: border-box; text-align: center; padding: 18px 20px;
@@ -117,27 +124,32 @@
 </head>
 <body>
 <canvas id="view"></canvas>
-<div id="cursors"></div>
+<div id="cursors"><div class="leash"></div></div>
 
 <div id="controls" class="panel">
   <h1>Blob Hands</h1>
-  <p class="help">Turn your hand to sweep the cursor: right hand facing the camera is the right edge, turned away is the left. Tilt for up/down; moving your hand pans on top. Calibrate (K) for precise aim. Make a fist to grab. Drag slowly to move a blob, yank fast to tear a piece off, push pieces together to merge them. Mouse and multi-touch work too.</p>
+  <p class="help">Aim with your hands, your head, or both (pick below). Make a fist to grab. Drag slowly to move a blob, yank fast to tear a piece off, push pieces together to merge them. Mouse and multi-touch work too.</p>
   <button id="start">Start hand tracking</button>
   <div id="status"></div>
   <div class="row hands-only" style="margin-top: 8px">
     <span class="lbl">Aim with</span>
     <button data-source="hands">Hands</button>
     <button data-source="head">Head</button>
+    <button data-source="fused">Head + hands</button>
   </div>
-  <div class="head-help note">Point your nose at things. Make a fist (either hand) or hold <kbd>Space</kbd> to grab. Press <kbd>C</kbd> while looking straight ahead to recenter.</div>
-  <label class="head-help">Head X range° <input id="headRangeX" type="range" min="5" max="45" step="1" /><output for="headRangeX"></output></label>
-  <label class="head-help">Head Y range° <input id="headRangeY" type="range" min="4" max="35" step="1" /><output for="headRangeY"></output></label>
-  <div class="row hand-aim" style="margin-top: 8px">
+  <div class="fused-only note">Look roughly where you want to go; your hand moves the cursor from there (slow moves are finer). The cursor stays inside the dashed leash around where your head points. No face visible? The leash follows your hand's own aim instead.</div>
+  <label class="fused-only">Leash <input id="leash" type="range" min="0.04" max="0.4" step="0.01" /><output for="leash"></output></label>
+  <label class="fused-only">Angle reach <input id="angleReach" type="range" min="0" max="1" step="0.05" /><output for="angleReach"></output></label>
+  <div class="head-only note">Point your nose at things. Make a fist (either hand) or hold <kbd>Space</kbd> to grab. Press <kbd>C</kbd> while looking straight ahead to recenter.</div>
+  <label class="uses-head">Head X range° <input id="headRangeX" type="range" min="5" max="45" step="1" /><output for="headRangeX"></output></label>
+  <label class="uses-head">Head Y range° <input id="headRangeY" type="range" min="4" max="35" step="1" /><output for="headRangeY"></output></label>
+  <div class="row hand-aim presets" style="margin-top: 8px">
     <button data-preset="both">Turn + move</button>
     <button data-preset="turn">Turn only</button>
     <button data-preset="move">Move only</button>
     <button id="calibrate" class="hands-only"><kbd>K</kbd>Calibrate</button>
   </div>
+  <label class="hands-only steady">Steadiness <input id="steadiness" type="range" min="0" max="3" step="0.1" /><output for="steadiness"></output></label>
   <div class="row"><button id="recenter"><kbd>C</kbd>Recenter</button></div>
   <div id="calibrated" class="note hands-only hand-aim"></div>
   <details class="hand-aim">

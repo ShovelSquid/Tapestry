@@ -342,7 +342,9 @@ slider("goo", (v) => (blob.k = uniforms.uK.value = v));
 // screen and the calibrated tilt reaches top and bottom.
 const AIM_DEFAULTS = { startX: 1, startY: 0.5, sensX: 1, sensY: 1, panX: 1.8, panY: 1.8, mirrorX: false, mirrorY: false };
 // Head aiming: degrees of head turn from centre to the screen edge.
-const HEAD_DEFAULTS = { source: "hands", headRangeX: 18, headRangeY: 12 };
+// Fused aiming: the leash radius around the head's aim (screens), how much hand angle adds to
+// hand motion, and the dead zone multiplier every source shares.
+const HEAD_DEFAULTS = { source: "fused", headRangeX: 18, headRangeY: 12, leash: 0.12, angleReach: 0, steadiness: 1 };
 const AIM_STORE = "blob-hands.aim.v2"; // v1 measured turning per 45 degrees
 // One-click starting points; each only sets the values it names.
 const AIM_PRESETS = {
@@ -381,7 +383,7 @@ function aimCheck(key) {
     saveAim();
   });
 }
-["startX", "startY", "sensX", "sensY", "panX", "panY", "headRangeX", "headRangeY"].forEach(aimSlider);
+["startX", "startY", "sensX", "sensY", "panX", "panY", "headRangeX", "headRangeY", "leash", "angleReach", "steadiness"].forEach(aimSlider);
 ["mirrorX", "mirrorY"].forEach(aimCheck);
 function setAim(values) {
   Object.assign(aim, values);
@@ -618,6 +620,18 @@ startBtn.addEventListener("click", async () => {
       onStatus: (s) => (status.textContent = s),
       onCalibrate: showCalibration,
       onHands: (list) => {
+        // Fused: show the leash around where the head points (shared by both hands).
+        const anchored = list.find((h) => h.anchor);
+        const leash = document.querySelector(".leash");
+        leash.classList.toggle("on", !!anchored);
+        if (anchored) {
+          // The leash is measured in screen fractions per axis, so it's an ellipse on screen.
+          const rx = aim.leash * anchored.leashScale * innerWidth, ry = aim.leash * anchored.leashScale * innerHeight;
+          Object.assign(leash.style, {
+            left: `${anchored.anchor[0] * innerWidth - rx}px`, top: `${anchored.anchor[1] * innerHeight - ry}px`,
+            width: `${2 * rx}px`, height: `${2 * ry}px`,
+          });
+        }
         for (const h of list) {
           if (!h.cursor) continue;
           const closed = h.closed || (h.id === "Head" && spaceHeld);
