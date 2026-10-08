@@ -7,13 +7,18 @@
 // can be turned off by setting its sensitivity to 0. How the palm's direction is measured, and
 // what calibration records, is in aim.js.
 //
+// Or the head aims (aim.source = "head"): where the nose points is the cursor, from the face
+// model's head pose matrix, and a fist on either hand grabs.
+//
 // Same MediaPipe Tasks Vision build as ws/hands-face-voice, hands only.
 
-import { HandLandmarker, FilesetResolver, DrawingUtils } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.17";
+import { HandLandmarker, FaceLandmarker, FilesetResolver, DrawingUtils } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.17";
 import { PALM, palmPose, aimFractions, captureRest, mirrorCalibration, Calibrator, UNCALIBRATED } from "./aim.js";
 
 const HAND_MODEL =
   "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task";
+const FACE_MODEL =
+  "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task";
 
 // Openness = mean fingertip-to-wrist distance over palm length (wrist to middle knuckle).
 // Open hand reads ~1.9, a fist ~0.9. Two thresholds so it doesn't flicker at the boundary.
@@ -74,6 +79,19 @@ function openness(lm) {
   return TIPS.reduce((s, t) => s + d(t, 0), 0) / TIPS.length / palm;
 }
 
+// Head yaw and pitch (degrees) from the face model's transformation matrix: where the face's
+// forward axis points. Turning toward your left and looking up are positive. The matrix's layout
+// (row or column major) is read off where the translation sits: the face is tens of centimetres
+// in front of the camera, so that's the one big number.
+function headAngles(m) {
+  const d = m.data;
+  const colMajor = Math.abs(d[14]) > Math.abs(d[11]);
+  const R = (r, c) => (colMajor ? d[c * 4 + r] : d[r * 4 + c]);
+  const fx = R(0, 2), fy = R(1, 2), fz = R(2, 2);
+  const deg = 180 / Math.PI;
+  return { yaw: Math.atan2(fx, fz) * deg, pitch: Math.atan2(fy, fz) * deg };
+}
+
 function loadCalibrations() {
   try {
     return JSON.parse(localStorage.getItem(STORE) ?? "{}");
@@ -90,6 +108,9 @@ function loadCalibrations() {
 //   sensX, sensY: multiples of the calibrated sweep / tilt (1 = calibrated edge to edge),
 //   panX, panY: screens per camera image the hand moves,
 //   mirrorX: swap which way each hand sweeps, mirrorY: flip tilt }.
+//   source: "hands" | "head", headRangeX, headRangeY: degrees of head turn from centre to edge }.
+// In head mode the list has one cursor ({ id: "Head", cursor: true, ... }, closed when any hand
+// is a fist) and the hands come along with cursor: false, for display.
 // onCalibrate({ hand, step, progress, error, done }) reports calibration; null when cancelled.
 export async function startHands({ video, canvas, onHands, onStatus, onCalibrate, aim }) {
   onStatus?.("asking for the camera…");
@@ -137,6 +158,24 @@ export async function startHands({ video, canvas, onHands, onStatus, onCalibrate
   // origin: the palm spot panning is measured from. cal: this session's calibration (a recenter
   // changes it without saving).
   const tracks = new Map();
+  // The face model loads the first time head aiming is picked.
+  let face = null, faceLoading = null;
+  const head = { fx: new OneEuro(), fy: new OneEuro(), zero: { yaw: 0, pitch: 0 }, recenter: null, raw: null };
+  const ensureFace = () =>
+    (faceLoading ??= (async () => {
+      onStatus?.("loading face model…");
+      const vision = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.17/wasm");
+      face = await FaceLandmarker.createFromOptions(vision, {
+        baseOptions: { modelAssetPath: FACE_MODEL, delegate: "GPU" },
+        runningMode: "VIDEO",
+        numFaces: 1,
+        outputFacialTransformationMatrixes: true,
+      });
+      onStatus?.(`tracking · camera ${W}×${H}${fps ? ` @ ${fps}fps` : ""} · head`);
+    })().catch((err) => {
+      faceLoading = null;
+      onStatus?.(`couldn't load the face model: ${err.message ?? err}`);
+    }));
   let calib = null; // { hand, calibrator } while calibrating
   let lastVideoTime = -1;
   let raf = 0;
@@ -231,7 +270,7 @@ export async function startHands({ video, canvas, onHands, onStatus, onCalibrate
       while (tr.trail.length > 2 && now - tr.trail[1].now > GRAB_REWIND_MS) tr.trail.shift();
       const back = tr.closed && !wasClosed ? tr.trail[0] : { x, y };
       out.push({
-        id, x, y, pickX: back.x, pickY: back.y,
+        id, x, y, pickX: back.x, pickY: back.y, cursor: true,
         closed: tr.closed && !calib, // no grabbing mid-calibration
         openness: open, turnX, turnY, panX, panY,
         calibrated: !!tr.cal.calibrated, precise: pose.weight2d,
@@ -243,6 +282,48 @@ export async function startHands({ video, canvas, onHands, onStatus, onCalibrate
     });
     // Forget a hand after it's been gone a moment (that also lets go of what it held).
     for (const [id, tr] of tracks) if (now - tr.lastSeen > 400) tracks.delete(id);
+    if (aim?.source === "head") {
+      ensureFace();
+      for (const h of out) h.cursor = false;
+      const res = face?.detectForVideo(video, now);
+      const m = res?.facialTransformationMatrixes?.[0];
+      if (m) {
+        const a = (head.raw = headAngles(m));
+        if (head.recenter) {
+          head.recenter.samples.push(a);
+          if (now >= head.recenter.until) {
+            const n = head.recenter.samples.length;
+            head.zero = {
+              yaw: head.recenter.samples.reduce((s, v) => s + v.yaw, 0) / n,
+              pitch: head.recenter.samples.reduce((s, v) => s + v.pitch, 0) / n,
+            };
+            head.recenter = null;
+          }
+        }
+        // Your left is the screen's left (the view is a mirror), up is up.
+        const yaw = (a.yaw - head.zero.yaw) * (aim.mirrorX ? -1 : 1);
+        const pitch = (a.pitch - head.zero.pitch) * (aim.mirrorY ? -1 : 1);
+        const x = head.fx.filter(Math.min(1, Math.max(0, 0.5 - yaw / (aim.headRangeX ?? 18) / 2)), t);
+        const y = head.fy.filter(Math.min(1, Math.max(0, 0.5 - pitch / (aim.headRangeY ?? 12) / 2)), t);
+        out.unshift({ id: "Head", x, y, pickX: x, pickY: y, cursor: true, closed: !calib && out.some((h) => h.closed), yaw, pitch });
+
+        // Show it: a line from the nose tip the way the face points.
+        const nose = res.faceLandmarks?.[0]?.[1];
+        if (nose) {
+          const r = Math.PI / 180;
+          ctx.strokeStyle = "#ffd36e";
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.moveTo(nose.x * W, nose.y * H);
+          ctx.lineTo(nose.x * W + Math.sin(a.yaw * r) * 120, nose.y * H - Math.sin(a.pitch * r) * 120);
+          ctx.stroke();
+          ctx.fillStyle = "#ffd36e";
+          ctx.beginPath();
+          ctx.arc(nose.x * W, nose.y * H, 5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    }
     onHands(out);
   };
   loop();
@@ -252,6 +333,7 @@ export async function startHands({ video, canvas, onHands, onStatus, onCalibrate
     recenter() {
       const now = performance.now();
       for (const tr of tracks.values()) tr.recenter = { until: now + RECENTER_MS, samples: [] };
+      if (aim?.source === "head") head.recenter = { until: now + RECENTER_MS, samples: [] };
     },
     calibrate() {
       calib = { hand: null, calibrator: new Calibrator() };
@@ -271,6 +353,7 @@ export async function startHands({ video, canvas, onHands, onStatus, onCalibrate
       stopped = true;
       cancelAnimationFrame(raf);
       landmarker.close();
+      face?.close();
       stream.getTracks().forEach((t) => t.stop());
       video.srcObject = null;
     },

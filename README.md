@@ -81,7 +81,8 @@ edge (left hand mirrored), tilt for up/down, and moving the hand pans on top. Bo
 **Calibrate** (`K`) walks through four held poses (facing the camera, turned, tilted up, tilted
 down); after it, the turn is read from how the palm outline foreshortens in the 2D image, which
 is far steadier than MediaPipe's depth estimate (`aim.js`, pure JS, runs under node). The cursor
-holds still while the fingers curl, so grabbing and letting go don't knock the aim. A fist grabs, an open hand lets go. Mouse and multi-touch work without a camera.
+holds still while the fingers curl, so grabbing and letting go don't knock the aim. **Aim with: Head** points the cursor where your nose points (the face model's head pose);
+a fist on either hand, or holding `Space`, grabs. A fist grabs, an open hand lets go. Mouse and multi-touch work without a camera.
 Three renderers of the same smooth-min SDF: `1` ray-marched, `2` gaussian surface splats, `3` a
 surface-nets mesh built in a worker with procedurally wobbling vertices (`W` wireframe).
 `blob.js` is pure JS and runs under node.

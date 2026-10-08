@@ -341,6 +341,8 @@ slider("goo", (v) => (blob.k = uniforms.uK.value = v));
 // Turning sensitivity is a multiple of the calibrated range: 1 = the calibrated sweep spans the
 // screen and the calibrated tilt reaches top and bottom.
 const AIM_DEFAULTS = { startX: 1, startY: 0.5, sensX: 1, sensY: 1, panX: 1.8, panY: 1.8, mirrorX: false, mirrorY: false };
+// Head aiming: degrees of head turn from centre to the screen edge.
+const HEAD_DEFAULTS = { source: "hands", headRangeX: 18, headRangeY: 12 };
 const AIM_STORE = "blob-hands.aim.v2"; // v1 measured turning per 45 degrees
 // One-click starting points; each only sets the values it names.
 const AIM_PRESETS = {
@@ -348,10 +350,10 @@ const AIM_PRESETS = {
   turn: { panX: 0, panY: 0 },
   move: { sensX: 0, sensY: 0, startX: 0.5, panX: 2.2, panY: 2.2 },
 };
-const aim = { ...AIM_DEFAULTS };
+const aim = { ...AIM_DEFAULTS, ...HEAD_DEFAULTS };
 try {
   const saved = JSON.parse(localStorage.getItem(AIM_STORE) ?? "{}");
-  for (const k in AIM_DEFAULTS) if (k in saved) aim[k] = saved[k];
+  for (const k in aim) if (k in saved) aim[k] = saved[k];
 } catch {}
 const saveAim = () => {
   try {
@@ -379,7 +381,7 @@ function aimCheck(key) {
     saveAim();
   });
 }
-["startX", "startY", "sensX", "sensY", "panX", "panY"].forEach(aimSlider);
+["startX", "startY", "sensX", "sensY", "panX", "panY", "headRangeX", "headRangeY"].forEach(aimSlider);
 ["mirrorX", "mirrorY"].forEach(aimCheck);
 function setAim(values) {
   Object.assign(aim, values);
@@ -392,6 +394,32 @@ function setAim(values) {
 document.querySelectorAll("[data-preset]").forEach((b) =>
   b.addEventListener("click", () => setAim({ ...AIM_DEFAULTS, mirrorX: aim.mirrorX, mirrorY: aim.mirrorY, ...AIM_PRESETS[b.dataset.preset] }))
 );
+
+// Aim with the hands or the head.
+function showSource() {
+  document.body.dataset.source = aim.source;
+  document.querySelectorAll("[data-source]").forEach((b) => b.classList.toggle("on", b.dataset.source === aim.source));
+}
+document.querySelectorAll("[data-source]").forEach((b) =>
+  b.addEventListener("click", () => {
+    aim.source = b.dataset.source;
+    saveAim();
+    showSource();
+    for (const id of [...cursors.keys()]) if (id.startsWith("hand:")) dropCursor(id);
+  })
+);
+showSource();
+
+// Space grabs with the head cursor, for aiming with no hands at all.
+let spaceHeld = false;
+addEventListener("keydown", (e) => {
+  if (e.code === "Space" && e.target.tagName !== "INPUT") (spaceHeld = true), e.preventDefault();
+});
+addEventListener("keyup", (e) => {
+  if (e.code !== "Space") return;
+  spaceHeld = false;
+  if (e.target.tagName !== "INPUT") e.preventDefault(); // a focused button would click on release
+});
 const recenter = () => hands?.recenter();
 document.getElementById("recenter").addEventListener("click", recenter);
 
@@ -590,10 +618,15 @@ startBtn.addEventListener("click", async () => {
       onStatus: (s) => (status.textContent = s),
       onCalibrate: showCalibration,
       onHands: (list) => {
-        for (const h of list)
-          feed(`hand:${h.id}`, h.x * innerWidth, h.y * innerHeight, h.closed, true, h.pickX * innerWidth, h.pickY * innerHeight);
+        for (const h of list) {
+          if (!h.cursor) continue;
+          const closed = h.closed || (h.id === "Head" && spaceHeld);
+          feed(`hand:${h.id}`, h.x * innerWidth, h.y * innerHeight, closed, true, h.pickX * innerWidth, h.pickY * innerHeight);
+        }
         meters.innerHTML = list
           .map((h) => {
+            if (h.id === "Head")
+              return `<div class="meter head"><span>Head · ${Math.round(h.yaw)}° ${Math.round(h.pitch)}°${h.closed ? " · grabbing" : ""}</span></div>`;
             const pct = Math.min(100, (h.openness / 2.2) * 100);
             const f = (v) => (v >= 0 ? "+" : "") + v.toFixed(2);
             const angles = ` · turn ${f(h.turnX)} ${f(h.turnY)} · move ${f(h.panX)} ${f(h.panY)}${h.calibrated ? "" : " · uncalibrated"}`;
