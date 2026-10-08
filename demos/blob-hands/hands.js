@@ -1,6 +1,11 @@
 // Hands as cursors: MediaPipe hand landmarks -> a smoothed screen point per hand, plus whether
 // the hand is closed (a fist grabs, an open hand lets go).
 //
+// Aiming adds two things together. Turning: with the defaults the right hand facing the camera
+// sits at the right edge and turned 45 degrees reaches the left edge (the left hand mirrors it),
+// and tilting moves it up and down. Moving: shifting the hand around pans the cursor on top.
+// Either can be turned off by setting its sensitivity to 0.
+//
 // Same MediaPipe Tasks Vision build as ws/hands-face-voice, hands only.
 
 import { HandLandmarker, FilesetResolver, DrawingUtils } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.17";
@@ -13,8 +18,16 @@ const HAND_MODEL =
 export const CLOSE_BELOW = 1.25;
 export const OPEN_ABOVE = 1.5;
 
-// The middle of the camera image maps to the whole screen, so you don't have to reach the edges.
-const REACH = 0.7;
+// Palm centre (0..1 across the image, mirrored) of the hand.
+function palmCentre(lm) {
+  let px = 0, py = 0;
+  for (const i of PALM) (px += lm[i].x), (py += lm[i].y);
+  return { px: 1 - px / PALM.length, py: py / PALM.length };
+}
+
+// Grabbing picks at where the cursor was this long ago: curling into a fist nudges the aim, and
+// the grab should land on what you were pointing at, not where the fist drifted to.
+const GRAB_REWIND_MS = 120;
 
 const TIPS = [8, 12, 16, 20];
 const PALM = [0, 5, 9, 13, 17];
@@ -44,15 +57,36 @@ class OneEuro {
   }
 }
 
+// Palm facing direction, from the 3D world landmarks: the normal of the triangle wrist, index
+// knuckle, pinky knuckle (none of which move when the fingers curl). Returns yaw and pitch in
+// degrees, 0/0 when the palm faces the camera; + yaw is toward the screen's right (mirrored),
+// + pitch is up.
+function palmAngles(w) {
+  const a = [w[5].x - w[0].x, w[5].y - w[0].y, w[5].z - w[0].z];
+  const b = [w[17].x - w[0].x, w[17].y - w[0].y, w[17].z - w[0].z];
+  let n = [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+  // Left and right hands wind opposite ways; take whichever side faces the camera (-z).
+  if (n[2] > 0) n = n.map((v) => -v);
+  const deg = 180 / Math.PI;
+  return { yaw: Math.atan2(-n[0], -n[2]) * deg, pitch: Math.atan2(-n[1], -n[2]) * deg };
+}
+
 function openness(lm) {
   const d = (a, b) => Math.hypot(lm[a].x - lm[b].x, lm[a].y - lm[b].y, lm[a].z - lm[b].z);
   const palm = d(0, 9) || 1e-6;
   return TIPS.reduce((s, t) => s + d(t, 0), 0) / TIPS.length / palm;
 }
 
-// Starts the camera and tracking. Calls onHands([{ id, x, y, closed, openness }]) every frame,
-// with x, y in 0..1 screen space (mirrored, like a mirror). Returns { stop }.
-export async function startHands({ video, canvas, onHands, onStatus }) {
+// Starts the camera and tracking. Calls onHands([{ id, x, y, pickX, pickY, closed, openness,
+// yaw, pitch }]) every frame, with x, y in 0..1 screen space (mirrored, like a mirror); pickX/Y
+// is where a grab that starts this frame should land. `aim` is read live:
+// { startX, startY: where the right hand's cursor sits facing forward (left hand: 1 - startX),
+//   sensX, sensY: screens per 45 degrees of turn / tilt,
+//   panX, panY: screens per camera image the hand moves,
+//   mirrorX: swap which way each hand sweeps, mirrorY: flip tilt }.
+// Returns { stop, recenter }: recenter makes each visible hand's current pose "facing forward"
+// and its current spot the pan origin.
+export async function startHands({ video, canvas, onHands, onStatus, aim }) {
   onStatus?.("asking for the camera…");
   const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
   video.srcObject = stream;
@@ -78,7 +112,9 @@ export async function startHands({ video, canvas, onHands, onStatus }) {
 
   const ctx = canvas.getContext("2d");
   const draw = new DrawingUtils(ctx);
-  const tracks = new Map(); // handedness -> { fx, fy, closed, lastSeen }
+  // handedness -> { fx, fy, closed, lastSeen, trail, raw, origin }. `origin` is the pose that
+  // counts as facing forward with the hand at rest: { yaw, pitch, px, py }.
+  const tracks = new Map();
   let lastVideoTime = -1;
   let raf = 0;
   let stopped = false;
@@ -95,23 +131,49 @@ export async function startHands({ video, canvas, onHands, onStatus }) {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     const out = [];
     (result.landmarks ?? []).forEach((lm, h) => {
-      const id = result.handednesses?.[h]?.[0]?.categoryName ?? `hand${h}`;
+      const label = result.handednesses?.[h]?.[0]?.categoryName;
+      const id = label ?? `hand${h}`;
       let tr = tracks.get(id);
-      if (!tr) tracks.set(id, (tr = { fx: new OneEuro(), fy: new OneEuro(), closed: false }));
+      if (!tr) {
+        tr = { fx: new OneEuro(), fy: new OneEuro(), closed: false, trail: [] };
+        tr.origin = { yaw: 0, pitch: 0, px: 0.5, py: 0.5 };
+        tracks.set(id, tr);
+      }
       tr.lastSeen = now;
 
       const open = openness(lm);
+      const wasClosed = tr.closed;
       if (tr.closed && open > OPEN_ABOVE) tr.closed = false;
       else if (!tr.closed && open < CLOSE_BELOW) tr.closed = true;
 
+      const world = result.worldLandmarks?.[h];
+      const ang = world ? palmAngles(world) : null;
       // The palm centre stays put when the fingers curl, unlike a fingertip.
-      let px = 0, py = 0;
-      for (const i of PALM) (px += lm[i].x), (py += lm[i].y);
-      px /= PALM.length;
-      py /= PALM.length;
-      const sx = Math.min(1, Math.max(0, (1 - px - 0.5) / REACH + 0.5));
-      const sy = Math.min(1, Math.max(0, (py - 0.5) / REACH + 0.5));
-      out.push({ id, x: tr.fx.filter(sx, t), y: tr.fy.filter(sy, t), closed: tr.closed, openness: open });
+      const { px, py } = palmCentre(lm);
+      // Pan is relative to where the hand showed up, so its resting spot doesn't skew the aim.
+      if (!tr.raw) Object.assign(tr.origin, { px, py });
+      tr.raw = { yaw: ang?.yaw ?? 0, pitch: ang?.pitch ?? 0, px, py };
+      const o = tr.origin;
+      const asRight = (id !== "Left") !== !!aim?.mirrorX;
+      const startX = asRight ? aim?.startX ?? 1 : 1 - (aim?.startX ?? 1);
+      // Turning: how far the hand has turned from facing forward, either way, in screens.
+      let turnX = 0, turnY = 0;
+      if (ang) {
+        turnX = (Math.abs(ang.yaw - o.yaw) / 45) * (aim?.sensX ?? 1) * (asRight ? -1 : 1);
+        turnY = -((ang.pitch - o.pitch) / 45) * (aim?.sensY ?? 1.8) * (aim?.mirrorY ? -1 : 1);
+      }
+      // Moving: how far the palm has travelled across the image since it showed up, in screens.
+      const panX = (px - o.px) * (aim?.panX ?? 1.8);
+      const panY = (py - o.py) * (aim?.panY ?? 1.8);
+      const sx = startX + turnX + panX;
+      const sy = (aim?.startY ?? 0.5) + turnY + panY;
+      const x = tr.fx.filter(Math.min(1, Math.max(0, sx)), t);
+      const y = tr.fy.filter(Math.min(1, Math.max(0, sy)), t);
+
+      tr.trail.push({ now, x, y });
+      while (tr.trail.length > 2 && now - tr.trail[1].now > GRAB_REWIND_MS) tr.trail.shift();
+      const back = tr.closed && !wasClosed ? tr.trail[0] : { x, y };
+      out.push({ id, x, y, pickX: back.x, pickY: back.y, closed: tr.closed, openness: open, turnX, turnY, panX, panY });
 
       const color = tr.closed ? "#ff5c8a" : "#7ee0ff";
       draw.drawConnectors(lm, HandLandmarker.HAND_CONNECTIONS, { color, lineWidth: 3 });
@@ -124,6 +186,9 @@ export async function startHands({ video, canvas, onHands, onStatus }) {
   loop();
 
   return {
+    recenter() {
+      for (const tr of tracks.values()) if (tr.raw) tr.origin = { ...tr.raw };
+    },
     stop() {
       stopped = true;
       cancelAnimationFrame(raf);

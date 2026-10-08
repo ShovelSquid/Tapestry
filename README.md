@@ -74,7 +74,10 @@ cd demos/blob-hands && python3 -m http.server 8765   # then open http://localhos
 
 A soft body of metaball particles; springs snap when stretched, so a fast yank tears a piece off
 and pushing pieces together merges them. **Start hand tracking** turns each hand into a cursor
-(palm centre); a fist grabs, an open hand lets go. Mouse and multi-touch work without a camera.
+aimed by turning it: your right hand facing the camera is the right edge, turned 45° the left
+edge (left hand mirrored), tilt for up/down, and moving the hand pans on top. Both add up;
+**Hand tuning** sets the start point, turning and moving sensitivity per axis, and mirroring
+(saved per browser), with presets for turn + move, turn only and move only. `C` recenters. A fist grabs, an open hand lets go. Mouse and multi-touch work without a camera.
 Three renderers of the same smooth-min SDF: `1` ray-marched, `2` gaussian surface splats, `3` a
 surface-nets mesh built in a worker with procedurally wobbling vertices (`W` wireframe).
 `blob.js` is pure JS and runs under node.

@@ -337,6 +337,61 @@ slider("sticky", (v) => (blob.breakRatio = v));
 slider("grabsize", (v) => (settings.grab = v));
 slider("goo", (v) => (blob.k = uniforms.uK.value = v));
 
+// How hands aim the cursor; hands.js reads this every frame. Tuning persists in this browser.
+const AIM_DEFAULTS = { startX: 1, startY: 0.5, sensX: 1, sensY: 1.8, panX: 1.8, panY: 1.8, mirrorX: false, mirrorY: false };
+// One-click starting points; each only sets the values it names.
+const AIM_PRESETS = {
+  both: {},
+  turn: { panX: 0, panY: 0 },
+  move: { sensX: 0, sensY: 0, startX: 0.5, panX: 2.2, panY: 2.2 },
+};
+const aim = { ...AIM_DEFAULTS };
+try {
+  const saved = JSON.parse(localStorage.getItem("blob-hands.aim") ?? "{}");
+  for (const k in AIM_DEFAULTS) if (k in saved) aim[k] = saved[k];
+} catch {}
+const saveAim = () => {
+  try {
+    localStorage.setItem("blob-hands.aim", JSON.stringify(aim));
+  } catch {}
+};
+const aimInputs = {};
+function aimSlider(key) {
+  const el = (aimInputs[key] = document.getElementById(key));
+  const out = document.querySelector(`output[for=${key}]`);
+  const show = () => (out.textContent = (+el.value).toFixed(2));
+  el.value = aim[key];
+  show();
+  el.addEventListener("input", () => {
+    aim[key] = +el.value;
+    show();
+    saveAim();
+  });
+}
+function aimCheck(key) {
+  const el = (aimInputs[key] = document.getElementById(key));
+  el.checked = aim[key];
+  el.addEventListener("change", () => {
+    aim[key] = el.checked;
+    saveAim();
+  });
+}
+["startX", "startY", "sensX", "sensY", "panX", "panY"].forEach(aimSlider);
+["mirrorX", "mirrorY"].forEach(aimCheck);
+function setAim(values) {
+  Object.assign(aim, values);
+  for (const [k, el] of Object.entries(aimInputs)) {
+    if (el.type === "checkbox") el.checked = aim[k];
+    else (el.value = aim[k]), el.dispatchEvent(new Event("input"));
+  }
+  saveAim();
+}
+document.querySelectorAll("[data-preset]").forEach((b) =>
+  b.addEventListener("click", () => setAim({ ...AIM_DEFAULTS, mirrorX: aim.mirrorX, mirrorY: aim.mirrorY, ...AIM_PRESETS[b.dataset.preset] }))
+);
+const recenter = () => hands?.recenter();
+document.getElementById("recenter").addEventListener("click", recenter);
+
 function reset(count) {
   for (const c of cursors.values()) c.held = [];
   blob.reset(count);
@@ -350,6 +405,7 @@ addEventListener("keydown", (e) => {
   if (e.key === "w") wireBtn.click();
   if (e.key === "r") reset(1);
   if (e.key === "t") reset(2);
+  if (e.key === "c") recenter();
 });
 
 function resize() {
@@ -386,8 +442,9 @@ function release(c) {
   c.held = [];
 }
 
-// Feed one cursor's state. `visual` cursors (hands) get a ring drawn on screen.
-function feed(id, px, py, closed, visual) {
+// Feed one cursor's state. `visual` cursors (hands) get a ring drawn on screen. A grab that
+// starts now picks at (pickX, pickY) if given, else at the cursor.
+function feed(id, px, py, closed, visual, pickX = px, pickY = py) {
   let c = cursors.get(id);
   if (!c) {
     c = { held: [], closed: false };
@@ -403,7 +460,8 @@ function feed(id, px, py, closed, visual) {
   c.seen = performance.now();
   const [wx, wy] = toWorld(px, py);
   if (closed && !c.closed) {
-    for (const i of blob.pick(wx, wy, settings.grab, heldElsewhere(c))) {
+    const [pkx, pky] = toWorld(pickX, pickY);
+    for (const i of blob.pick(pkx, pky, settings.grab, heldElsewhere(c))) {
       blob.pinned[i] = 1;
       c.held.push({ i, off: [blob.pos[i * 3] - wx, blob.pos[i * 3 + 1] - wy] });
     }
@@ -475,13 +533,17 @@ startBtn.addEventListener("click", async () => {
     hands = await startHands({
       video: document.getElementById("video"),
       canvas: document.getElementById("overlay"),
+      aim,
       onStatus: (s) => (status.textContent = s),
       onHands: (list) => {
-        for (const h of list) feed(`hand:${h.id}`, h.x * innerWidth, h.y * innerHeight, h.closed, true);
+        for (const h of list)
+          feed(`hand:${h.id}`, h.x * innerWidth, h.y * innerHeight, h.closed, true, h.pickX * innerWidth, h.pickY * innerHeight);
         meters.innerHTML = list
           .map((h) => {
             const pct = Math.min(100, (h.openness / 2.2) * 100);
-            return `<div class="meter ${h.closed ? "closed" : ""}"><span>${h.id}</span><i style="width:${pct}%"></i>
+            const f = (v) => (v >= 0 ? "+" : "") + v.toFixed(2);
+            const angles = ` · turn ${f(h.turnX)} ${f(h.turnY)} · move ${f(h.panX)} ${f(h.panY)}`;
+            return `<div class="meter ${h.closed ? "closed" : ""}"><span>${h.id}${angles}</span><i style="width:${pct}%"></i>
               <b style="left:${(CLOSE_BELOW / 2.2) * 100}%"></b><b style="left:${(OPEN_ABOVE / 2.2) * 100}%"></b></div>`;
           })
           .join("");
