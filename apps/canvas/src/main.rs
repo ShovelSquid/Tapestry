@@ -4,6 +4,9 @@
 //! back and the canvas replays to that moment; paint there and the future
 //! replays around what you added.
 
+mod ide;
+
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use eframe::egui;
@@ -11,6 +14,8 @@ use egui::{
     Align2, Color32, CornerRadius, FontFamily, FontId, Mesh, Pos2, Rect, RichText, Sense, Shape,
     Stroke, TextureHandle, Vec2, pos2, vec2,
 };
+use egui_dock::tab_viewer::OnCloseResponse;
+use egui_dock::{DockArea, DockState, NodeIndex, TabViewer};
 use tapestry_canvas::{
     Body, Brush, DT, HEIGHT, KeyId, MadeBy, Material, Particle, Rulebook, TICKS_PER_SECOND, Tick,
     Timeline, WIDTH,
@@ -39,6 +44,10 @@ fn main() -> eframe::Result {
         options,
         Box::new(move |cc| {
             let mut app = App::new(cc);
+            // `TAPESTRY_OPEN=<file>` opens a file as a tab at startup.
+            if let Ok(path) = std::env::var("TAPESTRY_OPEN") {
+                app.ide.open(PathBuf::from(path));
+            }
             if demo {
                 paint_demo(&mut app.timeline);
             }
@@ -93,6 +102,86 @@ struct Drag {
     to: Tick,
 }
 
+/// The panes of the window. Each can be dragged, split, resized, torn off
+/// into its own window, or double-clicked to fill the window.
+#[derive(Clone, Debug, PartialEq)]
+enum Tab {
+    Canvas,
+    Brushes,
+    Rules,
+    Timeline,
+    Files,
+    File(PathBuf),
+}
+
+fn default_layout() -> DockState<Tab> {
+    let mut dock = DockState::new(vec![Tab::Canvas]);
+    let s = dock.main_surface_mut();
+    let [top, _] = s.split_below(NodeIndex::root(), 0.8, vec![Tab::Timeline]);
+    let [middle, _] = s.split_right(top, 0.76, vec![Tab::Rules, Tab::Files]);
+    s.split_left(middle, 0.11, vec![Tab::Brushes]);
+    dock
+}
+
+struct Tabs<'a> {
+    app: &'a mut App,
+}
+
+impl TabViewer for Tabs<'_> {
+    type Tab = Tab;
+
+    fn id(&mut self, tab: &mut Tab) -> egui::Id {
+        egui::Id::new(format!("{tab:?}"))
+    }
+
+    fn title(&mut self, tab: &mut Tab) -> egui::WidgetText {
+        let name = match tab {
+            Tab::Canvas => "canvas".to_owned(),
+            Tab::Brushes => "brushes".to_owned(),
+            Tab::Rules => "rules".to_owned(),
+            Tab::Timeline => "timeline".to_owned(),
+            Tab::Files => "files".to_owned(),
+            Tab::File(p) => self.app.ide.tab_title(p),
+        };
+        RichText::new(name).size(15.0).into()
+    }
+
+    fn ui(&mut self, ui: &mut egui::Ui, tab: &mut Tab) {
+        self.app.tab_ui(ui, tab);
+    }
+
+    fn is_closeable(&self, tab: &Tab) -> bool {
+        matches!(tab, Tab::File(_))
+    }
+
+    fn on_close(&mut self, tab: &mut Tab) -> OnCloseResponse {
+        if let Tab::File(p) = tab {
+            self.app.ide.close(p);
+        }
+        OnCloseResponse::Close
+    }
+
+    fn on_tab_button(&mut self, tab: &mut Tab, response: &egui::Response) {
+        if response.double_clicked() {
+            self.app.maximized = Some(tab.clone());
+        }
+    }
+
+    fn context_menu(&mut self, ui: &mut egui::Ui, tab: &mut Tab, _: egui_dock::NodePath) {
+        if ui.button("fill the window").clicked() {
+            self.app.maximized = Some(tab.clone());
+            ui.close();
+        }
+    }
+
+    fn scroll_bars(&self, tab: &Tab) -> [bool; 2] {
+        match tab {
+            Tab::Rules | Tab::Brushes => [false, true],
+            _ => [false, false],
+        }
+    }
+}
+
 enum NoteAction {
     Edit,
     Save,
@@ -101,6 +190,11 @@ enum NoteAction {
 
 struct App {
     timeline: Timeline,
+    /// Taken out while it's drawn, since the tabs borrow the app.
+    dock: Option<DockState<Tab>>,
+    /// A pane filling the whole window, if one does.
+    maximized: Option<Tab>,
+    ide: ide::Ide,
     /// The world folder: rule notes live in `rules/` inside it.
     world: std::path::PathBuf,
     /// A rule note open for editing: its name and the text so far.
@@ -138,8 +232,18 @@ impl App {
             eprintln!("no rules in {}: {e}", world.display());
             Rulebook::default()
         });
+        let engine = world.parent().map_or(world.clone(), |p| p.to_path_buf());
         Self {
             timeline: Timeline::new(rules),
+            dock: Some(default_layout()),
+            // `TAPESTRY_FILL=files` (or canvas, rules…) opens with that pane
+            // filling the window.
+            maximized: std::env::var("TAPESTRY_FILL").ok().and_then(|name| {
+                [Tab::Canvas, Tab::Brushes, Tab::Rules, Tab::Timeline, Tab::Files]
+                    .into_iter()
+                    .find(|t| format!("{t:?}").eq_ignore_ascii_case(&name))
+            }),
+            ide: ide::Ide::new(engine, world.clone()),
             world,
             editing: None,
             last_poll: 0.0,
@@ -851,18 +955,57 @@ impl eframe::App for App {
         self.keyboard(ui);
 
         egui::Panel::top("top").show(ui, |ui| self.top_bar(ui));
-        egui::Panel::bottom("timeline").show(ui, |ui| self.timeline_bar(ui));
-        egui::Panel::left("palette")
-            .resizable(false)
-            .default_size(140.0)
-            .show(ui, |ui| self.palette(ui));
-        egui::Panel::right("notes")
-            .resizable(false)
-            .default_size(330.0)
-            .show(ui, |ui| {
-                egui::ScrollArea::vertical().show(ui, |ui| self.notes(ui));
+        if let Some(mut tab) = self.maximized.clone() {
+            egui::CentralPanel::default().show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.add_space(8.0);
+                    if quiet_link(ui, "back to the layout", false).clicked()
+                        || ui.input(|i| i.key_pressed(egui::Key::Escape))
+                    {
+                        self.maximized = None;
+                    }
+                });
+                self.tab_ui(ui, &mut tab);
             });
-        egui::CentralPanel::default().show(ui, |ui| self.canvas(ui));
+        } else if let Some(mut dock) = self.dock.take() {
+            let mut style = egui_dock::Style::from_egui(ui.style());
+            style.tab_bar.bg_fill = PAPER;
+            style.tab_bar.hline_color = RULE_LINE;
+            style.tab.tab_body.bg_fill = PAPER;
+            style.tab.tab_body.stroke = Stroke::NONE;
+            style.tab.active.bg_fill = PAPER;
+            style.tab.active.text_color = INK;
+            style.tab.focused.bg_fill = PAPER;
+            style.tab.focused.text_color = INK;
+            style.tab.inactive.bg_fill = PAPER;
+            style.tab.inactive.text_color = FAINT;
+            style.tab.hovered.bg_fill = PAPER;
+            style.tab.hovered.text_color = INK;
+            style.separator.color_idle = RULE_LINE;
+            style.separator.color_hovered = FAINT;
+            style.separator.color_dragged = INK;
+            style.overlay.selection_color = DOT.gamma_multiply(0.25);
+            egui::CentralPanel::default()
+                .frame(egui::Frame::NONE.fill(PAPER))
+                .show(ui, |ui| {
+                    DockArea::new(&mut dock)
+                        .style(style)
+                        .show_leaf_close_all_buttons(false)
+                        .show_inside(ui, &mut Tabs { app: self });
+                });
+            for path in std::mem::take(&mut self.ide.open_requests) {
+                let tab = Tab::File(path);
+                if let Some(at) = dock.find_tab(&tab) {
+                    let _ = dock.set_active_tab(at);
+                } else {
+                    if let Some(files) = dock.find_tab(&Tab::Files) {
+                        dock.set_focused_node_and_surface(files.node_path());
+                    }
+                    dock.push_to_focused_leaf(tab);
+                }
+            }
+            self.dock = Some(dock);
+        }
 
         self.run_clock(ui);
         self.take_shot(ui);
@@ -870,6 +1013,25 @@ impl eframe::App for App {
 }
 
 impl App {
+    fn tab_ui(&mut self, ui: &mut egui::Ui, tab: &mut Tab) {
+        match tab {
+            Tab::Canvas => self.canvas(ui),
+            Tab::Brushes => self.palette(ui),
+            Tab::Rules => {
+                ui.add_space(4.0);
+                egui::Frame::NONE
+                    .inner_margin(egui::Margin::symmetric(12, 0))
+                    .show(ui, |ui| self.notes(ui));
+            }
+            Tab::Timeline => self.timeline_bar(ui),
+            Tab::Files => self.ide.files_ui(ui),
+            Tab::File(path) => {
+                let path = path.clone();
+                self.ide.editor_ui(ui, &path);
+            }
+        }
+    }
+
     fn take_shot(&mut self, ui: &egui::Ui) {
         let Some((path, at, asked)) = &mut self.shot else {
             return;
