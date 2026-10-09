@@ -18,6 +18,7 @@ use eframe::egui;
 use egui::{Align2, Color32, CornerRadius, FontId, Pos2, Rect, RichText, Sense, Stroke, Vec2, pos2, vec2};
 
 use crate::server::{Device, Remote, Server};
+use crate::sync::{Synced, key_of, path_of};
 use crate::term::Terminal;
 use crate::{DOT, FAINT, INK, MUTED, SHEET, quiet_link, title};
 
@@ -138,8 +139,9 @@ pub struct Ide {
     zoom: f32,
     /// Where the camera was left in each folder, to come back to.
     views: HashMap<PathBuf, (Vec2, f32)>,
-    /// `views.tsv` as last written, to write it only when it changes.
-    views_saved: String,
+    /// What stays the same on every computer: the cards, cameras and pins
+    /// here, and the window's panes.
+    pub synced: Synced,
     /// How far each file card's text is scrolled, in unzoomed points.
     card_scroll: HashMap<PathBuf, f32>,
     pub buffers: BTreeMap<PathBuf, Buffer>,
@@ -211,14 +213,24 @@ pub struct Ide {
 
 impl Ide {
     pub fn new(engine: PathBuf) -> Self {
-        let positions = load_positions();
+        let synced = Synced::load();
+        seed_from_files(&synced);
+        let positions: HashMap<PathBuf, Vec2> = synced
+            .with_prefix(CARD_KEY)
+            .into_iter()
+            .filter_map(|(k, v)| Some((path_of(&k), card_from(&v)?)))
+            .collect();
         let placed = positions.keys().cloned().collect();
-        let mut pins = load_pins();
+        let mut pins = synced.get("pins").map_or(Vec::new(), |v| pins_from(&v));
         if pins.is_empty() {
             pins.push(engine.clone());
         }
         let root = pins[0].clone();
-        let views = load_views();
+        let views: HashMap<PathBuf, (Vec2, f32)> = synced
+            .with_prefix(VIEW_KEY)
+            .into_iter()
+            .filter_map(|(k, v)| Some((path_of(&k), view_from(&v)?)))
+            .collect();
         let (pan, zoom) = views.get(&root).copied().unwrap_or(HOME_VIEW);
         Self {
             here: root.clone(),
@@ -233,7 +245,7 @@ impl Ide {
             pan,
             zoom,
             views,
-            views_saved: String::new(),
+            synced,
             card_scroll: HashMap::new(),
             buffers: BTreeMap::new(),
             open_requests: Vec::new(),
@@ -280,6 +292,7 @@ impl Ide {
     /// (the timeline, the canvas, an editor), back to the app.
     pub fn begin_frame(&mut self, ctx: &egui::Context) {
         self.sync_terminals(ctx);
+        self.synced.start(self.servers.clone(), ctx);
         self.term_visible = std::mem::take(&mut self.term_drawn);
         self.editing = None;
         self.last_term_hits = std::mem::take(&mut self.term_hits);
@@ -609,21 +622,57 @@ impl Ide {
         self.listed_at = f64::NEG_INFINITY;
     }
 
-    /// Keep where the camera is in this folder, on disk too.
+    /// Keep where the camera is in this folder.
     pub fn remember_view(&mut self) {
-        let view = (self.pan_to.unwrap_or(self.pan), self.zoom);
-        self.views.insert(self.here.clone(), view);
-        let mut lines: Vec<String> = self
-            .views
-            .iter()
-            .map(|(p, (pan, z))| format!("{}\t{}\t{}\t{}", pan.x, pan.y, z, p.display()))
-            .collect();
-        lines.sort();
-        let text = lines.join("\n") + "\n";
-        if text != self.views_saved {
-            save_state("views.tsv", &text);
-            self.views_saved = text;
+        let (pan, zoom) = (self.pan_to.unwrap_or(self.pan), self.zoom);
+        self.views.insert(self.here.clone(), (pan, zoom));
+        let key = format!("{VIEW_KEY}{}", key_of(&self.here));
+        self.synced.set(&key, serde_json::json!([pan.x, pan.y, zoom]));
+    }
+
+    /// Take up what another computer changed: cards, cameras and pins. The
+    /// keys changed, for the window to take up its own.
+    pub fn take_synced(&mut self) -> Vec<String> {
+        let keys = self.synced.take_arrived();
+        for key in &keys {
+            let Some(value) = self.synced.get(key) else { continue };
+            if let Some(k) = key.strip_prefix(CARD_KEY)
+                && let Some(at) = card_from(&value)
+            {
+                let path = path_of(k);
+                self.positions.insert(path.clone(), at);
+                self.placed.insert(path);
+            } else if let Some(k) = key.strip_prefix(VIEW_KEY)
+                && let Some(view) = view_from(&value)
+            {
+                // The camera in use stays where it is; the next visit
+                // takes it up.
+                let path = path_of(k);
+                if path != self.here {
+                    self.views.insert(path, view);
+                }
+            } else if key == "pins" {
+                let pins = pins_from(&value);
+                if !pins.is_empty() {
+                    self.pins = pins;
+                }
+            }
         }
+        keys
+    }
+
+    /// Keep where the hand-moved cards sit.
+    fn keep_positions(&self) {
+        for p in &self.placed {
+            if let Some(v) = self.positions.get(p) {
+                self.synced.set(&format!("{CARD_KEY}{}", key_of(p)), serde_json::json!([v.x, v.y]));
+            }
+        }
+    }
+
+    fn keep_pins(&self) {
+        let pins: Vec<String> = self.pins.iter().map(|p| key_of(p)).collect();
+        self.synced.set("pins", serde_json::json!(pins));
     }
 
     /// The folder open and the one shown inside it.
@@ -633,7 +682,8 @@ impl Ide {
 
     /// Go back to a folder shown before, if it's still there.
     pub fn return_to(&mut self, root: PathBuf, here: PathBuf) {
-        if root.is_dir() && here.is_dir() && here.starts_with(&root) {
+        let moved = root != self.root || here != self.here;
+        if moved && root.is_dir() && here.is_dir() && here.starts_with(&root) {
             self.path_input = root.display().to_string();
             self.root = root;
             self.go(here);
@@ -736,7 +786,7 @@ impl Ide {
                     } else {
                         self.pins.push(self.here.clone());
                     }
-                    save_pins(&self.pins);
+                    self.keep_pins();
                 }
             });
         });
@@ -1048,7 +1098,7 @@ impl Ide {
             self.placed.insert(path);
         }
         if dropped {
-            save_positions(&self.positions, &self.placed);
+            self.keep_positions();
         }
         if let Some(dir) = enter {
             self.go(dir);
@@ -1995,6 +2045,58 @@ fn card_frame(painter: &egui::Painter, r: Rect, z: f32, heading: &str, strong: b
     Rect::from_min_max(pos2(r.left() + pad, y + 6.0 * z), r.max - vec2(pad, pad))
 }
 
+/// Keys in the synced state: a hand-moved card, a folder's camera.
+const CARD_KEY: &str = "card:";
+const VIEW_KEY: &str = "view:";
+
+/// Where a folder's camera starts before it's been moved.
+const HOME_VIEW: (Vec2, f32) = (vec2(24.0, 24.0), 1.0);
+
+fn card_from(v: &serde_json::Value) -> Option<Vec2> {
+    Some(vec2(v.get(0)?.as_f64()? as f32, v.get(1)?.as_f64()? as f32))
+}
+
+fn view_from(v: &serde_json::Value) -> Option<(Vec2, f32)> {
+    let pan = card_from(v)?;
+    Some((pan, (v.get(2)?.as_f64()? as f32).clamp(0.35, 2.5)))
+}
+
+fn pins_from(v: &serde_json::Value) -> Vec<PathBuf> {
+    v.as_array()
+        .map_or(Vec::new(), |a| a.iter().filter_map(|p| Some(path_of(p.as_str()?))).collect())
+}
+
+/// What was kept in files before it was synced: `cards.tsv` (`x<TAB>y<TAB>path`),
+/// `views.tsv` (`x<TAB>y<TAB>zoom<TAB>path`) and `pins.txt` (a folder a line).
+fn seed_from_files(synced: &Synced) {
+    let Some(dir) = state_dir() else { return };
+    let read = |name: &str| std::fs::read_to_string(dir.join(name)).unwrap_or_default();
+    for line in read("cards.tsv").lines() {
+        let parts: Vec<&str> = line.splitn(3, '\t').collect();
+        if let [x, y, path] = parts[..]
+            && let (Ok(x), Ok(y)) = (x.parse::<f32>(), y.parse::<f32>())
+        {
+            synced.seed(&format!("{CARD_KEY}{}", key_of(Path::new(path))), serde_json::json!([x, y]));
+        }
+    }
+    for line in read("views.tsv").lines() {
+        let parts: Vec<&str> = line.splitn(4, '\t').collect();
+        if let [x, y, z, path] = parts[..]
+            && let (Ok(x), Ok(y), Ok(z)) = (x.parse::<f32>(), y.parse::<f32>(), z.parse::<f32>())
+        {
+            synced.seed(&format!("{VIEW_KEY}{}", key_of(Path::new(path))), serde_json::json!([x, y, z]));
+        }
+    }
+    let pins: Vec<String> = read("pins.txt")
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .map(|l| key_of(Path::new(l)))
+        .collect();
+    if !pins.is_empty() {
+        synced.seed("pins", serde_json::json!(pins));
+    }
+}
+
 /// `~/.local/state/tapestry` (or under `$XDG_STATE_HOME`).
 pub(crate) fn state_dir() -> Option<PathBuf> {
     let base = std::env::var_os("XDG_STATE_HOME")
@@ -2003,86 +2105,12 @@ pub(crate) fn state_dir() -> Option<PathBuf> {
     Some(base.join("tapestry"))
 }
 
-/// `cards.tsv`: one moved card per line, `x<TAB>y<TAB>path`.
-fn load_positions() -> HashMap<PathBuf, Vec2> {
-    let Some(text) = state_dir().and_then(|d| std::fs::read_to_string(d.join("cards.tsv")).ok())
-    else {
-        return HashMap::new();
-    };
-    text.lines()
-        .filter_map(|line| {
-            let mut parts = line.splitn(3, '\t');
-            let x = parts.next()?.parse().ok()?;
-            let y = parts.next()?.parse().ok()?;
-            Some((PathBuf::from(parts.next()?), vec2(x, y)))
-        })
-        .collect()
-}
-
-fn save_positions(positions: &HashMap<PathBuf, Vec2>, placed: &HashSet<PathBuf>) {
-    let Some(dir) = state_dir() else { return };
-    let mut lines: Vec<String> = placed
-        .iter()
-        .filter_map(|p| {
-            let v = positions.get(p)?;
-            Some(format!("{}\t{}\t{}", v.x, v.y, p.display()))
-        })
-        .collect();
-    lines.sort();
-    let _ = std::fs::create_dir_all(&dir);
-    if let Err(e) = std::fs::write(dir.join("cards.tsv"), lines.join("\n") + "\n") {
-        eprintln!("couldn't remember card positions: {e}");
-    }
-}
-
-/// Where a folder's camera starts before it's been moved.
-const HOME_VIEW: (Vec2, f32) = (vec2(24.0, 24.0), 1.0);
-
-/// `views.tsv`: each folder's camera, `x<TAB>y<TAB>zoom<TAB>path`.
-fn load_views() -> HashMap<PathBuf, (Vec2, f32)> {
-    let Some(text) = state_dir().and_then(|d| std::fs::read_to_string(d.join("views.tsv")).ok())
-    else {
-        return HashMap::new();
-    };
-    text.lines()
-        .filter_map(|line| {
-            let mut parts = line.splitn(4, '\t');
-            let x = parts.next()?.parse().ok()?;
-            let y = parts.next()?.parse().ok()?;
-            let z: f32 = parts.next()?.parse().ok()?;
-            Some((PathBuf::from(parts.next()?), (vec2(x, y), z.clamp(0.35, 2.5))))
-        })
-        .collect()
-}
-
 /// Write one file in the state folder.
 pub(crate) fn save_state(name: &str, text: &str) {
     let Some(dir) = state_dir() else { return };
     let _ = std::fs::create_dir_all(&dir);
     if let Err(e) = std::fs::write(dir.join(name), text) {
         eprintln!("couldn't remember {name}: {e}");
-    }
-}
-
-/// `pins.txt`: one pinned folder per line.
-fn load_pins() -> Vec<PathBuf> {
-    state_dir()
-        .and_then(|d| std::fs::read_to_string(d.join("pins.txt")).ok())
-        .map(|t| {
-            t.lines()
-                .filter(|l| !l.trim().is_empty())
-                .map(PathBuf::from)
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
-fn save_pins(pins: &[PathBuf]) {
-    let Some(dir) = state_dir() else { return };
-    let text: String = pins.iter().map(|p| format!("{}\n", p.display())).collect();
-    let _ = std::fs::create_dir_all(&dir);
-    if let Err(e) = std::fs::write(dir.join("pins.txt"), text) {
-        eprintln!("couldn't remember pins: {e}");
     }
 }
 

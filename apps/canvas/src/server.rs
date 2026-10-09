@@ -195,6 +195,24 @@ impl Server {
             .call();
     }
 
+    /// What it keeps the same on every computer, or `None` if it can't say.
+    pub fn shared(&self) -> Option<crate::sync::Map> {
+        let mut r = self.agent().get(&self.url("/api/shared")).call().ok()?;
+        if r.status() != 200 {
+            return None;
+        }
+        r.body_mut().read_json().ok()
+    }
+
+    /// Give it what's newer here.
+    pub fn send_shared(&self, map: &crate::sync::Map) {
+        let _ = self
+            .agent()
+            .post(&self.url("/api/shared"))
+            .header("Origin", &self.origin())
+            .send_json(map);
+    }
+
     /// Tell the server which world's notes to serve.
     pub fn set_world(&self, world: &Path) {
         let _ = self

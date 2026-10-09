@@ -10,6 +10,7 @@ mod ide;
 mod marks;
 mod notes;
 mod server;
+mod sync;
 mod tabnote;
 mod term;
 mod trail;
@@ -41,7 +42,7 @@ const RULE_LINE: Color32 = Color32::from_rgb(0xe4, 0xe1, 0xd9);
 const DOT: Color32 = Color32::from_rgb(0xe8, 0x49, 0x2a);
 
 fn main() -> eframe::Result {
-    let saved = Layout::load();
+    let saved = (!fresh_start()).then(Window::load).flatten();
     let mut viewport = egui::ViewportBuilder::default()
         .with_title("Tapestry canvas")
         .with_inner_size(saved.as_ref().map_or([1480.0, 920.0], |l| l.size));
@@ -58,9 +59,7 @@ fn main() -> eframe::Result {
         options,
         Box::new(move |cc| {
             let mut app = App::new(cc);
-            if let Some(layout) = saved {
-                app.reopen(layout);
-            }
+            app.reopen();
             // `TAPESTRY_OPEN=<file>` opens a file in the files pane at startup.
             if let Ok(path) = std::env::var("TAPESTRY_OPEN") {
                 app.ide.show(PathBuf::from(path));
@@ -210,26 +209,68 @@ impl TabViewer for Tabs<'_> {
     }
 }
 
-/// The window as it was left: its panes, where it sat, and the folder the
-/// files pane showed. Kept in `layout.json` in the state folder.
-#[derive(serde::Serialize, serde::Deserialize)]
-struct Layout {
-    dock: DockState<Tab>,
-    maximized: Option<Tab>,
-    size: [f32; 2],
-    at: Option<[f32; 2]>,
-    root: PathBuf,
-    here: PathBuf,
+/// Start from the default window: `TAPESTRY_FRESH`, or a screenshot run,
+/// which starts from the same window every time.
+fn fresh_start() -> bool {
+    std::env::var_os("TAPESTRY_FRESH").is_some() || std::env::var_os("TAPESTRY_SHOT").is_some()
 }
 
-impl Layout {
+/// Where the window sat, on this computer only: `window.json` in the state
+/// folder.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct Window {
+    size: [f32; 2],
+    at: Option<[f32; 2]>,
+}
+
+impl Window {
     fn load() -> Option<Self> {
-        // A screenshot run starts from the same window every time.
-        if std::env::var_os("TAPESTRY_FRESH").is_some() || std::env::var_os("TAPESTRY_SHOT").is_some() {
-            return None;
-        }
-        let text = std::fs::read_to_string(ide::state_dir()?.join("layout.json")).ok()?;
+        let text = std::fs::read_to_string(ide::state_dir()?.join("window.json")).ok()?;
         serde_json::from_str(&text).ok()
+    }
+}
+
+/// The panes as they were left and the folder the files pane showed, the
+/// same on every computer (`layout` in the synced state). Paths in it are
+/// as another computer would find them.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct Panes {
+    dock: DockState<Tab>,
+    maximized: Option<Tab>,
+    root: String,
+    here: String,
+}
+
+/// A tab as another computer would find it, and back.
+fn shared_tab(tab: &Tab) -> Tab {
+    match tab {
+        Tab::File(p) => Tab::File(sync::key_of(p).into()),
+        t => t.clone(),
+    }
+}
+
+fn local_tab(tab: &Tab) -> Tab {
+    match tab {
+        Tab::File(p) => Tab::File(sync::path_of(&p.to_string_lossy())),
+        t => t.clone(),
+    }
+}
+
+/// Where each pane sat on this screen is worked out again on the next; leave
+/// it out, so a bigger or smaller screen isn't a change.
+fn forget_rects(v: &mut serde_json::Value) {
+    match v {
+        serde_json::Value::Object(o) => {
+            for (k, v) in o.iter_mut() {
+                if k == "rect" || k == "viewport" {
+                    *v = serde_json::json!({ "min": { "x": 0.0, "y": 0.0 }, "max": { "x": 0.0, "y": 0.0 } });
+                } else {
+                    forget_rects(v);
+                }
+            }
+        }
+        serde_json::Value::Array(a) => a.iter_mut().for_each(forget_rects),
+        _ => {}
     }
 }
 
@@ -287,10 +328,14 @@ struct App {
     shot: Option<(String, Tick, bool)>,
     hard: TextureHandle,
     soft: TextureHandle,
-    /// The window's size and place last frame, and the layout as last written.
+    /// The window's size and place last frame, and `window.json` as last
+    /// written.
     window: (egui::Vec2, Option<Pos2>),
+    window_saved: String,
     layout_at: f64,
-    layout_saved: String,
+    /// The panes as last kept or taken from another computer: only a change
+    /// from these is kept.
+    panes_kept: Option<serde_json::Value>,
 }
 
 /// Time per frame spent working out the canvas. When a scene costs more,
@@ -350,54 +395,99 @@ impl App {
             hard: dot_texture(&cc.egui_ctx, "hard", 0.72),
             soft: dot_texture(&cc.egui_ctx, "soft", 0.0),
             window: (vec2(1480.0, 920.0), None),
+            window_saved: String::new(),
             layout_at: 0.0,
-            layout_saved: String::new(),
+            panes_kept: None,
         }
     }
 
-    /// Put the window back as it was left. File tabs whose files are gone
-    /// close.
-    fn reopen(&mut self, layout: Layout) {
-        let mut dock = layout.dock;
+    /// Put the panes back as they were left, here or on another computer.
+    fn reopen(&mut self) {
+        if !fresh_start()
+            && let Some(v) = self.ide.synced.get("layout")
+        {
+            self.take_panes(v);
+        }
+        self.panes_kept = self.panes();
+    }
+
+    /// Lay the panes out as `v` says. File tabs whose files aren't on this
+    /// computer close.
+    fn take_panes(&mut self, v: serde_json::Value) {
+        let Ok(panes) = serde_json::from_value::<Panes>(v) else { return };
+        let mut dock = panes.dock.filter_map_tabs(|t| Some(local_tab(t)));
         dock.retain_tabs(|tab| match tab {
             Tab::File(p) => self.ide.reopen(p),
             _ => true,
         });
+        // A file with unsaved changes keeps its tab.
+        for (path, buf) in &self.ide.buffers {
+            let tab = Tab::File(path.clone());
+            if buf.dirty() && dock.find_tab(&tab).is_none() {
+                dock.push_to_first_leaf(tab);
+            }
+        }
         if dock.iter_all_tabs().next().is_some() {
             self.dock = Some(dock);
         }
-        // `TAPESTRY_FILL` still wins.
-        if self.maximized.is_none() {
-            self.maximized = layout.maximized.filter(|t| match t {
+        // `TAPESTRY_FILL` still wins at the start.
+        if self.panes_kept.is_some() || self.maximized.is_none() {
+            self.maximized = panes.maximized.map(|t| local_tab(&t)).filter(|t| match t {
                 Tab::File(p) => self.ide.buffers.contains_key(p),
                 _ => true,
             });
         }
-        self.ide.return_to(layout.root, layout.here);
+        self.ide.return_to(sync::path_of(&panes.root), sync::path_of(&panes.here));
     }
 
-    /// Write the layout down if it changed.
+    /// The panes as another computer would take them.
+    fn panes(&self) -> Option<serde_json::Value> {
+        let dock = self.dock.as_ref()?.filter_map_tabs(|t| Some(shared_tab(t)));
+        let (root, here) = self.ide.place();
+        let mut v = serde_json::to_value(Panes {
+            dock,
+            maximized: self.maximized.as_ref().map(shared_tab),
+            root: sync::key_of(&root),
+            here: sync::key_of(&here),
+        })
+        .ok()?;
+        forget_rects(&mut v);
+        Some(v)
+    }
+
+    /// Keep what changed: the panes, the folder's camera, the window.
     fn save_layout(&mut self) {
         if self.shot.is_some() {
             return;
         }
-        let Some(dock) = self.dock.clone() else { return };
-        let (root, here) = self.ide.place();
-        let (size, at) = self.window;
-        let layout = Layout {
-            dock,
-            maximized: self.maximized.clone(),
-            size: size.into(),
-            at: at.map(Into::into),
-            root,
-            here,
-        };
-        let Ok(text) = serde_json::to_string(&layout) else { return };
-        if text != self.layout_saved {
-            ide::save_state("layout.json", &text);
-            self.layout_saved = text;
+        if let Some(v) = self.panes()
+            && self.panes_kept.as_ref() != Some(&v)
+        {
+            self.ide.synced.set("layout", v.clone());
+            self.panes_kept = Some(v);
         }
         self.ide.remember_view();
+        self.ide.synced.write();
+        let (size, at) = self.window;
+        let window = Window { size: size.into(), at: at.map(Into::into) };
+        if let Ok(text) = serde_json::to_string(&window)
+            && text != self.window_saved
+        {
+            ide::save_state("window.json", &text);
+            self.window_saved = text;
+        }
+    }
+
+    /// Take up what another computer changed.
+    fn take_synced(&mut self) {
+        let keys = self.ide.take_synced();
+        if self.shot.is_none()
+            && keys.iter().any(|k| k == "layout")
+            && let Some(v) = self.ide.synced.get("layout")
+        {
+            self.take_panes(v);
+            self.panes_kept = self.panes();
+        }
     }
 
     fn keyboard(&mut self, ui: &egui::Ui) {
@@ -1240,6 +1330,7 @@ impl eframe::App for App {
         ui.ctx()
             .request_repaint_after(std::time::Duration::from_millis(500));
         self.ide.begin_frame(ui.ctx());
+        self.take_synced();
         self.marks.begin_frame();
         let selected = self.ide.term_selection();
         self.highlights
@@ -1569,4 +1660,36 @@ fn install_fonts(ctx: &egui::Context) {
         .families
         .insert(FontFamily::Name("title".into()), title);
     ctx.set_fonts(fonts);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn panes_travel_without_this_screen() {
+        let mut dock = default_layout();
+        let file = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/main.rs");
+        dock.push_to_first_leaf(Tab::File(file.clone()));
+        let shared = dock.filter_map_tabs(|t| Some(shared_tab(t)));
+        assert!(shared.find_tab(&Tab::File("@tapestry/apps/canvas/src/main.rs".into())).is_some());
+        let panes = |rect_x: f32| {
+            let mut v = serde_json::to_value(Panes {
+                dock: shared.clone(),
+                maximized: None,
+                root: "@tapestry".into(),
+                here: "@tapestry".into(),
+            })
+            .unwrap();
+            // Pretend a pane sat somewhere on this screen.
+            v["dock"]["surfaces"][0]["Main"]["nodes"][0]["Vertical"]["rect"]["min"]["x"] = rect_x.into();
+            forget_rects(&mut v);
+            v
+        };
+        assert_eq!(panes(0.0), panes(500.0));
+        let back: Panes = serde_json::from_value(panes(500.0)).unwrap();
+        let local = back.dock.filter_map_tabs(|t| Some(local_tab(t)));
+        assert!(local.find_tab(&Tab::File(file)).is_some());
+        assert!(local.find_tab(&Tab::Notes).is_some());
+    }
 }
