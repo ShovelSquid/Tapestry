@@ -73,11 +73,12 @@ fn paint_demo(t: &mut Timeline) {
     t.seek(0);
 }
 
-#[derive(Clone, Copy, PartialEq)]
-enum Show {
-    All,
-    Mine,
-    Rules,
+/// A keyframe being dragged along the timeline.
+struct Drag {
+    id: KeyId,
+    /// Pointer x minus the keyframe's x when grabbed.
+    grab: f32,
+    to: Tick,
 }
 
 struct App {
@@ -87,13 +88,19 @@ struct App {
     playing: bool,
     clock: f32,
     painting: Option<(KeyId, egui::Vec2)>,
-    show: Show,
+    /// The keyframe picked on the timeline. What it made stays bright.
+    selected: Option<KeyId>,
+    drag: Option<Drag>,
     /// `TAPESTRY_SHOT=path:seconds` saves the window at that canvas time
     /// and quits, so the canvas can be checked without a person.
     shot: Option<(String, Tick, bool)>,
     hard: TextureHandle,
     soft: TextureHandle,
 }
+
+/// Time per frame spent working out the canvas. When a scene costs more,
+/// it plays in slow motion rather than freezing the window.
+const BUDGET: std::time::Duration = std::time::Duration::from_millis(12);
 
 impl App {
     fn new(cc: &eframe::CreationContext<'_>) -> Self {
@@ -110,7 +117,8 @@ impl App {
             playing: true,
             clock: 0.0,
             painting: None,
-            show: Show::All,
+            selected: None,
+            drag: None,
             shot: std::env::var("TAPESTRY_SHOT").ok().and_then(|v| {
                 let (path, secs) = v.rsplit_once(':')?;
                 let secs: f32 = secs.parse().ok()?;
@@ -125,12 +133,22 @@ impl App {
         if ui.ctx().egui_wants_keyboard_input() {
             return;
         }
+        let idle = self.painting.is_none() && self.drag.is_none();
         ui.input(|i| {
             if i.key_pressed(egui::Key::Space) {
                 self.playing = !self.playing;
             }
-            if i.modifiers.command && i.key_pressed(egui::Key::Z) && self.painting.is_none() {
+            if i.modifiers.command && i.key_pressed(egui::Key::Z) && idle {
                 self.timeline.undo();
+            }
+            if (i.key_pressed(egui::Key::Delete) || i.key_pressed(egui::Key::Backspace))
+                && idle
+                && let Some(id) = self.selected.take()
+            {
+                self.timeline.remove(id);
+            }
+            if i.key_pressed(egui::Key::Escape) {
+                self.selected = None;
             }
             for (n, key) in [
                 egui::Key::Num1,
@@ -146,37 +164,48 @@ impl App {
                     self.brush = Brush::ALL[n];
                 }
             }
-            if !self.playing && self.painting.is_none() {
-                let t = self.timeline.tick();
+            if !self.playing && idle {
+                let t = self.timeline.playhead();
                 if i.key_pressed(egui::Key::ArrowRight) {
-                    self.timeline.seek(t + 1);
+                    self.timeline.set_playhead(t + 1);
                 }
                 if i.key_pressed(egui::Key::ArrowLeft) {
-                    self.timeline.seek(t.saturating_sub(1));
+                    self.timeline.set_playhead(t.saturating_sub(1));
                 }
             }
-            if i.key_pressed(egui::Key::Home) && self.painting.is_none() {
-                self.timeline.seek(0);
+            if i.key_pressed(egui::Key::Home) && idle {
+                self.timeline.set_playhead(0);
             }
         });
+        // A deleted or undone keyframe can't stay selected.
+        if let Some(id) = self.selected
+            && self.timeline.key(id).is_none()
+        {
+            self.selected = None;
+        }
     }
 
+    /// Advance the playhead with real time (only once the canvas has caught
+    /// up, so a heavy scene slows down instead of falling behind), then work
+    /// the canvas out toward it within the frame's budget.
     fn run_clock(&mut self, ui: &egui::Ui) {
-        if !self.playing {
+        let deadline = std::time::Instant::now() + BUDGET;
+        if self.playing && self.timeline.caught_up() {
+            self.clock += ui.input(|i| i.stable_dt).min(0.1);
+            let ticks = (self.clock / DT) as Tick;
+            if ticks > 0 {
+                self.clock -= ticks as f32 * DT;
+                let ticks = ticks.min(2);
+                self.timeline
+                    .set_playhead(self.timeline.playhead() + ticks);
+            }
+        } else {
             self.clock = 0.0;
-            return;
         }
-        self.clock += ui.input(|i| i.stable_dt).min(0.1);
-        let mut steps = 0;
-        while self.clock >= DT && steps < 4 {
-            self.timeline.step();
-            self.clock -= DT;
-            steps += 1;
+        self.timeline.catch_up(Some(deadline));
+        if self.playing || !self.timeline.caught_up() {
+            ui.ctx().request_repaint();
         }
-        if steps == 4 {
-            self.clock = 0.0;
-        }
-        ui.ctx().request_repaint();
     }
 
     fn top_bar(&mut self, ui: &mut egui::Ui) {
@@ -184,17 +213,6 @@ impl App {
         ui.horizontal(|ui| {
             ui.add_space(24.0);
             ui.label(RichText::new("Tapestry").font(title(24.0)));
-            ui.add_space(36.0);
-            for (show, name) in [
-                (Show::All, "everything"),
-                (Show::Mine, "what I made"),
-                (Show::Rules, "what rules made"),
-            ] {
-                if quiet_link(ui, name, self.show == show).clicked() {
-                    self.show = show;
-                }
-                ui.add_space(10.0);
-            }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.add_space(24.0);
                 let s = self.timeline.state();
@@ -203,6 +221,10 @@ impl App {
                         .color(FAINT)
                         .size(16.0),
                 );
+                if !self.timeline.caught_up() {
+                    ui.add_space(16.0);
+                    ui.label(RichText::new("catching up…").color(DOT).size(16.0));
+                }
             });
         });
         ui.add_space(8.0);
@@ -337,88 +359,236 @@ impl App {
             if dot.hovered() || card_click.hovered() {
                 ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
             }
-            if (dot.clicked() || card_click.clicked()) && self.painting.is_none() {
+            if (dot.clicked() || card_click.clicked())
+                && self.painting.is_none()
+                && self.timeline.caught_up()
+            {
                 self.timeline.set_rule(i, !on);
             }
             ui.add_space(14.0);
         }
     }
 
+    /// Play controls, then one lane per brush and one for rule notes.
+    /// Click a keyframe to pick it, drag it to move it, delete to remove it.
+    /// Anywhere else on the lanes scrubs.
     fn timeline_bar(&mut self, ui: &mut egui::Ui) {
-        ui.add_space(10.0);
-        let now = self.timeline.tick();
+        const LANE: f32 = 15.0;
+        const LABELS: f32 = 64.0;
+        let lanes = Brush::ALL.len() + 1;
+        let now = self.timeline.playhead();
         let end = (self.timeline.last_key_tick() + 5 * TICKS_PER_SECOND)
             .max(now + 2 * TICKS_PER_SECOND)
             .max(20 * TICKS_PER_SECOND);
         let end = end.div_ceil(5 * TICKS_PER_SECOND) * 5 * TICKS_PER_SECOND;
 
+        ui.add_space(10.0);
         ui.horizontal(|ui| {
             ui.add_space(24.0);
-            let label = if self.playing { "pause" } else { "play" };
-            if quiet_link(ui, label, true).clicked() {
-                self.playing = !self.playing;
-            }
-            ui.add_space(16.0);
-            ui.label(
-                RichText::new(format!("{:.2} s", now as f32 / TICKS_PER_SECOND as f32))
-                    .size(18.0)
-                    .color(MUTED),
-            );
-            ui.add_space(16.0);
+            ui.vertical(|ui| {
+                ui.set_width(120.0);
+                let label = if self.playing { "pause" } else { "play" };
+                if quiet_link(ui, label, true).clicked() {
+                    self.playing = !self.playing;
+                }
+                ui.label(
+                    RichText::new(format!("{:.2} s", now as f32 / TICKS_PER_SECOND as f32))
+                        .size(18.0)
+                        .color(MUTED),
+                );
+            });
+
             let width = ui.available_width() - 24.0;
-            let (rect, response) = ui.allocate_exact_size(vec2(width, 40.0), Sense::click_and_drag());
-            let x_of = |t: Tick| rect.left() + t as f32 / end as f32 * rect.width();
-            if let Some(p) = response.interact_pointer_pos()
-                && self.painting.is_none()
+            let height = lanes as f32 * LANE + 20.0;
+            let (rect, response) =
+                ui.allocate_exact_size(vec2(width, height), Sense::click_and_drag());
+            let track = Rect::from_min_max(
+                pos2(rect.left() + LABELS, rect.top()),
+                pos2(rect.right(), rect.top() + lanes as f32 * LANE),
+            );
+            let x_of = |t: Tick| track.left() + t as f32 / end as f32 * track.width();
+            let tick_at = |x: f32| {
+                let f = ((x - track.left()) / track.width()).clamp(0.0, 1.0);
+                (f * end as f32).round() as Tick
+            };
+            let lane_of = |body: &Body| match body {
+                Body::Stroke(s) => Brush::ALL.iter().position(|b| *b == s.brush).unwrap(),
+                Body::Rule { .. } => Brush::ALL.len(),
+            };
+            let y_of = |lane: usize| track.top() + (lane as f32 + 0.5) * LANE;
+
+            // Hit boxes: a stroke covers the time it was painted over.
+            let marks: Vec<(KeyId, Rect)> = self
+                .timeline
+                .keys()
+                .map(|k| {
+                    let x0 = x_of(k.tick);
+                    let x1 = x_of(k.tick + self.timeline.span(k.id)).max(x0);
+                    let y = y_of(lane_of(&k.body));
+                    (
+                        k.id,
+                        Rect::from_min_max(pos2(x0 - 6.0, y - 6.0), pos2(x1 + 6.0, y + 6.0)),
+                    )
+                })
+                .collect();
+            let pointer = ui.input(|i| i.pointer.interact_pos());
+            let hit = |p: Pos2| marks.iter().rev().find(|(_, r)| r.contains(p)).map(|m| m.0);
+            let hovered = response.hover_pos().and_then(hit);
+            let busy = self.painting.is_some();
+
+            let origin = ui.input(|i| i.pointer.press_origin());
+            if response.drag_started()
+                && !busy
+                && let Some(p) = origin
+                && let Some(id) = hit(p)
             {
-                let f = ((p.x - rect.left()) / rect.width()).clamp(0.0, 1.0);
-                self.timeline.seek((f * end as f32).round() as Tick);
+                let tick = self.timeline.key(id).map_or(0, |k| k.tick);
+                self.selected = Some(id);
+                self.drag = Some(Drag {
+                    id,
+                    grab: p.x - x_of(tick),
+                    to: tick,
+                });
+            }
+            if let Some(drag) = &mut self.drag {
+                if let Some(p) = pointer {
+                    drag.to = tick_at(p.x - drag.grab);
+                }
+                if response.drag_stopped() || !response.dragged() {
+                    let (id, to) = (drag.id, drag.to);
+                    self.drag = None;
+                    self.timeline.move_key(id, to);
+                }
+            } else if response.clicked() && !busy {
+                self.selected = pointer.and_then(hit);
+                if self.selected.is_none()
+                    && let Some(p) = pointer
+                {
+                    self.timeline.set_playhead(tick_at(p.x));
+                    self.playing = false;
+                }
+            } else if response.dragged() && !busy && let Some(p) = pointer {
+                self.timeline.set_playhead(tick_at(p.x));
                 self.playing = false;
             }
+            if hovered.is_some() {
+                ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
+            }
+
             let p = ui.painter();
-            let y = rect.center().y + 4.0;
-            p.line_segment(
-                [pos2(rect.left(), y), pos2(rect.right(), y)],
-                Stroke::new(1.0, MUTED),
-            );
+            for (lane, name) in Brush::ALL
+                .iter()
+                .map(|b| b.name())
+                .chain(["rules"])
+                .enumerate()
+            {
+                let y = y_of(lane);
+                p.text(
+                    pos2(rect.left(), y),
+                    Align2::LEFT_CENTER,
+                    name,
+                    FontId::proportional(12.0),
+                    FAINT,
+                );
+                p.line_segment(
+                    [pos2(track.left(), y), pos2(track.right(), y)],
+                    Stroke::new(1.0, RULE_LINE),
+                );
+            }
+            let axis = track.bottom() + 2.0;
             for s in (0..=end).step_by(5 * TICKS_PER_SECOND as usize) {
                 let x = x_of(s);
-                p.line_segment([pos2(x, y), pos2(x, y + 5.0)], Stroke::new(1.0, FAINT));
+                p.line_segment(
+                    [pos2(x, track.top()), pos2(x, axis + 3.0)],
+                    Stroke::new(1.0, RULE_LINE),
+                );
                 p.text(
-                    pos2(x, y + 7.0),
+                    pos2(x, axis + 4.0),
                     Align2::CENTER_TOP,
                     format!("{}", s / TICKS_PER_SECOND),
                     FontId::proportional(11.0),
                     FAINT,
                 );
             }
-            // Keyframes: a dot per stroke in its brush's colour, a small
-            // diamond per rule switch (filled on, hollow off).
-            for key in self.timeline.keys() {
-                let x = x_of(key.tick);
-                match &key.body {
-                    Body::Stroke(s) => {
-                        p.circle_filled(pos2(x, y), 3.5, swatch(s.brush));
+
+            for k in self.timeline.keys() {
+                let dragged = self.drag.as_ref().filter(|d| d.id == k.id);
+                let tick = dragged.map_or(k.tick, |d| d.to);
+                let x0 = x_of(tick);
+                let x1 = x_of(tick + self.timeline.span(k.id)).max(x0);
+                let y = y_of(lane_of(&k.body));
+                let picked = self.selected == Some(k.id);
+                let hot = picked || hovered == Some(k.id);
+                if dragged.is_some() && tick != k.tick {
+                    // Where it was, until it's let go.
+                    p.circle_stroke(pos2(x_of(k.tick), y), 4.0, Stroke::new(1.0, FAINT));
+                }
+                match &k.body {
+                    Body::Stroke(st) => {
+                        let color = swatch(st.brush);
+                        if x1 - x0 > 1.0 {
+                            p.line_segment(
+                                [pos2(x0, y), pos2(x1, y)],
+                                Stroke::new(4.0, color.gamma_multiply(0.6)),
+                            );
+                        }
+                        p.circle_filled(pos2(x0, y), if hot { 5.5 } else { 4.0 }, color);
                     }
                     Body::Rule { on, .. } => {
-                        let c = pos2(x, y - 11.0);
+                        let r = if hot { 6.5 } else { 5.0 };
+                        let c = pos2(x0, y);
                         let pts = vec![
-                            c + vec2(0.0, -5.0),
-                            c + vec2(5.0, 0.0),
-                            c + vec2(0.0, 5.0),
-                            c + vec2(-5.0, 0.0),
+                            c + vec2(0.0, -r),
+                            c + vec2(r, 0.0),
+                            c + vec2(0.0, r),
+                            c + vec2(-r, 0.0),
                         ];
                         let fill = if *on { DOT } else { PAPER };
                         p.add(Shape::convex_polygon(pts, fill, Stroke::new(1.2, DOT)));
                     }
                 }
+                if picked {
+                    p.circle_stroke(pos2(x0, y), 8.5, Stroke::new(1.2, INK));
+                }
             }
+
             let x = x_of(now);
             p.line_segment(
-                [pos2(x, rect.top()), pos2(x, y + 4.0)],
+                [pos2(x, track.top() - 4.0), pos2(x, axis)],
                 Stroke::new(1.5, INK),
             );
-            p.circle_filled(pos2(x, rect.top()), 3.0, INK);
+            p.circle_filled(pos2(x, track.top() - 4.0), 3.0, INK);
+            if !self.timeline.caught_up() {
+                // How far the canvas has been worked out so far.
+                let shown = x_of(self.timeline.tick());
+                p.line_segment(
+                    [pos2(shown, track.top()), pos2(shown, axis)],
+                    Stroke::new(1.0, DOT),
+                );
+            }
+        });
+
+        // What the picked (or hovered) keyframe is, in words.
+        let about = self.selected.or(self.drag.as_ref().map(|d| d.id));
+        let line = about.and_then(|id| self.timeline.key(id)).map(|k| {
+            let at = k.tick as f32 / TICKS_PER_SECOND as f32;
+            let what = match &k.body {
+                Body::Stroke(s) => format!("{} stroke at {at:.2} s", s.brush.name()),
+                Body::Rule { rule, on } => format!(
+                    "“{}” switched {} at {at:.2} s",
+                    RULES[*rule].title,
+                    if *on { "on" } else { "off" }
+                ),
+            };
+            format!("{what}  ·  drag to move, delete to remove, esc to let go")
+        });
+        ui.horizontal(|ui| {
+            ui.add_space(24.0 + 120.0 + 64.0 + 8.0);
+            ui.label(
+                RichText::new(line.unwrap_or_default())
+                    .size(14.0)
+                    .color(MUTED),
+            );
         });
         ui.add_space(6.0);
     }
@@ -449,6 +619,7 @@ impl App {
         if response.drag_started_by(egui::PointerButton::Primary)
             && let Some(p) = response.interact_pointer_pos()
         {
+            self.selected = None;
             let id = self
                 .timeline
                 .begin_stroke(self.brush, self.radius, to_world(p));
@@ -478,6 +649,15 @@ impl App {
         );
 
         let state = self.timeline.state();
+        // With a keyframe picked, what it made stands out: a stroke's own
+        // particles, or everything a rule note's switch converted.
+        let focus = self
+            .selected
+            .and_then(|id| self.timeline.key(id))
+            .map(|k| match k.body {
+                Body::Stroke(_) => MadeBy::Key(k.id),
+                Body::Rule { rule, .. } => MadeBy::Rule(rule),
+            });
         let mut hard = Mesh::with_texture(self.hard.id());
         let mut soft = Mesh::with_texture(self.soft.id());
         let mut glow = Mesh::with_texture(self.soft.id());
@@ -487,11 +667,9 @@ impl App {
                     continue;
                 }
                 let (color, size, is_soft) = look(p);
-                let color = match (self.show, p.made_by) {
-                    (Show::All, _) | (Show::Mine, MadeBy::Key(_)) | (Show::Rules, MadeBy::Rule(_)) => {
-                        color
-                    }
-                    _ => color.gamma_multiply(0.1),
+                let color = match focus {
+                    Some(made_by) if p.made_by != made_by => color.gamma_multiply(0.12),
+                    _ => color,
                 };
                 let rect = Rect::from_center_size(to_screen(p.pos), Vec2::splat(size * 2.0 * scale));
                 let uv = Rect::from_min_max(Pos2::ZERO, pos2(1.0, 1.0));
@@ -636,7 +814,7 @@ fn look(p: &Particle) -> (Color32, f32, bool) {
             } else {
                 (mix([200, 64, 30], [130, 126, 120], ((a - 0.55) / 0.4).min(1.0)), 110.0)
             };
-            (rgba(c[0], c[1], c[2], alpha as u8), p.radius * (1.0 + a * 1.4), true)
+            (rgba(c[0], c[1], c[2], alpha as u8), p.radius * (1.25 + a * 1.4), true)
         }
         Material::Ash => {
             let c = mix([96, 94, 90], [140, 137, 131], shade);

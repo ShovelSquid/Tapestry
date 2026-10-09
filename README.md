@@ -36,9 +36,14 @@ while time runs. Materials have a nature: ink blots and dries and holds water li
 water pours and pools, trees sway and settle, fire burns its fuel. How materials act on each
 other comes only from the rule notes on the right. Click a note's dot to switch it on from
 the playhead on: fire sits among trees doing nothing until "Fire spreads to trees" is on.
-"Fire engulfs trees" says nothing definite, so it does nothing. The top bar dims everything
-but what you made, or what rules made. Space plays, the timeline scrubs (the canvas replays
-to that moment), ctrl+Z takes back the last keyframe.
+"Fire engulfs trees" says nothing definite, so it does nothing. Space plays, the timeline
+scrubs (the canvas replays to that moment).
+
+The timeline has a lane per brush and one for rule switches. Click a keyframe to pick it
+(what it made stays bright on the canvas), drag it to another time, delete to remove it;
+ctrl+Z takes back the last add, move or delete. A scene heavier than real time plays in
+slow motion rather than freezing; `cargo run --release -p tapestry-canvas --example stress`
+times a big forest fire.
 
 ## The dungeon (first demo)
 

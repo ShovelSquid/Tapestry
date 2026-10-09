@@ -193,5 +193,66 @@ fn undo_takes_back_the_last_keyframe() {
     );
     assert_ne!(t.state().fingerprint(), before);
     t.undo();
+    t.seek(120);
     assert_eq!(t.state().fingerprint(), before);
+}
+
+#[test]
+fn a_deleted_keyframe_is_as_if_never_made() {
+    let mut never = forest();
+    never.seek(300);
+
+    let mut t = forest();
+    t.seek(60);
+    let ink = line(
+        &mut t,
+        Brush::Ink,
+        5.0,
+        Vec2::new(10.0, 10.0),
+        Vec2::new(90.0, 10.0),
+    );
+    t.seek(300);
+    assert_ne!(t.state().fingerprint(), never.state().fingerprint());
+    t.remove(ink);
+    t.seek(300);
+    assert_eq!(t.state().fingerprint(), never.state().fingerprint());
+
+    // And undoing the delete brings it back exactly.
+    let mut kept = forest();
+    kept.seek(60);
+    line(
+        &mut kept,
+        Brush::Ink,
+        5.0,
+        Vec2::new(10.0, 10.0),
+        Vec2::new(90.0, 10.0),
+    );
+    kept.seek(300);
+    t.undo();
+    t.seek(300);
+    assert_eq!(t.state().fingerprint(), kept.state().fingerprint());
+}
+
+#[test]
+fn moving_the_fire_moves_when_the_forest_burns() {
+    let mut t = forest();
+    t.set_rule(0, true);
+    let fire = t
+        .keys()
+        .find(|k| matches!(&k.body, Body::Stroke(s) if s.brush == Brush::Fire))
+        .unwrap()
+        .id;
+    t.seek(180);
+    let standing = t.state().count(Material::Tree);
+    assert!(standing < 900, "burning by 3 s");
+
+    // Light the fire at 2 s instead: at 3 s far fewer trees have caught.
+    t.move_key(fire, 120);
+    t.seek(180);
+    assert!(t.state().count(Material::Tree) > standing);
+    assert_eq!(t.key(fire).unwrap().tick, 120);
+
+    t.undo();
+    t.seek(180);
+    assert_eq!(t.state().count(Material::Tree), standing);
 }

@@ -23,10 +23,11 @@ fn cell_of(p: Vec2) -> (usize, usize) {
 }
 
 impl Grid {
-    pub fn build(&mut self, positions: impl Iterator<Item = Vec2> + Clone) {
+    /// File each `(index, position)` under its cell.
+    pub fn build(&mut self, items: impl Iterator<Item = (u32, Vec2)> + Clone) {
         self.start.clear();
         self.start.resize(COLS * ROWS + 1, 0);
-        for p in positions.clone() {
+        for (_, p) in items.clone() {
             let (c, r) = cell_of(p);
             self.start[r * COLS + c + 1] += 1;
         }
@@ -36,24 +37,36 @@ impl Grid {
         let mut fill = self.start.clone();
         self.order.clear();
         self.order.resize(*self.start.last().unwrap() as usize, 0);
-        for (i, p) in positions.enumerate() {
+        for (i, p) in items {
             let (c, r) = cell_of(p);
             let slot = &mut fill[r * COLS + c];
-            self.order[*slot as usize] = i as u32;
+            self.order[*slot as usize] = i;
             *slot += 1;
         }
     }
 
-    /// Every particle index in the 3×3 cells around `p`, in a fixed order.
+    /// Every index in the 3×3 cells around `p`, in a fixed order.
     pub fn near(&self, p: Vec2, out: &mut Vec<u32>) {
         out.clear();
+        for run in self.runs(p) {
+            out.extend_from_slice(run);
+        }
+    }
+
+    /// Whether any index in the 3×3 cells around `p` passes `test`. Stops at
+    /// the first, which matters in a crowd.
+    pub fn any_near(&self, p: Vec2, mut test: impl FnMut(u32) -> bool) -> bool {
+        self.runs(p).any(|run| run.iter().any(|&i| test(i)))
+    }
+
+    /// The three row runs of the 3×3 cells around `p`.
+    fn runs(&self, p: Vec2) -> impl Iterator<Item = &[u32]> {
         let (c, r) = cell_of(p);
-        for rr in r.saturating_sub(1)..=(r + 1).min(ROWS - 1) {
+        (r.saturating_sub(1)..=(r + 1).min(ROWS - 1)).map(move |rr| {
             let row = rr * COLS;
             let lo = row + c.saturating_sub(1);
             let hi = row + (c + 1).min(COLS - 1);
-            let (a, b) = (self.start[lo] as usize, self.start[hi + 1] as usize);
-            out.extend_from_slice(&self.order[a..b]);
-        }
+            &self.order[self.start[lo] as usize..self.start[hi + 1] as usize]
+        })
     }
 }

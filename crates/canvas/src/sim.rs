@@ -24,6 +24,8 @@ const BLOT_TICKS: Tick = 30;
 const DRY_TICKS: Tick = 180;
 /// Ink wetter than this flows.
 const FLOWING: f32 = 0.05;
+/// Ash resting this many ticks in a row settles for good.
+const ASLEEP: u8 = 30;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Material {
@@ -77,6 +79,9 @@ pub struct Particle {
     pub home: Vec2,
     pub trunk: bool,
     pub made_by: MadeBy,
+    /// Ticks spent resting on something. Ash that rests long enough stops
+    /// being simulated and becomes part of the ground.
+    rest: u8,
     dead: bool,
 }
 
@@ -96,6 +101,7 @@ impl Particle {
             home: Vec2::ZERO,
             trunk: false,
             made_by,
+            rest: 0,
             dead: false,
         }
     }
@@ -116,16 +122,33 @@ impl Particle {
 
     /// Things that fall, pour and pile: they push each other apart.
     fn fluid(&self) -> bool {
-        matches!(self.material, Material::Water | Material::Ash) || self.flowing_ink()
+        match self.material {
+            Material::Water => true,
+            Material::Ash => self.rest < ASLEEP,
+            _ => self.flowing_ink(),
+        }
     }
 
-    /// Ink at rest is a wall to everything that pours.
+    /// Ink at rest is a wall to everything that pours, and so is ash that
+    /// has settled into a pile.
     fn solid(&self) -> bool {
-        self.material == Material::Ink && !self.flowing_ink()
+        match self.material {
+            Material::Ink => !self.flowing_ink(),
+            Material::Ash => self.rest >= ASLEEP,
+            _ => false,
+        }
+    }
+
+    /// Takes part in physics at all (flames, fire and trees don't).
+    fn physical(&self) -> bool {
+        self.fluid() || self.solid()
     }
 
     fn solid_radius(&self) -> f32 {
-        (self.radius * 0.6).min(7.0)
+        match self.material {
+            Material::Ash => WATER_RADIUS * 0.9,
+            _ => (self.radius * 0.6).min(7.0),
+        }
     }
 }
 
@@ -154,7 +177,11 @@ pub struct State {
     pub trees: Vec<Tree>,
     /// Which rule notes are switched on, by index into [`RULES`].
     pub rules_on: Vec<bool>,
+    /// Everything, for rules.
     grid: Grid,
+    /// Only what pours or blocks, for physics: flames and trees stay out of
+    /// the way.
+    solids: Grid,
 }
 
 impl State {
@@ -166,9 +193,15 @@ impl State {
             trees: Vec::new(),
             rules_on: vec![false; RULES.len()],
             grid: Grid::default(),
+            solids: Grid::default(),
         };
         s.apply_keys(script);
         s
+    }
+
+    /// Particles physics still has to move (not settled, not hung in trees).
+    pub fn active(&self) -> usize {
+        self.particles.iter().filter(|p| p.fluid()).count()
     }
 
     pub fn count(&self, material: Material) -> usize {
@@ -192,7 +225,9 @@ impl State {
     /// One tick: physics, rules, nature, then any keyframes at the new tick.
     pub(crate) fn step(&mut self, script: &[Entry]) {
         self.tick += 1;
-        self.grid.build(self.particles.iter().map(|p| p.pos));
+        let indexed = self.particles.iter().enumerate().map(|(i, p)| (i as u32, p.pos));
+        self.solids
+            .build(indexed.filter(|&(i, _)| self.particles[i as usize].physical()));
 
         for t in &mut self.trees {
             t.spin += (-28.0 * t.angle - 1.6 * t.spin) * DT;
@@ -217,6 +252,13 @@ impl State {
                 p.vel = (moved[i] - prev[i] + pushed * 0.35) / DT;
                 if touched[i] {
                     p.vel *= 0.5;
+                }
+                if p.material == Material::Ash {
+                    let resting = touched[i] && p.vel.length_squared() < 30.0 * 30.0;
+                    p.rest = if resting { p.rest + 1 } else { 0 };
+                    if p.rest >= ASLEEP {
+                        p.vel = Vec2::ZERO;
+                    }
                 }
             }
         }
@@ -273,7 +315,7 @@ impl State {
             }
             let (pos, reach) = (p.pos, p.radius * 0.5);
             let mut push = disk(p.id, p.age as u64) * 0.3;
-            self.grid.near(pos, &mut near);
+            self.solids.near(pos, &mut near);
             for &j in &near {
                 let q = &self.particles[j as usize];
                 if j as usize == i || q.material != Material::Ink {
@@ -301,7 +343,7 @@ impl State {
             if !self.particles[i].fluid() {
                 continue;
             }
-            self.grid.near(self.particles[i].pos, &mut near);
+            self.solids.near(self.particles[i].pos, &mut near);
             for &j in &near {
                 let j = j as usize;
                 if j <= i || !self.particles[j].fluid() {
@@ -334,7 +376,7 @@ impl State {
             if p.fluid() {
                 let mut pos = p.pos;
                 let before = prev.get(i).copied().unwrap_or(pos);
-                self.grid.near(pos, &mut near);
+                self.solids.near(pos, &mut near);
                 for &j in &near {
                     let q = &self.particles[j as usize];
                     if !q.solid() {
@@ -372,7 +414,11 @@ impl State {
     }
 
     fn apply_rules(&mut self) {
-        let mut near = Vec::new();
+        if !self.rules_on.iter().any(|&on| on) {
+            return;
+        }
+        self.grid
+            .build(self.particles.iter().enumerate().map(|(i, p)| (i as u32, p.pos)));
         let mut hits = Vec::new();
         for (rule, note) in RULES.iter().enumerate() {
             let Some(basics) = note.basics else { continue };
@@ -393,8 +439,7 @@ impl State {
                             if p.dead || p.material != who {
                                 continue;
                             }
-                            self.grid.near(p.pos, &mut near);
-                            let touched = near.iter().any(|&j| {
+                            let touched = self.grid.any_near(p.pos, |j| {
                                 let q = &self.particles[j as usize];
                                 !q.dead
                                     && of.contains(&q.material)
@@ -437,7 +482,7 @@ impl State {
             match p.material {
                 Material::Fire => {
                     p.fuel -= DT;
-                    if (p.age + (p.id % 4) as Tick).is_multiple_of(4) {
+                    if (p.age + (p.id % 6) as Tick).is_multiple_of(6) {
                         let id = mix(p.id, p.age as u64);
                         let mut f = Particle::new(
                             id,
