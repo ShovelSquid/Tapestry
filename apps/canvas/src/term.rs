@@ -9,12 +9,14 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use eframe::egui;
-use egui::{Color32, FontId, Rect, Stroke, pos2, vec2};
+use egui::{Color32, FontId, Pos2, Rect, Stroke, pos2, vec2};
 use portable_pty::{Child, CommandBuilder, MasterPty, PtySize, native_pty_system};
 
 use crate::{FAINT, INK};
 
 const SCROLLBACK: usize = 5000;
+/// Points of wheel travel per line scrolled.
+const WHEEL_LINE: f32 = 8.0;
 
 #[derive(Clone, Copy, PartialEq)]
 struct Style {
@@ -33,6 +35,12 @@ pub struct Terminal {
     child: Box<dyn Child + Send + Sync>,
     exited: Arc<AtomicBool>,
     size: (u16, u16),
+    /// Where the grid was last drawn and its cell size, to find the cell
+    /// under the pointer.
+    grid: Option<(Pos2, f32, f32)>,
+    /// Wheel travel not yet worth a whole line, so slow trackpad scrolling
+    /// adds up instead of rounding away each frame.
+    wheel_rest: f32,
 }
 
 impl Terminal {
@@ -87,6 +95,8 @@ impl Terminal {
             child,
             exited,
             size: (rows, cols),
+            grid: None,
+            wheel_rest: 0.0,
         })
     }
 
@@ -121,6 +131,8 @@ impl Terminal {
     }
 
     pub fn send(&mut self, bytes: &[u8]) {
+        // Typing returns to the live screen, as any terminal does.
+        self.parser.lock().unwrap().screen_mut().set_scrollback(0);
         let _ = self.writer.write_all(bytes);
         let _ = self.writer.flush();
     }
@@ -165,12 +177,71 @@ impl Terminal {
         }
     }
 
-    /// Scroll back through history (positive: further back).
-    pub fn scroll(&mut self, lines: i32) {
-        let mut p = self.parser.lock().unwrap();
-        let s = p.screen_mut();
-        let now = s.scrollback() as i32;
-        s.set_scrollback((now + lines).max(0) as usize);
+    /// Wheel travel in points (positive: up, further back), with the pointer.
+    ///
+    /// Where it goes depends on what's running, as in any terminal: a program
+    /// that asked for the mouse gets wheel reports; a full-screen program on
+    /// the alternate screen (which has no history) gets arrow keys; otherwise
+    /// it scrolls back through history.
+    pub fn wheel(&mut self, dy: f32, pointer: Option<Pos2>) {
+        self.wheel_rest += dy / WHEEL_LINE;
+        let lines = self.wheel_rest.trunc() as i32;
+        if lines == 0 {
+            return;
+        }
+        self.wheel_rest -= lines as f32;
+        let (mode, encoding, alternate, app_cursor) = {
+            let p = self.parser.lock().unwrap();
+            let s = p.screen();
+            (
+                s.mouse_protocol_mode(),
+                s.mouse_protocol_encoding(),
+                s.alternate_screen(),
+                s.application_cursor(),
+            )
+        };
+        let up = lines > 0;
+        let n = lines.unsigned_abs().min(50);
+        if mode != vt100::MouseProtocolMode::None {
+            let (col, row) = self.cell_at(pointer);
+            let report = wheel_report(up, col, row, encoding);
+            for _ in 0..n {
+                self.write_raw(&report);
+            }
+        } else if alternate {
+            let arrow: &[u8] = match (up, app_cursor) {
+                (true, true) => b"\x1bOA",
+                (true, false) => b"\x1b[A",
+                (false, true) => b"\x1bOB",
+                (false, false) => b"\x1b[B",
+            };
+            for _ in 0..n {
+                self.write_raw(arrow);
+            }
+        } else {
+            let mut p = self.parser.lock().unwrap();
+            let s = p.screen_mut();
+            let now = s.scrollback() as i32;
+            s.set_scrollback((now + lines).max(0) as usize);
+        }
+    }
+
+    /// Send without leaving history: for wheel reports, not typing.
+    fn write_raw(&mut self, bytes: &[u8]) {
+        let _ = self.writer.write_all(bytes);
+        let _ = self.writer.flush();
+    }
+
+    /// The 1-based (column, row) under `pointer`, clamped to the grid.
+    fn cell_at(&self, pointer: Option<Pos2>) -> (u16, u16) {
+        let (rows, cols) = self.size;
+        match (self.grid, pointer) {
+            (Some((origin, cw, ch)), Some(p)) => (
+                (((p.x - origin.x) / cw).floor().max(0.0) as u16 + 1).min(cols),
+                (((p.y - origin.y) / ch).floor().max(0.0) as u16 + 1).min(rows),
+            ),
+            _ => (1, 1),
+        }
     }
 
     /// Draw the screen into `rect`, fitting the terminal's size to it.
@@ -178,6 +249,7 @@ impl Terminal {
         let font = FontId::monospace(size);
         let cell = painter.layout_no_wrap("M".into(), font.clone(), INK).size();
         let (cw, ch) = (cell.x.max(1.0), cell.y.max(1.0));
+        self.grid = Some((rect.min, cw, ch));
         let rows = (rect.height() / ch).floor() as u16;
         let cols = (rect.width() / cw).floor() as u16;
         self.resize(rows, cols);
@@ -347,6 +419,26 @@ fn key_bytes(key: egui::Key, m: egui::Modifiers, app_cursor: bool) -> Option<Vec
 }
 
 /// Terminal colours, tuned to read on paper.
+/// One wheel notch as an xterm mouse report (button 64 up, 65 down).
+fn wheel_report(up: bool, col: u16, row: u16, encoding: vt100::MouseProtocolEncoding) -> Vec<u8> {
+    let button: u32 = if up { 64 } else { 65 };
+    match encoding {
+        vt100::MouseProtocolEncoding::Sgr => format!("\x1b[<{button};{col};{row}M").into_bytes(),
+        vt100::MouseProtocolEncoding::Utf8 => {
+            let mut out = b"\x1b[M".to_vec();
+            for v in [button + 32, col as u32 + 32, row as u32 + 32] {
+                let c = char::from_u32(v).unwrap_or(' ');
+                out.extend_from_slice(c.encode_utf8(&mut [0; 4]).as_bytes());
+            }
+            out
+        }
+        vt100::MouseProtocolEncoding::Default => {
+            let byte = |v: u32| (v + 32).min(255) as u8;
+            vec![0x1b, b'[', b'M', byte(button), byte(col as u32), byte(row as u32)]
+        }
+    }
+}
+
 fn color(c: vt100::Color, default: Color32) -> Color32 {
     const BASE: [[u8; 3]; 16] = [
         [0x16, 0x19, 0x1b],

@@ -495,7 +495,7 @@ impl Ide {
             if scroll != 0.0
                 && let Some(t) = self.terminals.iter_mut().find(|t| t.id == id)
             {
-                t.scroll((scroll / 8.0).round() as i32);
+                t.wheel(scroll, ui.input(|i| i.pointer.hover_pos()));
             }
         } else if let Some(p) = response.hover_pos() {
             let scroll = ui.input(|i| i.smooth_scroll_delta.y);
@@ -791,7 +791,7 @@ impl Ide {
                     let over = ui.input(|i| i.pointer.hover_pos()).is_some_and(|p| body.contains(p));
                     let scroll = ui.input(|i| i.smooth_scroll_delta.y);
                     if over && scroll != 0.0 {
-                        term.scroll((scroll / 8.0).round() as i32);
+                        term.wheel(scroll, ui.input(|i| i.pointer.hover_pos()));
                     }
                     term.take_input(ui);
                 } else {
