@@ -76,13 +76,20 @@ impl Timeline {
         &self.rules
     }
 
-    /// Swap in rule notes as they now read. If anything changed, the whole
-    /// canvas replays under them (catching up as usual).
+    /// Swap in rule notes as they now read. If what they do changed, the
+    /// whole canvas replays under them (catching up as usual); a change to
+    /// titles or prose alone replays nothing.
     pub fn set_rules(&mut self, rules: Rulebook) {
-        if rules == self.rules {
+        let same = rules.notes.len() == self.rules.notes.len()
+            && rules
+                .notes
+                .iter()
+                .zip(&self.rules.notes)
+                .all(|(a, b)| a.name == b.name && a.basics == b.basics);
+        self.rules = rules;
+        if same {
             return;
         }
-        self.rules = rules;
         self.checkpoints.clear();
         self.invalidate(0);
         self.restore(0);

@@ -1,10 +1,15 @@
 //! Prose to rule lines, as you write.
 //!
 //! While a rule note is open, a moment after you stop typing its title and
-//! prose go to Claude, and the rule lines that come back replace the note's
-//! own, checked by the parser first. It runs the `claude` command, so it uses
-//! whatever Claude Code is signed in as: there's no key to set. Write rule
-//! lines yourself and it stops, so it never overwrites your hand.
+//! prose go to a model, and the rule lines that come back replace the note's
+//! own, checked by the parser first. Write rule lines yourself and it stops,
+//! so it never overwrites your hand.
+//!
+//! By default the model is local: a small one on Ollama, held to a JSON
+//! schema built from the basic rules, so it can only name materials,
+//! properties and rules that exist. `TAPESTRY_MODEL` picks another Ollama
+//! model; `TAPESTRY_TRANSLATE=claude` uses the `claude` command instead
+//! (whatever Claude Code is signed in as).
 
 use std::io::Read;
 use std::path::PathBuf;
@@ -14,14 +19,19 @@ use std::time::{Duration, Instant};
 
 use eframe::egui;
 use egui::{FontId, RichText};
-use tapestry_canvas::{RuleNote, grammar, is_rule_line};
+use serde_json::{Value as Json, json};
+use tapestry_canvas::{Material, Prop, RuleNote, grammar, is_rule_line};
 
 use crate::{DOT, FAINT, MUTED};
 
 /// How long typing has to pause before the prose is sent.
 const PAUSE: f64 = 1.0;
-/// Fast enough to keep up with typing; the grammar is small.
-const MODEL: &str = "haiku";
+/// The Claude model, when translating with Claude: fast enough to keep up
+/// with typing.
+const CLAUDE_MODEL: &str = "haiku";
+/// The local model: small, and good at this with the schema holding it.
+const LOCAL_MODEL: &str = "qwen3:4b";
+const OLLAMA: &str = "http://localhost:11434";
 const TIMEOUT: Duration = Duration::from_secs(60);
 /// Comments a translation adds about what isn't built start with this, so
 /// the next translation can replace them.
@@ -58,6 +68,7 @@ pub struct Translator {
 
 impl Translator {
     pub fn new(source: &str) -> Self {
+        warm_up();
         let prose = prose(source);
         let lines = rule_lines(source);
         Self {
@@ -164,7 +175,7 @@ impl Translator {
                 (_, false) => ("translating is off: the rule lines are yours".to_owned(), FAINT),
                 (Status::Waiting, _) => ("translating when you pause…".to_owned(), FAINT),
                 (Status::Translating, _) => ("translating…".to_owned(), FAINT),
-                (Status::Done, _) => ("translated from your prose".to_owned(), FAINT),
+                (Status::Done, _) => (format!("translated from your prose by {}", backend()), FAINT),
                 (Status::Failed(e), _) => (format!("couldn't translate: {e}"), DOT),
                 (Status::Idle, _) => ("translates as you write".to_owned(), FAINT),
             };
@@ -240,8 +251,235 @@ fn spawn(prose: String, current: Vec<String>, ctx: &egui::Context) -> mpsc::Rece
     rx
 }
 
-/// Ask once; if a line doesn't read, ask again with what the parser said.
 fn translate(prose: &str, current: &[String]) -> Reply {
+    match backend() {
+        Backend::Claude => translate_with_claude(prose, current),
+        Backend::Local(model) => translate_locally(&model, prose, current),
+    }
+}
+
+enum Backend {
+    Local(String),
+    Claude,
+}
+
+fn backend() -> Backend {
+    if std::env::var("TAPESTRY_TRANSLATE").is_ok_and(|v| v == "claude") {
+        Backend::Claude
+    } else {
+        Backend::Local(std::env::var("TAPESTRY_MODEL").unwrap_or_else(|_| LOCAL_MODEL.into()))
+    }
+}
+
+impl std::fmt::Display for Backend {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Backend::Local(model) => write!(f, "{model}"),
+            Backend::Claude => write!(f, "Claude"),
+        }
+    }
+}
+
+/// Load the local model while the author is still reading the note, so the
+/// first translation doesn't wait for it.
+fn warm_up() {
+    if let Backend::Local(model) = backend() {
+        std::thread::spawn(move || {
+            let _ = agent()
+                .post(&format!("{OLLAMA}/api/generate"))
+                .send_json(json!({ "model": model, "keep_alive": "30m" }));
+        });
+    }
+}
+
+fn agent() -> ureq::Agent {
+    ureq::Agent::config_builder()
+        .http_status_as_error(false)
+        .timeout_global(Some(TIMEOUT))
+        .build()
+        .into()
+}
+
+/// One rule as the local model gives it: the basic rules' words as fields,
+/// with every material and property an enum, so it can't name one that
+/// doesn't exist.
+fn schema() -> Json {
+    let materials: Vec<&str> = Material::ALL.iter().map(|m| m.name()).collect();
+    let mut becomes = materials.clone();
+    becomes.push("nothing");
+    let props: Vec<&str> = Prop::ALL.iter().map(|p| p.name()).collect();
+    json!({
+        "type": "object",
+        "properties": {
+            "rules": { "type": "array", "items": { "anyOf": [
+                {
+                    "type": "object",
+                    "properties": {
+                        "rule": { "enum": ["change"] },
+                        "who": { "enum": materials },
+                        "prop": { "enum": props },
+                        "rate_per_second": { "type": "number" },
+                        "within": { "type": "number" },
+                        "of": { "type": "array", "items": { "enum": materials }, "minItems": 1 }
+                    },
+                    "required": ["rule", "who", "prop", "rate_per_second", "within", "of"]
+                },
+                {
+                    "type": "object",
+                    "properties": {
+                        "rule": { "enum": ["convert"] },
+                        "who": { "enum": materials },
+                        "to": { "enum": becomes },
+                        "when": { "enum": props },
+                        "reaches": { "type": "number" },
+                        "spread_percent": { "type": "number" }
+                    },
+                    "required": ["rule", "who", "to", "when", "reaches", "spread_percent"]
+                }
+            ]}},
+            "needs": { "type": "array", "items": { "type": "string" } }
+        },
+        "required": ["rules", "needs"]
+    })
+}
+
+fn local_system() -> String {
+    let names = |v: Vec<&str>| v.join(", ");
+    format!(
+        "You translate an author's plain-language rule for a particle canvas into rules \
+the canvas runs.
+
+There are two kinds of rule:
+- change: while a <who> is within <within> canvas units of any material in <of>, its \
+property <prop> changes by <rate_per_second> each second.
+- convert: when a <who>'s property <when> reaches <reaches>, it becomes <to> \
+(\"nothing\" makes it vanish). spread_percent varies each particle's threshold \
+(use 30-60) so a crowd doesn't turn all at once.
+
+Materials: {materials}. Properties: {props}. Properties start at 0 and only change \
+rules move them.
+
+What materials do on their own: ink blots and dries (wet ink flows); water falls and \
+pools; trees hang and sway; fire burns its fuel for a few seconds giving off flames, \
+then becomes ash; flames rise and die within a second; ash falls and piles. How \
+materials act on each other comes only from rules.
+
+Most effects are a pair: a change that builds a property near something, then a \
+convert when it's high enough. To make something vanish, build its own property and \
+convert it to nothing. Make the rules about the thing the prose is about.
+
+Numbers that work: \"near\" or \"touching\" is within 8-20. Rates reach the \
+threshold in 0.3-2 seconds. Example, \"A tree near fire heats up and catches\":
+{{\"rules\":[{{\"rule\":\"change\",\"who\":\"tree\",\"prop\":\"heat\",\"rate_per_second\":1.5,\"within\":18,\"of\":[\"fire\",\"flame\"]}},{{\"rule\":\"convert\",\"who\":\"tree\",\"to\":\"fire\",\"when\":\"heat\",\"reaches\":1,\"spread_percent\":60}}],\"needs\":[]}}
+
+If the prose asks for something not listed here (another material, property or kind \
+of rule), say what in \"needs\", in a few words.",
+        materials = names(Material::ALL.iter().map(|m| m.name()).collect()),
+        props = names(Prop::ALL.iter().map(|p| p.name()).collect()),
+    )
+}
+
+fn translate_locally(model: &str, prose: &str, current: &[String]) -> Reply {
+    let mut ask = prose.to_owned();
+    if !current.is_empty() {
+        ask.push_str(
+            "\n\nThe note's rules so far, as rule lines (keep any that still fit the \
+             prose, with the same numbers):\n",
+        );
+        ask.push_str(&current.join("\n"));
+    }
+    let body = json!({
+        "model": model,
+        "stream": false,
+        "think": false,
+        "keep_alive": "30m",
+        "format": schema(),
+        "options": { "temperature": 0 },
+        "messages": [
+            { "role": "system", "content": local_system() },
+            { "role": "user", "content": ask }
+        ]
+    });
+    let mut response = agent()
+        .post(&format!("{OLLAMA}/api/chat"))
+        .send_json(&body)
+        .map_err(|_| "Ollama isn't running (open the Ollama app)".to_owned())?;
+    let status = response.status();
+    let reply: Json = response
+        .body_mut()
+        .read_json()
+        .map_err(|e| format!("Ollama sent something odd: {e}"))?;
+    if !status.is_success() {
+        let msg = reply["error"].as_str().unwrap_or("unknown error");
+        if msg.contains("not found") {
+            return Err(format!("run `ollama pull {model}` first"));
+        }
+        return Err(format!("Ollama: {msg}"));
+    }
+    let content = reply["message"]["content"].as_str().unwrap_or("");
+    let out: Json =
+        serde_json::from_str(content).map_err(|e| format!("{model} sent bad JSON: {e}"))?;
+    let lines = from_json(&out);
+    // The schema keeps the words right; anything that still doesn't read
+    // (an odd number) is left out rather than written into the note.
+    Ok(lines
+        .into_iter()
+        .filter(|l| l.starts_with("//") || RuleNote::parse("draft", l).problems.is_empty())
+        .collect())
+}
+
+/// The local model's rules, as rule lines and notes on what's missing.
+fn from_json(out: &Json) -> Vec<String> {
+    let s = |v: &Json| v.as_str().unwrap_or("").to_owned();
+    let n = |v: &Json| v.as_f64().unwrap_or(0.0) as f32;
+    let mut lines = Vec::new();
+    // Changes first, then the converts they lead to: how a note reads.
+    let mut rules: Vec<&Json> = out["rules"].as_array().into_iter().flatten().collect();
+    rules.sort_by_key(|r| r["rule"] != "change");
+    for r in rules {
+        match r["rule"].as_str() {
+            Some("change") => {
+                let of: Vec<String> =
+                    r["of"].as_array().into_iter().flatten().map(s).collect();
+                lines.push(format!(
+                    "change {} {} {:+}/s within {} of {}",
+                    s(&r["who"]),
+                    s(&r["prop"]),
+                    n(&r["rate_per_second"]),
+                    n(&r["within"]),
+                    of.join(" or ")
+                ));
+            }
+            Some("convert") => {
+                let mut line = format!(
+                    "convert {} to {} at {} {}",
+                    s(&r["who"]),
+                    s(&r["to"]),
+                    s(&r["when"]),
+                    n(&r["reaches"])
+                );
+                let spread = n(&r["spread_percent"]).round();
+                if spread > 0.0 {
+                    line.push_str(&format!(" ±{spread}%"));
+                }
+                lines.push(line);
+            }
+            _ => {}
+        }
+    }
+    let materials: Vec<&str> = Material::ALL.iter().map(|m| m.name()).collect();
+    for need in out["needs"].as_array().into_iter().flatten() {
+        let need = need.as_str().unwrap_or("").trim();
+        // Small models sometimes "need" a thing that's already here.
+        if !need.is_empty() && !materials.contains(&need) {
+            lines.push(format!("{NEEDS} {need}"));
+        }
+    }
+    lines
+}
+
+/// Ask once; if a line doesn't read, ask again with what the parser said.
+fn translate_with_claude(prose: &str, current: &[String]) -> Reply {
     let mut ask = prose.to_owned();
     if !current.is_empty() {
         ask.push_str(
@@ -323,7 +561,7 @@ expressed, reply with only such lines.",
 fn claude(ask: &str) -> Result<String, String> {
     let bin = find_claude().ok_or("no claude command found")?;
     let mut child = Command::new(bin)
-        .args(["-p", "--model", MODEL, "--tools", "", "--no-session-persistence"])
+        .args(["-p", "--model", CLAUDE_MODEL, "--tools", "", "--no-session-persistence"])
         .arg("--strict-mcp-config")
         .arg("--system-prompt")
         .arg(system())
@@ -404,6 +642,29 @@ mod tests {
             clean(reply),
             ["change ink wet +3/s within 10 of water", "// needs: a weight property"]
         );
+    }
+
+    #[test]
+    fn local_rules_become_rule_lines_that_read() {
+        let out = json!({
+            "rules": [
+                { "rule": "convert", "who": "tree", "to": "nothing", "when": "heat",
+                  "reaches": 1, "spread_percent": 60 },
+                { "rule": "change", "who": "tree", "prop": "heat", "rate_per_second": 1.5,
+                  "within": 18, "of": ["fire", "flame"] }
+            ],
+            "needs": ["a smoke material", "ash"]
+        });
+        let lines = from_json(&out);
+        assert_eq!(
+            lines,
+            [
+                "change tree heat +1.5/s within 18 of fire or flame",
+                "convert tree to nothing at heat 1 ±60%",
+                "// needs: a smoke material",
+            ]
+        );
+        assert!(RuleNote::parse("t", &lines.join("\n")).problems.is_empty());
     }
 
     #[test]

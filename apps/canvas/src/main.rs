@@ -189,11 +189,20 @@ impl TabViewer for Tabs<'_> {
     }
 }
 
-enum NoteAction {
-    Edit,
-    Save,
-    Cancel,
+/// A rule note open for editing. It saves itself as you write.
+struct Editing {
+    name: String,
+    text: String,
+    /// The text as last written to disk.
+    saved: String,
+    /// When the text last changed, to save once typing pauses.
+    changed_at: f64,
+    /// Give the editor the keyboard on its first frame.
+    focus: bool,
 }
+
+/// How long typing pauses before a note saves itself.
+const AUTOSAVE: f64 = 0.4;
 
 struct App {
     timeline: Timeline,
@@ -204,8 +213,7 @@ struct App {
     ide: ide::Ide,
     /// The world folder: rule notes live in `rules/` inside it.
     world: std::path::PathBuf,
-    /// A rule note open for editing: its name and the text so far.
-    editing: Option<(String, String)>,
+    editing: Option<Editing>,
     /// Turns the open note's prose into rule lines as it's written.
     translator: Option<translate::Translator>,
     last_poll: f64,
@@ -460,8 +468,8 @@ impl App {
         let notes = self.timeline.rules().notes.clone();
         for note in &notes {
             let on = self.timeline.rule_on(&note.name);
-            let editing = self.editing.as_ref().is_some_and(|(n, _)| *n == note.name);
-            let mut action = None;
+            let editing = self.editing.as_ref().is_some_and(|e| e.name == note.name);
+            let now = ui.input(|i| i.time);
             let card = egui::Frame::new()
                 .fill(SHEET)
                 .stroke(Stroke::new(1.5, if on { INK } else { MUTED }))
@@ -469,21 +477,7 @@ impl App {
                 .inner_margin(egui::Margin::symmetric(16, 12))
                 .show(ui, |ui| {
                     ui.set_width(ui.available_width());
-                    ui.horizontal(|ui| {
-                        ui.label(RichText::new(&note.title).font(title(19.0)));
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if editing {
-                                if quiet_link(ui, "save", true).clicked() {
-                                    action = Some(NoteAction::Save);
-                                }
-                                if quiet_link(ui, "cancel", false).clicked() {
-                                    action = Some(NoteAction::Cancel);
-                                }
-                            } else if quiet_link(ui, "edit", false).clicked() {
-                                action = Some(NoteAction::Edit);
-                            }
-                        });
-                    });
+                    ui.label(RichText::new(&note.title).font(title(19.0)));
                     let r = ui.max_rect();
                     let y = ui.cursor().top() + 2.0;
                     ui.painter().line_segment(
@@ -491,22 +485,31 @@ impl App {
                         Stroke::new(1.2, INK),
                     );
                     ui.add_space(8.0);
-                    if editing && let Some((_, text)) = &mut self.editing {
-                        if let Some(tr) = &mut self.translator {
-                            tr.frame(text, ui.input(|i| i.time), ui.ctx());
+                    if editing && let Some(ed) = &mut self.editing {
+                        if let Some(tr) = &mut self.translator
+                            && tr.frame(&mut ed.text, now, ui.ctx())
+                        {
+                            ed.changed_at = now;
                         }
                         let id = ui.make_persistent_id(("rule-editor", &note.name));
-                        edit::keys(ui, id, text, Some("//"));
-                        ui.add(
-                            egui::TextEdit::multiline(text)
+                        edit::keys(ui, id, &mut ed.text, Some("//"));
+                        let response = ui.add(
+                            egui::TextEdit::multiline(&mut ed.text)
                                 .id(id)
                                 .font(FontId::monospace(13.0))
                                 .desired_width(f32::INFINITY)
                                 .desired_rows(6)
                                 .frame(egui::Frame::NONE),
                         );
+                        if response.changed() {
+                            ed.changed_at = now;
+                        }
+                        if ed.focus {
+                            response.request_focus();
+                            ed.focus = false;
+                        }
                         if let Some(tr) = &mut self.translator {
-                            tr.show(ui, text);
+                            tr.show(ui, &ed.text);
                         }
                         return;
                     }
@@ -535,8 +538,39 @@ impl App {
                 });
             // The red dot on the card's corner is its switch.
             let corner = card.response.rect.left_top() + vec2(4.0, 4.0);
+            let dot_rect = Rect::from_center_size(corner, vec2(26.0, 26.0));
+            if editing {
+                // Escape, or a click anywhere off the card, puts it down.
+                let off = ui.input(|i| {
+                    i.key_pressed(egui::Key::Escape)
+                        || (i.pointer.primary_pressed()
+                            && i.pointer
+                                .interact_pos()
+                                .is_some_and(|p| !card.response.rect.contains(p)))
+                });
+                if off {
+                    self.stop_editing();
+                } else {
+                    self.autosave(now);
+                }
+            } else {
+                // Click a card to write in it.
+                let click = ui.interact(
+                    card.response.rect,
+                    ui.id().with(("rule-card", &note.name)),
+                    Sense::click(),
+                );
+                if click.hovered() && !dot_rect.contains(click.hover_pos().unwrap_or(corner)) {
+                    ui.ctx().set_cursor_icon(egui::CursorIcon::Text);
+                }
+                if click.clicked()
+                    && !click.interact_pointer_pos().is_some_and(|p| dot_rect.contains(p))
+                {
+                    self.edit_note(&note.name);
+                }
+            }
             let dot = ui.interact(
-                Rect::from_center_size(corner, vec2(26.0, 26.0)),
+                dot_rect,
                 ui.id().with(("rule-dot", &note.name)),
                 Sense::click(),
             );
@@ -553,25 +587,6 @@ impl App {
             if dot.clicked() && self.painting.is_none() && self.timeline.caught_up() {
                 self.timeline.set_rule(&note.name, !on);
             }
-            match action {
-                Some(NoteAction::Edit) => self.edit_note(&note.name),
-                Some(NoteAction::Cancel) => {
-                    self.editing = None;
-                    self.translator = None;
-                    self.reload_rules();
-                }
-                Some(NoteAction::Save) => {
-                    self.translator = None;
-                    if let Some((name, text)) = self.editing.take() {
-                        let path = self.rule_path(&name);
-                        if let Err(e) = std::fs::write(&path, text) {
-                            eprintln!("couldn't save {}: {e}", path.display());
-                        }
-                        self.reload_rules();
-                    }
-                }
-                None => {}
-            }
             ui.add_space(14.0);
         }
     }
@@ -581,10 +596,54 @@ impl App {
     }
 
     fn edit_note(&mut self, name: &str) {
+        self.stop_editing();
         if let Some(note) = self.timeline.rules().get(name) {
             self.translator = Some(translate::Translator::new(&note.source));
-            self.editing = Some((note.name.clone(), note.source.clone()));
+            self.editing = Some(Editing {
+                name: note.name.clone(),
+                text: note.source.clone(),
+                saved: note.source.clone(),
+                changed_at: 0.0,
+                focus: true,
+            });
         }
+    }
+
+    /// Write the open note if it has changed and typing has paused.
+    fn autosave(&mut self, now: f64) {
+        let Some(ed) = &self.editing else { return };
+        if ed.text == ed.saved {
+            return;
+        }
+        // The app repaints at least every half second, so this comes round.
+        if now - ed.changed_at < AUTOSAVE {
+            return;
+        }
+        self.save_open_note();
+    }
+
+    fn save_open_note(&mut self) {
+        let Some(ed) = &mut self.editing else { return };
+        if ed.text == ed.saved {
+            return;
+        }
+        let path = self.world.join("rules").join(format!("{}.tree", ed.name));
+        match std::fs::write(&path, &ed.text) {
+            Ok(()) => ed.saved = ed.text.clone(),
+            Err(e) => eprintln!("couldn't save {}: {e}", path.display()),
+        }
+        self.reload_rules();
+    }
+
+    /// Save the open note and put it down.
+    fn stop_editing(&mut self) {
+        if self.editing.is_none() {
+            return;
+        }
+        self.save_open_note();
+        self.editing = None;
+        self.translator = None;
+        self.reload_rules();
     }
 
     /// Read `world/rules` again. Unchanged notes change nothing; a changed
@@ -594,10 +653,17 @@ impl App {
     fn reload_rules(&mut self) {
         match Rulebook::load(&self.world.join("rules")) {
             Ok(mut rules) => {
-                if let Some((name, text)) = &self.editing
-                    && let Some(i) = rules.index(name)
+                if let Some(ed) = &mut self.editing
+                    && let Some(i) = rules.index(&ed.name)
                 {
-                    let draft = tapestry_canvas::RuleNote::parse(name, text);
+                    // Changed on disk (by Claude in a terminal, say) while
+                    // open but untouched here since: take the new version.
+                    let disk = &rules.notes[i].source;
+                    if *disk != ed.saved && ed.text == ed.saved {
+                        ed.text = disk.clone();
+                        ed.saved = disk.clone();
+                    }
+                    let draft = tapestry_canvas::RuleNote::parse(&ed.name, &ed.text);
                     rules.notes[i].basics = draft.basics;
                     rules.notes[i].problems = draft.problems;
                 }
@@ -992,7 +1058,7 @@ impl eframe::App for App {
         }
         ui.ctx()
             .request_repaint_after(std::time::Duration::from_millis(500));
-        self.ide.begin_frame(ui.ctx());
+        self.ide.begin_frame();
         self.keyboard(ui);
 
         egui::Panel::top("top").show(ui, |ui| self.top_bar(ui));
