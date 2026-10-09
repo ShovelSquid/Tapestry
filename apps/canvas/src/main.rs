@@ -4,8 +4,10 @@
 //! back and the canvas replays to that moment; paint there and the future
 //! replays around what you added.
 
+mod edit;
 mod ide;
 mod term;
+mod translate;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -51,6 +53,10 @@ fn main() -> eframe::Result {
             }
             if demo {
                 paint_demo(&mut app.timeline);
+            }
+            // `TAPESTRY_EDIT=<note>` opens that rule note for editing.
+            if let Ok(name) = std::env::var("TAPESTRY_EDIT") {
+                app.edit_note(&name);
             }
             Ok(Box::new(app))
         }),
@@ -200,6 +206,8 @@ struct App {
     world: std::path::PathBuf,
     /// A rule note open for editing: its name and the text so far.
     editing: Option<(String, String)>,
+    /// Turns the open note's prose into rule lines as it's written.
+    translator: Option<translate::Translator>,
     last_poll: f64,
     brush: Brush,
     radius: f32,
@@ -247,6 +255,7 @@ impl App {
             ide: ide::Ide::new(engine),
             world,
             editing: None,
+            translator: None,
             last_poll: 0.0,
             brush: Brush::Ink,
             radius: 5.0,
@@ -483,13 +492,22 @@ impl App {
                     );
                     ui.add_space(8.0);
                     if editing && let Some((_, text)) = &mut self.editing {
+                        if let Some(tr) = &mut self.translator {
+                            tr.frame(text, ui.input(|i| i.time), ui.ctx());
+                        }
+                        let id = ui.make_persistent_id(("rule-editor", &note.name));
+                        edit::keys(ui, id, text, Some("//"));
                         ui.add(
                             egui::TextEdit::multiline(text)
+                                .id(id)
                                 .font(FontId::monospace(13.0))
                                 .desired_width(f32::INFINITY)
                                 .desired_rows(6)
                                 .frame(egui::Frame::NONE),
                         );
+                        if let Some(tr) = &mut self.translator {
+                            tr.show(ui, text);
+                        }
                         return;
                     }
                     if !note.text.is_empty() {
@@ -536,11 +554,14 @@ impl App {
                 self.timeline.set_rule(&note.name, !on);
             }
             match action {
-                Some(NoteAction::Edit) => {
-                    self.editing = Some((note.name.clone(), note.source.clone()));
+                Some(NoteAction::Edit) => self.edit_note(&note.name),
+                Some(NoteAction::Cancel) => {
+                    self.editing = None;
+                    self.translator = None;
+                    self.reload_rules();
                 }
-                Some(NoteAction::Cancel) => self.editing = None,
                 Some(NoteAction::Save) => {
+                    self.translator = None;
                     if let Some((name, text)) = self.editing.take() {
                         let path = self.rule_path(&name);
                         if let Err(e) = std::fs::write(&path, text) {
@@ -559,11 +580,29 @@ impl App {
         self.world.join("rules").join(format!("{name}.tree"))
     }
 
+    fn edit_note(&mut self, name: &str) {
+        if let Some(note) = self.timeline.rules().get(name) {
+            self.translator = Some(translate::Translator::new(&note.source));
+            self.editing = Some((note.name.clone(), note.source.clone()));
+        }
+    }
+
     /// Read `world/rules` again. Unchanged notes change nothing; a changed
-    /// one replays the canvas under it.
+    /// one replays the canvas under it. The note being edited runs as its
+    /// draft does, so the canvas answers rule lines as they're written; only
+    /// its rule lines count, so typing prose doesn't replay anything.
     fn reload_rules(&mut self) {
         match Rulebook::load(&self.world.join("rules")) {
-            Ok(rules) => self.timeline.set_rules(rules),
+            Ok(mut rules) => {
+                if let Some((name, text)) = &self.editing
+                    && let Some(i) = rules.index(name)
+                {
+                    let draft = tapestry_canvas::RuleNote::parse(name, text);
+                    rules.notes[i].basics = draft.basics;
+                    rules.notes[i].problems = draft.problems;
+                }
+                self.timeline.set_rules(rules);
+            }
             Err(e) => eprintln!("couldn't read rules: {e}"),
         }
     }
@@ -575,10 +614,9 @@ impl App {
             .map(|n| format!("untitled-{n}"))
             .find(|n| !self.rule_path(n).exists())
             .unwrap();
-        let source = "# Untitled\nWhat should happen?\n\n// change tree heat +1/s within 10 of fire\n// convert tree to ash at heat 1\n";
-        if std::fs::write(self.rule_path(&name), source).is_ok() {
+        if std::fs::write(self.rule_path(&name), translate::NEW_NOTE).is_ok() {
             self.reload_rules();
-            self.editing = Some((name, source.to_owned()));
+            self.edit_note(&name);
         }
     }
 
@@ -954,7 +992,7 @@ impl eframe::App for App {
         }
         ui.ctx()
             .request_repaint_after(std::time::Duration::from_millis(500));
-        self.ide.begin_frame();
+        self.ide.begin_frame(ui.ctx());
         self.keyboard(ui);
 
         egui::Panel::top("top").show(ui, |ui| self.top_bar(ui));

@@ -110,6 +110,13 @@ is {w} by {h}). Lines starting with // are comments.",
     )
 }
 
+/// Whether the parser takes `line` as a rule line (working or not) rather
+/// than prose.
+pub fn is_rule_line(line: &str) -> bool {
+    let first = line.split_whitespace().next().unwrap_or("");
+    BUILT.contains(&first) || NOT_YET.contains(&first)
+}
+
 /// A line of a note that didn't read.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Problem {
