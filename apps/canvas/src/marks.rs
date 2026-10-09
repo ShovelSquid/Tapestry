@@ -243,6 +243,18 @@ impl Marks {
         true
     }
 
+    /// Rub out every mark, on every pane.
+    pub fn clear(&mut self) {
+        self.marks.clear();
+        self.fresh = false;
+        save(&self.marks);
+    }
+
+    /// Whether anything has been drawn.
+    pub fn any(&self) -> bool {
+        !self.marks.is_empty()
+    }
+
     pub fn begin_frame(&mut self) {
         self.last = std::mem::take(&mut self.panes);
         self.keep_clear = std::mem::take(&mut self.clear_now);

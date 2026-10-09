@@ -482,6 +482,14 @@ impl App {
                     .size(14.0),
             );
         });
+        if self.marks.any() {
+            ui.horizontal(|ui| {
+                ui.add_space(16.0);
+                if quiet_link(ui, "clear marks", false).clicked() {
+                    self.marks.clear();
+                }
+            });
+        }
         ui.add_space(24.0);
         ui.horizontal(|ui| {
             ui.add_space(16.0);
