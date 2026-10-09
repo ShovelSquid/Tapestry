@@ -1,30 +1,43 @@
 //! Mimics: little creatures with a coloured core and four or five inky
-//! tentacles, wandering the canvas.
+//! tentacles, wandering the canvas, and between them, the swarm's links.
 //!
-//! They aren't clever. A tentacle reaches out, grips the paper, and pulls
-//! the core after it; reaching for another mimic instead, it holds on and
-//! the two trade colour along it. A pulse of the holder's colour runs down
-//! to the other's core, which takes some in, jiggles, and sends its own
-//! colour back. Mimics that hold each other long enough come to share a
-//! colour, so a colour on the canvas marks who has been in touch with whom;
-//! apart, each drifts back to the colour it was born with.
+//! What you see and what the swarm is are kept apart. The body is physics:
+//! a core and tentacles of rope, reaching, gripping the paper and pulling.
+//! The structure is [`Link`]s: discrete, weighted, inspectable. A tentacle
+//! holding another mimic acts a link out, and only then does anything pass
+//! along it: a pulse carrying the holder's state runs down to the other's
+//! core, which takes it in, jiggles, and sends its own state back. What
+//! each mimic makes of what it hears is its [mind](crate::mind), and its
+//! colour is only a view of that.
 //!
-//! Determinism as in the rest of the sim: fixed tick, mimics and their
-//! tentacles visited in order, randomness only from hashing IDs and ticks,
-//! and no trigonometry from the platform's libm.
+//! Links also hold the swarm together physically: a dragged mimic pulls
+//! its partners, and theirs, as strongly as they're linked.
+//!
+//! Determinism as in the rest of the sim: fixed tick, mimics, tentacles and
+//! links visited in order, everyone reading the state as it was at the start
+//! of the tick, randomness only from hashing IDs and ticks, and no
+//! trigonometry from the platform's libm.
+
+use std::collections::HashMap;
 
 use glam::Vec2;
 
 use crate::key::{DT, Tick};
+use crate::link::{Link, pair};
+use crate::mind::{self, N, Species, THINK, Vector, cosine};
 use crate::sim::{HEIGHT, MadeBy, WIDTH, disk, unit};
 
 /// Points along a tentacle, its root (at the core) first.
 pub const SEGS: usize = 9;
-/// A mimic holds at most this many others at once, so they make chains
-/// and rings rather than piling into one ball.
-const MAX_LINKS: usize = 2;
+/// A mimic holds (or is held by) at most this many others at once, so they
+/// make chains and rings rather than piling into one ball.
+const MAX_HELD: usize = 2;
 /// Ticks a pulse takes to run the length of a tentacle.
 const PULSE_TICKS: f32 = 36.0;
+/// How much of a message gets in, at full link weight.
+const HEAR: f32 = 0.5;
+/// Ticks a cut pair waits before either may take hold of the other again.
+const CUT_FOR: Tick = 600;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Hold {
@@ -32,16 +45,17 @@ pub enum Hold {
     Free,
     /// Gripping the paper here, and pulling the core towards it.
     Ground(Vec2),
-    /// Holding the mimic with this id.
+    /// Holding the mimic with this id: acting out their link.
     Mimic(u64),
 }
 
-/// Colour travelling along a tentacle.
+/// A message travelling along a tentacle.
 #[derive(Clone, Copy, Debug)]
 pub struct Pulse {
     /// 0 at the root, 1 at the tip.
     pub at: f32,
-    pub color: [f32; 3],
+    /// The sender's state when it set off.
+    pub message: Vector,
     /// Root to tip: from the holder to the one held. Else back.
     pub outward: bool,
 }
@@ -62,9 +76,17 @@ pub struct Arm {
     aim: Option<u64>,
     /// Ticks left in what it's doing.
     timer: u32,
-    /// Ticks until the one held answers a pulse with its own colour.
+    /// Ticks until the one held answers a pulse with its own state.
     echo: Option<u32>,
     pub pulses: Vec<Pulse>,
+}
+
+/// The note a mimic carries.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Carried {
+    /// The note's file name, without `.md`.
+    pub name: String,
+    pub title: String,
 }
 
 #[derive(Clone, Debug)]
@@ -72,14 +94,19 @@ pub struct Mimic {
     pub id: u64,
     pub core: Vec2,
     vel: Vec2,
-    /// The core's radius; tentacles reach about nine times it.
+    /// The core's radius; tentacles reach eleven times it.
     pub size: f32,
-    /// Red, green, blue, 0..1.
-    pub color: [f32; 3],
-    /// The colour it was born with, which it slowly drifts back to: what it
-    /// takes in from others is a tint, not a replacement.
-    pub own: [f32; 3],
-    /// How far the core is squashed from round, after taking in colour.
+    pub species: Species,
+    /// What it has in mind.
+    pub state: Vector,
+    /// What it carries: its note's vector, or an identity of its own.
+    pub input: Vector,
+    /// Messages that got in since it last thought.
+    inbox: Vector,
+    pub note: Option<Carried>,
+    /// Held in place by the author.
+    pub pinned: bool,
+    /// How far the core is squashed from round, after a message.
     pub jiggle: f32,
     jiggle_vel: f32,
     /// Which way it's wandering.
@@ -87,17 +114,6 @@ pub struct Mimic {
     pub arms: Vec<Arm>,
     pub made_by: MadeBy,
 }
-
-/// Inks a new mimic's core can start as.
-const PALETTE: [[f32; 3]; 7] = [
-    [0.86, 0.22, 0.20],
-    [0.95, 0.62, 0.12],
-    [0.93, 0.83, 0.20],
-    [0.25, 0.66, 0.36],
-    [0.18, 0.52, 0.80],
-    [0.48, 0.30, 0.78],
-    [0.88, 0.36, 0.62],
-];
 
 impl Mimic {
     pub(crate) fn new(id: u64, at: Vec2, size: f32, made_by: MadeBy) -> Self {
@@ -130,13 +146,18 @@ impl Mimic {
             });
             dir = Vec2::new(dir.x * c - dir.y * s, dir.x * s + dir.y * c);
         }
+        let input = mind::identity(id);
         Self {
             id,
             core: at,
             vel: Vec2::ZERO,
             size,
-            color: PALETTE[(unit(id, 3) * PALETTE.len() as f32) as usize % PALETTE.len()],
-            own: PALETTE[(unit(id, 3) * PALETTE.len() as f32) as usize % PALETTE.len()],
+            species: Species::of(id),
+            state: mind::think(&[0.0; N], &input, &[0.0; N]),
+            input,
+            inbox: [0.0; N],
+            note: None,
+            pinned: false,
             jiggle: 0.0,
             jiggle_vel: 0.0,
             heading: disk(id, 4).normalize_or(Vec2::Y),
@@ -149,33 +170,26 @@ impl Mimic {
         self.size * 11.0
     }
 
+    /// Its state as a colour.
+    pub fn color(&self) -> [f32; 3] {
+        mind::color(&self.state)
+    }
+
     /// The mimics it's holding, or reaching for.
-    fn links(&self) -> impl Iterator<Item = u64> + '_ {
+    fn holding(&self) -> impl Iterator<Item = u64> + '_ {
         self.arms.iter().filter_map(|a| match a.hold {
             Hold::Mimic(id) => Some(id),
             _ => a.aim,
         })
     }
 
-    /// Take in some of a colour, and jiggle with it. A core keeps its colour
-    /// a little brighter than a plain mix, so a group settles on a shared
-    /// ink rather than fading together to grey.
-    fn absorb(&mut self, color: [f32; 3]) {
-        for (mine, theirs) in self.color.iter_mut().zip(color) {
-            *mine += (theirs - *mine) * 0.35;
-        }
-        let mean = self.color.iter().sum::<f32>() / 3.0;
-        for c in &mut self.color {
-            *c = (mean + (*c - mean) * 1.08).clamp(0.0, 1.0);
+    /// Take a message in, and jiggle with it.
+    fn hear(&mut self, message: &Vector, weight: f32) {
+        for (x, m) in self.inbox.iter_mut().zip(message) {
+            *x += HEAR * weight * m;
         }
         self.jiggle_vel += 9.0;
     }
-}
-
-/// A pulse got to the end of its tentacle: whose core takes it in.
-struct Arrival {
-    to: usize,
-    color: [f32; 3],
 }
 
 impl Arm {
@@ -185,244 +199,479 @@ impl Arm {
         self.aim = None;
         self.timer = ticks;
     }
+
+    fn let_go(&mut self, ticks: u32) {
+        self.hold = Hold::Free;
+        self.pulses.clear();
+        self.echo = None;
+        self.rest(ticks);
+    }
 }
 
-/// One tick for every mimic.
-pub(crate) fn step(mimics: &mut [Mimic], tick: Tick) {
-    let n = mimics.len();
-    if n == 0 {
-        return;
-    }
-    // Everyone as they were at the start of the tick: what one mimic does
-    // can't depend on what those before it did this tick.
-    let cores: Vec<Vec2> = mimics.iter().map(|m| m.core).collect();
-    let colors: Vec<[f32; 3]> = mimics.iter().map(|m| m.color).collect();
-    let ids: Vec<u64> = mimics.iter().map(|m| m.id).collect();
-    let find = |id: u64| ids.iter().position(|&i| i == id);
+/// The author's say on a pair of notes' link.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Verdict {
+    pub a: u64,
+    pub b: u64,
+    pub keep: bool,
+}
 
-    let link_counts: Vec<usize> = {
-        let mut c = vec![0; n];
-        for (i, m) in mimics.iter().enumerate() {
-            for id in m.links() {
-                c[i] += 1;
-                if let Some(j) = find(id) {
-                    c[j] += 1;
-                }
+/// Something proposed: these two notes belong together.
+#[derive(Clone, Debug)]
+pub struct Proposal {
+    pub a: Carried,
+    pub b: Carried,
+    pub weight: f32,
+    /// Seconds it has been strong.
+    pub for_secs: f32,
+    pub history: [f32; 12],
+}
+
+/// Every mimic and every link.
+#[derive(Clone, Default)]
+pub struct Swarm {
+    pub mimics: Vec<Mimic>,
+    pub links: Vec<Link>,
+    pub verdicts: Vec<Verdict>,
+    /// Pairs cut by the author, and the tick until which they stay apart.
+    cut: Vec<(u64, u64, Tick)>,
+    /// How alike two minds in the swarm usually are: the mean and spread of
+    /// their likeness, over a steady sample of pairs, as of the last thought.
+    pub typical: (f32, f32),
+}
+
+/// A pulse got to the end of its tentacle: whose core takes it in.
+struct Arrival {
+    to: usize,
+    message: Vector,
+    weight: f32,
+}
+
+impl Swarm {
+    pub fn mimic(&self, id: u64) -> Option<&Mimic> {
+        self.mimics.iter().find(|m| m.id == id)
+    }
+
+    pub fn link(&self, x: u64, y: u64) -> Option<&Link> {
+        self.links.iter().find(|l| l.joins(x, y))
+    }
+
+    /// The mimic carrying the note named `name`.
+    pub fn carrier(&self, name: &str) -> Option<&Mimic> {
+        self.mimics.iter().find(|m| m.note.as_ref().is_some_and(|n| n.name == name))
+    }
+
+    /// Links between notes that have stayed strong long enough, and that
+    /// the author hasn't ruled on: strongest first.
+    pub fn proposals(&self) -> Vec<Proposal> {
+        let mut out: Vec<Proposal> = self
+            .links
+            .iter()
+            .filter(|l| !l.pinned && l.strong >= crate::link::PROPOSE_AFTER)
+            .filter(|l| !self.verdicts.iter().any(|v| pair(v.a, v.b) == (l.a, l.b)))
+            .filter_map(|l| {
+                Some(Proposal {
+                    a: self.mimic(l.a)?.note.clone()?,
+                    b: self.mimic(l.b)?.note.clone()?,
+                    weight: l.weight,
+                    for_secs: (l.strong * THINK) as f32 / crate::key::TICKS_PER_SECOND as f32,
+                    history: l.history,
+                })
+            })
+            .collect();
+        out.sort_by(|x, y| y.weight.total_cmp(&x.weight));
+        out
+    }
+
+    pub(crate) fn add(&mut self, m: Mimic) {
+        self.mimics.push(m);
+    }
+
+    /// Put down a mimic carrying a note, or give the one carrying it the
+    /// note as it now reads.
+    pub(crate) fn carry(&mut self, note: Carried, pos: Vec2, vector: Vector, made_by: MadeBy) {
+        let id = crate::text::note_id(&note.name);
+        if let Some(m) = self.mimics.iter_mut().find(|m| m.id == id) {
+            m.input = vector;
+            m.note = Some(note);
+            return;
+        }
+        let mut m = Mimic::new(id, pos, 9.0, made_by);
+        m.input = vector;
+        m.state = mind::think(&[0.0; N], &vector, &[0.0; N]);
+        m.note = Some(note);
+        self.mimics.push(m);
+    }
+
+    pub(crate) fn pin(&mut self, id: u64, on: bool) {
+        if let Some(m) = self.mimics.iter_mut().find(|m| m.id == id) {
+            m.pinned = on;
+        }
+    }
+
+    /// Cut the link between two mimics, and keep them apart a while.
+    pub(crate) fn cut(&mut self, x: u64, y: u64, tick: Tick) {
+        self.links.retain(|l| !l.joins(x, y));
+        self.release(x, y);
+        let (a, b) = pair(x, y);
+        self.cut.retain(|c| (c.0, c.1) != (a, b));
+        self.cut.push((a, b, tick + CUT_FOR));
+    }
+
+    /// The author's verdict on two notes' link: kept, it's pinned; turned
+    /// down, it's cut, and the pair learns slowly from then on.
+    pub(crate) fn rule(&mut self, a: &str, b: &str, keep: bool, tick: Tick) {
+        let (x, y) = (crate::text::note_id(a), crate::text::note_id(b));
+        let (a, b) = pair(x, y);
+        self.verdicts.retain(|v| pair(v.a, v.b) != (a, b));
+        self.verdicts.push(Verdict { a, b, keep });
+        if keep {
+            if !self.links.iter().any(|l| l.joins(a, b)) {
+                self.links.push(Link::new(a, b, tick, 1.0));
             }
-        }
-        c
-    };
-    let linked = |a: usize, b: usize, ms: &[Mimic]| {
-        ms[a].links().any(|id| id == ms[b].id) || ms[b].links().any(|id| id == ms[a].id)
-    };
-
-    let mut force = vec![Vec2::ZERO; n];
-    let mut arrivals: Vec<Arrival> = Vec::new();
-
-    for i in 0..n {
-        let snapshot_links: Vec<bool> = (0..n).map(|j| j != i && linked(i, j, mimics)).collect();
-        let m = &mut mimics[i];
-        let (id, size, reach) = (m.id, m.size, m.reach());
-
-        // Wander: the heading drifts, and turns back from the edges.
-        let turn = (unit(id, 1000 + tick as u64) - 0.5) * 0.12;
-        m.heading = rotate(m.heading, turn);
-        let margin = reach;
-        let mut back = Vec2::ZERO;
-        if m.core.x < margin {
-            back.x += 1.0;
-        }
-        if m.core.x > WIDTH - margin {
-            back.x -= 1.0;
-        }
-        if m.core.y < margin {
-            back.y += 1.0;
-        }
-        if m.core.y > HEIGHT - margin {
-            back.y -= 1.0;
-        }
-        // Alone, it heads for the nearest mimic out of reach: they're curious.
-        let near = (0..n)
-            .filter(|&j| j != i && link_counts[i] == 0 && cores[j].distance(m.core) > reach)
-            .map(|j| (cores[j].distance_squared(m.core), j))
-            .filter(|&(d, _)| d < (reach * 5.0) * (reach * 5.0))
-            .min_by(|a, b| a.0.total_cmp(&b.0));
-        let toward = near.map_or(Vec2::ZERO, |(_, j)| (cores[j] - m.core).normalize_or(Vec2::ZERO));
-        m.heading = (m.heading + back * 0.06 + toward * 0.03).normalize_or(Vec2::Y);
-
-        let mut gripping = m.arms.iter().filter(|a| matches!(a.hold, Hold::Ground(_))).count();
-        let mut links_here = link_counts[i];
-        let core = m.core;
-        let color = m.color;
-
-        for (k, arm) in m.arms.iter_mut().enumerate() {
-            let salt = (k as u64) << 32 | tick as u64;
-            arm.timer = arm.timer.saturating_sub(1);
-            match arm.hold {
-                Hold::Free => {
-                    if !arm.reaching && arm.timer == 0 {
-                        // Choose where to reach next: now and then another
-                        // mimic in range, else the paper ahead.
-                        let other = (0..n).find(|&j| {
-                            j != i
-                                && !snapshot_links[j]
-                                && links_here < MAX_LINKS
-                                && link_counts[j] < MAX_LINKS
-                                && cores[j].distance(core) < reach * 0.9
-                                && unit(id ^ ids[j], salt) < 0.35
-                        });
-                        if let Some(j) = other {
-                            arm.aim = Some(ids[j]);
-                            links_here += 1;
-                        } else {
-                            let jitter = disk(id, salt) * 0.6;
-                            let dir = (m.heading * 1.1 + arm.home * 0.8 + jitter).normalize_or(arm.home);
-                            arm.goal = core + dir * reach * (0.6 + 0.35 * unit(id, salt ^ 7));
-                        }
-                        arm.reaching = true;
-                        arm.timer = 40 + (unit(id, salt ^ 9) * 30.0) as u32;
-                    }
-                    if let Some(aim) = arm.aim {
-                        match find(aim) {
-                            Some(j) => arm.goal = cores[j],
-                            None => arm.rest(20),
-                        }
-                    }
-                    if arm.reaching {
-                        let tip = arm.points[SEGS - 1];
-                        let want = arm.goal.distance(core).min(reach);
-                        arm.length += (want - arm.length) * 0.12;
-                        let got = tip.distance(arm.goal) < size * 1.5;
-                        let tired = arm.timer == 0;
-                        if let Some(aim) = arm.aim {
-                            if got {
-                                arm.hold = Hold::Mimic(aim);
-                                arm.reaching = false;
-                                arm.aim = None;
-                                // Held for a while, then let go.
-                                arm.timer = 300 + (unit(id ^ aim, salt) * 420.0) as u32;
-                                arm.pulses.push(Pulse { at: 0.0, color, outward: true });
-                            } else if tired || arm.goal.distance(core) > reach {
-                                arm.rest(20);
-                            }
-                        } else if (got || tired) && gripping < 2 {
-                            arm.hold = Hold::Ground(tip);
-                            arm.reaching = false;
-                            gripping += 1;
-                            arm.timer = 50 + (unit(id, salt ^ 11) * 40.0) as u32;
-                        } else if tired {
-                            arm.rest(10);
-                        }
-                    } else {
-                        // Curled up, near the core.
-                        arm.length += (reach * 0.3 - arm.length) * 0.08;
-                        arm.goal = core + arm.home * arm.length;
-                    }
-                }
-                Hold::Ground(at) => {
-                    // Pull: shorten, and the core follows.
-                    arm.length = (arm.length - reach * 0.012).max(reach * 0.2);
-                    let d = at - core;
-                    let dist = d.length();
-                    if dist > arm.length {
-                        force[i] += d / dist.max(1e-4) * (dist - arm.length) * 9.0;
-                    }
-                    if arm.timer == 0 || dist < reach * 0.25 {
-                        arm.hold = Hold::Free;
-                        arm.rest(8 + (unit(id, salt ^ 13) * 25.0) as u32);
-                    }
-                }
-                Hold::Mimic(other) => {
-                    let Some(j) = find(other) else {
-                        arm.hold = Hold::Free;
-                        arm.rest(30);
-                        continue;
-                    };
-                    let d = cores[j] - core;
-                    let dist = d.length();
-                    arm.length = dist.min(reach);
-                    // A soft spring: they keep to about half a reach apart.
-                    let rest = reach * 0.5;
-                    let pull = d / dist.max(1e-4) * (dist - rest) * 2.5;
-                    force[i] += pull;
-                    force[j] -= pull;
-                    // Pulses: out with the holder's colour, back with the other's.
-                    if !arm.pulses.iter().any(|p| p.outward) && arm.echo.is_none() && (tick + k as Tick).is_multiple_of(90) {
-                        arm.pulses.push(Pulse { at: 0.0, color, outward: true });
-                    }
-                    if let Some(e) = arm.echo.as_mut() {
-                        *e = e.saturating_sub(1);
-                        if *e == 0 {
-                            arm.echo = None;
-                            arm.pulses.push(Pulse { at: 1.0, color: colors[j], outward: false });
-                        }
-                    }
-                    for p in &mut arm.pulses {
-                        p.at += if p.outward { 1.0 } else { -1.0 } / PULSE_TICKS;
-                    }
-                    let mut keep = Vec::with_capacity(arm.pulses.len());
-                    for p in arm.pulses.drain(..) {
-                        if p.outward && p.at >= 1.0 {
-                            arrivals.push(Arrival { to: j, color: p.color });
-                            arm.echo = Some(20);
-                        } else if !p.outward && p.at <= 0.0 {
-                            arrivals.push(Arrival { to: i, color: p.color });
-                        } else {
-                            keep.push(p);
-                        }
-                    }
-                    arm.pulses = keep;
-                    if arm.timer == 0 || dist > reach * 1.15 {
-                        arm.hold = Hold::Free;
-                        arm.pulses.clear();
-                        arm.echo = None;
-                        arm.rest(30);
-                    }
-                }
+            for l in self.links.iter_mut().filter(|l| l.joins(a, b)) {
+                l.pinned = true;
+                l.weight = 1.0;
             }
+        } else {
+            self.links.retain(|l| !l.joins(a, b));
+            self.release(a, b);
         }
     }
 
-    for a in arrivals {
-        mimics[a.to].absorb(a.color);
-    }
-
-    // Cores keep a little apart.
-    for i in 0..n {
-        for j in i + 1..n {
-            let d = cores[i] - cores[j];
-            let dist = d.length();
-            let near = (mimics[i].reach() + mimics[j].reach()) * 0.22;
-            if dist < near {
-                let dir = if dist > 1e-4 { d / dist } else { disk(ids[i] ^ ids[j], 5).normalize_or(Vec2::X) };
-                let push = dir * (near - dist) * 12.0;
-                force[i] += push;
-                force[j] -= push;
-            }
-        }
-    }
-
-    for (m, f) in mimics.iter_mut().zip(&force) {
-        m.vel = (m.vel + *f * DT) * 0.86;
-        m.vel = m.vel.clamp_length_max(140.0);
-        let before = m.core;
-        let r = m.size;
-        m.core += m.vel * DT;
-        m.core = Vec2::new(m.core.x.clamp(r, WIDTH - r), m.core.y.clamp(r, HEIGHT - r));
-        for (c, o) in m.color.iter_mut().zip(m.own) {
-            *c += (o - *c) * 0.004;
-        }
-        m.jiggle_vel += (-120.0 * m.jiggle - 7.0 * m.jiggle_vel) * DT;
-        m.jiggle += m.jiggle_vel * DT;
-        let moved = m.core - before;
-        let (id, sway) = (m.id, tick as f32 * 0.05);
-        for (k, arm) in m.arms.iter_mut().enumerate() {
-            let tip_to = match arm.hold {
-                Hold::Ground(at) => Some(at),
-                Hold::Mimic(other) => find(other).map(|j| cores[j]),
-                Hold::Free => None,
+    /// Any tentacle either holds the other with lets go.
+    fn release(&mut self, x: u64, y: u64) {
+        for m in &mut self.mimics {
+            let other = if m.id == x {
+                y
+            } else if m.id == y {
+                x
+            } else {
+                continue;
             };
-            arm.body(m.core, moved, tip_to, sway + unit(id, 20 + k as u64) * 3.0);
+            for arm in &mut m.arms {
+                if arm.hold == Hold::Mimic(other) || arm.aim == Some(other) {
+                    arm.let_go(30);
+                }
+            }
+        }
+    }
+
+    /// One tick. `drags` are mimics the author has hold of, and where.
+    pub(crate) fn step(&mut self, tick: Tick, drags: &[(u64, Vec2)]) {
+        let n = self.mimics.len();
+        if n == 0 {
+            return;
+        }
+        self.cut.retain(|c| c.2 > tick);
+        // Everyone as they were at the start of the tick: what one mimic
+        // does can't depend on what those before it did this tick.
+        let cores: Vec<Vec2> = self.mimics.iter().map(|m| m.core).collect();
+        let states: Vec<Vector> = self.mimics.iter().map(|m| m.state).collect();
+        let ids: Vec<u64> = self.mimics.iter().map(|m| m.id).collect();
+        let index: HashMap<u64, usize> = ids.iter().enumerate().map(|(i, &id)| (id, i)).collect();
+        let find = |id: u64| index.get(&id).copied();
+        let weights: HashMap<(u64, u64), f32> = self.links.iter().map(|l| ((l.a, l.b), l.weight)).collect();
+        let weight_of = |x: u64, y: u64| weights.get(&pair(x, y)).copied();
+
+        // Who holds whom.
+        let mut held_count = vec![0usize; n];
+        let mut held_pairs: Vec<(u64, u64)> = Vec::new();
+        for (i, m) in self.mimics.iter().enumerate() {
+            for other in m.holding() {
+                held_count[i] += 1;
+                if let Some(j) = find(other) {
+                    held_count[j] += 1;
+                }
+                held_pairs.push(pair(m.id, other));
+            }
+        }
+        let held = |x: u64, y: u64| held_pairs.contains(&pair(x, y));
+        let cut = self.cut.clone();
+        let apart = |x: u64, y: u64| cut.iter().any(|c| (c.0, c.1) == pair(x, y));
+        let refused: Vec<(u64, u64)> = self.verdicts.iter().filter(|v| !v.keep).map(|v| (v.a, v.b)).collect();
+        let turned_down = |x: u64, y: u64| refused.contains(&pair(x, y));
+
+        let mut force = vec![Vec2::ZERO; n];
+        let mut arrivals: Vec<Arrival> = Vec::new();
+        let mut made: Vec<(u64, u64)> = Vec::new();
+
+        for i in 0..n {
+            let id = ids[i];
+            let m = &mut self.mimics[i];
+            let (size, reach, temper) = (m.size, m.reach(), m.species.temper());
+
+            // Wander: the heading drifts, and turns back from the edges.
+            let turn = (unit(id, 1000 + tick as u64) - 0.5) * 0.12;
+            m.heading = rotate(m.heading, turn);
+            let margin = reach;
+            let mut back = Vec2::ZERO;
+            if m.core.x < margin {
+                back.x += 1.0;
+            }
+            if m.core.x > WIDTH - margin {
+                back.x -= 1.0;
+            }
+            if m.core.y < margin {
+                back.y += 1.0;
+            }
+            if m.core.y > HEIGHT - margin {
+                back.y -= 1.0;
+            }
+            // Holding no one, it heads for the nearest mimic out of reach.
+            let roam = reach * temper.roam;
+            let near = (0..n)
+                .filter(|&j| j != i && held_count[i] == 0 && cores[j].distance(m.core) > reach)
+                .map(|j| (cores[j].distance_squared(m.core), j))
+                .filter(|&(d, _)| d < roam * roam)
+                .min_by(|a, b| a.0.total_cmp(&b.0));
+            let toward = near.map_or(Vec2::ZERO, |(_, j)| (cores[j] - m.core).normalize_or(Vec2::ZERO));
+            m.heading = (m.heading + back * 0.06 + toward * 0.03).normalize_or(Vec2::Y);
+
+            let mut gripping = m.arms.iter().filter(|a| matches!(a.hold, Hold::Ground(_))).count();
+            let mut holding_here = held_count[i];
+            let core = m.core;
+            let state = states[i];
+
+            for (k, arm) in m.arms.iter_mut().enumerate() {
+                let salt = (k as u64) << 32 | tick as u64;
+                arm.timer = arm.timer.saturating_sub(1);
+                match arm.hold {
+                    Hold::Free => {
+                        if !arm.reaching && arm.timer == 0 {
+                            // Choose where to reach next. A partner it has a
+                            // link with, as readily as the link is strong;
+                            // else another mimic, as readily as their minds
+                            // are alike; else the paper ahead.
+                            let other = (0..n).find(|&j| {
+                                let them = ids[j];
+                                if j == i
+                                    || held(id, them)
+                                    || apart(id, them)
+                                    || holding_here >= MAX_HELD
+                                    || held_count[j] >= MAX_HELD
+                                    || cores[j].distance(core) >= reach * 0.9
+                                {
+                                    return false;
+                                }
+                                let chance = match weight_of(id, them) {
+                                    Some(w) => temper.recall * (0.2 + w),
+                                    None => {
+                                        let alike = cosine(&state, &states[j]);
+                                        let shy = if turned_down(id, them) { 0.1 } else { 1.0 };
+                                        temper.social * (0.5 + 0.5 * alike) * shy
+                                    }
+                                };
+                                unit(id ^ them, salt) < chance
+                            });
+                            if let Some(j) = other {
+                                arm.aim = Some(ids[j]);
+                                holding_here += 1;
+                            } else {
+                                let jitter = disk(id, salt) * 0.6;
+                                let dir = (m.heading * 1.1 + arm.home * 0.8 + jitter).normalize_or(arm.home);
+                                arm.goal = core + dir * reach * (0.6 + 0.35 * unit(id, salt ^ 7));
+                            }
+                            arm.reaching = true;
+                            arm.timer = 40 + (unit(id, salt ^ 9) * 30.0) as u32;
+                        }
+                        if let Some(aim) = arm.aim {
+                            match find(aim) {
+                                Some(j) => arm.goal = cores[j],
+                                None => arm.rest(20),
+                            }
+                        }
+                        if arm.reaching {
+                            let tip = arm.points[SEGS - 1];
+                            let want = arm.goal.distance(core).min(reach);
+                            arm.length += (want - arm.length) * 0.12;
+                            let got = tip.distance(arm.goal) < size * 1.5;
+                            let tired = arm.timer == 0;
+                            if let Some(aim) = arm.aim {
+                                if got {
+                                    arm.hold = Hold::Mimic(aim);
+                                    arm.reaching = false;
+                                    arm.aim = None;
+                                    // Held for a while, then let go.
+                                    let ticks = 300.0 + unit(id ^ aim, salt) * 420.0;
+                                    arm.timer = (ticks * temper.hold) as u32;
+                                    arm.pulses.push(Pulse { at: 0.0, message: state, outward: true });
+                                    made.push(pair(id, aim));
+                                } else if tired || arm.goal.distance(core) > reach {
+                                    arm.rest(20);
+                                }
+                            } else if (got || tired) && gripping < 2 {
+                                arm.hold = Hold::Ground(tip);
+                                arm.reaching = false;
+                                gripping += 1;
+                                arm.timer = 50 + (unit(id, salt ^ 11) * 40.0) as u32;
+                            } else if tired {
+                                arm.rest(10);
+                            }
+                        } else {
+                            // Curled up, near the core.
+                            arm.length += (reach * 0.3 - arm.length) * 0.08;
+                            arm.goal = core + arm.home * arm.length;
+                        }
+                    }
+                    Hold::Ground(at) => {
+                        // Pull: shorten, and the core follows.
+                        arm.length = (arm.length - reach * 0.012).max(reach * 0.2);
+                        let d = at - core;
+                        let dist = d.length();
+                        if dist > arm.length {
+                            force[i] += d / dist.max(1e-4) * (dist - arm.length) * 9.0;
+                        }
+                        // Done pulling, or dragged off: it slips.
+                        if arm.timer == 0 || dist < reach * 0.25 || dist > reach {
+                            arm.hold = Hold::Free;
+                            arm.rest(8 + (unit(id, salt ^ 13) * 25.0) as u32);
+                        }
+                    }
+                    Hold::Mimic(other) => {
+                        let Some(j) = find(other) else {
+                            arm.let_go(30);
+                            continue;
+                        };
+                        // (The link is made at the end of the tick it took hold.)
+                        let weight = weight_of(id, other).unwrap_or(crate::link::BORN);
+                        let d = cores[j] - core;
+                        let dist = d.length();
+                        arm.length = dist.min(reach);
+                        // A soft spring: they keep to about half a reach apart.
+                        let rest = reach * 0.5;
+                        let pull = d / dist.max(1e-4) * (dist - rest) * 2.5;
+                        force[i] += pull;
+                        force[j] -= pull;
+                        // Pulses: out with the holder's state, back with the other's.
+                        let quiet = !arm.pulses.iter().any(|p| p.outward) && arm.echo.is_none();
+                        if quiet && (tick + k as Tick).is_multiple_of(90) {
+                            arm.pulses.push(Pulse { at: 0.0, message: state, outward: true });
+                        }
+                        if let Some(e) = arm.echo.as_mut() {
+                            *e = e.saturating_sub(1);
+                            if *e == 0 {
+                                arm.echo = None;
+                                arm.pulses.push(Pulse { at: 1.0, message: states[j], outward: false });
+                            }
+                        }
+                        for p in &mut arm.pulses {
+                            p.at += if p.outward { 1.0 } else { -1.0 } / PULSE_TICKS;
+                        }
+                        let mut keep = Vec::with_capacity(arm.pulses.len());
+                        for p in arm.pulses.drain(..) {
+                            if p.outward && p.at >= 1.0 {
+                                arrivals.push(Arrival { to: j, message: p.message, weight });
+                                arm.echo = Some(20);
+                            } else if !p.outward && p.at <= 0.0 {
+                                arrivals.push(Arrival { to: i, message: p.message, weight });
+                            } else {
+                                keep.push(p);
+                            }
+                        }
+                        arm.pulses = keep;
+                        // Minds that disagree tire of each other sooner.
+                        if cosine(&state, &states[j]) < 0.0 {
+                            arm.timer = arm.timer.saturating_sub(1);
+                        }
+                        if arm.timer == 0 || dist > reach * 1.15 {
+                            arm.let_go(30);
+                        }
+                    }
+                }
+            }
+        }
+
+        for a in arrivals {
+            self.mimics[a.to].hear(&a.message, a.weight);
+        }
+        made.sort_unstable();
+        made.dedup();
+        for (a, b) in made {
+            if !self.links.iter().any(|l| l.joins(a, b)) {
+                let plasticity = if turned_down(a, b) { 0.2 } else { 1.0 };
+                self.links.push(Link::new(a, b, tick, plasticity));
+            }
+        }
+
+        // Links hold the swarm together: past a loose length, partners pull
+        // on each other as hard as they're linked.
+        for l in &self.links {
+            let (Some(i), Some(j)) = (find(l.a), find(l.b)) else { continue };
+            let d = cores[j] - cores[i];
+            let dist = d.length();
+            let rest = (self.mimics[i].reach() + self.mimics[j].reach()) * 0.35;
+            if dist > rest {
+                let pull = d / dist * (dist - rest) * 12.0 * l.weight;
+                force[i] += pull;
+                force[j] -= pull;
+            }
+        }
+
+        // Cores keep a little apart.
+        for i in 0..n {
+            for j in i + 1..n {
+                let d = cores[i] - cores[j];
+                let dist = d.length();
+                let near = (self.mimics[i].reach() + self.mimics[j].reach()) * 0.22;
+                if dist < near {
+                    let dir = if dist > 1e-4 { d / dist } else { disk(ids[i] ^ ids[j], 5).normalize_or(Vec2::X) };
+                    let push = dir * (near - dist) * 12.0;
+                    force[i] += push;
+                    force[j] -= push;
+                }
+            }
+        }
+
+        let thinking = tick.is_multiple_of(THINK);
+        for (m, f) in self.mimics.iter_mut().zip(&force) {
+            let before = m.core;
+            let r = m.size;
+            if let Some(&(_, to)) = drags.iter().find(|d| d.0 == m.id) {
+                // Held by the author: it goes where it's put.
+                m.core = Vec2::new(to.x.clamp(r, WIDTH - r), to.y.clamp(r, HEIGHT - r));
+                m.vel = Vec2::ZERO;
+            } else if m.pinned {
+                m.vel = Vec2::ZERO;
+            } else {
+                m.vel = (m.vel + *f * DT) * 0.86;
+                m.vel = m.vel.clamp_length_max(140.0);
+                m.core += m.vel * DT;
+                m.core = Vec2::new(m.core.x.clamp(r, WIDTH - r), m.core.y.clamp(r, HEIGHT - r));
+            }
+            if thinking {
+                m.state = mind::think(&m.state, &m.input, &m.inbox);
+                m.inbox = [0.0; N];
+            }
+            m.jiggle_vel += (-120.0 * m.jiggle - 7.0 * m.jiggle_vel) * DT;
+            m.jiggle += m.jiggle_vel * DT;
+            let moved = m.core - before;
+            let (id, sway) = (m.id, tick as f32 * 0.05);
+            for (k, arm) in m.arms.iter_mut().enumerate() {
+                let tip_to = match arm.hold {
+                    Hold::Ground(at) => Some(at),
+                    Hold::Mimic(other) => find(other).map(|j| cores[j]),
+                    Hold::Free => None,
+                };
+                arm.body(m.core, moved, tip_to, sway + unit(id, 20 + k as u64) * 3.0);
+            }
+        }
+
+        if thinking {
+            // Learn from the states just thought: held links toward how
+            // alike their ends are, the rest fading.
+            let states: Vec<Vector> = self.mimics.iter().map(|m| m.state).collect();
+            self.typical = typical(&states);
+            let second = tick.is_multiple_of(crate::key::TICKS_PER_SECOND);
+            for l in &mut self.links {
+                let (Some(i), Some(j)) = (find(l.a), find(l.b)) else { continue };
+                l.learn(&states[i], &states[j], held(l.a, l.b), self.typical);
+                if second {
+                    l.remember();
+                }
+            }
+            self.links
+                .retain(|l| find(l.a).is_some() && find(l.b).is_some() && !l.gone(held(l.a, l.b)));
         }
     }
 }
@@ -478,6 +727,30 @@ impl Arm {
         }
         self.points[0] = core;
     }
+}
+
+/// The mean and spread of how alike minds are, over each mimic and the
+/// next eight after it (all pairs, in a small swarm).
+fn typical(states: &[Vector]) -> (f32, f32) {
+    let n = states.len();
+    let (mut sum, mut sq, mut count) = (0.0, 0.0, 0.0);
+    for i in 0..n {
+        for k in 1..=8.min(n.saturating_sub(1) / 2).max(1) {
+            let j = (i + k) % n;
+            if j == i {
+                continue;
+            }
+            let c = cosine(&states[i], &states[j]);
+            sum += c;
+            sq += c * c;
+            count += 1.0;
+        }
+    }
+    if count == 0.0 {
+        return (0.0, 0.1);
+    }
+    let mean = sum / count;
+    (mean, (sq / count - mean * mean).max(0.0).sqrt())
 }
 
 /// A sine-like wave from a parabola, the same on every machine.

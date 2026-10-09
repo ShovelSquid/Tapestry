@@ -1,5 +1,7 @@
 use glam::Vec2;
 
+use crate::mind::Vector;
+
 /// Time on the canvas, in whole ticks. Exact, so replays land on the same tick.
 pub type Tick = u32;
 pub const TICKS_PER_SECOND: Tick = 60;
@@ -75,6 +77,33 @@ pub enum Body {
     Stroke(Stroke),
     /// Switch the rule note named `rule` (its file name) on or off.
     Rule { rule: String, on: bool },
+    /// A mimic reads the note named `name` (its file name): it's put down
+    /// at `pos` carrying the note, or, if one already carries it, takes in
+    /// the note as it now reads. The vector is worked out when the note is
+    /// read and kept here, so the canvas replays the same whatever the file
+    /// says later.
+    Note {
+        name: String,
+        title: String,
+        pos: Vec2,
+        vector: Box<Vector>,
+    },
+    /// The author holds mimic `mimic` and moves it through these points.
+    Drag { mimic: u64, samples: Vec<Sample> },
+    /// Cut the link between two mimics.
+    Cut { a: u64, b: u64 },
+    /// Hold a mimic in place, or let it go.
+    Pin { mimic: u64, on: bool },
+    /// The author's say on a proposal: the notes `a` and `b` belong
+    /// together (keep) or don't.
+    Verdict { a: String, b: String, keep: bool },
+}
+
+impl Body {
+    /// Something done to the swarm (rather than painted, or a rule).
+    pub fn is_swarm(&self) -> bool {
+        !matches!(self, Body::Stroke(_) | Body::Rule { .. })
+    }
 }
 
 /// Something the author said: at `tick`, this.

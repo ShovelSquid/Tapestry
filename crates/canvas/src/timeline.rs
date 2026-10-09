@@ -4,6 +4,7 @@ use std::time::Instant;
 use glam::Vec2;
 
 use crate::key::{Body, Brush, Dab, KeyId, Keyframe, Sample, Stroke, Tick, dabs};
+use crate::mind::Vector;
 use crate::rules::Rulebook;
 use crate::sim::State;
 
@@ -17,7 +18,10 @@ pub(crate) struct Entry {
 impl Entry {
     /// Ticks from the keyframe to its last dab: how long the stroke took.
     fn span(&self) -> Tick {
-        self.dabs.last().map_or(0, |d| d.dt)
+        match &self.key.body {
+            Body::Drag { samples, .. } => samples.last().map_or(0, |s| s.dt),
+            _ => self.dabs.last().map_or(0, |d| d.dt),
+        }
     }
 }
 
@@ -29,7 +33,7 @@ const MAX_CHECKPOINTS: usize = 96;
 /// An edit to the keyframes, kept so it can be taken back exactly.
 enum Edit {
     Added(KeyId),
-    Removed { entry: Entry, index: usize },
+    Removed { entry: Box<Entry>, index: usize },
     Moved { id: KeyId, tick: Tick, index: usize },
 }
 
@@ -252,6 +256,80 @@ impl Timeline {
         }
     }
 
+    /// Something done to the swarm at the playhead: it shows at once.
+    fn swarm(&mut self, body: Body) -> KeyId {
+        self.catch_up(None);
+        let at = self.insert(body);
+        let (id, body) = (self.script[at].key.id, self.script[at].key.body.clone());
+        self.state.apply_swarm(id, &body);
+        id
+    }
+
+    /// A mimic reads a note (see [`Body::Note`]).
+    pub fn read_note(&mut self, name: &str, title: &str, pos: Vec2, vector: Vector) -> KeyId {
+        self.swarm(Body::Note {
+            name: name.to_owned(),
+            title: title.to_owned(),
+            pos,
+            vector: Box::new(vector),
+        })
+    }
+
+    pub fn cut(&mut self, a: u64, b: u64) -> KeyId {
+        self.swarm(Body::Cut { a, b })
+    }
+
+    pub fn pin(&mut self, mimic: u64, on: bool) -> KeyId {
+        self.swarm(Body::Pin { mimic, on })
+    }
+
+    /// Keep, or turn down, a proposal that notes `a` and `b` belong together.
+    pub fn rule_on_proposal(&mut self, a: &str, b: &str, keep: bool) -> KeyId {
+        self.swarm(Body::Verdict {
+            a: a.to_owned(),
+            b: b.to_owned(),
+            keep,
+        })
+    }
+
+    /// Take hold of a mimic at the playhead. It follows
+    /// [`Timeline::extend_drag`] while time runs, until [`Timeline::end_drag`].
+    pub fn begin_drag(&mut self, mimic: u64, pos: Vec2) -> KeyId {
+        self.catch_up(None);
+        let at = self.insert(Body::Drag {
+            mimic,
+            samples: vec![Sample { pos, dt: 0 }],
+        });
+        self.script[at].key.id
+    }
+
+    pub fn extend_drag(&mut self, id: KeyId, pos: Vec2) {
+        let now = self.state.tick;
+        let Some(e) = self.script.iter_mut().find(|e| e.key.id == id) else {
+            return;
+        };
+        let Body::Drag { samples, .. } = &mut e.key.body else {
+            return;
+        };
+        if now < e.key.tick {
+            return;
+        }
+        let dt = now - e.key.tick;
+        match samples.last_mut() {
+            Some(s) if s.dt == dt => s.pos = pos,
+            _ => samples.push(Sample { pos, dt }),
+        }
+        self.invalidate(now);
+    }
+
+    /// Let go. The live preview read each point a tick late; the canvas
+    /// works the drag out again as a replay would.
+    pub fn end_drag(&mut self, id: KeyId) {
+        if let Some(e) = self.script.iter().find(|e| e.key.id == id) {
+            self.edited(e.key.tick);
+        }
+    }
+
     /// Whether the note named `rule` is on at the shown state.
     pub fn rule_on(&self, rule: &str) -> bool {
         self.rules
@@ -265,7 +343,7 @@ impl Timeline {
         let entry = self.script.remove(index);
         self.edited(entry.key.tick);
         let key = entry.key.clone();
-        self.edits.push(Edit::Removed { entry, index });
+        self.edits.push(Edit::Removed { entry: Box::new(entry), index });
         Some(key)
     }
 
@@ -304,7 +382,7 @@ impl Timeline {
             }
             Edit::Removed { entry, index } => {
                 let tick = entry.key.tick;
-                self.script.insert(index.min(self.script.len()), entry);
+                self.script.insert(index.min(self.script.len()), *entry);
                 self.edited(tick);
             }
             Edit::Moved { id, tick, index } => {
@@ -331,7 +409,7 @@ impl Timeline {
         self.next_id += 1;
         let dabs = match &key.body {
             Body::Stroke(s) => dabs(s),
-            Body::Rule { .. } => Vec::new(),
+            _ => Vec::new(),
         };
         let id = key.id;
         let at = self.script.partition_point(|e| e.key.tick <= tick);

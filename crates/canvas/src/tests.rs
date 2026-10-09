@@ -353,7 +353,7 @@ fn grammar_names_the_whole_vocabulary() {
     }
 }
 
-/// A ring of mimics put down close together, one dab each.
+/// Mimics put down close together, one dab each.
 fn mimics(t: &mut Timeline, n: usize) {
     for k in 0..n {
         let x = 600.0 + (k % 4) as f32 * 70.0;
@@ -363,16 +363,20 @@ fn mimics(t: &mut Timeline, n: usize) {
     }
 }
 
+fn swarm(t: &Timeline) -> &Swarm {
+    &t.state().swarm
+}
+
 #[test]
 fn mimics_wander_and_replay_the_same() {
     let mut t = timeline();
     mimics(&mut t, 6);
     t.seek(5);
-    let start: Vec<Vec2> = t.state().mimics.iter().map(|m| m.core).collect();
+    let start: Vec<Vec2> = swarm(&t).mimics.iter().map(|m| m.core).collect();
     assert_eq!(start.len(), 6);
     t.seek(900);
     let live = t.state().fingerprint();
-    for (m, s) in t.state().mimics.iter().zip(&start) {
+    for (m, s) in swarm(&t).mimics.iter().zip(&start) {
         assert!(m.core.distance(*s) > 5.0, "a mimic stayed put");
         assert!(m.core.x >= 0.0 && m.core.x <= WIDTH && m.core.y >= 0.0 && m.core.y <= HEIGHT);
         for a in &m.arms {
@@ -389,23 +393,178 @@ fn mimics_wander_and_replay_the_same() {
 }
 
 #[test]
-fn mimics_hold_each_other_and_trade_colour() {
+fn holding_makes_links_that_learn_and_messages_that_change_minds() {
     let mut t = timeline();
     mimics(&mut t, 8);
     t.seek(1);
-    let before: Vec<[f32; 3]> = t.state().mimics.iter().map(|m| m.color).collect();
-    let mut held = false;
+    let before: Vec<Vector> = swarm(&t).mimics.iter().map(|m| m.state).collect();
+    let (mut made, mut learned) = (false, false);
     for tick in (60..=1800).step_by(60) {
         t.seek(tick);
-        held |= t.state().mimics.iter().any(|m| m.arms.iter().any(|a| matches!(a.hold, Hold::Mimic(_))));
+        made |= !swarm(&t).links.is_empty();
+        learned |= swarm(&t).links.iter().any(|l| (l.weight - 0.3).abs() > 0.05);
     }
-    assert!(held, "no mimic ever took hold of another");
-    let changed = t
-        .state()
+    assert!(made, "no links were made");
+    assert!(learned, "no link's weight moved");
+    let changed = swarm(&t)
         .mimics
         .iter()
         .zip(&before)
-        .filter(|(m, b)| m.color != **b)
+        .filter(|(m, b)| m.state != **b)
         .count();
-    assert!(changed >= 2, "only {changed} mimics took in any colour");
+    assert!(changed >= 2, "only {changed} minds changed");
+    // Every link joins two mimics that exist, and weights stay in 0..1.
+    for l in &swarm(&t).links {
+        assert!(swarm(&t).mimic(l.a).is_some() && swarm(&t).mimic(l.b).is_some());
+        assert!((0.0..=1.0).contains(&l.weight));
+    }
+}
+
+/// The topic notes put down as mimics, spread across the canvas with the
+/// topics mixed up.
+fn notes_on_canvas(t: &mut Timeline) -> Vec<(String, usize, String)> {
+    let notes = topic_notes();
+    for (k, (name, _, text)) in notes.iter().enumerate() {
+        let slot = (k * 7) % notes.len();
+        let pos = Vec2::new(250.0 + (slot % 5) as f32 * 270.0, 220.0 + (slot / 5) as f32 * 260.0);
+        t.read_note(name, name, pos, note_vector(text));
+    }
+    notes
+}
+
+#[test]
+fn notes_find_their_own_kind() {
+    let mut t = timeline();
+    let notes = notes_on_canvas(&mut t);
+    t.seek(5 * 60 * TICKS_PER_SECOND);
+    let s = swarm(&t);
+    let topic = |id: u64| notes.iter().find(|n| note_id(&n.0) == id).map(|n| n.1);
+    let (mut within, mut across) = (Vec::new(), Vec::new());
+    for l in &s.links {
+        if topic(l.a) == topic(l.b) { within.push(l.weight) } else { across.push(l.weight) }
+    }
+    let mean = |v: &[f32]| v.iter().sum::<f32>() / v.len().max(1) as f32;
+    let proposals = s.proposals();
+    let right = proposals
+        .iter()
+        .filter(|p| topic(note_id(&p.a.name)) == topic(note_id(&p.b.name)))
+        .count();
+    eprintln!(
+        "links within {} (mean {:.2}), across {} (mean {:.2}); proposals {} of which right {}",
+        within.len(), mean(&within), across.len(), mean(&across), proposals.len(), right
+    );
+    assert!(mean(&within) > mean(&across) + 0.15, "links don't prefer notes on one topic");
+    assert!(proposals.len() >= 3, "too few proposals");
+    assert!(right * 10 >= proposals.len() * 8, "fewer than 80% of proposals join notes on one topic");
+}
+
+#[test]
+fn a_kept_proposal_stays_and_a_turned_down_one_goes() {
+    let mut t = timeline();
+    notes_on_canvas(&mut t);
+    t.seek(5 * 60 * TICKS_PER_SECOND);
+    let ps = swarm(&t).proposals();
+    assert!(ps.len() >= 2);
+    let (keep, drop) = (ps[0].clone(), ps[1].clone());
+    t.rule_on_proposal(&keep.a.name, &keep.b.name, true);
+    t.rule_on_proposal(&drop.a.name, &drop.b.name, false);
+    let (ka, kb) = (note_id(&keep.a.name), note_id(&keep.b.name));
+    let (da, db) = (note_id(&drop.a.name), note_id(&drop.b.name));
+    let later = t.playhead() + 2 * 60 * TICKS_PER_SECOND;
+    t.seek(later);
+    let s = swarm(&t);
+    let kept = s.link(ka, kb).expect("the kept link is gone");
+    assert!(kept.pinned && kept.weight == 1.0);
+    let proposed = |a: u64, b: u64| s.proposals().iter().any(|p| {
+        let (x, y) = (note_id(&p.a.name), note_id(&p.b.name));
+        (x, y) == (a, b) || (x, y) == (b, a)
+    });
+    assert!(!proposed(ka, kb) && !proposed(da, db), "a ruled-on pair was proposed again");
+    // Ruling is a keyframe like any other: undo takes it back.
+    let with = t.state().fingerprint();
+    t.undo();
+    t.seek(later);
+    assert_ne!(t.state().fingerprint(), with);
+}
+
+#[test]
+fn dragging_a_mimic_pulls_its_partners() {
+    let mut t = timeline();
+    notes_on_canvas(&mut t);
+    t.seek(3 * 60 * TICKS_PER_SECOND);
+    let s = swarm(&t);
+    let l = s.links.iter().max_by(|a, b| a.weight.total_cmp(&b.weight)).expect("no links");
+    let (held, partner) = (l.a, l.b);
+    let from = s.mimic(held).unwrap().core;
+    let partner_from = s.mimic(partner).unwrap().core;
+    let to = Vec2::new(if from.x < WIDTH / 2.0 { from.x + 400.0 } else { from.x - 400.0 }, from.y);
+    let id = t.begin_drag(held, from);
+    for k in 1..=120 {
+        t.step();
+        t.extend_drag(id, from.lerp(to, k as f32 / 120.0));
+    }
+    t.end_drag(id);
+    t.seek(t.playhead());
+    let s = swarm(&t);
+    assert!(s.mimic(held).unwrap().core.distance(to) < 2.0, "the dragged mimic isn't where it was put");
+    // Let go, the group catches up.
+    let settled = t.playhead() + 3 * TICKS_PER_SECOND;
+    t.seek(settled);
+    let s = swarm(&t);
+    let moved = s.mimic(partner).unwrap().core.distance(partner_from);
+    assert!(moved > 150.0, "its partner only moved {moved}");
+    // Played back from the start, the drag lands everyone the same.
+    let end = t.playhead();
+    let after = t.state().fingerprint();
+    t.seek(0);
+    t.seek(end);
+    assert_eq!(t.state().fingerprint(), after);
+}
+
+#[test]
+fn a_cut_link_stays_cut_for_a_while_and_a_pinned_mimic_stays_put() {
+    let mut t = timeline();
+    notes_on_canvas(&mut t);
+    t.seek(3 * 60 * TICKS_PER_SECOND);
+    let l = swarm(&t).links.iter().max_by(|a, b| a.weight.total_cmp(&b.weight)).cloned().expect("no links");
+    t.cut(l.a, l.b);
+    let pinned = swarm(&t).mimics[0].id;
+    let at = swarm(&t).mimics[0].core;
+    t.pin(pinned, true);
+    for _ in 0..8 {
+        let next = t.playhead() + 60;
+        t.seek(next);
+        assert!(swarm(&t).link(l.a, l.b).is_none(), "the cut pair linked again within ten seconds");
+        assert_eq!(swarm(&t).mimic(pinned).unwrap().core, at, "the pinned mimic moved");
+    }
+}
+
+/// Fifteen notes on three topics (name, topic, text): each draws ten words
+/// from its topic's dozen and a few everyday words any note might use.
+fn topic_notes() -> Vec<(String, usize, String)> {
+    const TOPICS: [&[&str]; 3] = [
+        &["tomato", "compost", "seedling", "soil", "watering", "mulch", "harvest", "basil", "trellis", "sunlight", "pruning", "greenhouse"],
+        &["chord", "melody", "tempo", "guitar", "rhythm", "harmony", "verse", "chorus", "drummer", "synth", "mixing", "bassline"],
+        &["orbit", "rocket", "planet", "telescope", "comet", "galaxy", "nebula", "gravity", "asteroid", "launch", "satellite", "crater"],
+    ];
+    const EVERYDAY: [&str; 8] = ["today", "idea", "maybe", "remember", "try", "later", "weekend", "friend"];
+    let mut out = Vec::new();
+    for (t, words) in TOPICS.iter().enumerate() {
+        for k in 0..5u64 {
+            let seed = crate::sim::mix(t as u64, k);
+            let mut text = String::new();
+            for w in 0..10u64 {
+                let i = (crate::sim::unit(seed, w) * words.len() as f32) as usize % words.len();
+                text.push_str(words[i]);
+                text.push(' ');
+            }
+            for w in 0..3u64 {
+                let i = (crate::sim::unit(seed, 50 + w) * EVERYDAY.len() as f32) as usize % EVERYDAY.len();
+                text.push_str(EVERYDAY[i]);
+                text.push(' ');
+            }
+            out.push((format!("topic{t}-{k}"), t, text));
+        }
+    }
+    out
 }

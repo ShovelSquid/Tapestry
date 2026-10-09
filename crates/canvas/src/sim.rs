@@ -7,8 +7,8 @@
 use glam::Vec2;
 
 use crate::grid::Grid;
-use crate::key::{Brush, DT, Dab, KeyId, Stroke, Tick};
-use crate::mimic::Mimic;
+use crate::key::{Body, Brush, DT, Dab, KeyId, Stroke, Tick};
+use crate::mimic::{Carried, Mimic, Swarm};
 use crate::rules::{Basic, Becomes, Prop, Rulebook};
 use crate::timeline::Entry;
 
@@ -185,7 +185,7 @@ pub struct State {
     pub tick: Tick,
     pub particles: Vec<Particle>,
     pub trees: Vec<Tree>,
-    pub mimics: Vec<Mimic>,
+    pub swarm: Swarm,
     /// Which rule notes are switched on, by index into the [`Rulebook`].
     pub rules_on: Vec<bool>,
     /// Everything, for rules.
@@ -202,7 +202,7 @@ impl State {
             tick: 0,
             particles: Vec::new(),
             trees: Vec::new(),
-            mimics: Vec::new(),
+            swarm: Swarm::default(),
             rules_on: vec![false; rules.len()],
             grid: Grid::default(),
             solids: Grid::default(),
@@ -231,12 +231,16 @@ impl State {
             h = mix(h, p.material as u64);
             h = mix(h, (p.pos.x.to_bits() as u64) << 32 | p.pos.y.to_bits() as u64);
         }
-        for m in &self.mimics {
+        for m in &self.swarm.mimics {
             h = mix(h, m.id);
             h = mix(h, (m.core.x.to_bits() as u64) << 32 | m.core.y.to_bits() as u64);
-            for c in m.color {
-                h = mix(h, c.to_bits() as u64);
+            for s in m.state {
+                h = mix(h, s.to_bits() as u64);
             }
+        }
+        for l in &self.swarm.links {
+            h = mix(h, l.a ^ l.b.rotate_left(1));
+            h = mix(h, l.weight.to_bits() as u64);
         }
         h
     }
@@ -282,7 +286,8 @@ impl State {
             }
         }
 
-        crate::mimic::step(&mut self.mimics, self.tick);
+        let drags = drags(script, self.tick);
+        self.swarm.step(self.tick, &drags);
         self.apply_rules(rules);
         self.nature();
         self.particles.retain(|p| !p.dead);
@@ -538,14 +543,14 @@ impl State {
                 break;
             }
             match &e.key.body {
-                crate::key::Body::Rule { rule, on } if e.key.tick == self.tick => {
+                Body::Rule { rule, on } if e.key.tick == self.tick => {
                     // A switch for a note that's since been deleted does nothing.
                     if let Some(i) = rules.index(rule) {
                         self.rules_on[i] = *on;
                     }
                 }
-                crate::key::Body::Rule { .. } => {}
-                crate::key::Body::Stroke(stroke) => {
+                Body::Rule { .. } => {}
+                Body::Stroke(stroke) => {
                     let dt = self.tick - e.key.tick;
                     let lo = e.dabs.partition_point(|d| d.dt < dt);
                     let hi = e.dabs.partition_point(|d| d.dt <= dt);
@@ -553,7 +558,27 @@ impl State {
                         self.emit(e.key.id, stroke, i, e.dabs[i]);
                     }
                 }
+                body => {
+                    if e.key.tick == self.tick {
+                        self.apply_swarm(e.key.id, body);
+                    }
+                }
             }
+        }
+    }
+
+    /// Something done to the swarm at this tick.
+    pub(crate) fn apply_swarm(&mut self, key: KeyId, body: &Body) {
+        let tick = self.tick;
+        match body {
+            Body::Note { name, title, pos, vector } => {
+                let note = Carried { name: name.clone(), title: title.clone() };
+                self.swarm.carry(note, *pos, **vector, MadeBy::Key(key));
+            }
+            Body::Cut { a, b } => self.swarm.cut(*a, *b, tick),
+            Body::Pin { mimic, on } => self.swarm.pin(*mimic, *on),
+            Body::Verdict { a, b, keep } => self.swarm.rule(a, b, *keep, tick),
+            Body::Drag { .. } | Body::Stroke(_) | Body::Rule { .. } => {}
         }
     }
 
@@ -582,7 +607,7 @@ impl State {
                 self.particles.push(p);
             }
             Brush::Tree => self.plant(seed, dab.pos, r, made_by),
-            Brush::Mimic => self.mimics.push(Mimic::new(seed, dab.pos, r, made_by)),
+            Brush::Mimic => self.swarm.add(Mimic::new(seed, dab.pos, r, made_by)),
             Brush::Smudge => {
                 let reach = r * 2.5;
                 for p in &mut self.particles {
@@ -660,6 +685,33 @@ fn convert(p: &mut Particle, to: Becomes, made_by: MadeBy) {
         }
         _ => {}
     }
+}
+
+/// A drag holds its mimic this many ticks past its last point. Painting
+/// live, the newest point always lands a tick or so after the canvas has
+/// moved on; this keeps the mimic held in between, live and in replays.
+const DRAG_GRACE: Tick = 8;
+
+/// Mimics the author is moving at `tick`, and where: each drag holds its
+/// mimic at the latest point given, from its first point to just past its
+/// last.
+fn drags(script: &[Entry], tick: Tick) -> Vec<(u64, Vec2)> {
+    script
+        .iter()
+        .take_while(|e| e.key.tick <= tick)
+        .filter_map(|e| match &e.key.body {
+            Body::Drag { mimic, samples } => {
+                let dt = tick - e.key.tick;
+                let last = samples.last()?;
+                if dt > last.dt + DRAG_GRACE {
+                    return None;
+                }
+                let at = samples.iter().rev().find(|s| s.dt <= dt)?;
+                Some((*mimic, at.pos))
+            }
+            _ => None,
+        })
+        .collect()
 }
 
 /// Rotation by a small angle, from series rather than libm so every machine
