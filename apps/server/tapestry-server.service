@@ -1,0 +1,17 @@
+[Unit]
+Description=Tapestry server: terminals and Claude sessions that outlive the app
+After=network-online.target
+
+[Service]
+ExecStart=%h/.local/bin/tapestry-server
+# Claude Code, cargo and the Tailscale snap live outside systemd's short PATH.
+Environment=PATH=%h/.local/bin:%h/.cargo/bin:/snap/bin:/usr/local/bin:/usr/bin:/bin
+Restart=on-failure
+RestartSec=2
+# Stop the server first, so it knows the terminals are going down with it
+# and keeps them in its list; what's left is ended after.
+KillMode=mixed
+TimeoutStopSec=5
+
+[Install]
+WantedBy=default.target

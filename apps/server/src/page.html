@@ -1,0 +1,368 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, interactive-widget=resizes-content">
+<title>Tapestry Server</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.css">
+<script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.js"></script>
+<style>
+  :root {
+    --paper: #faf9f5; --ink: #16191b; --muted: #4b4e4b; --faint: #686a66;
+    --rule: #e4e1d8; --dot: #e8492a; --link: #4a7fc1; --green: #2ecc71;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--paper); color: var(--ink);
+    font: 15px/1.45 ui-serif, Georgia, serif; -webkit-text-size-adjust: 100%; }
+  button { font: inherit; color: var(--link); background: none; border: 0; padding: 4px 0; cursor: pointer; }
+  button:hover { text-decoration: underline; }
+  .mono { font-family: ui-monospace, "JetBrains Mono", Menlo, monospace; font-size: 12.5px; }
+  #home { max-width: 760px; margin: 0 auto; padding: 22px 16px 60px; }
+  h1 { font-weight: normal; font-size: 26px; margin: 0 0 2px; }
+  h1 .dot { color: var(--dot); }
+  .sub { color: var(--faint); margin-bottom: 26px; }
+  h2 { font-weight: normal; font-size: 13px; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--faint); margin: 28px 0 8px; border-bottom: 1px solid var(--rule); padding-bottom: 4px; }
+  .row { display: flex; gap: 12px; align-items: baseline; padding: 9px 0; border-bottom: 1px solid var(--rule); }
+  .row .what { flex: 1; min-width: 0; }
+  .row .title { overflow: hidden; text-overflow: ellipsis; display: -webkit-box;
+    -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .row .where { color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row .acts { display: flex; gap: 14px; white-space: nowrap; }
+  .empty { color: var(--faint); padding: 8px 0; }
+  .new { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .new input { flex: 1; min-width: 180px; padding: 7px 9px; border: 1px solid var(--rule);
+    background: #fff; color: var(--ink); border-radius: 4px; }
+  .live { color: var(--green); }
+  .notes { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+  .note { background: #fff; border: 1px solid var(--rule); border-radius: 6px; padding: 10px 12px;
+    cursor: text; min-height: 70px; }
+  .note .nt { font-size: 16px; margin-bottom: 4px; overflow-wrap: anywhere; }
+  .note .nb { color: var(--muted); font-size: 14px; white-space: pre-wrap; overflow-wrap: anywhere;
+    display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden; }
+  .note.editing { grid-column: 1 / -1; cursor: auto; border-color: var(--link); }
+  .note textarea { width: 100%; min-height: 160px; border: 0; outline: 0; resize: vertical;
+    font: 15px/1.45 ui-serif, Georgia, serif; color: var(--ink); background: transparent; }
+  .note .state { color: var(--faint); font-size: 12px; display: flex; justify-content: space-between; }
+  .err { color: var(--dot); }
+
+  #term { position: fixed; inset: 0; display: none; flex-direction: column; background: var(--paper); }
+  #term.on { display: flex; }
+  #bar { display: flex; gap: 14px; align-items: baseline; padding: 8px 12px; border-bottom: 1px solid var(--rule); }
+  #bar .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
+  #screen { flex: 1; min-height: 0; padding: 6px 4px 0 8px; }
+  #keys { display: flex; gap: 6px; padding: 6px 8px; border-top: 1px solid var(--rule);
+    overflow-x: auto; scrollbar-width: none; }
+  #keys button { flex: none; min-width: 42px; padding: 7px 10px; color: var(--ink);
+    border: 1px solid var(--rule); border-radius: 5px; background: #fff; text-decoration: none; }
+  #keys button.armed { border-color: var(--dot); color: var(--dot); }
+  @media (hover: hover) and (pointer: fine) { #keys { display: none; } }
+</style>
+</head>
+<body>
+<div id="home">
+  <h1>Tapestry<span class="dot">.</span></h1>
+  <div class="sub">Terminals and Claude sessions kept running on this machine, open from anywhere.</div>
+
+  <h2>Open</h2>
+  <div id="open"></div>
+  <div class="new" style="margin-top:12px">
+    <input id="cwd" class="mono" placeholder="folder" autocapitalize="off" autocorrect="off" spellcheck="false">
+    <button id="newClaude">+ claude</button>
+    <button id="newShell">+ shell</button>
+  </div>
+  <div id="msg" class="err"></div>
+
+  <h2>Notes <button id="newNote" style="float:right; text-transform:none; letter-spacing:0; font-size:15px; padding:0">+ note</button></h2>
+  <div id="notes"><div class="empty">Looking…</div></div>
+
+  <h2>Reopen a Claude session</h2>
+  <div id="past"><div class="empty">Looking…</div></div>
+  <button id="more" style="margin-top:8px; display:none">show more</button>
+</div>
+
+<div id="term">
+  <div id="bar">
+    <button id="back">← back</button>
+    <span class="t mono" id="ttitle"></span>
+    <button id="closeTerm">close</button>
+  </div>
+  <div id="screen"></div>
+  <div id="keys">
+    <button data-k="esc">esc</button>
+    <button data-k="tab">tab</button>
+    <button data-k="ctrl">ctrl</button>
+    <button data-k="up">↑</button>
+    <button data-k="down">↓</button>
+    <button data-k="left">←</button>
+    <button data-k="right">→</button>
+    <button data-k="stab">⇧tab</button>
+    <button data-k="cc">^C</button>
+    <button data-k="enter">⏎</button>
+  </div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+let home = "";
+let pastLimit = 30;
+
+function short(p) {
+  if (!p) return "";
+  return home && p.startsWith(home) ? "~" + p.slice(home.length) : p;
+}
+function ago(t) {
+  const s = Date.now() / 1000 - t;
+  if (s < 60) return "just now";
+  if (s < 3600) return Math.floor(s / 60) + "m ago";
+  if (s < 86400) return Math.floor(s / 3600) + "h ago";
+  return Math.floor(s / 86400) + "d ago";
+}
+async function api(path, opts) {
+  const r = await fetch(path, opts);
+  if (!r.ok) throw new Error(await r.text() || r.statusText);
+  return r.status === 204 ? null : r.json();
+}
+
+async function refresh() {
+  try {
+    const { sessions, home: h } = await api("/api/sessions");
+    home = h;
+    if (!$("cwd").value) $("cwd").value = short(h) || "~";
+    $("open").innerHTML = sessions.length ? sessions.map((s) => `
+      <div class="row">
+        <div class="what"><div class="title">${esc(s.title)}</div>
+          <div class="where mono">${esc(short(s.cwd))}</div></div>
+        <div class="acts"><button data-open="${s.id}" data-title="${esc(s.title)}">open</button>
+          <button data-close="${s.id}">close</button></div>
+      </div>`).join("") : `<div class="empty">Nothing running. Start one below, or reopen a session.</div>`;
+  } catch (e) { $("msg").textContent = e.message; }
+}
+
+async function loadPast() {
+  try {
+    const list = await api("/api/claude?limit=" + pastLimit);
+    $("past").innerHTML = list.length ? list.map((p) => `
+      <div class="row">
+        <div class="what"><div class="title">${esc(p.title)}</div>
+          <div class="where mono">${esc(short(p.cwd))} · ${ago(p.at)}${p.running ? ' · <span class="live">running</span>' : ""}</div></div>
+        <div class="acts"><button data-resume="${esc(p.id)}" data-cwd="${esc(p.cwd || "")}" data-running="${p.running}">reopen</button></div>
+      </div>`).join("") : `<div class="empty">No Claude sessions found.</div>`;
+    $("more").style.display = list.length >= pastLimit ? "" : "none";
+  } catch (e) { $("past").innerHTML = `<div class="err">${esc(e.message)}</div>`; }
+}
+
+function expand(p) { return p.startsWith("~") ? home + p.slice(1) : p; }
+
+async function create(body) {
+  $("msg").textContent = "";
+  try {
+    const { id } = await api("/api/sessions", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+    });
+    await refresh();
+    openTerm(id, body.claude ? "claude" : "shell");
+  } catch (e) { $("msg").textContent = e.message; }
+}
+
+document.addEventListener("click", async (e) => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  if (b.dataset.open) openTerm(+b.dataset.open, b.dataset.title);
+  else if (b.dataset.close) {
+    if (!confirm("Close this terminal? Whatever runs in it ends.")) return;
+    await api("/api/sessions/" + b.dataset.close, { method: "DELETE" }).catch(() => {});
+    refresh();
+  } else if (b.dataset.resume) {
+    if (b.dataset.running === "true" &&
+      !confirm("This session is open somewhere else right now. Reopening it here too means two windows writing to one conversation. Reopen anyway?")) return;
+    create({ claude: b.dataset.resume, cwd: b.dataset.cwd || undefined });
+  }
+});
+$("newClaude").onclick = () => create({ claude: "new", cwd: expand($("cwd").value.trim() || "~") });
+$("newShell").onclick = () => create({ cwd: expand($("cwd").value.trim() || "~") });
+$("more").onclick = () => { pastLimit += 30; loadPast(); };
+
+// The terminal view.
+let xterm, fit, ws, current = null, ctrl = false;
+
+function theme() {
+  return {
+    background: "#faf9f5", foreground: "#16191b", cursor: "#e8492a", cursorAccent: "#faf9f5",
+    selectionBackground: "rgba(74,127,193,0.25)",
+    black: "#16191b", red: "#c0392b", green: "#2a7d4f", yellow: "#9a6b00", blue: "#3567a8",
+    magenta: "#8a4a9e", cyan: "#2b7f86", white: "#8a8c87",
+    brightBlack: "#686a66", brightRed: "#e8492a", brightGreen: "#2ecc71", brightYellow: "#b8860b",
+    brightBlue: "#4a7fc1", brightMagenta: "#a35bb8", brightCyan: "#3a9aa2", brightWhite: "#b5b6b0",
+  };
+}
+
+function send(d) { if (ws && ws.readyState === 1) ws.send(JSON.stringify({ t: "in", d })); }
+function sendSize() { if (ws && ws.readyState === 1 && xterm) ws.send(JSON.stringify({ t: "size", r: xterm.rows, c: xterm.cols })); }
+
+function openTerm(id, title) {
+  current = id;
+  $("ttitle").textContent = title || "";
+  $("term").classList.add("on");
+  if (!xterm) {
+    xterm = new Terminal({
+      fontFamily: 'ui-monospace, "JetBrains Mono", Menlo, monospace',
+      fontSize: matchMedia("(pointer: coarse)").matches ? 12 : 13.5,
+      theme: theme(), scrollback: 5000, allowProposedApi: true,
+    });
+    fit = new FitAddon.FitAddon();
+    xterm.loadAddon(fit);
+    xterm.open($("screen"));
+    xterm.onData((d) => {
+      if (ctrl && d.length === 1) {
+        const c = d.toLowerCase().charCodeAt(0);
+        if (c >= 97 && c <= 122) d = String.fromCharCode(c - 96);
+        setCtrl(false);
+      }
+      send(d);
+    });
+    xterm.onResize(sendSize);
+    new ResizeObserver(() => { try { fit.fit(); } catch {} }).observe($("screen"));
+  }
+  xterm.reset();
+  connect(id);
+  setTimeout(() => { fit.fit(); xterm.focus(); }, 0);
+  history.pushState({ term: id }, "", "#" + id);
+}
+
+function connect(id) {
+  if (ws) { ws.onclose = null; ws.close(); }
+  const proto = location.protocol === "https:" ? "wss" : "ws";
+  ws = new WebSocket(`${proto}://${location.host}/ws/${id}`);
+  ws.binaryType = "arraybuffer";
+  ws.onopen = () => { fit.fit(); sendSize(); };
+  ws.onmessage = (m) => {
+    if (typeof m.data === "string") {
+      if (JSON.parse(m.data).ended) xterm.write("\r\n\x1b[2m[ended]\x1b[0m\r\n");
+      return;
+    }
+    xterm.write(new Uint8Array(m.data));
+  };
+  // Phones drop sockets when the screen sleeps; come back to it.
+  ws.onclose = () => { if (current === id) setTimeout(() => current === id && connect(id), 1500); };
+}
+
+function closeTerm() {
+  current = null;
+  if (ws) { ws.onclose = null; ws.close(); ws = null; }
+  $("term").classList.remove("on");
+  refresh(); loadPast();
+}
+$("back").onclick = () => history.back();
+window.addEventListener("popstate", () => { if (current !== null) closeTerm(); });
+$("closeTerm").onclick = async () => {
+  if (!confirm("Close this terminal? Whatever runs in it ends.")) return;
+  const id = current;
+  closeTerm();
+  await api("/api/sessions/" + id, { method: "DELETE" }).catch(() => {});
+  refresh();
+};
+
+function setCtrl(on) { ctrl = on; document.querySelector('[data-k="ctrl"]').classList.toggle("armed", on); }
+const KEYS = { esc: "\x1b", tab: "\t", up: "\x1b[A", down: "\x1b[B", left: "\x1b[D", right: "\x1b[C",
+  stab: "\x1b[Z", cc: "\x03", enter: "\r" };
+$("keys").addEventListener("pointerdown", (e) => e.preventDefault()); // keep the keyboard up
+$("keys").addEventListener("click", (e) => {
+  const k = e.target.closest("button")?.dataset.k;
+  if (!k) return;
+  if (k === "ctrl") setCtrl(!ctrl); else send(KEYS[k]);
+  xterm.focus();
+});
+
+// Notes: the app's notes folder. Tap one to write in it; it saves itself
+// when typing pauses. A note left empty is deleted, as in the app.
+let notes = [], editing = null; // editing: { name|null, text, saved, timer }
+function noteTitle(t) {
+  const first = t.split("\n").map((l) => l.trim()).find((l) => l);
+  return first ? first.replace(/^#+/, "").trim() || "Untitled" : "Untitled";
+}
+function noteBody(t) {
+  const lines = t.split("\n"); let i = lines.findIndex((l) => l.trim());
+  return i < 0 ? "" : lines.slice(i + 1).join("\n").trim();
+}
+async function loadNotes() {
+  try {
+    const { notes: list } = await api("/api/notes");
+    if (list === null) {
+      $("notes").innerHTML = `<div class="empty">Open the Tapestry app on this machine once, and its notes show here.</div>`;
+      $("newNote").style.display = "none";
+      return;
+    }
+    $("newNote").style.display = "";
+    notes = list;
+    // A note open here and untouched since its last save takes what's on disk.
+    if (editing && editing.name) {
+      const n = notes.find((n) => n.name === editing.name);
+      if (n && n.text !== editing.saved && editing.text === editing.saved) {
+        editing.text = editing.saved = n.text;
+        const ta = document.querySelector(".note.editing textarea");
+        if (ta) ta.value = n.text;
+      }
+    }
+    if (!document.querySelector(".note.editing textarea:focus")) drawNotes();
+  } catch (e) { $("notes").innerHTML = `<div class="err">${esc(e.message)}</div>`; }
+}
+function drawNotes() {
+  const cards = notes.filter((n) => !editing || n.name !== editing.name).map((n) => `
+    <div class="note" data-note="${esc(n.name)}"><div class="nt">${esc(noteTitle(n.text))}</div>
+      <div class="nb">${esc(noteBody(n.text))}</div></div>`);
+  const ed = editing ? [`<div class="note editing"><textarea placeholder="Write…" spellcheck="true">${esc(editing.text)}</textarea>
+      <div class="state"><span id="nstate">${editing.text === editing.saved ? "saved" : "…"}</span><button id="doneNote">done</button></div></div>`] : [];
+  $("notes").className = "notes";
+  $("notes").innerHTML = ed.concat(cards).join("") || `<div class="empty">No notes yet.</div>`;
+  const ta = document.querySelector(".note.editing textarea");
+  if (ta) ta.addEventListener("input", () => { editing.text = ta.value; $("nstate").textContent = "…"; schedule(); });
+}
+function schedule() { clearTimeout(editing.timer); editing.timer = setTimeout(saveNote, 600); }
+async function saveNote() {
+  const ed = editing; if (!ed || ed.text === ed.saved) return;
+  const text = ed.text;
+  try {
+    if (!ed.name) {
+      if (!text.trim()) return;
+      ed.name = (await api("/api/notes", { method: "POST", body: text })).name;
+    } else {
+      await api("/api/notes/" + encodeURIComponent(ed.name), { method: "PUT", body: text });
+    }
+    ed.saved = text;
+    const s = $("nstate"); if (s && editing === ed && ed.text === text) s.textContent = "saved";
+  } catch (e) { const s = $("nstate"); if (s) s.textContent = "couldn't save: " + e.message; }
+}
+async function putDown() {
+  if (!editing) return;
+  clearTimeout(editing.timer);
+  await saveNote();
+  editing = null;
+  await loadNotes(); drawNotes();
+}
+function edit(name) {
+  const n = notes.find((n) => n.name === name);
+  editing = { name, text: n ? n.text : "", saved: n ? n.text : "", timer: null };
+  drawNotes();
+  const ta = document.querySelector(".note.editing textarea"); if (ta) ta.focus();
+}
+$("notes").addEventListener("click", async (e) => {
+  if (e.target.id === "doneNote") { await putDown(); return; }
+  const card = e.target.closest("[data-note]");
+  if (card) { await putDown(); edit(card.dataset.note); }
+});
+$("newNote").onclick = async () => {
+  await putDown();
+  editing = { name: null, text: "", saved: "", timer: null };
+  drawNotes();
+  document.querySelector(".note.editing textarea")?.focus();
+};
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && editing && current === null) putDown(); });
+
+refresh(); loadPast(); loadNotes();
+setInterval(() => { if (current === null) { refresh(); loadNotes(); } }, 3000);
+</script>
+</body>
+</html>
