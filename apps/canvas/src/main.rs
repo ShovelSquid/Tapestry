@@ -10,6 +10,7 @@ mod ide;
 mod marks;
 mod notes;
 mod server;
+mod swarm;
 mod sync;
 mod tabnote;
 mod term;
@@ -27,8 +28,8 @@ use egui::{
 use egui_dock::tab_viewer::OnCloseResponse;
 use egui_dock::{DockArea, DockState, NodeIndex, TabViewer};
 use tapestry_canvas::{
-    Body, Brush, DT, HEIGHT, KeyId, MadeBy, Material, Mimic, Particle, Rulebook, SEGS,
-    TICKS_PER_SECOND, Tick, Timeline, WIDTH,
+    Body, Brush, DT, HEIGHT, KeyId, MadeBy, Material, Particle, Rulebook, TICKS_PER_SECOND, Tick,
+    Timeline, WIDTH,
 };
 
 // The palette of data.pewdiepie.com: warm paper, near-black ink, quiet greys.
@@ -66,6 +67,9 @@ fn main() -> eframe::Result {
             }
             if demo {
                 paint_demo(&mut app.timeline);
+                for (name, text) in swarm::DEMO_NOTES {
+                    app.note_texts.insert((*name).to_owned(), (*text).to_owned());
+                }
             }
             // `TAPESTRY_EDIT=<note>` opens that rule note for editing.
             if let Ok(name) = std::env::var("TAPESTRY_EDIT") {
@@ -90,7 +94,7 @@ fn world_dir() -> std::path::PathBuf {
 
 /// A scene to start from: an ink cup with water poured in, a row of trees
 /// that fire reaches once "Fire spreads to trees" is switched on, and a
-/// handful of mimics.
+/// dozen mimics reading notes.
 fn paint_demo(t: &mut Timeline) {
     use glam::Vec2;
     fn stroke(t: &mut Timeline, brush: Brush, radius: f32, points: &[(f32, f32)]) {
@@ -112,8 +116,11 @@ fn paint_demo(t: &mut Timeline) {
     stroke(t, Brush::Fire, 6.0, &[(680.0, 880.0), (700.0, 850.0)]);
     t.seek(150);
     t.set_rule("fire-spreads-to-trees", true);
-    for (x, y) in [(900.0, 260.0), (980.0, 330.0), (1060.0, 240.0), (1140.0, 340.0), (1220.0, 260.0), (1010.0, 450.0), (1170.0, 470.0)] {
-        stroke(t, Brush::Mimic, 8.0, &[(x, y)]);
+    // Mimics reading notes on three topics, the topics mixed up.
+    for (k, (name, text)) in swarm::DEMO_NOTES.iter().enumerate() {
+        let slot = (k * 5) % swarm::DEMO_NOTES.len();
+        let pos = Vec2::new(820.0 + (slot % 4) as f32 * 200.0, 170.0 + (slot / 4) as f32 * 160.0);
+        t.read_note(name, &swarm::title(text), pos, tapestry_canvas::note_vector(text));
     }
     t.seek(0);
 }
@@ -324,6 +331,10 @@ struct App {
     playing: bool,
     clock: f32,
     painting: Option<(KeyId, egui::Vec2)>,
+    /// A mimic being dragged: the drag's keyframe.
+    holding: Option<KeyId>,
+    /// The text of every note a mimic has read, for saying what two share.
+    note_texts: std::collections::HashMap<String, String>,
     /// The keyframe picked on the timeline. What it made stays bright.
     selected: Option<KeyId>,
     drag: Option<Drag>,
@@ -389,6 +400,8 @@ impl App {
             playing: true,
             clock: 0.0,
             painting: None,
+            holding: None,
+            note_texts: std::collections::HashMap::new(),
             selected: None,
             drag: None,
             shot: std::env::var("TAPESTRY_SHOT").ok().and_then(|v| {
@@ -605,6 +618,25 @@ impl App {
         ui.add_space(8.0);
     }
 
+    /// A mimic for every note in `world/notes`, carrying what it says. A
+    /// note already carried is read again only if it changed.
+    fn read_notes(&mut self) {
+        for (name, title, text) in self.notebook.all() {
+            let vector = tapestry_canvas::note_vector(&text);
+            let same = self.timeline.state().swarm.carrier(&name).is_some_and(|m| {
+                m.input == vector && m.note.as_ref().is_some_and(|n| n.title == title)
+            });
+            self.note_texts.insert(name.clone(), text);
+            if same {
+                continue;
+            }
+            // Somewhere steady for each note, all over the canvas.
+            let id = tapestry_canvas::note_id(&name);
+            let pos = glam::Vec2::new(150.0 + (id % 1300) as f32, 150.0 + ((id >> 20) % 700) as f32);
+            self.timeline.read_note(&name, &title, pos, vector);
+        }
+    }
+
     fn palette(&mut self, ui: &mut egui::Ui) {
         ui.add_space(16.0);
         let rows = Brush::ALL.into_iter().map(Some).chain([None]);
@@ -654,6 +686,12 @@ impl App {
             ui.add_space(16.0);
             if quiet_link(ui, "draw anywhere", self.marks.anywhere).clicked() {
                 self.marks.anywhere = !self.marks.anywhere;
+            }
+        });
+        ui.horizontal(|ui| {
+            ui.add_space(16.0);
+            if quiet_link(ui, "mimics read the notes", false).clicked() {
+                self.read_notes();
             }
         });
         ui.horizontal_wrapped(|ui| {
@@ -999,6 +1037,8 @@ impl App {
             let lane_of = |body: &Body| match body {
                 Body::Stroke(s) => Brush::ALL.iter().position(|b| *b == s.brush).unwrap(),
                 Body::Rule { .. } => Brush::ALL.len(),
+                // Whatever's done to the swarm goes in the mimics' lane.
+                _ => Brush::ALL.iter().position(|b| *b == Brush::Mimic).unwrap(),
             };
             let y_of = |lane: usize| track.top() + (lane as f32 + 0.5) * LANE;
 
@@ -1131,6 +1171,29 @@ impl App {
                         let fill = if *on { DOT } else { PAPER };
                         p.add(Shape::convex_polygon(pts, fill, Stroke::new(1.2, DOT)));
                     }
+                    Body::Drag { .. } => {
+                        let color = swatch(Brush::Mimic);
+                        if x1 - x0 > 1.0 {
+                            p.line_segment([pos2(x0, y), pos2(x1, y)], Stroke::new(2.0, color.gamma_multiply(0.6)));
+                        }
+                        p.circle_stroke(pos2(x0, y), if hot { 5.5 } else { 4.0 }, Stroke::new(1.5, color));
+                    }
+                    body => {
+                        // A note read, a cut, a pin, a ruling: small squares.
+                        let r = if hot { 4.5 } else { 3.5 };
+                        let fill = match body {
+                            Body::Note { .. } => swatch(Brush::Mimic),
+                            Body::Verdict { keep: true, .. } | Body::Pin { on: true, .. } => DOT,
+                            _ => PAPER,
+                        };
+                        p.rect(
+                            Rect::from_center_size(pos2(x0, y), vec2(r * 2.0, r * 2.0)),
+                            CornerRadius::same(1),
+                            fill,
+                            Stroke::new(1.2, swatch(Brush::Mimic)),
+                            egui::StrokeKind::Inside,
+                        );
+                    }
                 }
                 if picked {
                     p.circle_stroke(pos2(x0, y), 8.5, Stroke::new(1.2, INK));
@@ -1167,6 +1230,22 @@ impl App {
                         .map_or(format!("{rule} (no such note)"), |n| n.title.clone()),
                     if *on { "on" } else { "off" }
                 ),
+                Body::Note { title, .. } => format!("a mimic reads “{title}” at {at:.2} s"),
+                Body::Drag { samples, .. } => format!(
+                    "a mimic dragged for {:.1} s at {at:.2} s",
+                    samples.last().map_or(0, |s| s.dt) as f32 / TICKS_PER_SECOND as f32
+                ),
+                Body::Cut { .. } => format!("a link cut at {at:.2} s"),
+                Body::Pin { on, .. } => format!("a mimic {} at {at:.2} s", if *on { "pinned" } else { "let go" }),
+                Body::Verdict { a, b, keep } => {
+                    let name = |n: &String| self.note_texts.get(n).map_or(n.clone(), |t| swarm::title(t));
+                    format!(
+                        "“{}” and “{}” {} at {at:.2} s",
+                        name(a),
+                        name(b),
+                        if *keep { "kept together" } else { "turned down" }
+                    )
+                }
             };
             format!("{what}  ·  drag to move, delete to remove, esc to let go")
         });
@@ -1204,9 +1283,56 @@ impl App {
             ui.ctx().set_cursor_icon(egui::CursorIcon::Crosshair);
         }
 
+        // A press on a mimic takes hold of it rather than painting: it goes
+        // where it's dragged, while time runs, and pulls its partners along.
+        let swarm_now = &self.timeline.state().swarm;
+        let on_mimic = |p: Pos2| swarm::mimic_at(swarm_now, to_world(p), 4.0 / scale);
+        let pressed_mimic = response
+            .drag_started_by(egui::PointerButton::Primary)
+            .then(|| response.interact_pointer_pos())
+            .flatten()
+            .filter(|_| !self.selecting)
+            .and_then(|p| on_mimic(p).map(|id| (id, p)));
+        let double = response.hovered() && ui.input(|i| i.pointer.button_double_clicked(egui::PointerButton::Primary));
+        let pin = double.then(|| pointer.and_then(on_mimic)).flatten().map(|id| {
+            (id, !swarm_now.mimic(id).is_some_and(|m| m.pinned))
+        });
+        let right = response.hovered() && ui.input(|i| i.pointer.secondary_clicked());
+        let cut = right
+            .then(|| pointer.and_then(|p| swarm::link_at(swarm_now, to_world(p), 6.0 / scale)))
+            .flatten();
+        if let Some((id, p)) = pressed_mimic {
+            self.selected = None;
+            self.holding = Some(self.timeline.begin_drag(id, to_world(p)));
+        }
+        if let Some(drag) = self.holding {
+            if response.dragged_by(egui::PointerButton::Primary) {
+                if let Some(p) = response.interact_pointer_pos() {
+                    self.timeline.extend_drag(drag, to_world(p));
+                }
+            } else {
+                // A press that never moved isn't worth keeping.
+                let moved = matches!(self.timeline.key(drag).map(|k| &k.body),
+                    Some(Body::Drag { samples, .. }) if samples.len() > 1);
+                if moved {
+                    self.timeline.end_drag(drag);
+                } else {
+                    self.timeline.remove(drag);
+                }
+                self.holding = None;
+            }
+        }
+        if let Some((id, on)) = pin {
+            self.timeline.pin(id, on);
+        }
+        if let Some((a, b)) = cut {
+            self.timeline.cut(a, b);
+        }
+
         // Painting: one keyframe per stroke, grown while the button is held.
         if response.drag_started_by(egui::PointerButton::Primary)
             && !self.selecting
+            && self.holding.is_none()
             && let Some(p) = response.interact_pointer_pos()
         {
             self.selected = None;
@@ -1246,10 +1372,10 @@ impl App {
             .selected
             .and_then(|id| self.timeline.key(id))
             .map(|k| match k.body {
-                Body::Stroke(_) => MadeBy::Key(k.id),
                 Body::Rule { ref rule, .. } => {
                     MadeBy::Rule(self.timeline.rules().index(rule).unwrap_or(usize::MAX))
                 }
+                _ => MadeBy::Key(k.id),
             });
         let mut hard = Mesh::with_texture(self.hard.id());
         let mut soft = Mesh::with_texture(self.soft.id());
@@ -1277,10 +1403,20 @@ impl App {
         painter.add(Shape::mesh(Arc::new(soft)));
         painter.add(Shape::mesh(Arc::new(hard)));
         painter.add(Shape::mesh(Arc::new(glow)));
-        for m in &state.mimics {
-            let dim = matches!(focus, Some(made_by) if m.made_by != made_by);
-            draw_mimic(&painter, m, &to_screen, scale, dim);
+        swarm::draw(&painter, &state.swarm, &to_screen, scale, focus);
+        // Hovering a mimic or a link says what it is.
+        if let Some(p) = pointer.filter(|_| self.painting.is_none() && self.holding.is_none()) {
+            let at = to_world(p);
+            let text = match swarm::mimic_at(&state.swarm, at, 4.0 / scale) {
+                Some(id) => Some(swarm::describe_mimic(&state.swarm, id)),
+                None => swarm::link_at(&state.swarm, at, 6.0 / scale).map(|l| swarm::describe_link(&state.swarm, l)),
+            };
+            if let Some(text) = text {
+                swarm::tooltip(&painter, p, &text);
+            }
         }
+        let proposals = state.swarm.proposals();
+        let ruling = swarm::proposals_ui(ui, sheet, &proposals, &self.note_texts);
 
         if let Some(p) = pointer.filter(|_| !self.selecting) {
             let r = match self.brush {
@@ -1318,6 +1454,9 @@ impl App {
                 FontId::proportional(26.0),
                 FAINT,
             );
+        }
+        if let Some((a, b, keep)) = ruling {
+            self.timeline.rule_on_proposal(&a, &b, keep);
         }
     }
 }
@@ -1572,34 +1711,6 @@ fn swatch(brush: Brush) -> Color32 {
         Brush::Smudge => Color32::from_rgb(190, 186, 178),
         Brush::Mimic => Color32::from_rgb(122, 76, 196),
     }
-}
-
-/// A mimic: inky tentacles, thick at the root and fine at the tip, with
-/// colour running along them as dots, and its core on top.
-fn draw_mimic(painter: &egui::Painter, m: &Mimic, to_screen: &impl Fn(glam::Vec2) -> Pos2, scale: f32, dim: bool) {
-    let fade = |c: Color32| if dim { c.gamma_multiply(0.12) } else { c };
-    let ink = |c: [f32; 3], a: u8| fade(rgba((c[0] * 255.0) as u8, (c[1] * 255.0) as u8, (c[2] * 255.0) as u8, a));
-    let line = fade(rgba(22, 25, 27, 255));
-    for arm in &m.arms {
-        let pts: Vec<Pos2> = arm.points.iter().map(|p| to_screen(*p)).collect();
-        for (i, w) in pts.windows(2).enumerate() {
-            let f = i as f32 / (SEGS - 1) as f32;
-            let width = (m.size * 0.5 * (1.0 - f) + 0.6) * scale;
-            painter.line_segment([w[0], w[1]], Stroke::new(width.max(0.8), line));
-            painter.circle_filled(w[1], width * 0.5, line);
-        }
-        for pulse in &arm.pulses {
-            let at = pulse.at.clamp(0.0, 1.0) * (SEGS - 1) as f32;
-            let i = (at as usize).min(SEGS - 2);
-            let p = pts[i].lerp(pts[i + 1], at - i as f32);
-            painter.circle_filled(p, (m.size * 0.42 * scale).max(2.0), ink(pulse.color, 240));
-        }
-    }
-    // The core bulges as it takes colour in.
-    let r = m.size * (1.0 + 0.3 * m.jiggle.clamp(-1.0, 1.0)) * scale;
-    let c = to_screen(m.core);
-    painter.circle_filled(c, r * 1.12, line);
-    painter.circle_filled(c, r, ink(m.color, 255));
 }
 
 fn rgba(r: u8, g: u8, b: u8, a: u8) -> Color32 {

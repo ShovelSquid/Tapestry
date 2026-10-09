@@ -107,6 +107,14 @@ impl Notes {
         self.notes = notes;
     }
 
+    /// Every note: its file name, title and text, newest first.
+    pub fn all(&self) -> Vec<(String, String, String)> {
+        self.notes
+            .iter()
+            .map(|n| (n.name.clone(), n.title(), n.source.clone()))
+            .collect()
+    }
+
     /// Keep a finished note, written somewhere else in the app.
     pub fn add(&mut self, source: &str) {
         let _ = std::fs::create_dir_all(&self.dir);
