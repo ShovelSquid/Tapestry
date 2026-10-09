@@ -41,10 +41,15 @@ const RULE_LINE: Color32 = Color32::from_rgb(0xe4, 0xe1, 0xd9);
 const DOT: Color32 = Color32::from_rgb(0xe8, 0x49, 0x2a);
 
 fn main() -> eframe::Result {
+    let saved = Layout::load();
+    let mut viewport = egui::ViewportBuilder::default()
+        .with_title("Tapestry canvas")
+        .with_inner_size(saved.as_ref().map_or([1480.0, 920.0], |l| l.size));
+    if let Some(at) = saved.as_ref().and_then(|l| l.at) {
+        viewport = viewport.with_position(at);
+    }
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_title("Tapestry canvas")
-            .with_inner_size([1480.0, 920.0]),
+        viewport,
         ..Default::default()
     };
     let demo = std::env::args().any(|a| a == "--demo");
@@ -53,6 +58,9 @@ fn main() -> eframe::Result {
         options,
         Box::new(move |cc| {
             let mut app = App::new(cc);
+            if let Some(layout) = saved {
+                app.reopen(layout);
+            }
             // `TAPESTRY_OPEN=<file>` opens a file in the files pane at startup.
             if let Ok(path) = std::env::var("TAPESTRY_OPEN") {
                 app.ide.show(PathBuf::from(path));
@@ -117,7 +125,7 @@ struct Drag {
 
 /// The panes of the window. Each can be dragged, split, resized, torn off
 /// into its own window, or double-clicked to fill the window.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 enum Tab {
     Canvas,
     Brushes,
@@ -202,6 +210,33 @@ impl TabViewer for Tabs<'_> {
     }
 }
 
+/// The window as it was left: its panes, where it sat, and the folder the
+/// files pane showed. Kept in `layout.json` in the state folder.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct Layout {
+    dock: DockState<Tab>,
+    maximized: Option<Tab>,
+    size: [f32; 2],
+    at: Option<[f32; 2]>,
+    root: PathBuf,
+    here: PathBuf,
+}
+
+impl Layout {
+    fn load() -> Option<Self> {
+        // A screenshot run starts from the same window every time.
+        if std::env::var_os("TAPESTRY_FRESH").is_some() || std::env::var_os("TAPESTRY_SHOT").is_some() {
+            return None;
+        }
+        let text = std::fs::read_to_string(ide::state_dir()?.join("layout.json")).ok()?;
+        serde_json::from_str(&text).ok()
+    }
+}
+
+/// How often the layout is written down while the window is open, so a
+/// crash or a kill loses little of it.
+const LAYOUT_EVERY: f64 = 3.0;
+
 /// A rule note open for editing. It saves itself as you write.
 struct Editing {
     name: String,
@@ -252,6 +287,10 @@ struct App {
     shot: Option<(String, Tick, bool)>,
     hard: TextureHandle,
     soft: TextureHandle,
+    /// The window's size and place last frame, and the layout as last written.
+    window: (egui::Vec2, Option<Pos2>),
+    layout_at: f64,
+    layout_saved: String,
 }
 
 /// Time per frame spent working out the canvas. When a scene costs more,
@@ -310,7 +349,55 @@ impl App {
             }),
             hard: dot_texture(&cc.egui_ctx, "hard", 0.72),
             soft: dot_texture(&cc.egui_ctx, "soft", 0.0),
+            window: (vec2(1480.0, 920.0), None),
+            layout_at: 0.0,
+            layout_saved: String::new(),
         }
+    }
+
+    /// Put the window back as it was left. File tabs whose files are gone
+    /// close.
+    fn reopen(&mut self, layout: Layout) {
+        let mut dock = layout.dock;
+        dock.retain_tabs(|tab| match tab {
+            Tab::File(p) => self.ide.reopen(p),
+            _ => true,
+        });
+        if dock.iter_all_tabs().next().is_some() {
+            self.dock = Some(dock);
+        }
+        // `TAPESTRY_FILL` still wins.
+        if self.maximized.is_none() {
+            self.maximized = layout.maximized.filter(|t| match t {
+                Tab::File(p) => self.ide.buffers.contains_key(p),
+                _ => true,
+            });
+        }
+        self.ide.return_to(layout.root, layout.here);
+    }
+
+    /// Write the layout down if it changed.
+    fn save_layout(&mut self) {
+        if self.shot.is_some() {
+            return;
+        }
+        let Some(dock) = self.dock.clone() else { return };
+        let (root, here) = self.ide.place();
+        let (size, at) = self.window;
+        let layout = Layout {
+            dock,
+            maximized: self.maximized.clone(),
+            size: size.into(),
+            at: at.map(Into::into),
+            root,
+            here,
+        };
+        let Ok(text) = serde_json::to_string(&layout) else { return };
+        if text != self.layout_saved {
+            ide::save_state("layout.json", &text);
+            self.layout_saved = text;
+        }
+        self.ide.remember_view();
     }
 
     fn keyboard(&mut self, ui: &egui::Ui) {
@@ -1244,6 +1331,19 @@ impl eframe::App for App {
 
         self.run_clock(ui);
         self.take_shot(ui);
+
+        if let Some(inner) = ui.input(|i| i.viewport().inner_rect) {
+            let at = ui.input(|i| i.viewport().outer_rect).map(|r| r.min);
+            self.window = (inner.size(), at);
+        }
+        if now - self.layout_at > LAYOUT_EVERY {
+            self.layout_at = now;
+            self.save_layout();
+        }
+    }
+
+    fn on_exit(&mut self) {
+        self.save_layout();
     }
 }
 

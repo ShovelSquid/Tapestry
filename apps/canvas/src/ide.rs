@@ -136,6 +136,10 @@ pub struct Ide {
     placed: HashSet<PathBuf>,
     pan: Vec2,
     zoom: f32,
+    /// Where the camera was left in each folder, to come back to.
+    views: HashMap<PathBuf, (Vec2, f32)>,
+    /// `views.tsv` as last written, to write it only when it changes.
+    views_saved: String,
     /// How far each file card's text is scrolled, in unzoomed points.
     card_scroll: HashMap<PathBuf, f32>,
     pub buffers: BTreeMap<PathBuf, Buffer>,
@@ -214,6 +218,8 @@ impl Ide {
             pins.push(engine.clone());
         }
         let root = pins[0].clone();
+        let views = load_views();
+        let (pan, zoom) = views.get(&root).copied().unwrap_or(HOME_VIEW);
         Self {
             here: root.clone(),
             path_input: root.display().to_string(),
@@ -224,8 +230,10 @@ impl Ide {
             listed_at: f64::NEG_INFINITY,
             positions,
             placed,
-            pan: vec2(24.0, 24.0),
-            zoom: 1.0,
+            pan,
+            zoom,
+            views,
+            views_saved: String::new(),
             card_scroll: HashMap::new(),
             buffers: BTreeMap::new(),
             open_requests: Vec::new(),
@@ -594,9 +602,47 @@ impl Ide {
     fn go(&mut self, dir: PathBuf) {
         self.focus = None;
         self.active_term = None;
+        self.remember_view();
+        (self.pan, self.zoom) = self.views.get(&dir).copied().unwrap_or(HOME_VIEW);
+        self.pan_to = None;
         self.here = dir;
         self.listed_at = f64::NEG_INFINITY;
-        self.pan = vec2(24.0, 24.0);
+    }
+
+    /// Keep where the camera is in this folder, on disk too.
+    pub fn remember_view(&mut self) {
+        let view = (self.pan_to.unwrap_or(self.pan), self.zoom);
+        self.views.insert(self.here.clone(), view);
+        let mut lines: Vec<String> = self
+            .views
+            .iter()
+            .map(|(p, (pan, z))| format!("{}\t{}\t{}\t{}", pan.x, pan.y, z, p.display()))
+            .collect();
+        lines.sort();
+        let text = lines.join("\n") + "\n";
+        if text != self.views_saved {
+            save_state("views.tsv", &text);
+            self.views_saved = text;
+        }
+    }
+
+    /// The folder open and the one shown inside it.
+    pub fn place(&self) -> (PathBuf, PathBuf) {
+        (self.root.clone(), self.here.clone())
+    }
+
+    /// Go back to a folder shown before, if it's still there.
+    pub fn return_to(&mut self, root: PathBuf, here: PathBuf) {
+        if root.is_dir() && here.is_dir() && here.starts_with(&root) {
+            self.path_input = root.display().to_string();
+            self.root = root;
+            self.go(here);
+        }
+    }
+
+    /// Open a file as a tab would need it: read into a buffer.
+    pub fn reopen(&mut self, path: &Path) -> bool {
+        self.load(path)
     }
 
     fn relist(&mut self, now: f64) {
@@ -1986,6 +2032,35 @@ fn save_positions(positions: &HashMap<PathBuf, Vec2>, placed: &HashSet<PathBuf>)
     let _ = std::fs::create_dir_all(&dir);
     if let Err(e) = std::fs::write(dir.join("cards.tsv"), lines.join("\n") + "\n") {
         eprintln!("couldn't remember card positions: {e}");
+    }
+}
+
+/// Where a folder's camera starts before it's been moved.
+const HOME_VIEW: (Vec2, f32) = (vec2(24.0, 24.0), 1.0);
+
+/// `views.tsv`: each folder's camera, `x<TAB>y<TAB>zoom<TAB>path`.
+fn load_views() -> HashMap<PathBuf, (Vec2, f32)> {
+    let Some(text) = state_dir().and_then(|d| std::fs::read_to_string(d.join("views.tsv")).ok())
+    else {
+        return HashMap::new();
+    };
+    text.lines()
+        .filter_map(|line| {
+            let mut parts = line.splitn(4, '\t');
+            let x = parts.next()?.parse().ok()?;
+            let y = parts.next()?.parse().ok()?;
+            let z: f32 = parts.next()?.parse().ok()?;
+            Some((PathBuf::from(parts.next()?), (vec2(x, y), z.clamp(0.35, 2.5))))
+        })
+        .collect()
+}
+
+/// Write one file in the state folder.
+pub(crate) fn save_state(name: &str, text: &str) {
+    let Some(dir) = state_dir() else { return };
+    let _ = std::fs::create_dir_all(&dir);
+    if let Err(e) = std::fs::write(dir.join(name), text) {
+        eprintln!("couldn't remember {name}: {e}");
     }
 }
 
