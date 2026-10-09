@@ -364,7 +364,8 @@ fn stroke_shapes(
         Brush::Water => (soft, radius * 1.8, 0.35, rgba(74, 127, 193, 150)),
         Brush::Tree => (hard, radius * 0.9, 0.45, swatch(Brush::Tree)),
         Brush::Fire => (soft, radius * 1.4, 0.4, DOT),
-        Brush::Smudge => return Vec::new(),
+        // Mimics live only on the canvas.
+        Brush::Smudge | Brush::Mimic => return Vec::new(),
     };
     let mut mesh = Mesh::with_texture(texture);
     let uv = Rect::from_min_max(Pos2::ZERO, pos2(1.0, 1.0));

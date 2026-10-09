@@ -8,6 +8,7 @@ use glam::Vec2;
 
 use crate::grid::Grid;
 use crate::key::{Brush, DT, Dab, KeyId, Stroke, Tick};
+use crate::mimic::Mimic;
 use crate::rules::{Basic, Becomes, Prop, Rulebook};
 use crate::timeline::Entry;
 
@@ -184,6 +185,7 @@ pub struct State {
     pub tick: Tick,
     pub particles: Vec<Particle>,
     pub trees: Vec<Tree>,
+    pub mimics: Vec<Mimic>,
     /// Which rule notes are switched on, by index into the [`Rulebook`].
     pub rules_on: Vec<bool>,
     /// Everything, for rules.
@@ -200,6 +202,7 @@ impl State {
             tick: 0,
             particles: Vec::new(),
             trees: Vec::new(),
+            mimics: Vec::new(),
             rules_on: vec![false; rules.len()],
             grid: Grid::default(),
             solids: Grid::default(),
@@ -227,6 +230,13 @@ impl State {
             h = mix(h, p.id);
             h = mix(h, p.material as u64);
             h = mix(h, (p.pos.x.to_bits() as u64) << 32 | p.pos.y.to_bits() as u64);
+        }
+        for m in &self.mimics {
+            h = mix(h, m.id);
+            h = mix(h, (m.core.x.to_bits() as u64) << 32 | m.core.y.to_bits() as u64);
+            for c in m.color {
+                h = mix(h, c.to_bits() as u64);
+            }
         }
         h
     }
@@ -272,6 +282,7 @@ impl State {
             }
         }
 
+        crate::mimic::step(&mut self.mimics, self.tick);
         self.apply_rules(rules);
         self.nature();
         self.particles.retain(|p| !p.dead);
@@ -571,6 +582,7 @@ impl State {
                 self.particles.push(p);
             }
             Brush::Tree => self.plant(seed, dab.pos, r, made_by),
+            Brush::Mimic => self.mimics.push(Mimic::new(seed, dab.pos, r, made_by)),
             Brush::Smudge => {
                 let reach = r * 2.5;
                 for p in &mut self.particles {
@@ -676,7 +688,7 @@ pub(crate) fn unit(id: u64, salt: u64) -> f32 {
 }
 
 /// A steady point in the unit disk for `id` and `salt`.
-fn disk(id: u64, salt: u64) -> Vec2 {
+pub(crate) fn disk(id: u64, salt: u64) -> Vec2 {
     let mut j = 0;
     loop {
         let h = mix(id, salt.wrapping_mul(31).wrapping_add(j));

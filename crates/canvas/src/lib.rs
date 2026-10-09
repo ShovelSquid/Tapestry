@@ -12,6 +12,7 @@
 
 mod grid;
 mod key;
+mod mimic;
 mod rules;
 mod sim;
 mod timeline;
@@ -20,6 +21,7 @@ mod timeline;
 mod tests;
 
 pub use key::{Body, Brush, DT, KeyId, Keyframe, Sample, Stroke, TICKS_PER_SECOND, Tick};
+pub use mimic::{Arm, Hold, Mimic, Pulse, SEGS};
 pub use rules::{Basic, Becomes, Problem, Prop, RuleNote, Rulebook, grammar, is_rule_line};
 pub use sim::{HEIGHT, MadeBy, Material, Particle, State, WIDTH};
 pub use timeline::Timeline;

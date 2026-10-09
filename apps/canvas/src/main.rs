@@ -26,8 +26,8 @@ use egui::{
 use egui_dock::tab_viewer::OnCloseResponse;
 use egui_dock::{DockArea, DockState, NodeIndex, TabViewer};
 use tapestry_canvas::{
-    Body, Brush, DT, HEIGHT, KeyId, MadeBy, Material, Particle, Rulebook, TICKS_PER_SECOND, Tick,
-    Timeline, WIDTH,
+    Body, Brush, DT, HEIGHT, KeyId, MadeBy, Material, Mimic, Particle, Rulebook, SEGS,
+    TICKS_PER_SECOND, Tick, Timeline, WIDTH,
 };
 
 // The palette of data.pewdiepie.com: warm paper, near-black ink, quiet greys.
@@ -81,8 +81,9 @@ fn world_dir() -> std::path::PathBuf {
     dir.canonicalize().unwrap_or(dir)
 }
 
-/// A scene to start from: an ink cup with water poured in, and a row of
-/// trees that fire reaches once "Fire spreads to trees" is switched on.
+/// A scene to start from: an ink cup with water poured in, a row of trees
+/// that fire reaches once "Fire spreads to trees" is switched on, and a
+/// handful of mimics.
 fn paint_demo(t: &mut Timeline) {
     use glam::Vec2;
     fn stroke(t: &mut Timeline, brush: Brush, radius: f32, points: &[(f32, f32)]) {
@@ -104,6 +105,9 @@ fn paint_demo(t: &mut Timeline) {
     stroke(t, Brush::Fire, 6.0, &[(680.0, 880.0), (700.0, 850.0)]);
     t.seek(150);
     t.set_rule("fire-spreads-to-trees", true);
+    for (x, y) in [(900.0, 260.0), (980.0, 330.0), (1060.0, 240.0), (1140.0, 340.0), (1220.0, 260.0), (1010.0, 450.0), (1170.0, 470.0)] {
+        stroke(t, Brush::Mimic, 8.0, &[(x, y)]);
+    }
     t.seek(0);
 }
 
@@ -341,6 +345,7 @@ impl App {
                 egui::Key::Num3,
                 egui::Key::Num4,
                 egui::Key::Num5,
+                egui::Key::Num6,
             ]
             .into_iter()
             .enumerate()
@@ -350,7 +355,7 @@ impl App {
                     self.selecting = false;
                 }
             }
-            if i.key_pressed(egui::Key::Num6) {
+            if i.key_pressed(egui::Key::Num7) {
                 self.choose_select();
             }
             if !self.playing && idle {
@@ -1087,6 +1092,10 @@ impl App {
         painter.add(Shape::mesh(Arc::new(soft)));
         painter.add(Shape::mesh(Arc::new(hard)));
         painter.add(Shape::mesh(Arc::new(glow)));
+        for m in &state.mimics {
+            let dim = matches!(focus, Some(made_by) if m.made_by != made_by);
+            draw_mimic(&painter, m, &to_screen, scale, dim);
+        }
 
         if let Some(p) = pointer.filter(|_| !self.selecting) {
             let r = match self.brush {
@@ -1362,7 +1371,36 @@ fn swatch(brush: Brush) -> Color32 {
         Brush::Tree => Color32::from_rgb(79, 122, 58),
         Brush::Fire => DOT,
         Brush::Smudge => Color32::from_rgb(190, 186, 178),
+        Brush::Mimic => Color32::from_rgb(122, 76, 196),
     }
+}
+
+/// A mimic: inky tentacles, thick at the root and fine at the tip, with
+/// colour running along them as dots, and its core on top.
+fn draw_mimic(painter: &egui::Painter, m: &Mimic, to_screen: &impl Fn(glam::Vec2) -> Pos2, scale: f32, dim: bool) {
+    let fade = |c: Color32| if dim { c.gamma_multiply(0.12) } else { c };
+    let ink = |c: [f32; 3], a: u8| fade(rgba((c[0] * 255.0) as u8, (c[1] * 255.0) as u8, (c[2] * 255.0) as u8, a));
+    let line = fade(rgba(22, 25, 27, 255));
+    for arm in &m.arms {
+        let pts: Vec<Pos2> = arm.points.iter().map(|p| to_screen(*p)).collect();
+        for (i, w) in pts.windows(2).enumerate() {
+            let f = i as f32 / (SEGS - 1) as f32;
+            let width = (m.size * 0.5 * (1.0 - f) + 0.6) * scale;
+            painter.line_segment([w[0], w[1]], Stroke::new(width.max(0.8), line));
+            painter.circle_filled(w[1], width * 0.5, line);
+        }
+        for pulse in &arm.pulses {
+            let at = pulse.at.clamp(0.0, 1.0) * (SEGS - 1) as f32;
+            let i = (at as usize).min(SEGS - 2);
+            let p = pts[i].lerp(pts[i + 1], at - i as f32);
+            painter.circle_filled(p, (m.size * 0.42 * scale).max(2.0), ink(pulse.color, 240));
+        }
+    }
+    // The core bulges as it takes colour in.
+    let r = m.size * (1.0 + 0.3 * m.jiggle.clamp(-1.0, 1.0)) * scale;
+    let c = to_screen(m.core);
+    painter.circle_filled(c, r * 1.12, line);
+    painter.circle_filled(c, r, ink(m.color, 255));
 }
 
 fn rgba(r: u8, g: u8, b: u8, a: u8) -> Color32 {

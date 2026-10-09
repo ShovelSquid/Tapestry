@@ -352,3 +352,60 @@ fn grammar_names_the_whole_vocabulary() {
         assert_eq!(note.basics[0].to_string(), line);
     }
 }
+
+/// A ring of mimics put down close together, one dab each.
+fn mimics(t: &mut Timeline, n: usize) {
+    for k in 0..n {
+        let x = 600.0 + (k % 4) as f32 * 70.0;
+        let y = 400.0 + (k / 4) as f32 * 70.0;
+        let id = t.begin_stroke(Brush::Mimic, 8.0, Vec2::new(x, y));
+        t.end_stroke(id);
+    }
+}
+
+#[test]
+fn mimics_wander_and_replay_the_same() {
+    let mut t = timeline();
+    mimics(&mut t, 6);
+    t.seek(5);
+    let start: Vec<Vec2> = t.state().mimics.iter().map(|m| m.core).collect();
+    assert_eq!(start.len(), 6);
+    t.seek(900);
+    let live = t.state().fingerprint();
+    for (m, s) in t.state().mimics.iter().zip(&start) {
+        assert!(m.core.distance(*s) > 5.0, "a mimic stayed put");
+        assert!(m.core.x >= 0.0 && m.core.x <= WIDTH && m.core.y >= 0.0 && m.core.y <= HEIGHT);
+        for a in &m.arms {
+            assert!(a.points.iter().all(|p| p.is_finite()));
+        }
+    }
+    t.seek(300);
+    t.seek(900);
+    assert_eq!(t.state().fingerprint(), live);
+    let mut again = timeline();
+    mimics(&mut again, 6);
+    again.seek(900);
+    assert_eq!(again.state().fingerprint(), live);
+}
+
+#[test]
+fn mimics_hold_each_other_and_trade_colour() {
+    let mut t = timeline();
+    mimics(&mut t, 8);
+    t.seek(1);
+    let before: Vec<[f32; 3]> = t.state().mimics.iter().map(|m| m.color).collect();
+    let mut held = false;
+    for tick in (60..=1800).step_by(60) {
+        t.seek(tick);
+        held |= t.state().mimics.iter().any(|m| m.arms.iter().any(|a| matches!(a.hold, Hold::Mimic(_))));
+    }
+    assert!(held, "no mimic ever took hold of another");
+    let changed = t
+        .state()
+        .mimics
+        .iter()
+        .zip(&before)
+        .filter(|(m, b)| m.color != **b)
+        .count();
+    assert!(changed >= 2, "only {changed} mimics took in any colour");
+}

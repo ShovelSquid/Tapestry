@@ -16,10 +16,19 @@ pub enum Brush {
     Tree,
     Fire,
     Smudge,
+    /// Puts down mimics: creatures that wander and trade colour.
+    Mimic,
 }
 
 impl Brush {
-    pub const ALL: [Brush; 5] = [Brush::Ink, Brush::Water, Brush::Tree, Brush::Fire, Brush::Smudge];
+    pub const ALL: [Brush; 6] = [
+        Brush::Ink,
+        Brush::Water,
+        Brush::Tree,
+        Brush::Fire,
+        Brush::Smudge,
+        Brush::Mimic,
+    ];
 
     pub fn name(self) -> &'static str {
         match self {
@@ -28,6 +37,7 @@ impl Brush {
             Brush::Tree => "tree",
             Brush::Fire => "fire",
             Brush::Smudge => "smudge",
+            Brush::Mimic => "mimic",
         }
     }
 
@@ -39,6 +49,7 @@ impl Brush {
             Brush::Tree => radius * 5.5,
             Brush::Fire => 7.0,
             Brush::Smudge => 3.0,
+            Brush::Mimic => radius * 12.0,
         }
     }
 }
