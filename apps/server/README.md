@@ -9,6 +9,7 @@ Terminals and Claude Code sessions that outlive the app, open from any of your d
 - **Every computer can run one.** Install it on each of your computers and the app shows all their terminals together, each card naming its computer. **+ terminal ▾** opens one on any of them directly. A terminal opened on HyperMutant runs on HyperMutant's own server, not through grumbus.
 - **Computers without one.** In the same menu (and beside **+ shell** on the page), these are marked *ssh*: the terminal opens on the first server, logged in to that computer over `ssh` as the user you set beside it (remembered per device). A dropped connection reconnects by itself, and `exit` closes it. The other computer needs SSH on (on a Mac, Remote Login). On a computer with no server and no way to reach one, the app's terminals run in the app itself and end with it.
 - **Notes.** The page shows and edits the app's notes: the `.md` files in `world/notes/`, which the app tells the server about. They stay ordinary files, so an edit on the phone is in the app half a second later.
+- **The app's layout follows you.** The canvas app keeps its panes, open file tabs, the folder shown, each folder's camera, where cards sit and the pins the same on every computer, through every server it finds. Paths inside the Tapestry repository or your home folder mean the same place on each computer. The window's size and place stay with each computer.
 - **Any device.** The page at `http://tapestry-server:7878` (or `http://100.100.99.119:7878`) works on a phone too, with a key bar for esc, tab, ctrl, arrows and ^C.
 
 ## Who can reach it
@@ -24,7 +25,7 @@ apps/server/install.sh      # build, install to ~/.local/bin, and (re)start it: 
 - **Linux:** a systemd user service. It starts at boot, without logging in, because lingering is on (`loginctl enable-linger`). Check it with `systemctl --user status tapestry-server` and `journalctl --user -u tapestry-server -f`.
 - **macOS:** a launchd agent (`~/Library/LaunchAgents/com.tapestry.server.plist`), started when you log in. Logs go to `~/Library/Logs/tapestry-server.log`. Stop it with `launchctl bootout gui/$(id -u)/com.tapestry.server`.
 
-State is kept in `~/.local/state/tapestry/server/sessions.json`. For a trial run beside the real one, use `XDG_STATE_HOME=/some/dir cargo run -p tapestry-server -- --port 7979`.
+State is kept in `~/.local/state/tapestry/server/`: `sessions.json` for terminals, `shared.json` for the app's layout. For a trial run beside the real one, use `XDG_STATE_HOME=/some/dir cargo run -p tapestry-server -- --port 7979`.
 
 ## Not yet
 

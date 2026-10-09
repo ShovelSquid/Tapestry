@@ -13,6 +13,7 @@ mod devices;
 mod notes;
 mod procs;
 mod session;
+mod shared;
 
 use std::collections::BTreeMap;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
@@ -48,6 +49,9 @@ struct App {
     /// The world folder whose notes it serves: the app on this machine says
     /// which (or `TAPESTRY_WORLD`).
     world: Mutex<Option<PathBuf>>,
+    /// What the app keeps the same on every computer, and where it's kept.
+    shared: Mutex<shared::Map>,
+    shared_file: PathBuf,
 }
 
 type Shared = Arc<App>;
@@ -154,6 +158,8 @@ async fn main() {
         .or_else(|| std::fs::read_to_string(&world_file).ok().map(|w| PathBuf::from(w.trim())))
         .filter(|w| w.is_dir());
 
+    let shared_file = dir.join("shared.json");
+
     let mut hosts = vec!["localhost".to_owned(), "127.0.0.1".to_owned()];
     hosts.extend(hostname());
     let app: Shared = Arc::new(App {
@@ -163,6 +169,8 @@ async fn main() {
         stopping: AtomicBool::new(false),
         hosts: Mutex::new(hosts),
         world: Mutex::new(world),
+        shared: Mutex::new(shared::load(&shared_file)),
+        shared_file,
     });
     for s in saved {
         let id = s.id;
@@ -200,6 +208,7 @@ async fn main() {
         .route("/api/world", get(get_world).put(set_world))
         .route("/api/notes", get(list_notes).post(new_note))
         .route("/api/notes/{name}", axum::routing::put(put_note).delete(delete_note))
+        .route("/api/shared", get(get_shared).post(post_shared))
         .route("/ws/{id}", get(attach))
         .layer(middleware::from_fn_with_state(app.clone(), guard))
         .with_state(app.clone());
@@ -510,6 +519,19 @@ async fn delete_note(State(app): State<Shared>, Path(name): Path<String>) -> Sta
         Ok(()) => StatusCode::NO_CONTENT,
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR,
     }
+}
+
+async fn get_shared(State(app): State<Shared>) -> impl IntoResponse {
+    axum::Json(app.shared.lock().unwrap().clone())
+}
+
+/// Take what's newer than what's kept.
+async fn post_shared(State(app): State<Shared>, axum::Json(from): axum::Json<shared::Map>) -> StatusCode {
+    let mut map = app.shared.lock().unwrap();
+    if shared::merge(&mut map, from) {
+        shared::save(&app.shared_file, &map);
+    }
+    StatusCode::NO_CONTENT
 }
 
 /// This machine, and the others you can open a terminal on.
