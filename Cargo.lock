@@ -2580,6 +2580,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "tapestry-canvas"
+version = "0.1.0"
+dependencies = [
+ "glam",
+]
+
+[[package]]
+name = "tapestry-canvas-app"
+version = "0.1.0"
+dependencies = [
+ "eframe",
+ "glam",
+ "png",
+ "tapestry-canvas",
+]
+
+[[package]]
 name = "tapestry-core"
 version = "0.1.0"
 dependencies = [

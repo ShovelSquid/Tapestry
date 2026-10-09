@@ -4,6 +4,8 @@ The Rust workspace for the narrative engine. The design lives on the `ws/writing
 (`narrative-engine-core-spec.md` and `log/`).
 
 ```
+crates/canvas   Paint with particles (ink, water, trees, fire) that keep living; rule notes (log 0009).
+apps/canvas     The canvas app: palette, rule notes, and a timeline of keyframes.
 crates/core     The engine: keys, rules, a pure simulate(), history, and the gap report.
 crates/dungeon  First demo (log 0008): a rule pack, a world written as keys, perception, a game loop.
 apps/dungeon    Play the dungeon in a terminal.
@@ -20,6 +22,23 @@ demos/blob-hands  Browser toy: a metaball blob you grab with your hands (camera)
 Blender) sees it only through `tapestry-view`. When the real
 core arrives it implements `WorldView`, replaces the mock, and nothing downstream changes
 (spec principle 10, authority vs appearance).
+
+## The canvas (current focus)
+
+```sh
+cargo run -p tapestry-canvas-app            # empty sheet
+cargo run -p tapestry-canvas-app -- --demo  # an ink cup with water, a row of trees, a fire
+```
+
+Paint with ink, water, trees and fire (keys 1–5; scroll to resize). Each stroke is one
+keyframe: a set of points laid down from a moment on, recorded with its timing if you paint
+while time runs. Materials have a nature: ink blots and dries and holds water like a wall,
+water pours and pools, trees sway and settle, fire burns its fuel. How materials act on each
+other comes only from the rule notes on the right. Click a note's dot to switch it on from
+the playhead on: fire sits among trees doing nothing until "Fire spreads to trees" is on.
+"Fire engulfs trees" says nothing definite, so it does nothing. The top bar dims everything
+but what you made, or what rules made. Space plays, the timeline scrubs (the canvas replays
+to that moment), ctrl+Z takes back the last keyframe.
 
 ## The dungeon (first demo)
 

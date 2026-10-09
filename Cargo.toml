@@ -8,3 +8,7 @@ license = "UNLICENSED"
 
 [profile.dev.package."*"]
 opt-level = 2
+
+# The canvas steps thousands of particles per tick; unoptimized it can't keep up.
+[profile.dev.package.tapestry-canvas]
+opt-level = 3
