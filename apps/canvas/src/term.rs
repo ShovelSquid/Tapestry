@@ -33,6 +33,8 @@ struct Style {
 pub struct Terminal {
     pub id: u64,
     pub cwd: PathBuf,
+    /// The other device it's logged in to, for one on the server.
+    pub on: Option<String>,
     parser: Arc<Mutex<vt100::Parser>>,
     backend: Backend,
     exited: Arc<AtomicBool>,
@@ -61,12 +63,17 @@ enum Backend {
         child: Box<dyn Child + Send + Sync>,
     },
     /// A shell the server keeps.
-    Remote { link: Link, server: Arc<Server> },
+    Remote {
+        link: Link,
+        server: Arc<Server>,
+        /// Its number on the server (the card's is unique across servers).
+        remote_id: u64,
+    },
 }
 
 impl Terminal {
-    /// Show a terminal the server keeps.
-    pub fn attach(server: &Arc<Server>, remote: Remote, ctx: &egui::Context) -> Self {
+    /// Show a terminal a server keeps, as card `id`.
+    pub fn attach(id: u64, server: &Arc<Server>, remote: Remote, ctx: &egui::Context) -> Self {
         let (rows, cols) = (24, 80);
         let parser = Arc::new(Mutex::new(vt100::Parser::new(rows, cols, SCROLLBACK)));
         let exited = Arc::new(AtomicBool::new(false));
@@ -76,17 +83,21 @@ impl Terminal {
             Some(pid) if server.local => crate::trail::watch(pid, exited.clone(), ctx.clone()),
             _ => Default::default(),
         };
+        // Cards for another computer's terminals say which.
+        let on = remote.on.or_else(|| (!server.local).then(|| server.name.clone()));
         Self {
-            id: remote.id,
+            id,
             trail,
             started: crate::trail::now(),
             sel: None,
             selecting: false,
             cwd: remote.cwd,
+            on,
             parser,
             backend: Backend::Remote {
                 link,
                 server: server.clone(),
+                remote_id: remote.id,
             },
             exited,
             // Unknown until drawn, so the first draw sends the card's size.
@@ -103,8 +114,8 @@ impl Terminal {
             Backend::Local { child, .. } => {
                 let _ = child.kill();
             }
-            Backend::Remote { server, .. } => {
-                let (server, id) = (server.clone(), self.id);
+            Backend::Remote { server, remote_id, .. } => {
+                let (server, id) = (server.clone(), *remote_id);
                 std::thread::spawn(move || server.close(id));
             }
         }
@@ -158,6 +169,7 @@ impl Terminal {
             None => Default::default(),
         };
         Ok(Self {
+            on: None,
             id,
             trail,
             started: crate::trail::now(),
@@ -182,10 +194,13 @@ impl Terminal {
     }
 
     pub fn title(&self) -> String {
-        let place = self
-            .cwd
-            .file_name()
-            .map_or("/".into(), |n| n.to_string_lossy().into_owned());
+        let place = match &self.on {
+            Some(device) => format!("on {device}"),
+            None => self
+                .cwd
+                .file_name()
+                .map_or("/".into(), |n| n.to_string_lossy().into_owned()),
+        };
         if self.exited() {
             format!("terminal · {place} · ended")
         } else {

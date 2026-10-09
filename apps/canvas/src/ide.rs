@@ -17,7 +17,7 @@ use std::time::Instant;
 use eframe::egui;
 use egui::{Align2, Color32, CornerRadius, FontId, Pos2, Rect, RichText, Sense, Stroke, Vec2, pos2, vec2};
 
-use crate::server::{Remote, Server};
+use crate::server::{Device, Remote, Server};
 use crate::term::Terminal;
 use crate::{DOT, FAINT, INK, MUTED, SHEET, quiet_link, title};
 
@@ -29,6 +29,37 @@ const LOCAL_TERMS: u64 = 1 << 40;
 
 /// The server's terminals, and when it was asked.
 type Listed = (Instant, Vec<Remote>);
+
+/// Where a terminal can open besides the servers.
+#[derive(Clone, Default)]
+struct Places {
+    /// This computer, when it runs no server: a terminal here runs in the
+    /// app, and ends with it.
+    here: Option<String>,
+    /// Your other computers that run no server, reached from the first
+    /// server over ssh.
+    others: Vec<Device>,
+}
+
+/// Where "+ terminal" opens one.
+#[derive(Clone, PartialEq)]
+enum On {
+    Here,
+    /// That server (its place in `servers`).
+    Server(usize),
+    /// That device's host, over ssh.
+    Device(String),
+}
+
+/// A card's number for terminal `id` on server `slot`: each server gets its
+/// own range, above the app's own terminals'.
+fn card_id(slot: usize, id: u64) -> u64 {
+    ((slot as u64 + 1) << 48) | id
+}
+
+fn slot_of(card: u64) -> Option<usize> {
+    (card >> 48).checked_sub(1).map(|s| s as usize)
+}
 /// How long a card takes to grow to fill the surface.
 const GROW: f64 = 0.2;
 const GAP: Vec2 = vec2(30.0, 30.0);
@@ -114,11 +145,18 @@ pub struct Ide {
     build: Option<Build>,
     /// Terminals, each living in the folder it was opened in.
     terminals: Vec<Terminal>,
-    /// tapestry-server, once found, and what it last said it keeps. Found
-    /// and asked off the UI thread; see `watch_server`.
-    server: Arc<Mutex<Option<Arc<Server>>>>,
-    remote: Arc<Mutex<Option<Listed>>>,
+    /// The tapestry-servers found (one per computer that runs one; never
+    /// reordered), and what each last said it keeps. Found and asked off
+    /// the UI thread; see `watch_servers`.
+    servers: Arc<Mutex<Vec<Arc<Server>>>>,
+    remote: Arc<Mutex<HashMap<usize, Listed>>>,
     watching_server: bool,
+    /// This computer and your other computers, to open terminals on.
+    devices: Arc<Mutex<Option<Places>>>,
+    /// Where "+ terminal" opens one, once picked; until then, here.
+    term_on: Option<On>,
+    /// Who to log in to each device as, where changed here.
+    term_user: HashMap<String, String>,
     /// When each terminal got its card: a list asked for before then
     /// doesn't know it yet.
     carded: HashMap<u64, Instant>,
@@ -194,9 +232,12 @@ impl Ide {
             engine_changed: false,
             build: None,
             terminals: Vec::new(),
-            server: Arc::default(),
+            servers: Arc::default(),
             remote: Arc::default(),
             watching_server: false,
+            devices: Arc::default(),
+            term_on: None,
+            term_user: HashMap::new(),
             carded: HashMap::new(),
             world: Arc::default(),
             term_pos: HashMap::new(),
@@ -282,72 +323,115 @@ impl Ide {
         *self.world.lock().unwrap() = Some(world);
     }
 
-    /// Look for tapestry-server, and keep asking it what terminals it
-    /// keeps, once a second, off the UI thread.
-    fn watch_server(&self, ctx: &egui::Context) {
-        let (server, remote, world, ctx) = (self.server.clone(), self.remote.clone(), self.world.clone(), ctx.clone());
+    /// Look for tapestry-servers, and keep asking each what terminals it
+    /// keeps, once a second, off the UI thread. Every 15 s, ask the first
+    /// which of your devices run one too.
+    fn watch_servers(&self, ctx: &egui::Context) {
+        let (servers, remote, world, ctx) = (self.servers.clone(), self.remote.clone(), self.world.clone(), ctx.clone());
+        let devices = self.devices.clone();
         std::thread::spawn(move || {
+            let mut looked_at: Option<Instant> = None;
+            let add = |s: Server| {
+                if s.local
+                    && let Some(w) = world.lock().unwrap().as_ref()
+                {
+                    s.set_world(w);
+                }
+                servers.lock().unwrap().push(Arc::new(s));
+            };
             loop {
-                let found = server.lock().unwrap().clone();
-                match found {
-                    None => {
-                        if let Some(s) = Server::find() {
-                            if s.local
-                                && let Some(w) = world.lock().unwrap().as_ref()
-                            {
-                                s.set_world(w);
-                            }
-                            *server.lock().unwrap() = Some(Arc::new(s));
-                            continue;
+                let known: Vec<Arc<Server>> = servers.lock().unwrap().clone();
+                let Some(first) = known.first().cloned() else {
+                    match Server::find() {
+                        Some(s) => add(s),
+                        None => {
+                            // No server: terminals stay in the app.
+                            *devices.lock().unwrap() = Some(Places { here: Some("this computer".into()), others: vec![] });
+                            std::thread::sleep(std::time::Duration::from_secs(5));
                         }
-                        std::thread::sleep(std::time::Duration::from_secs(5));
                     }
-                    Some(s) => {
-                        let asked = Instant::now();
-                        if let Some(list) = s.list() {
-                            *remote.lock().unwrap() = Some((asked, list));
-                            ctx.request_repaint();
+                    continue;
+                };
+                if looked_at.is_none_or(|at| at.elapsed().as_secs() >= 15) {
+                    looked_at = Some(Instant::now());
+                    // The usual server, by name, in case the first can't list devices.
+                    if first.local
+                        && let Some(s) = Server::at(format!("tapestry-server:{}", crate::server::PORT), None)
+                        && !known.iter().any(|k| k.name == s.name)
+                    {
+                        add(s);
+                    }
+                    if let Some((_, mut list)) = first.devices() {
+                        // Which device this is, when the first server is elsewhere.
+                        let me = (!first.local).then(|| first.my_ip()).flatten();
+                        let this = list.iter().position(|d| me.is_some() && d.ip == me).map(|i| list.remove(i));
+                        for d in list.iter().filter(|d| d.server && d.online) {
+                            let have = known.iter().any(|s| s.name == d.name);
+                            if !have && let Some(s) = Server::of(d) {
+                                add(s);
+                            }
                         }
-                        std::thread::sleep(std::time::Duration::from_secs(1));
+                        let any_local = servers.lock().unwrap().iter().any(|s| s.local);
+                        let here = (!any_local).then(|| this.map_or_else(|| "this computer".to_owned(), |d| d.name));
+                        let others = list.into_iter().filter(|d| !d.server).collect();
+                        *devices.lock().unwrap() = Some(Places { here, others });
                     }
                 }
+                let known: Vec<Arc<Server>> = servers.lock().unwrap().clone();
+                for (slot, s) in known.iter().enumerate() {
+                    let asked = Instant::now();
+                    if let Some(list) = s.list() {
+                        remote.lock().unwrap().insert(slot, (asked, list));
+                        ctx.request_repaint();
+                    }
+                }
+                std::thread::sleep(std::time::Duration::from_secs(1));
             }
         });
     }
 
-    /// Match the cards to the server's terminals: one opened elsewhere (on
+    /// Match the cards to the servers' terminals: one opened elsewhere (on
     /// the phone, say) gets a card here, and one closed elsewhere loses its.
     fn sync_terminals(&mut self, ctx: &egui::Context) {
         if !self.watching_server {
             self.watching_server = true;
-            self.watch_server(ctx);
+            self.watch_servers(ctx);
         }
-        let Some(server) = self.server.lock().unwrap().clone() else { return };
-        let Some((asked, list)) = self.remote.lock().unwrap().take() else { return };
-        let gone: Vec<u64> = self
-            .terminals
-            .iter()
-            .filter(|t| t.id < LOCAL_TERMS && !list.iter().any(|r| r.id == t.id))
-            .filter(|t| self.carded.get(&t.id).is_none_or(|&at| at < asked))
-            .map(|t| t.id)
-            .collect();
-        for id in gone {
-            self.drop_terminal(id);
-        }
-        for r in list {
-            if !self.terminals.iter().any(|t| t.id == r.id) {
-                let home = r.cwd.canonicalize().unwrap_or_else(|_| r.cwd.clone());
-                let t = Terminal::attach(&server, Remote { cwd: home.clone(), ..r }, ctx);
-                self.add_terminal(t, home, false);
+        let lists: Vec<(usize, Listed)> = self.remote.lock().unwrap().drain().collect();
+        for (slot, (asked, list)) in lists {
+            let Some(server) = self.servers.lock().unwrap().get(slot).cloned() else { continue };
+            let gone: Vec<u64> = self
+                .terminals
+                .iter()
+                .filter(|t| slot_of(t.id) == Some(slot) && !list.iter().any(|r| card_id(slot, r.id) == t.id))
+                .filter(|t| self.carded.get(&t.id).is_none_or(|&at| at < asked))
+                .map(|t| t.id)
+                .collect();
+            for id in gone {
+                self.drop_terminal(id);
+            }
+            for r in list {
+                let id = card_id(slot, r.id);
+                if !self.terminals.iter().any(|t| t.id == id) {
+                    let home = r.cwd.canonicalize().unwrap_or_else(|_| r.cwd.clone());
+                    let t = Terminal::attach(id, &server, Remote { cwd: home.clone(), ..r }, ctx);
+                    self.add_terminal(t, home, false);
+                }
             }
         }
     }
 
     fn spawn_terminal(&mut self, ctx: &egui::Context) {
-        let server = self.server.lock().unwrap().clone();
-        let made = match &server {
-            Some(server) => server.create(&self.here).map(|r| Terminal::attach(server, r, ctx)),
-            None => Terminal::spawn(self.next_term, &self.here, ctx).inspect(|_| self.next_term += 1),
+        let servers = self.servers.lock().unwrap().clone();
+        let attach = |slot: usize, r: Remote| Terminal::attach(card_id(slot, r.id), &servers[slot], r, ctx);
+        let made = match self.on() {
+            On::Server(slot) => servers[slot].create(&self.here, None).map(|r| attach(slot, r)),
+            // Other computers without a server are reached from the first.
+            On::Device(_) => match self.term_device() {
+                Some(d) => servers[0].create(&self.here, Some(&d)).map(|r| attach(0, r)),
+                None => Err("that computer isn't online".to_owned()),
+            },
+            On::Here => Terminal::spawn(self.next_term, &self.here, ctx).inspect(|_| self.next_term += 1),
         };
         match made {
             Ok(t) => {
@@ -356,6 +440,94 @@ impl Ide {
             }
             Err(e) => eprintln!("couldn't start a terminal: {e}"),
         }
+    }
+
+    /// Where "+ terminal" opens one now: what was picked, while it's still
+    /// there; else this computer's server, else here in the app, else the
+    /// first server.
+    fn on(&self) -> On {
+        let servers = self.servers.lock().unwrap();
+        let places = self.devices.lock().unwrap().clone().unwrap_or_default();
+        let picked = match &self.term_on {
+            Some(On::Server(slot)) if *slot < servers.len() => self.term_on.clone(),
+            Some(On::Device(h)) if !servers.is_empty() && places.others.iter().any(|d| &d.host == h) => {
+                self.term_on.clone()
+            }
+            Some(On::Here) if places.here.is_some() || servers.is_empty() => self.term_on.clone(),
+            _ => None,
+        };
+        picked.unwrap_or_else(|| match servers.iter().position(|s| s.local) {
+            Some(slot) => On::Server(slot),
+            None if places.here.is_some() || servers.is_empty() => On::Here,
+            None => On::Server(0),
+        })
+    }
+
+    /// The other computer "+ terminal" opens on over ssh, if it's still there.
+    fn term_device(&self) -> Option<Device> {
+        let On::Device(host) = self.on() else { return None };
+        let places = self.devices.lock().unwrap();
+        let mut d = places.as_ref()?.others.iter().find(|d| d.host == host && d.online)?.clone();
+        if let Some(u) = self.term_user.get(&host).filter(|u| !u.trim().is_empty()) {
+            d.user = u.trim().to_owned();
+        }
+        Some(d)
+    }
+
+    /// "+ terminal", and, with a server, where it opens: on one of the
+    /// computers that run a server, here in the app, or logged in to
+    /// another computer over ssh. Drawn right to left.
+    fn terminal_button(&mut self, ui: &mut egui::Ui, key: &str) -> bool {
+        let clicked = quiet_link(ui, "+ terminal", false).clicked();
+        let servers: Vec<(String, bool)> = self.servers.lock().unwrap().iter().map(|s| (s.name.clone(), s.local)).collect();
+        let places = self.devices.lock().unwrap().clone().unwrap_or_default();
+        let choices = servers.len() + usize::from(places.here.is_some()) + places.others.len();
+        if servers.is_empty() || choices < 2 {
+            return clicked;
+        }
+        let now = self.on();
+        let label = |on: &On| match on {
+            On::Here => format!("on {} (here)", places.here.as_deref().unwrap_or("this computer")),
+            On::Server(slot) => match &servers[*slot] {
+                (name, true) => format!("on {name} (here)"),
+                (name, false) => format!("on {name}"),
+            },
+            On::Device(h) => places
+                .others
+                .iter()
+                .find(|d| &d.host == h)
+                .map_or_else(|| h.clone(), |d| format!("on {} (ssh)", d.name)),
+        };
+        ui.add_space(8.0);
+        egui::ComboBox::from_id_salt(("term-on", key))
+            .selected_text(RichText::new(label(&now)).color(MUTED))
+            .show_ui(ui, |ui| {
+                let mut pick = |ui: &mut egui::Ui, on: On, enabled: bool, text: String| {
+                    if ui.add_enabled(enabled, egui::Button::selectable(now == on, text)).clicked() {
+                        self.term_on = Some(on);
+                    }
+                };
+                for slot in 0..servers.len() {
+                    pick(ui, On::Server(slot), true, label(&On::Server(slot)));
+                }
+                if places.here.is_some() {
+                    pick(ui, On::Here, true, label(&On::Here));
+                }
+                for d in &places.others {
+                    let on = On::Device(d.host.clone());
+                    let text = if d.online { label(&on) } else { format!("{} (offline)", label(&on)) };
+                    pick(ui, on, d.online, text);
+                }
+            });
+        if let On::Device(host) = &now
+            && let Some(d) = places.others.iter().find(|d| &d.host == host)
+        {
+            let user = self.term_user.entry(d.host.clone()).or_insert_with(|| d.user.clone());
+            ui.add(egui::TextEdit::singleline(user).desired_width(70.0).font(FontId::monospace(13.0)))
+                .on_hover_text(format!("who to log in to {} as", d.name));
+            ui.label(RichText::new("as").color(FAINT));
+        }
+        clicked
     }
 
     /// Put a terminal's card in `home`: in the middle of what's in view, a
@@ -499,7 +671,7 @@ impl Ide {
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.add_space(8.0);
-                if quiet_link(ui, "+ terminal", false).clicked() {
+                if self.terminal_button(ui, "files") {
                     self.spawn_terminal(ui.ctx());
                 }
                 ui.add_space(12.0);
@@ -1007,7 +1179,7 @@ impl Ide {
         ui.horizontal(|ui| {
             ui.label(RichText::new("Terminals").font(title(22.0)));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if quiet_link(ui, "+ terminal", false).clicked() {
+                if self.terminal_button(ui, "terminals") {
                     self.spawn_terminal(ui.ctx());
                     self.reveal_files = true;
                 }

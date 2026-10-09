@@ -1,14 +1,15 @@
 //! The app's side of tapestry-server (`apps/server`).
 //!
-//! When the server is running, terminals live there instead of in the app:
+//! When a server is running, terminals live there instead of in the app:
 //! the app's terminal cards, the server's page on a phone and any other
 //! window all show the same terminals, and closing the app doesn't end
-//! them. It's found without setup, here first (`127.0.0.1:7878`), then as
-//! `tapestry-server` on Tailscale. `TAPESTRY_SERVER=<host:port>` names
-//! another; `TAPESTRY_SERVER=off` keeps terminals in the app.
+//! them. Every computer can run one. The first is found without setup,
+//! here first (`127.0.0.1:7878`), then as `tapestry-server` on Tailscale;
+//! the rest are the devices it says run one too. `TAPESTRY_SERVER=<host:port>`
+//! names the first; `TAPESTRY_SERVER=off` keeps terminals in the app.
 
 use std::io::ErrorKind;
-use std::net::{TcpStream, ToSocketAddrs};
+use std::net::{IpAddr, Ipv6Addr, SocketAddr, TcpStream, ToSocketAddrs, UdpSocket};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
@@ -19,13 +20,15 @@ use eframe::egui;
 use serde_json::json;
 use tungstenite::Message;
 
-const PORT: u16 = 7878;
+pub const PORT: u16 = 7878;
 
 pub struct Server {
     /// `host:port`.
     addr: String,
     /// On this machine: its terminals' processes are ours to follow.
     pub local: bool,
+    /// The computer it runs on.
+    pub name: String,
 }
 
 /// A terminal the server keeps.
@@ -34,6 +37,21 @@ pub struct Remote {
     pub id: u64,
     pub cwd: PathBuf,
     pub pid: Option<u32>,
+    /// The other device it's logged in to, if it isn't this one.
+    pub on: Option<String>,
+}
+
+/// One of your other computers, to open a terminal on.
+#[derive(Clone, PartialEq)]
+pub struct Device {
+    pub name: String,
+    pub host: String,
+    pub online: bool,
+    /// Who to log in as.
+    pub user: String,
+    pub ip: Option<IpAddr>,
+    /// It runs a server of its own.
+    pub server: bool,
 }
 
 impl Server {
@@ -45,11 +63,35 @@ impl Server {
             Some(addr) => vec![addr.to_owned()],
             None => vec![format!("127.0.0.1:{PORT}"), format!("tapestry-server:{PORT}")],
         };
-        candidates.into_iter().find_map(|addr| {
-            let local = addr.starts_with("127.0.0.1:") || addr.starts_with("localhost:");
-            let s = Self { addr, local };
-            s.list().map(|_| s)
-        })
+        candidates.into_iter().find_map(|addr| Self::at(addr, None))
+    }
+
+    /// The server at `addr`, if it answers. Its name is what it calls its
+    /// machine, unless given.
+    pub fn at(addr: String, name: Option<String>) -> Option<Self> {
+        let local = addr.starts_with("127.0.0.1:") || addr.starts_with("localhost:");
+        let mut s = Self { addr, local, name: name.unwrap_or_default() };
+        s.list()?;
+        if s.name.is_empty() {
+            s.name = s.devices().map_or_else(|| s.addr.clone(), |(here, _)| here);
+        }
+        Some(s)
+    }
+
+    /// A device's server, at its Tailscale name.
+    pub fn of(d: &Device) -> Option<Self> {
+        Self::at(format!("{}:{PORT}", d.host), Some(d.name.clone()))
+    }
+
+    /// This computer's address as the server sees it: on another computer,
+    /// its Tailscale address. (Nothing is sent; this only asks which of our
+    /// addresses a packet to the server would leave from.)
+    pub fn my_ip(&self) -> Option<IpAddr> {
+        let to = self.addr.to_socket_addrs().ok()?.next()?;
+        let any: SocketAddr = if to.is_ipv4() { ([0, 0, 0, 0], 0).into() } else { (Ipv6Addr::UNSPECIFIED, 0).into() };
+        let sock = UdpSocket::bind(any).ok()?;
+        sock.connect(to).ok()?;
+        Some(sock.local_addr().ok()?.ip())
     }
 
     fn url(&self, path: &str) -> String {
@@ -85,19 +127,48 @@ impl Server {
                         id: s.get("id")?.as_u64()?,
                         cwd: PathBuf::from(s.get("cwd")?.as_str()?),
                         pid: s.get("pid").and_then(|p| p.as_u64()).map(|p| p as u32),
+                        on: s.get("device").and_then(|d| d.as_str()).map(str::to_owned),
                     })
                 })
                 .collect(),
         )
     }
 
-    /// Open a shell in `cwd`.
-    pub fn create(&self, cwd: &Path) -> Result<Remote, String> {
+    /// The server's own machine, and your other computers.
+    pub fn devices(&self) -> Option<(String, Vec<Device>)> {
+        let mut r = self.agent().get(&self.url("/api/devices")).call().ok()?;
+        let v: serde_json::Value = r.body_mut().read_json().ok()?;
+        let here = v.get("here").and_then(|h| h.as_str()).unwrap_or("this machine").to_owned();
+        let list = v
+            .get("devices")?
+            .as_array()?
+            .iter()
+            .filter_map(|d| {
+                let s = |k: &str| Some(d.get(k)?.as_str()?.to_owned());
+                Some(Device {
+                    name: s("name")?,
+                    host: s("host")?,
+                    user: s("user")?,
+                    online: d.get("online")?.as_bool()?,
+                    ip: d.get("ip").and_then(|i| i.as_str()).and_then(|i| i.parse().ok()),
+                    server: d.get("server").and_then(|s| s.as_bool()).unwrap_or(false),
+                })
+            })
+            .collect();
+        Some((here, list))
+    }
+
+    /// Open a shell in `cwd`, or, given a device, one logged in to it.
+    pub fn create(&self, cwd: &Path, on: Option<&Device>) -> Result<Remote, String> {
+        let body = match on {
+            Some(d) => json!({ "device": d.host, "user": d.user }),
+            None => json!({ "cwd": cwd }),
+        };
         let mut r = self
             .agent()
             .post(&self.url("/api/sessions"))
             .header("Origin", &self.origin())
-            .send_json(json!({ "cwd": cwd }))
+            .send_json(body)
             .map_err(|e| e.to_string())?;
         if r.status() != 200 {
             return Err(r.body_mut().read_to_string().unwrap_or_default());
@@ -110,6 +181,7 @@ impl Server {
             id,
             cwd: cwd.to_path_buf(),
             pid,
+            on: on.map(|d| d.name.clone()),
         })
     }
 
