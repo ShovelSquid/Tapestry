@@ -15,3 +15,5 @@ tapestry-canvas = { version = "0.1.0", path = "../../crates/canvas" }
 png = "0.18.1"
 egui_dock = "0.21.1"
 egui_extras = { version = "0.36.2", default-features = false }
+portable-pty = "0.9.0"
+vt100 = "0.16.2"

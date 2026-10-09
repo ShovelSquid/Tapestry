@@ -14,11 +14,15 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use eframe::egui;
-use egui::{Align2, Color32, CornerRadius, FontId, Rect, RichText, Sense, Stroke, Vec2, pos2, vec2};
+use egui::{Align2, Color32, CornerRadius, FontId, Pos2, Rect, RichText, Sense, Stroke, Vec2, pos2, vec2};
 
+use crate::term::Terminal;
 use crate::{DOT, FAINT, INK, MUTED, SHEET, quiet_link, title};
 
 const CARD: Vec2 = vec2(230.0, 150.0);
+const TERM: Vec2 = vec2(500.0, 310.0);
+/// How long a card takes to grow to fill the surface.
+const GROW: f64 = 0.2;
 const GAP: Vec2 = vec2(30.0, 30.0);
 /// Never listed: build output, version control, dependencies.
 const SKIP: [&str; 4] = ["target", ".git", "node_modules", "__pycache__"];
@@ -57,6 +61,13 @@ impl Buffer {
     }
 }
 
+/// What fills the surface when a card is opened.
+#[derive(Clone, PartialEq)]
+enum Focus {
+    File(PathBuf),
+    Term(u64),
+}
+
 #[derive(Clone, PartialEq)]
 enum BuildStatus {
     Running,
@@ -91,6 +102,23 @@ pub struct Ide {
     pub open_requests: Vec<PathBuf>,
     engine_changed: bool,
     build: Option<Build>,
+    /// Terminals, each living in the folder it was opened in.
+    terminals: Vec<Terminal>,
+    term_pos: HashMap<u64, Vec2>,
+    next_term: u64,
+    /// The terminal that has the keyboard.
+    active_term: Option<u64>,
+    /// Whether the active terminal was on screen last frame (if its pane is
+    /// hidden, the keyboard goes back to the app).
+    term_drawn: bool,
+    term_visible: bool,
+    /// An opened card filling the surface, and where it grew from.
+    focus: Option<Focus>,
+    focus_from: Rect,
+    focus_at: f64,
+    startup_term: Option<String>,
+    /// The surface's size last frame, for placing things in view.
+    view: Rect,
 }
 
 impl Ide {
@@ -118,7 +146,75 @@ impl Ide {
             open_requests: Vec::new(),
             engine_changed: false,
             build: None,
+            terminals: Vec::new(),
+            term_pos: HashMap::new(),
+            next_term: 1,
+            active_term: None,
+            term_drawn: false,
+            term_visible: false,
+            focus: None,
+            focus_from: Rect::NOTHING,
+            focus_at: 0.0,
+            startup_term: std::env::var("TAPESTRY_TERM").ok(),
+            view: Rect::from_min_size(Pos2::ZERO, vec2(1000.0, 700.0)),
         }
+    }
+
+    /// Call once per frame before anything reads the keyboard.
+    pub fn begin_frame(&mut self) {
+        self.term_visible = std::mem::take(&mut self.term_drawn);
+    }
+
+    /// A card is open, filling the surface.
+    pub fn has_focus(&self) -> bool {
+        self.focus.is_some()
+    }
+
+    /// A terminal has the keyboard: the app's own shortcuts stand aside.
+    pub fn terminal_active(&self) -> bool {
+        self.active_term.is_some() && self.term_visible
+    }
+
+    fn spawn_terminal(&mut self, ctx: &egui::Context) {
+        let id = self.next_term;
+        match Terminal::spawn(id, &self.here, ctx) {
+            Ok(t) => {
+                self.next_term += 1;
+                // In the middle of what's in view, a little offset from any
+                // terminal already there.
+                let view = self.view.size() / 2.0 - self.pan;
+                let nudge = self
+                    .terminals
+                    .iter()
+                    .filter(|t| t.cwd == self.here)
+                    .count() as f32
+                    * 28.0;
+                let pos = view / self.zoom - TERM / 2.0 + Vec2::splat(nudge);
+                self.term_pos.insert(id, pos);
+                self.terminals.push(t);
+                self.active_term = Some(id);
+            }
+            Err(e) => eprintln!("couldn't start a terminal: {e}"),
+        }
+    }
+
+    fn close_terminal(&mut self, id: u64) {
+        self.terminals.retain(|t| t.id != id);
+        if self.active_term == Some(id) {
+            self.active_term = None;
+        }
+        if self.focus == Some(Focus::Term(id)) {
+            self.focus = None;
+        }
+    }
+
+    fn grow(&mut self, focus: Focus, from: Rect, now: f64) {
+        if let Focus::Term(id) = focus {
+            self.active_term = Some(id);
+        }
+        self.focus = Some(focus);
+        self.focus_from = from;
+        self.focus_at = now;
     }
 
     fn open_folder(&mut self, dir: PathBuf) {
@@ -132,6 +228,8 @@ impl Ide {
 
     /// Step into (or out to) a folder under the root.
     fn go(&mut self, dir: PathBuf) {
+        self.focus = None;
+        self.active_term = None;
         self.here = dir;
         self.listed_at = f64::NEG_INFINITY;
         self.pan = vec2(24.0, 24.0);
@@ -167,6 +265,17 @@ impl Ide {
         self.header(ui);
         ui.add_space(6.0);
         self.surface(ui);
+        // `TAPESTRY_TERM="<command>"`: open a terminal running it (for checks).
+        if let Some(cmd) = self.startup_term.take() {
+            self.spawn_terminal(ui.ctx());
+            if let Some(t) = self.terminals.last_mut() {
+                t.send(format!("{cmd}\r").as_bytes());
+                let id = t.id;
+                if std::env::var_os("TAPESTRY_TERM_GROW").is_some() {
+                    self.grow(Focus::Term(id), Rect::NOTHING, 0.0);
+                }
+            }
+        }
     }
 
     fn header(&mut self, ui: &mut egui::Ui) {
@@ -188,13 +297,27 @@ impl Ide {
                 let name = crumb
                     .file_name()
                     .map_or("/".into(), |n| n.to_string_lossy().into_owned());
-                let last = i + 1 == crumbs.len();
+                let last = i + 1 == crumbs.len() && self.focus.is_none();
                 if quiet_link(ui, &name, last).clicked() && !last {
                     self.go(crumb.clone());
                 }
             }
+            if let Some(focus) = &self.focus {
+                ui.label(RichText::new("/").color(FAINT));
+                let name = match focus {
+                    Focus::File(p) => p
+                        .file_name()
+                        .map_or(String::new(), |n| n.to_string_lossy().into_owned()),
+                    Focus::Term(id) => format!("terminal {id}"),
+                };
+                quiet_link(ui, &name, true);
+            }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.add_space(8.0);
+                if quiet_link(ui, "+ terminal", false).clicked() {
+                    self.spawn_terminal(ui.ctx());
+                }
+                ui.add_space(12.0);
                 let pinned = self.pins.contains(&self.here);
                 if quiet_link(ui, if pinned { "unpin" } else { "pin" }, false).clicked() {
                     if pinned {
@@ -336,11 +459,45 @@ impl Ide {
         let painter = ui.painter_at(rect);
         painter.rect_filled(rect, CornerRadius::same(10), Color32::from_rgb(0xef, 0xed, 0xe7));
 
+        self.view = rect;
+        let now = ui.input(|i| i.time);
+        if self.focus.is_some() {
+            self.focused(ui, rect, now);
+            return;
+        }
+        if response.clicked() {
+            self.active_term = None;
+        }
+
+        // Where this folder's terminals sit; scrolling over one scrolls
+        // its history rather than zooming.
+        let z = self.zoom;
+        let term_rects: Vec<(u64, Rect)> = self
+            .terminals
+            .iter()
+            .filter(|t| t.cwd == self.here)
+            .map(|t| {
+                let pos = self.term_pos.get(&t.id).copied().unwrap_or_default();
+                (t.id, Rect::from_min_size(rect.min + self.pan + pos * z, TERM * z))
+            })
+            .collect();
+        let over_term = response
+            .hover_pos()
+            .or(ui.input(|i| i.pointer.hover_pos()))
+            .and_then(|p| term_rects.iter().find(|(_, r)| r.contains(p)).map(|t| t.0));
+
         // Pan by dragging the background, zoom with the wheel.
         if response.dragged() {
             self.pan += response.drag_delta();
         }
-        if let Some(p) = response.hover_pos() {
+        if let Some(id) = over_term {
+            let scroll = ui.input(|i| i.smooth_scroll_delta.y);
+            if scroll != 0.0
+                && let Some(t) = self.terminals.iter_mut().find(|t| t.id == id)
+            {
+                t.scroll((scroll / 8.0).round() as i32);
+            }
+        } else if let Some(p) = response.hover_pos() {
             let scroll = ui.input(|i| i.smooth_scroll_delta.y);
             if scroll != 0.0 {
                 let old = self.zoom;
@@ -433,7 +590,7 @@ impl Ide {
                 match e.kind {
                     Kind::Folder => enter = Some(e.path.clone()),
                     Kind::Binary => {}
-                    _ => open = Some(e.path.clone()),
+                    _ => open = Some((e.path.clone(), r)),
                 }
             }
             if resp.hovered() {
@@ -453,10 +610,15 @@ impl Ide {
         if let Some(dir) = enter {
             self.go(dir);
         }
-        if let Some(path) = open {
-            self.open(path);
+        if let Some((path, from)) = open
+            && self.load(&path)
+        {
+            self.grow(Focus::File(path), from, now);
         }
-        if self.entries.is_empty() {
+
+        self.terminal_cards(ui, &painter, rect, &term_rects, now);
+
+        if self.entries.is_empty() && term_rects.is_empty() {
             painter.text(
                 rect.center(),
                 Align2::CENTER_CENTER,
@@ -468,30 +630,190 @@ impl Ide {
         painter.text(
             rect.left_bottom() + vec2(12.0, -10.0),
             Align2::LEFT_BOTTOM,
-            "double-click a folder to step in, a file to open it · drag to move · scroll to zoom",
+            "double-click a folder to step in, a file or terminal to fill the view · drag to move · scroll to zoom",
             FontId::proportional(13.0),
             FAINT,
         );
     }
 
-    pub fn open(&mut self, path: PathBuf) {
-        if !self.buffers.contains_key(&path) {
-            let Ok(text) = std::fs::read_to_string(&path) else {
-                return;
-            };
-            self.buffers.insert(
-                path.clone(),
-                Buffer {
-                    saved: text.clone(),
-                    text,
-                },
-            );
+    /// Read a file into a buffer, unless it's open already.
+    fn load(&mut self, path: &Path) -> bool {
+        if self.buffers.contains_key(path) {
+            return true;
         }
-        self.open_requests.push(path);
+        let Ok(text) = std::fs::read_to_string(path) else {
+            return false;
+        };
+        self.buffers.insert(
+            path.to_path_buf(),
+            Buffer {
+                saved: text.clone(),
+                text,
+            },
+        );
+        true
     }
 
-    /// An open file: a header with its path and save, then the text.
+    /// Open a file filling the files surface, as a double-click does.
+    pub fn show(&mut self, path: PathBuf) {
+        if self.load(&path) {
+            self.grow(Focus::File(path), Rect::NOTHING, 0.0);
+        }
+    }
+
+    fn terminal_cards(
+        &mut self,
+        ui: &mut egui::Ui,
+        painter: &egui::Painter,
+        surface: Rect,
+        rects: &[(u64, Rect)],
+        now: f64,
+    ) {
+        let z = self.zoom;
+        let mut close = None;
+        let mut grow = None;
+        for &(id, r) in rects {
+            if !r.intersects(surface) {
+                continue;
+            }
+            let resp = ui.interact(r, ui.id().with(("term", id)), Sense::click_and_drag());
+            let x = Rect::from_center_size(r.right_top() + vec2(-16.0, 16.0) * z, Vec2::splat(18.0 * z));
+            let x_resp = ui.interact(x, ui.id().with(("term-close", id)), Sense::click());
+            if x_resp.clicked() {
+                close = Some(id);
+            }
+            if resp.clicked() {
+                self.active_term = Some(id);
+            }
+            if resp.double_clicked() {
+                grow = Some((id, r));
+            }
+            if resp.dragged()
+                && let Some(p) = self.term_pos.get_mut(&id)
+            {
+                *p += resp.drag_delta() / z;
+            }
+            let active = self.active_term == Some(id);
+            let Some(t) = self.terminals.iter_mut().find(|t| t.id == id) else {
+                continue;
+            };
+            let body = card_frame(painter, r, z, &t.title(), active);
+            painter.text(
+                x.center(),
+                Align2::CENTER_CENTER,
+                "×",
+                FontId::proportional(16.0 * z),
+                if x_resp.hovered() { INK } else { FAINT },
+            );
+            t.draw(ui, &painter.with_clip_rect(body.intersect(surface)), body, 11.0 * z, active);
+            if active {
+                self.term_drawn = true;
+                t.take_input(ui);
+            }
+        }
+        if let Some(id) = close {
+            self.close_terminal(id);
+        }
+        if let Some((id, r)) = grow {
+            self.grow(Focus::Term(id), r, now);
+        }
+    }
+
+    /// An opened card, grown to fill the surface.
+    fn focused(&mut self, ui: &mut egui::Ui, surface: Rect, now: f64) {
+        let Some(focus) = self.focus.clone() else {
+            return;
+        };
+        let target = surface.shrink(10.0);
+        let t = ((now - self.focus_at) / GROW).clamp(0.0, 1.0) as f32;
+        let ease = 1.0 - (1.0 - t).powi(3);
+        let from = if self.focus_from == Rect::NOTHING {
+            target
+        } else {
+            self.focus_from
+        };
+        let r = Rect::from_min_max(
+            from.min.lerp(target.min, ease),
+            from.max.lerp(target.max, ease),
+        );
+        let painter = ui.painter_at(surface);
+        let name = match &focus {
+            Focus::File(p) => p
+                .file_name()
+                .map_or(String::new(), |n| n.to_string_lossy().into_owned()),
+            Focus::Term(id) => self
+                .terminals
+                .iter()
+                .find(|t| t.id == *id)
+                .map_or("terminal".into(), |t| t.title()),
+        };
+        let body = card_frame(&painter, r, 1.0, &name, true);
+        if t < 1.0 {
+            ui.ctx().request_repaint();
+            return;
+        }
+
+        // Links on the title row: back to the folder, and for a file, out
+        // into a tab of its own.
+        let row = Rect::from_min_max(
+            pos2(r.right() - 260.0, r.top() + 8.0),
+            pos2(r.right() - 14.0, body.top() - 10.0),
+        );
+        let mut back = false;
+        let mut own_tab = false;
+        ui.scope_builder(egui::UiBuilder::new().max_rect(row), |ui| {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                back = quiet_link(ui, "back", false).clicked();
+                if matches!(focus, Focus::File(_)) {
+                    ui.add_space(10.0);
+                    own_tab = quiet_link(ui, "own tab", false).clicked();
+                }
+            });
+        });
+        match &focus {
+            Focus::File(path) => {
+                if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                    back = true;
+                }
+                ui.scope_builder(egui::UiBuilder::new().max_rect(body), |ui| {
+                    self.editor(ui, path, false);
+                });
+                if own_tab {
+                    self.open_requests.push(path.clone());
+                    back = true;
+                }
+            }
+            Focus::Term(id) => {
+                self.active_term = Some(*id);
+                if let Some(term) = self.terminals.iter_mut().find(|t| t.id == *id) {
+                    term.draw(ui, &painter.with_clip_rect(body), body, 13.0, true);
+                    self.term_drawn = true;
+                    let over = ui.input(|i| i.pointer.hover_pos()).is_some_and(|p| body.contains(p));
+                    let scroll = ui.input(|i| i.smooth_scroll_delta.y);
+                    if over && scroll != 0.0 {
+                        term.scroll((scroll / 8.0).round() as i32);
+                    }
+                    term.take_input(ui);
+                } else {
+                    back = true;
+                }
+            }
+        }
+        if back {
+            if matches!(focus, Focus::Term(_)) {
+                self.active_term = None;
+            }
+            self.focus = None;
+        }
+    }
+
+    /// An open file in a tab of its own.
     pub fn editor_ui(&mut self, ui: &mut egui::Ui, path: &Path) {
+        self.editor(ui, path, true);
+    }
+
+    /// A header with save (and the path, if asked), then the text.
+    fn editor(&mut self, ui: &mut egui::Ui, path: &Path, show_path: bool) {
         // Rust source or a manifest in Tapestry's own repository: saving it
         // means the program itself needs building again.
         let in_engine = path.starts_with(&self.engine)
@@ -509,7 +831,9 @@ impl Ide {
                 .unwrap_or(path)
                 .display()
                 .to_string();
-            ui.label(RichText::new(shown).font(FontId::monospace(12.0)).color(MUTED));
+            if show_path {
+                ui.label(RichText::new(shown).font(FontId::monospace(12.0)).color(MUTED));
+            }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.add_space(8.0);
                 if buf.dirty() {
@@ -760,6 +1084,29 @@ fn draw_card(painter: &egui::Painter, e: &Entry, r: Rect, z: f32, hot: bool, ope
     };
     let galley = clip.layout(body, font, color, width);
     clip.galley(body_at, galley, color);
+}
+
+/// A Line Lab card: sheet, title, rule under it. Returns the body's rect.
+fn card_frame(painter: &egui::Painter, r: Rect, z: f32, heading: &str, strong: bool) -> Rect {
+    painter.rect(
+        r,
+        CornerRadius::same((12.0 * z).min(14.0) as u8),
+        SHEET,
+        Stroke::new(if strong { 1.6 } else { 1.2 }, if strong { INK } else { MUTED }),
+        egui::StrokeKind::Inside,
+    );
+    let pad = 12.0 * z;
+    let head = painter.layout_no_wrap(heading.to_owned(), title(17.0 * z), INK);
+    let h = head.size().y;
+    painter
+        .with_clip_rect(r.shrink(2.0))
+        .galley(r.min + vec2(pad, pad), head, INK);
+    let y = r.top() + pad + h + 4.0 * z;
+    painter.line_segment(
+        [pos2(r.left() + pad, y), pos2(r.right() - pad, y)],
+        Stroke::new(1.0, INK),
+    );
+    Rect::from_min_max(pos2(r.left() + pad, y + 6.0 * z), r.max - vec2(pad, pad))
 }
 
 /// `~/.local/state/tapestry` (or under `$XDG_STATE_HOME`).

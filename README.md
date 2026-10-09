@@ -63,9 +63,14 @@ to have it fill the window; esc comes back.
 
 **files** is a small spatial IDE. It opens any folder (type a path, or click a pinned one;
 *pin* keeps the folder you're in) as note cards: folders are frames you double-click to step into,
-files are cards you double-click to open as a tab, and Markdown `[[wikilinks]]` are drawn as
+files are cards you double-click to open: the card grows to fill the surface, with save,
+*back* (or esc) and *own tab* to pull it out into a pane of its own, and Markdown `[[wikilinks]]` are drawn as
 ink lines between cards, so an Obsidian vault reads as a web. Drag cards around; scroll to
-zoom. Moved cards and pins are remembered in `~/.local/state/tapestry/`. Saving a rule file changes the canvas at once. Saving the engine's own source offers
+zoom. Moved cards and pins are remembered in `~/.local/state/tapestry/`. **+ terminal** opens a real shell in the folder you're in, as a card: click it to type into
+it (every key goes to it, Ctrl+C and Shift+Tab included; click the surface to give the
+keyboard back), double-click to grow it, scroll over it for history. Run `claude` in one to
+work with an agent beside the notes it's working on. Saving a rule file changes the canvas
+at once. Saving the engine's own source offers
 **rebuild**, then **restart into it**.
 
 The timeline has a lane per brush and one for rule switches. Click a keyframe to pick it

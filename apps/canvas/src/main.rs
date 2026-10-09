@@ -5,6 +5,7 @@
 //! replays around what you added.
 
 mod ide;
+mod term;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -44,9 +45,9 @@ fn main() -> eframe::Result {
         options,
         Box::new(move |cc| {
             let mut app = App::new(cc);
-            // `TAPESTRY_OPEN=<file>` opens a file as a tab at startup.
+            // `TAPESTRY_OPEN=<file>` opens a file in the files pane at startup.
             if let Ok(path) = std::env::var("TAPESTRY_OPEN") {
-                app.ide.open(PathBuf::from(path));
+                app.ide.show(PathBuf::from(path));
             }
             if demo {
                 paint_demo(&mut app.timeline);
@@ -265,7 +266,8 @@ impl App {
     }
 
     fn keyboard(&mut self, ui: &egui::Ui) {
-        if ui.ctx().egui_wants_keyboard_input() {
+        // A terminal with the keyboard gets every key, Space and Ctrl+Z too.
+        if ui.ctx().egui_wants_keyboard_input() || self.ide.terminal_active() {
             return;
         }
         let idle = self.painting.is_none() && self.drag.is_none();
@@ -952,6 +954,7 @@ impl eframe::App for App {
         }
         ui.ctx()
             .request_repaint_after(std::time::Duration::from_millis(500));
+        self.ide.begin_frame();
         self.keyboard(ui);
 
         egui::Panel::top("top").show(ui, |ui| self.top_bar(ui));
@@ -959,8 +962,10 @@ impl eframe::App for App {
             egui::CentralPanel::default().show(ui, |ui| {
                 ui.horizontal(|ui| {
                     ui.add_space(8.0);
-                    if quiet_link(ui, "back to the layout", false).clicked()
-                        || ui.input(|i| i.key_pressed(egui::Key::Escape))
+                    let esc = ui.input(|i| i.key_pressed(egui::Key::Escape))
+                        && !self.ide.terminal_active()
+                        && !self.ide.has_focus();
+                    if quiet_link(ui, "back to the layout", false).clicked() || esc
                     {
                         self.maximized = None;
                     }
