@@ -1,0 +1,746 @@
+#!/usr/bin/env python3
+"""Claims: each terminal says which files it's working on and what it means to
+do with each, so terminals editing the same tree don't get in each other's way.
+
+A claim is a file, optionally narrowed to parts of it (a line to find, like
+`fn spawn_terminal` or `pub struct Terminal`, meaning that item and its body),
+a lock, and a note for anyone else who arrives there:
+
+    whole    the file is off limits to other sessions
+    parts    the named parts are off limits; the rest of the file is open
+    none     open, but read the note first
+
+Hooks (see .claude/settings.json) enforce it. Before an Edit or Write, a file
+another live session has locked is refused with its note; a file with only a
+note, or with another session's uncommitted edits, is refused once so the note
+gets read, then allowed. Git commands that would sweep up or throw away another
+session's uncommitted work (`git add -A`, `commit -a`, `stash`, `reset --hard`,
+`restore`, a plain commit over their staged files) are refused too. Every edit
+claims its file lightly ("touched") until it's committed, so sessions that
+never claim anything still show up.
+
+Every prompt is appended to inbox.jsonl, where an orchestrator session
+(`claim watch`, see .claude/skills/orchestrate) checks it against the claims.
+
+State lives in ~/.local/state/tapestry/claims/, one <session-id>.json per
+session, beside the canvas app's own state. A session is live while Claude Code
+lists it in ~/.claude/sessions/. When it ends its claims go dormant: shown, not
+enforced, and woken again if the session is resumed.
+"""
+
+import argparse
+import json
+import os
+import re
+import shlex
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+SESSIONS = Path.home() / ".claude" / "sessions"
+DORMANT_SECS = 3 * 24 * 3600
+ME = "tools/claims/claim"
+
+
+def state_dir():
+    base = os.environ.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/state")
+    d = Path(base) / "tapestry" / "claims"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+# ---------- sessions ----------
+
+
+def alive(pid):
+    try:
+        os.kill(pid, 0)
+        return True
+    except PermissionError:
+        return True
+    except (OSError, TypeError):
+        return False
+
+
+def live_sessions():
+    """Claude Code sessions running now, by session id."""
+    out = {}
+    for f in SESSIONS.glob("*.json"):
+        try:
+            s = json.loads(f.read_text())
+        except (OSError, ValueError):
+            continue
+        if s.get("sessionId") and alive(s.get("pid")):
+            out[s["sessionId"]] = s
+    return out
+
+
+def parent(pid):
+    try:
+        r = subprocess.run(["ps", "-o", "ppid=", "-p", str(pid)], capture_output=True, text=True)
+        return int(r.stdout.strip() or 0)
+    except ValueError:
+        return 0
+
+
+def enclosing_session():
+    """The Claude Code session this command runs under, from the process tree."""
+    pid = os.getppid()
+    for _ in range(30):
+        f = SESSIONS / f"{pid}.json"
+        if f.exists():
+            try:
+                return json.loads(f.read_text())
+            except ValueError:
+                return None
+        pid = parent(pid)
+        if pid <= 1:
+            return None
+    return None
+
+
+# ---------- records ----------
+
+
+def rec_path(sid):
+    return state_dir() / f"{sid}.json"
+
+
+def load(sid):
+    try:
+        return json.loads(rec_path(sid).read_text())
+    except (OSError, ValueError):
+        return {"session": sid, "name": "", "cwd": "", "task": "", "claims": [], "seen": []}
+
+
+def save(rec):
+    rec["updated"] = time.time()
+    p = rec_path(rec["session"])
+    tmp = p.with_suffix(".tmp")
+    tmp.write_text(json.dumps(rec, indent=1))
+    tmp.replace(p)
+
+
+def all_records():
+    for f in state_dir().glob("*.json"):
+        try:
+            yield json.loads(f.read_text())
+        except (OSError, ValueError):
+            continue
+
+
+def others(sid):
+    """(record, live) for every other session with claims, dropping long-dead ones."""
+    live = live_sessions()
+    now = time.time()
+    for r in all_records():
+        if r.get("session") == sid:
+            continue
+        is_live = r.get("session") in live
+        if is_live:
+            r["name"] = live[r["session"]].get("name") or r.get("name", "")
+            r["status"] = live[r["session"]].get("status", "")
+        elif now - r.get("updated", 0) > DORMANT_SECS:
+            rec_path(r["session"]).unlink(missing_ok=True)
+            continue
+        if r.get("claims"):
+            yield r, is_live
+
+
+def who(r):
+    return r.get("name") or r.get("session", "?")[:8]
+
+
+# ---------- git ----------
+
+
+def git(cwd, *args):
+    try:
+        r = subprocess.run(["git", "-C", str(cwd), *args], capture_output=True, text=True, timeout=5)
+        return r.stdout if r.returncode == 0 else None
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+
+
+def where(path):
+    """(worktree root, repo common dir) holding `path`."""
+    d = path if os.path.isdir(path) else os.path.dirname(path) or "."
+    while not os.path.isdir(d):
+        d = os.path.dirname(d)
+    out = git(d, "rev-parse", "--show-toplevel", "--git-common-dir")
+    if not out:
+        return None, None
+    top, common = out.splitlines()[:2]
+    return top, os.path.realpath(os.path.join(d, common))
+
+
+def dirty(path, root):
+    out = git(root, "status", "--porcelain", "--", path)
+    return bool(out and out.strip())
+
+
+def rel(path, root):
+    try:
+        return os.path.relpath(path, root) if root else path
+    except ValueError:
+        return path
+
+
+# ---------- parts of a file ----------
+
+CLOSERS = ("}", ")", "]")
+OPENERS = ("{", "(", "[", ":")
+
+
+def indent(line):
+    return len(line) - len(line.lstrip())
+
+
+def region(lines, anchor):
+    """The lines (first, last) of the item starting at the first line holding
+    `anchor`: that line and everything indented under it, through its closer."""
+    start = next((i for i, l in enumerate(lines) if anchor in l), None)
+    if start is None:
+        return None
+    head = lines[start].rstrip()
+    if not head.endswith(OPENERS) and not head.endswith(","):
+        # A signature over several lines carries on until it opens.
+        k = start
+        while k + 1 < len(lines) and k - start < 12 and not lines[k].rstrip().endswith(OPENERS + (";",)):
+            k += 1
+        if not lines[k].rstrip().endswith(OPENERS):
+            return start, start
+    ind = indent(lines[start])
+    end = start
+    for j in range(start + 1, len(lines)):
+        s = lines[j].strip()
+        if not s:
+            continue
+        if indent(lines[j]) <= ind:
+            if s.startswith(CLOSERS):
+                end = j
+                if s.rstrip().endswith(OPENERS):
+                    continue
+            break
+        end = j
+    return start, end
+
+
+def regions(text, parts):
+    lines = text.split("\n")
+    out = []
+    for p in parts:
+        r = region(lines, p)
+        if r:
+            out.append((p, r[0], r[1], "\n".join(lines[r[0] : r[1] + 1])))
+    return out
+
+
+def spans(text, olds, replace_all=False):
+    """Line spans an edit would change."""
+    out = []
+    for old in olds:
+        if not old:
+            continue
+        i = text.find(old)
+        while i != -1:
+            a = text.count("\n", 0, i)
+            out.append((a, a + old.count("\n")))
+            if not replace_all:
+                break
+            i = text.find(old, i + len(old))
+    return out
+
+
+# ---------- hooks ----------
+
+
+def emit(event, **fields):
+    print(json.dumps({"hookSpecificOutput": {"hookEventName": event, **fields}}))
+
+
+def deny(reason):
+    emit("PreToolUse", permissionDecision="deny", permissionDecisionReason=reason)
+
+
+def claims_on(path, sid):
+    """Other sessions' claims on `path` (in this worktree), and same-named files
+    claimed in sibling worktrees of the repo."""
+    path = os.path.realpath(path)
+    root, repo = where(path)
+    here, elsewhere = [], []
+    for r, is_live in others(sid):
+        for c in r["claims"]:
+            if c["path"] == path:
+                if c.get("lock") == "touched" and not dirty(path, root):
+                    continue
+                here.append((r, is_live, c))
+            elif repo and c.get("repo") == repo and c.get("rel") == rel(path, root):
+                elsewhere.append((r, c))
+    return here, elsewhere, root
+
+
+def describe(r, is_live, c, root):
+    parts = f" (parts: {', '.join('`'+p+'`' for p in c['parts'])})" if c.get("parts") else ""
+    lock = {"whole": "whole file locked", "parts": "parts locked", "none": "open, with a note",
+            "touched": "has uncommitted edits here, no note"}.get(c.get("lock"), c.get("lock"))
+    state = "live" if is_live else "ended — dormant until resumed"
+    s = f"- {who(r)} [{state}] on {rel(c['path'], root)}{parts}: {lock}."
+    if c.get("note"):
+        s += f"\n  Their note: {c['note']}"
+    if r.get("task"):
+        s += f"\n  Their task: {r['task']}"
+    return s
+
+
+def ask_hint(rs):
+    names = sorted({who(r) for r in rs})
+    return (f"To ask for a change, SendMessage {' / '.join(names)}. To see every claim: `{ME} list`. "
+            f"Claim what you're about to change before editing: `{ME} add <file> [--part <line to find>] -m <what you'll do>`.")
+
+
+def hook_pre_edit(inp):
+    sid = inp.get("session_id", "")
+    ti = inp.get("tool_input", {})
+    path = ti.get("file_path") or ti.get("notebook_path")
+    if not path:
+        return
+    path = os.path.realpath(path)
+    here, elsewhere, root = claims_on(path, sid)
+    if not here and not elsewhere:
+        return
+    try:
+        text = Path(path).read_text()
+    except (OSError, UnicodeDecodeError):
+        text = None
+
+    blocking, advisory = [], []
+    for r, is_live, c in here:
+        lock = c.get("lock")
+        if is_live and lock == "whole":
+            blocking.append((r, is_live, c, None))
+        elif is_live and lock == "parts" and c.get("parts") and text is not None:
+            regs = regions(text, c["parts"])
+            hit = None
+            if inp.get("tool_name") == "Write":
+                new = ti.get("content", "")
+                hit = next((g for g in regs if g[3] not in new), None)
+            else:
+                olds = [ti.get("old_string", "")] + [e.get("old_string", "") for e in ti.get("edits", [])]
+                for a, b in spans(text, olds, ti.get("replace_all", False)):
+                    hit = hit or next((g for g in regs if a <= g[2] and b >= g[1]), None)
+            if hit:
+                blocking.append((r, is_live, c, hit))
+            else:
+                advisory.append((r, is_live, c))
+        else:
+            advisory.append((r, is_live, c))
+
+    if blocking:
+        lines = [f"Claimed by another session — not edited."]
+        for r, is_live, c, hit in blocking:
+            lines.append(describe(r, is_live, c, root))
+            if hit:
+                lines.append(f"  Your edit reaches `{hit[0]}` (lines {hit[1]+1}–{hit[2]+1}). The rest of the file is open.")
+        lines.append(ask_hint([b[0] for b in blocking]))
+        deny("\n".join(lines))
+        return
+
+    me = load(sid)
+    seen = set(me.get("seen", []))
+    fresh = [(r, l, c) for r, l, c in advisory if key(r, c) not in seen]
+    fresh_else = [(r, c) for r, c in elsewhere if key(r, c) not in seen]
+    if not fresh and not fresh_else:
+        return
+    lines = [f"Before you edit {rel(path, root)}, read what other sessions say about it:"]
+    for r, is_live, c in fresh:
+        lines.append(describe(r, is_live, c, root))
+    for r, c in fresh_else:
+        lines.append(f"- {who(r)} is changing the same file in another worktree ({c.get('root')}); "
+                     f"expect a merge conflict. Note: {c.get('note') or '(none)'}")
+    if any(c.get("lock") in ("touched", "none", "parts") for _, _, c in fresh):
+        lines.append("Their uncommitted changes share this working tree: keep your hunks apart from theirs, "
+                     "and when committing stage only your own hunks.")
+    lines.append("If your edit fits with that, run the same edit again; it will go through.")
+    lines.append(ask_hint([x[0] for x in fresh] + [x[0] for x in fresh_else]))
+    me.setdefault("seen", []).extend(key(r, c) for r, _, c in fresh)
+    me["seen"].extend(key(r, c) for r, c in fresh_else)
+    save(me)
+    deny("\n".join(lines))
+
+
+def key(r, c):
+    return f"{r['session']}|{c['path']}|{c.get('at')}"
+
+
+def hook_post_edit(inp):
+    """Every edit claims its file lightly, so others see it until it's committed."""
+    sid = inp.get("session_id", "")
+    ti = inp.get("tool_input", {})
+    path = ti.get("file_path") or ti.get("notebook_path")
+    if not path:
+        return
+    path = os.path.realpath(path)
+    rec = register(sid, inp.get("cwd", ""))
+    if not any(c["path"] == path for c in rec["claims"]):
+        root, repo = where(path)
+        rec["claims"].append({"path": path, "root": root, "repo": repo, "rel": rel(path, root),
+                              "parts": [], "lock": "touched", "note": "", "at": time.time()})
+    save(rec)
+
+
+SPLIT = re.compile(r"&&|\|\||[;|\n]")
+
+
+def git_calls(command, cwd):
+    """(subcommand, args, dir) for each git call in a shell command."""
+    for seg in SPLIT.split(command):
+        try:
+            toks = shlex.split(seg, comments=True)
+        except ValueError:
+            continue
+        while toks and "=" in toks[0] and not toks[0].startswith("-"):
+            toks = toks[1:]
+        if not toks or os.path.basename(toks[0]) != "git":
+            continue
+        d, i = cwd, 1
+        while i < len(toks) and toks[i].startswith("-"):
+            if toks[i] == "-C" and i + 1 < len(toks):
+                d = os.path.join(d, toks[i + 1])
+                i += 2
+            elif toks[i] == "-c":
+                i += 2
+            else:
+                i += 1
+        if i < len(toks):
+            yield toks[i], toks[i + 1 :], d
+
+
+def hook_pre_bash(inp):
+    sid = inp.get("session_id", "")
+    command = inp.get("tool_input", {}).get("command", "")
+    if "git" not in command or "claims-ok" in command:
+        return
+    cwd = inp.get("cwd") or os.getcwd()
+    problems = []
+    for sub, args, d in git_calls(command, cwd):
+        root, _ = where(os.path.realpath(d))
+        if not root:
+            continue
+        theirs = [(r, l, c) for r, l, c in worktree_claims(sid, root) if dirty(c["path"], root)]
+        if not theirs:
+            continue
+        flags = [a for a in args if a.startswith("-")]
+        paths = [os.path.realpath(os.path.join(d, a)) for a in args if not a.startswith("-")]
+        short = {f for a in flags if a.startswith("-") and not a.startswith("--") for f in a[1:]}
+        sweep, hit = None, []
+        if sub == "add":
+            if {"-A", "--all", "-u", "--update"} & set(flags) or not paths or root in paths or any(
+                    p == os.path.realpath(d) for p in paths):
+                sweep = "stages every change in the tree"
+            else:
+                hit = [x for x in theirs if any(x[2]["path"] == p or x[2]["path"].startswith(p + os.sep) for p in paths)]
+        elif sub == "commit":
+            if "a" in short or "--all" in flags:
+                sweep = "commits every change in the tree"
+            else:
+                staged = set(os.path.realpath(os.path.join(root, f))
+                             for f in (git(root, "diff", "--cached", "--name-only") or "").split())
+                hit = [x for x in theirs if x[2]["path"] in staged or x[2]["path"] in paths]
+        elif sub == "stash" and not (args and args[0] in ("list", "show")):
+            sweep = "takes every change out of the tree, theirs included"
+        elif sub == "reset" and "--hard" in flags:
+            sweep = "throws away every uncommitted change"
+        elif sub == "clean":
+            sweep = "deletes untracked files"
+        elif sub in ("checkout", "restore") and not ("--staged" in flags and "--worktree" not in flags):
+            if "." in args or root in paths:
+                sweep = "discards changes across the tree"
+            elif sub == "restore" or "--" in args:
+                hit = [x for x in theirs if x[2]["path"] in paths]
+        if sweep:
+            problems.append(f"`git {sub}` {sweep}, and other sessions have uncommitted work here:")
+            problems += [describe(r, l, c, root) for r, l, c in theirs]
+        elif hit:
+            problems.append(f"`git {sub}` would take in or throw away another session's uncommitted work:")
+            problems += [describe(r, l, c, root) for r, l, c in hit]
+    if problems:
+        problems.append(
+            "Stage only your own paths and hunks (for a shared file: write a copy holding only your hunks, "
+            "`git update-index --cacheinfo 100644,$(git hash-object -w <copy>),<path>`), and check "
+            "`git show --stat HEAD` after committing. If you've checked and it's only your work, add the "
+            "comment `# claims-ok` to the command.")
+        deny("\n".join(problems))
+
+
+def hook_post_bash(inp):
+    """After a commit, light claims on files that are clean again let go."""
+    command = inp.get("tool_input", {}).get("command", "")
+    if "git" not in command or "commit" not in command:
+        return
+    sid = inp.get("session_id", "")
+    rec = load(sid)
+    keep = [c for c in rec["claims"] if c.get("lock") != "touched" or dirty(c["path"], c.get("root"))]
+    if len(keep) != len(rec["claims"]):
+        rec["claims"] = keep
+        save(rec)
+
+
+def worktree_claims(sid, root):
+    return [(r, l, c) for r, l in others(sid) for c in r["claims"] if c.get("root") == root]
+
+
+def register(sid, cwd):
+    rec = load(sid)
+    s = live_sessions().get(sid, {})
+    rec["name"] = s.get("name") or rec.get("name", "")
+    rec["cwd"] = cwd or rec.get("cwd", "")
+    rec["ended"] = None
+    return rec
+
+
+def hook_session_start(inp):
+    sid = inp.get("session_id", "")
+    rec = register(sid, inp.get("cwd", ""))
+    save(rec)
+    root, _ = where(os.path.realpath(inp.get("cwd") or "."))
+    peers = worktree_claims(sid, root) if root else []
+    ctx = (
+        "This tree is shared with other Claude sessions, coordinated by claims "
+        f"(`{ME}`; run `{ME} -h`). Before editing, claim the files you'll change and say what you'll do "
+        f"to each: `{ME} task \"<what you're building>\"`, then `{ME} add <file> [--part <line to find>]... "
+        "[--lock whole|parts|none] -m \"<what you'll change, and what others should leave alone>\"`. "
+        "Prefer `--part` locks over whole files. Edits into another session's claim are refused with their "
+        f"note; read it and work around it, or SendMessage them. `{ME} release --all` when you're done. "
+    )
+    if peers:
+        ctx += "\nClaims here now:\n" + "\n".join(describe(r, l, c, root) for r, l, c in peers)
+    emit("SessionStart", additionalContext=ctx)
+
+
+def hook_session_end(inp):
+    sid = inp.get("session_id", "")
+    rec = load(sid)
+    if rec.get("claims") or rec.get("task"):
+        rec["ended"] = time.time()
+        save(rec)
+    else:
+        rec_path(sid).unlink(missing_ok=True)
+
+
+WORD = re.compile(r"[A-Za-z_][A-Za-z0-9_]{3,}")
+
+
+def overlaps(prompt, sid, root):
+    """Other sessions' claims a prompt seems to touch, by the words they share."""
+    words = {w.lower() for w in WORD.findall(prompt)}
+    out = []
+    for r, l, c in worktree_claims(sid, root):
+        names = {Path(c["path"]).stem.lower(), Path(c["path"]).name.lower()}
+        names |= {w.lower() for p in c.get("parts", []) for w in WORD.findall(p)}
+        task = {w.lower() for w in WORD.findall(r.get("task", "") + " " + c.get("note", ""))}
+        shared = (names & words) | (task & words - COMMON)
+        if names & words or len(task & words - COMMON) >= 3:
+            out.append((r, l, c, sorted(shared)))
+    return out
+
+
+COMMON = set("""that this with from have will what when where which there their them they then than
+into also just like want need make sure some more could would should about each file files code
+the and for are but not you all any can her was one our out get has how its new now see way
+please thanks thank lets let's""".split())
+
+
+def hook_prompt(inp):
+    sid = inp.get("session_id", "")
+    prompt = inp.get("prompt", "")
+    cwd = inp.get("cwd", "")
+    rec = register(sid, cwd)
+    save(rec)
+    with open(state_dir() / "inbox.jsonl", "a") as f:
+        f.write(json.dumps({"at": time.time(), "session": sid, "name": rec["name"], "cwd": cwd,
+                            "prompt": prompt}) + "\n")
+    root, _ = where(os.path.realpath(cwd or "."))
+    if not root:
+        return
+    hits = overlaps(prompt, sid, root)
+    peers = {}
+    for r, l, c in worktree_claims(sid, root):
+        peers.setdefault(who(r), []).append(rel(c["path"], root))
+    if not peers:
+        return
+    lines = ["[claims] Other sessions working in this tree: " + "; ".join(
+        f"{n}: {', '.join(sorted(set(ps)))}" for n, ps in peers.items())]
+    if hits:
+        lines.append("This prompt may overlap:")
+        lines += [describe(r, l, c, root) for r, l, c, _ in hits]
+    lines.append(f"Claim your files before editing (`{ME} add ...`).")
+    emit("UserPromptSubmit", additionalContext="\n".join(lines))
+
+
+HOOKS = {
+    "pre-edit": hook_pre_edit,
+    "post-edit": hook_post_edit,
+    "pre-bash": hook_pre_bash,
+    "post-bash": hook_post_bash,
+    "session-start": hook_session_start,
+    "session-end": hook_session_end,
+    "prompt": hook_prompt,
+}
+
+
+# ---------- commands ----------
+
+
+def mine():
+    s = enclosing_session()
+    if not s:
+        sys.exit("claim: not running inside a Claude Code session (set CLAIM_SESSION=<session id> to act as one)")
+    rec = register(s["sessionId"], os.getcwd())
+    return rec
+
+
+def cmd_task(a):
+    rec = mine()
+    rec["task"] = " ".join(a.text)
+    save(rec)
+    print(f"{who(rec)}: {rec['task']}")
+
+
+def cmd_add(a):
+    rec = mine()
+    for p in a.paths:
+        path = os.path.realpath(p)
+        root, repo = where(path)
+        lock = a.lock or ("parts" if a.part else "whole")
+        if lock == "parts" and not a.part:
+            sys.exit("claim: --lock parts needs at least one --part")
+        if a.part and os.path.exists(path):
+            text = Path(path).read_text()
+            found = {g[0] for g in regions(text, a.part)}
+            missing = [x for x in a.part if x not in found]
+            if missing:
+                sys.exit(f"claim: not found in {p}: {', '.join(missing)}")
+        here, _, _ = claims_on(path, rec["session"])
+        for r, l, c in here:
+            if l and c.get("lock") == "whole":
+                print(f"note: {who(r)} already holds all of {p}: {c.get('note')}", file=sys.stderr)
+        rec["claims"] = [c for c in rec["claims"] if c["path"] != path]
+        rec["claims"].append({"path": path, "root": root, "repo": repo, "rel": rel(path, root),
+                              "parts": a.part or [], "lock": lock, "note": a.m or "", "at": time.time()})
+        print(f"claimed {rel(path, root)} ({lock}{': ' + ', '.join(a.part) if a.part else ''})")
+    save(rec)
+
+
+def cmd_release(a):
+    rec = mine()
+    if a.all:
+        rec["claims"] = []
+    else:
+        drop = {os.path.realpath(p) for p in a.paths}
+        rec["claims"] = [c for c in rec["claims"] if c["path"] not in drop]
+    save(rec)
+    print(f"{len(rec['claims'])} claims left")
+
+
+def board(include_dormant=True):
+    live = live_sessions()
+    rows = []
+    for r in sorted(all_records(), key=lambda r: r.get("name", "")):
+        is_live = r["session"] in live
+        if not is_live and (not include_dormant or not r.get("claims")):
+            continue
+        name = (live.get(r["session"], {}).get("name") or r.get("name") or r["session"][:8])
+        status = live.get(r["session"], {}).get("status", "ended")
+        rows.append(f"## {name} ({status}) — {r.get('task') or 'no task given'}")
+        rows.append(f"   cwd {r.get('cwd')}")
+        for c in r.get("claims", []):
+            parts = f" [{'; '.join(c['parts'])}]" if c.get("parts") else ""
+            rows.append(f"   {c.get('lock'):8} {c.get('rel') or c['path']}{parts}"
+                        + (f" — {c['note']}" if c.get("note") else ""))
+    return "\n".join(rows) or "no claims"
+
+
+def cmd_list(a):
+    print(board())
+
+
+def cmd_check(a):
+    s = enclosing_session()
+    sid = s["sessionId"] if s else ""
+    for p in a.paths:
+        here, elsewhere, root = claims_on(p, sid)
+        if not here and not elsewhere:
+            print(f"{p}: free")
+        for r, l, c in here:
+            print(describe(r, l, c, root))
+            if c.get("parts") and os.path.exists(c["path"]):
+                for name, s0, s1, _ in regions(Path(c["path"]).read_text(), c["parts"]):
+                    print(f"  `{name}` is lines {s0+1}–{s1+1}")
+        for r, c in elsewhere:
+            print(f"- {who(r)} on the same path in {c.get('root')}: {c.get('lock')} {c.get('note')}")
+
+
+def cmd_watch(a):
+    """Print each new prompt with the claims it may run into, as it arrives."""
+    inbox = state_dir() / "inbox.jsonl"
+    inbox.touch()
+    with open(inbox) as f:
+        if not a.from_start:
+            f.seek(0, 2)
+        while True:
+            line = f.readline()
+            if not line:
+                time.sleep(0.5)
+                continue
+            try:
+                m = json.loads(line)
+            except ValueError:
+                continue
+            root, _ = where(os.path.realpath(m.get("cwd") or "."))
+            hits = overlaps(m["prompt"], m["session"], root) if root else []
+            print(f"--- {m.get('name') or m['session'][:8]} in {m.get('cwd')}:")
+            print("    " + m["prompt"][:1500].replace("\n", "\n    "))
+            for r, l, c, words in hits:
+                print(f"    may overlap {who(r)} on {c.get('rel')} (shared words: {', '.join(words)})")
+            sys.stdout.flush()
+
+
+def main():
+    ap = argparse.ArgumentParser(prog="claim", description=__doc__.split("\n\n")[0])
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    p = sub.add_parser("task", help="say what this session is building")
+    p.add_argument("text", nargs="+")
+    p.set_defaults(fn=cmd_task)
+    p = sub.add_parser("add", help="claim files, or parts of them")
+    p.add_argument("paths", nargs="+")
+    p.add_argument("--part", action="append", help="a line to find; the item it starts is claimed (repeatable)")
+    p.add_argument("--lock", choices=["whole", "parts", "none"])
+    p.add_argument("-m", help="what you'll do to it, and what others should leave alone")
+    p.set_defaults(fn=cmd_add)
+    p = sub.add_parser("release", help="let claims go")
+    p.add_argument("paths", nargs="*")
+    p.add_argument("--all", action="store_true")
+    p.set_defaults(fn=cmd_release)
+    sub.add_parser("list", help="every session's task and claims").set_defaults(fn=cmd_list)
+    p = sub.add_parser("check", help="who has claimed these files, and what they said")
+    p.add_argument("paths", nargs="+")
+    p.set_defaults(fn=cmd_check)
+    p = sub.add_parser("watch", help="follow new prompts and what they may run into (for the orchestrator)")
+    p.add_argument("--from-start", action="store_true")
+    p.set_defaults(fn=cmd_watch)
+    p = sub.add_parser("hook", help="called by Claude Code hooks")
+    p.add_argument("event", choices=sorted(HOOKS))
+    a = ap.parse_args()
+    if a.cmd == "hook":
+        try:
+            HOOKS[a.event](json.load(sys.stdin))
+        except Exception as e:  # a broken hook must never stop a session
+            print(f"claims hook {a.event}: {e}", file=sys.stderr)
+        return
+    a.fn(a)
+
+
+if __name__ == "__main__":
+    main()
