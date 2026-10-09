@@ -97,6 +97,8 @@ pub struct Ide {
     placed: HashSet<PathBuf>,
     pan: Vec2,
     zoom: f32,
+    /// How far each file card's text is scrolled, in unzoomed points.
+    card_scroll: HashMap<PathBuf, f32>,
     pub buffers: BTreeMap<PathBuf, Buffer>,
     /// Files to open as tabs; the dock picks these up after drawing.
     pub open_requests: Vec<PathBuf>,
@@ -106,12 +108,38 @@ pub struct Ide {
     terminals: Vec<Terminal>,
     term_pos: HashMap<u64, Vec2>,
     next_term: u64,
-    /// The terminal that has the keyboard.
+    /// The terminal that has the keyboard: the last one clicked, until
+    /// something else is.
     active_term: Option<u64>,
     /// Whether the active terminal was on screen last frame (if its pane is
     /// hidden, the keyboard goes back to the app).
     term_drawn: bool,
     term_visible: bool,
+    /// Where terminals were drawn this frame and last, to tell whether a
+    /// click landed on one.
+    term_hits: Vec<(u64, Rect)>,
+    last_term_hits: Vec<(u64, Rect)>,
+    /// The folder each terminal sits in while it isn't at a file.
+    term_home: HashMap<u64, PathBuf>,
+    /// Terminals that stay where they're put instead of moving to the files
+    /// they read and edit.
+    stay: HashSet<u64>,
+    /// Terminals drawn in this folder last frame, so one arriving appears at
+    /// its card rather than gliding in from wherever it was.
+    term_here: HashSet<u64>,
+    /// The terminal the files view follows from folder to folder, and the
+    /// file it was last shown at.
+    pub watching: Option<u64>,
+    watched_at: Option<PathBuf>,
+    /// A terminal's trail being scrubbed: it shows where it was then.
+    scrub: Option<(u64, f64)>,
+    /// A card to bring into view once it's laid out, and the pan gliding there.
+    reveal: Option<PathBuf>,
+    pan_to: Option<Vec2>,
+    /// Asks the window to show the files pane.
+    pub reveal_files: bool,
+    /// The file whose editor has the keyboard this frame, as shown.
+    pub editing: Option<String>,
     /// An opened card filling the surface, and where it grew from.
     focus: Option<Focus>,
     focus_from: Rect,
@@ -142,6 +170,7 @@ impl Ide {
             placed,
             pan: vec2(24.0, 24.0),
             zoom: 1.0,
+            card_scroll: HashMap::new(),
             buffers: BTreeMap::new(),
             open_requests: Vec::new(),
             engine_changed: false,
@@ -152,6 +181,18 @@ impl Ide {
             active_term: None,
             term_drawn: false,
             term_visible: false,
+            term_hits: Vec::new(),
+            last_term_hits: Vec::new(),
+            term_home: HashMap::new(),
+            stay: HashSet::new(),
+            term_here: HashSet::new(),
+            watching: None,
+            watched_at: None,
+            scrub: None,
+            reveal: None,
+            pan_to: None,
+            reveal_files: false,
+            editing: None,
             focus: None,
             focus_from: Rect::NOTHING,
             focus_at: 0.0,
@@ -161,13 +202,49 @@ impl Ide {
     }
 
     /// Call once per frame before anything reads the keyboard.
-    pub fn begin_frame(&mut self) {
+    ///
+    /// A click decides where keys go: on a terminal, to it; anywhere else
+    /// (the timeline, the canvas, an editor), back to the app.
+    pub fn begin_frame(&mut self, ctx: &egui::Context) {
         self.term_visible = std::mem::take(&mut self.term_drawn);
+        self.editing = None;
+        self.last_term_hits = std::mem::take(&mut self.term_hits);
+        let press = ctx.input(|i| {
+            i.pointer
+                .any_pressed()
+                .then(|| i.pointer.press_origin())
+                .flatten()
+        });
+        if let Some(p) = press {
+            self.active_term = self
+                .last_term_hits
+                .iter()
+                .rev()
+                .find(|(_, r)| r.contains(p))
+                .map(|t| t.0);
+        }
     }
 
     /// A card is open, filling the surface.
     pub fn has_focus(&self) -> bool {
         self.focus.is_some()
+    }
+
+    /// Text selected in a terminal on screen, for highlighting.
+    pub fn term_selection(&self) -> Option<crate::highlight::Direct> {
+        self.terminals
+            .iter()
+            .filter(|t| self.last_term_hits.iter().any(|h| h.0 == t.id))
+            .find_map(|t| {
+                let (text, anchor) = t.selection()?;
+                Some(crate::highlight::Direct {
+                    text,
+                    source: t.trail.lock().unwrap().claude.as_ref().map_or(t.title(), |c| {
+                        format!("claude · {}", c.name)
+                    }),
+                    anchor,
+                })
+            })
     }
 
     /// A terminal has the keyboard: the app's own shortcuts stand aside.
@@ -191,6 +268,7 @@ impl Ide {
                     * 28.0;
                 let pos = view / self.zoom - TERM / 2.0 + Vec2::splat(nudge);
                 self.term_pos.insert(id, pos);
+                self.term_home.insert(id, self.here.clone());
                 self.terminals.push(t);
                 self.active_term = Some(id);
             }
@@ -261,6 +339,7 @@ impl Ide {
     /// The files surface.
     pub fn files_ui(&mut self, ui: &mut egui::Ui) {
         let now = ui.input(|i| i.time);
+        self.follow();
         self.relist(now);
         self.header(ui);
         ui.add_space(6.0);
@@ -465,48 +544,6 @@ impl Ide {
             self.focused(ui, rect, now);
             return;
         }
-        if response.clicked() {
-            self.active_term = None;
-        }
-
-        // Where this folder's terminals sit; scrolling over one scrolls
-        // its history rather than zooming.
-        let z = self.zoom;
-        let term_rects: Vec<(u64, Rect)> = self
-            .terminals
-            .iter()
-            .filter(|t| t.cwd == self.here)
-            .map(|t| {
-                let pos = self.term_pos.get(&t.id).copied().unwrap_or_default();
-                (t.id, Rect::from_min_size(rect.min + self.pan + pos * z, TERM * z))
-            })
-            .collect();
-        let over_term = response
-            .hover_pos()
-            .or(ui.input(|i| i.pointer.hover_pos()))
-            .and_then(|p| term_rects.iter().find(|(_, r)| r.contains(p)).map(|t| t.0));
-
-        // Pan by dragging the background, zoom with the wheel.
-        if response.dragged() {
-            self.pan += response.drag_delta();
-        }
-        if let Some(id) = over_term {
-            let scroll = ui.input(|i| i.smooth_scroll_delta.y);
-            if scroll != 0.0
-                && let Some(t) = self.terminals.iter_mut().find(|t| t.id == id)
-            {
-                t.wheel(scroll, ui.input(|i| i.pointer.hover_pos()));
-            }
-        } else if let Some(p) = response.hover_pos() {
-            let scroll = ui.input(|i| i.smooth_scroll_delta.y);
-            if scroll != 0.0 {
-                let old = self.zoom;
-                self.zoom = (self.zoom * (scroll * 0.002).exp()).clamp(0.35, 2.5);
-                // Keep the point under the pointer where it is.
-                let at = p - rect.min - self.pan;
-                self.pan -= at * (self.zoom / old - 1.0);
-            }
-        }
 
         let cols = ((rect.width() - 24.0) / ((CARD.x + GAP.x) * self.zoom))
             .floor()
@@ -539,6 +576,63 @@ impl Ide {
             };
             self.positions.insert(e.path.clone(), pos);
         }
+        let anchored = self.place_terminals(ui, rect);
+
+        // Where this folder's terminals sit; scrolling over one scrolls
+        // its history rather than zooming.
+        let z = self.zoom;
+        let term_rects: Vec<(u64, Rect)> = anchored
+            .iter()
+            .map(|(id, _)| {
+                let pos = self.term_pos.get(id).copied().unwrap_or_default();
+                (*id, Rect::from_min_size(rect.min + self.pan + pos * z, TERM * z))
+            })
+            .collect();
+        let over_term = response
+            .hover_pos()
+            .or(ui.input(|i| i.pointer.hover_pos()))
+            .and_then(|p| term_rects.iter().find(|(_, r)| r.contains(p)).map(|t| t.0));
+
+        // Cards are drawn in order, so the last one under the pointer is on top.
+        let pointer = ui.input(|i| i.pointer.hover_pos()).filter(|p| rect.contains(*p));
+        let over_card = pointer.filter(|_| over_term.is_none()).and_then(|p| {
+            self.entries.iter().rev().find(|e| {
+                let at = self.positions.get(&e.path).copied().unwrap_or(Vec2::INFINITY);
+                Rect::from_min_size(rect.min + self.pan + at * z, CARD * z).contains(p)
+            })
+        });
+
+        // Pan by dragging the background; zoom with the wheel there, or by
+        // pinching (or Cmd+wheel) anywhere.
+        if response.dragged() {
+            self.pan += response.drag_delta();
+            self.pan_to = None;
+        }
+        let pinch = ui.input(|i| i.zoom_delta());
+        if pinch != 1.0
+            && let Some(p) = pointer
+        {
+            self.zoom_at(p - rect.min, pinch);
+        } else if let Some(e) = over_card {
+            // Over a file card, the wheel reads down through the file.
+            let scroll = ui.input(|i| i.smooth_scroll_delta.y);
+            if scroll != 0.0 && e.kind != Kind::Folder {
+                *self.card_scroll.entry(e.path.clone()).or_default() -= scroll / z;
+            }
+        } else if let Some(id) = over_term {
+            let scroll = ui.input(|i| i.smooth_scroll_delta.y);
+            if scroll != 0.0
+                && let Some(t) = self.terminals.iter_mut().find(|t| t.id == id)
+            {
+                t.wheel(scroll, ui.input(|i| i.pointer.hover_pos()));
+            }
+        } else if let Some(p) = response.hover_pos() {
+            let scroll = ui.input(|i| i.smooth_scroll_delta.y);
+            if scroll != 0.0 {
+                self.zoom_at(p - rect.min, (scroll * 0.002).exp());
+            }
+        }
+
         let z = self.zoom;
         let place = |pos: Vec2| Rect::from_min_size(rect.min + self.pan + pos * z, CARD * z);
         let rects: Vec<Rect> = self
@@ -581,12 +675,18 @@ impl Ide {
             if !r.intersects(rect) {
                 continue;
             }
-            let resp = ui.interact(r, ui.id().with(("card", &e.path)), Sense::click_and_drag());
+            let hot = ui.rect_contains_pointer(r);
+            let scroll = self.card_scroll.entry(e.path.clone()).or_default();
+            let body = draw_card(&painter, e, r, z, hot, self.buffers.contains_key(&e.path), scroll);
+            // The title moves the card; the text below it selects, like any text.
+            let head = Rect::from_min_max(r.min, pos2(r.right(), body.window.top()));
+            let resp = ui.interact(head, ui.id().with(("card", &e.path)), Sense::click_and_drag());
+            let text = ui.interact(body.window, ui.id().with(("card-text", &e.path)), Sense::click_and_drag());
             if resp.dragged() {
                 moved = Some((e.path.clone(), resp.drag_delta() / z));
             }
             dropped |= resp.drag_stopped();
-            if resp.double_clicked() {
+            if resp.double_clicked() || text.double_clicked() {
                 match e.kind {
                     Kind::Folder => enter = Some(e.path.clone()),
                     Kind::Binary => {}
@@ -594,9 +694,20 @@ impl Ide {
                 }
             }
             if resp.hovered() {
-                ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
+            } else if text.hovered() {
+                ui.ctx().set_cursor_icon(egui::CursorIcon::Text);
             }
-            draw_card(&painter, e, r, z, resp.hovered(), self.buffers.contains_key(&e.path));
+            let mut clip = ui.new_child(egui::UiBuilder::new().max_rect(body.window));
+            clip.set_clip_rect(body.window);
+            egui::text_selection::LabelSelectionState::label_text_selection(
+                &clip,
+                &text,
+                body.at,
+                body.galley,
+                body.color,
+                Stroke::NONE,
+            );
         }
         if let Some((path, d)) = moved
             && let Some(p) = self.positions.get_mut(&path)
@@ -616,6 +727,23 @@ impl Ide {
             self.grow(Focus::File(path), from, now);
         }
 
+        // A terminal at a card is tied to it by a thread of blue ink.
+        for ((_, card), (_, t)) in anchored.iter().zip(&term_rects) {
+            let Some(i) = card.as_ref().and_then(|c| self.entries.iter().position(|e| e.path == *c)) else {
+                continue;
+            };
+            let c = rects[i];
+            painter.rect_stroke(
+                c,
+                CornerRadius::same((12.0 * z) as u8),
+                Stroke::new(2.0, LINK),
+                egui::StrokeKind::Outside,
+            );
+            let (a, b) = (c.right_center(), pos2(t.left(), t.top() + 24.0 * z));
+            painter.line_segment([a, b], Stroke::new(1.5, LINK));
+            painter.circle_filled(a, 3.5 * z, LINK);
+        }
+
         self.terminal_cards(ui, &painter, rect, &term_rects, now);
 
         if self.entries.is_empty() && term_rects.is_empty() {
@@ -630,10 +758,358 @@ impl Ide {
         painter.text(
             rect.left_bottom() + vec2(12.0, -10.0),
             Align2::LEFT_BOTTOM,
-            "double-click a folder to step in, a file or terminal to fill the view · drag to move · scroll to zoom",
+            "double-click a folder to step in, a file or terminal to fill the view · drag a title to move, its text to select · scroll a card to read it, elsewhere to zoom · pinch to zoom",
             FontId::proportional(13.0),
             FAINT,
         );
+    }
+
+    /// The file a terminal is at (where it was, while its trail is being
+    /// scrubbed), unless it stays put.
+    fn term_file(&self, t: &Terminal) -> Option<PathBuf> {
+        if self.stay.contains(&t.id) {
+            return None;
+        }
+        let trail = t.trail.lock().unwrap();
+        let visit = match self.scrub {
+            Some((id, at)) if id == t.id => trail.at(at),
+            _ => trail.last(),
+        };
+        visit.map(|v| v.path.clone())
+    }
+
+    /// The card in this folder standing for `file`: the file's own, or the
+    /// folder's it's somewhere inside.
+    fn card_for(&self, file: &Path) -> Option<PathBuf> {
+        let first = file.strip_prefix(&self.here).ok()?.components().next()?;
+        let path = self.here.join(first);
+        self.entries.iter().any(|e| e.path == path).then_some(path)
+    }
+
+    /// Move each terminal toward the card of the file it's at, and say which
+    /// are in this folder and at which card.
+    fn place_terminals(&mut self, ui: &egui::Ui, rect: Rect) -> Vec<(u64, Option<PathBuf>)> {
+        let dt = ui.input(|i| i.stable_dt).min(0.1);
+        let ease = 1.0 - (-dt * 7.0).exp();
+        let mut here = Vec::new();
+        let mut per_card: HashMap<PathBuf, f32> = HashMap::new();
+        for t in &self.terminals {
+            let card = self.term_file(t).and_then(|f| self.card_for(&f));
+            match &card {
+                Some(c) => {
+                    // Beside the card, stacked if several are at it.
+                    let n = per_card.entry(c.clone()).or_default();
+                    let target = self.positions[c] + vec2(CARD.x + 40.0, 0.0) + Vec2::splat(*n * 28.0);
+                    *n += 1.0;
+                    let pos = self.term_pos.entry(t.id).or_insert(target);
+                    if !self.term_here.contains(&t.id) {
+                        *pos = target;
+                    }
+                    let gap = target - *pos;
+                    *pos += gap * ease;
+                    if gap.length() > 0.5 {
+                        ui.ctx().request_repaint();
+                    }
+                }
+                None if self.term_home.get(&t.id) != Some(&self.here) => continue,
+                None => {}
+            }
+            here.push((t.id, card));
+        }
+        self.term_here = here.iter().map(|t| t.0).collect();
+
+        // A card asked for: glide so it and the terminal beside it are in view.
+        if let Some(path) = self.reveal.take() {
+            match self.card_for(&path).and_then(|c| self.positions.get(&c)) {
+                Some(&pos) => {
+                    let middle = pos + vec2(CARD.x + 40.0 + TERM.x, TERM.y) / 2.0;
+                    self.pan_to = Some(rect.size() / 2.0 - middle * self.zoom);
+                }
+                // Not listed yet: try next frame.
+                None if self.entries.is_empty() => self.reveal = Some(path),
+                None => {}
+            }
+        }
+        if let Some(to) = self.pan_to {
+            let gap = to - self.pan;
+            self.pan += gap * ease;
+            if gap.length() < 0.5 {
+                self.pan_to = None;
+            }
+            ui.ctx().request_repaint();
+        }
+        here
+    }
+
+    /// Keep the view on the followed (or scrubbed) terminal: when it moves
+    /// to a file in another folder, go there.
+    fn follow(&mut self) {
+        let id = self.scrub.map(|s| s.0).or(self.watching);
+        let Some(t) = id.and_then(|id| self.terminals.iter().find(|t| t.id == id)) else {
+            self.watching = None;
+            return;
+        };
+        let file = self.term_file(t);
+        if self.focus.is_some() || file == self.watched_at {
+            return;
+        }
+        self.watched_at = file.clone();
+        if let Some(f) = file {
+            self.show_file(&f);
+        }
+    }
+
+    /// Go to the folder a file is in and bring its card into view.
+    fn show_file(&mut self, file: &Path) {
+        let Some(dir) = file.parent() else { return };
+        if dir != self.here {
+            let active = self.active_term;
+            if dir.starts_with(&self.root) {
+                self.go(dir.to_path_buf());
+            } else {
+                self.open_folder(dir.to_path_buf());
+            }
+            self.active_term = active;
+        }
+        self.reveal = Some(file.to_path_buf());
+    }
+
+    /// Fill the files view with a terminal, in the folder where it is.
+    fn open_terminal(&mut self, id: u64, now: f64) {
+        let Some(t) = self.terminals.iter().find(|t| t.id == id) else {
+            return;
+        };
+        let dir = match self.term_file(t) {
+            Some(f) => f.parent().map(Path::to_path_buf),
+            None => self.term_home.get(&id).cloned(),
+        };
+        if let Some(dir) = dir
+            && dir != self.here
+        {
+            self.go(dir);
+        }
+        self.grow(Focus::Term(id), Rect::NOTHING, now);
+        self.reveal_files = true;
+    }
+
+    /// The terminals pane: each terminal, where it is, and where it's been.
+    pub fn terminals_ui(&mut self, ui: &mut egui::Ui) {
+        let now = ui.input(|i| i.time);
+        let wall = crate::trail::now();
+        let root = self.root.clone();
+        ui.add_space(14.0);
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("Terminals").font(title(22.0)));
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if quiet_link(ui, "+ terminal", false).clicked() {
+                    self.spawn_terminal(ui.ctx());
+                    self.reveal_files = true;
+                }
+            });
+        });
+        ui.label(
+            RichText::new("Each one goes to the files it reads and edits.")
+                .color(FAINT)
+                .size(15.0),
+        );
+        ui.add_space(12.0);
+        if self.terminals.is_empty() {
+            ui.label(RichText::new("None open.").color(FAINT).size(15.0));
+        }
+        let mut open = None;
+        let mut show = None;
+        let mut scrub = None;
+        let mut scrubbing = false;
+        for t in &self.terminals {
+            let id = t.id;
+            let (claude, visits) = {
+                let tr = t.trail.lock().unwrap();
+                (tr.claude.clone(), tr.visits.clone())
+            };
+            let following = self.watching == Some(id);
+            let stays = self.stay.contains(&id);
+            let card = egui::Frame::new()
+                .fill(SHEET)
+                .stroke(Stroke::new(1.5, if following { INK } else { MUTED }))
+                .corner_radius(CornerRadius::same(14))
+                .inner_margin(egui::Margin::symmetric(16, 12));
+            let inner = ui.scope_builder(egui::UiBuilder::new().sense(Sense::click()), |ui| {
+                card.show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    ui.horizontal(|ui| {
+                        let name = match &claude {
+                            Some(c) if !c.name.is_empty() => format!("claude · {}", c.name),
+                            Some(_) => "claude".to_owned(),
+                            None => t.title(),
+                        };
+                        ui.label(RichText::new(name).font(title(19.0)));
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if quiet_link(ui, "open", false).clicked() {
+                                open = Some(id);
+                            }
+                            let label = if following { "following" } else { "follow" };
+                            if quiet_link(ui, label, following).clicked() {
+                                self.watching = if following { None } else { Some(id) };
+                                self.watched_at = None;
+                                self.reveal_files = true;
+                            }
+                            if let Some(c) = &claude {
+                                ui.label(RichText::new(&c.status).color(FAINT).size(14.0));
+                            }
+                        });
+                    });
+                    let r = ui.max_rect();
+                    let y = ui.cursor().top() + 2.0;
+                    ui.painter().line_segment(
+                        [pos2(r.left(), y), pos2(r.right(), y)],
+                        Stroke::new(1.2, INK),
+                    );
+                    ui.add_space(8.0);
+
+                    // Where it is now.
+                    match visits.last() {
+                        Some(v) => {
+                            let line = format!(
+                                "{} {} · {} ago",
+                                touched(v.touch),
+                                shown_path(&root, &v.path),
+                                ago(wall - v.at)
+                            );
+                            ui.label(RichText::new(line).size(15.0));
+                        }
+                        None => {
+                            ui.label(
+                                RichText::new("hasn't touched a file yet")
+                                    .color(FAINT)
+                                    .size(15.0),
+                            );
+                        }
+                    }
+
+                    // Its trail: one dot per file, in time. Drag along it to
+                    // see where it was; click a dot to go to that file.
+                    if !visits.is_empty() {
+                        ui.add_space(6.0);
+                        let (strip, resp) = ui.allocate_exact_size(
+                            vec2(ui.available_width(), 26.0),
+                            Sense::click_and_drag(),
+                        );
+                        let t0 = visits[0].at.min(t.started);
+                        let t1 = wall.max(t0 + 60.0);
+                        let x_of = |at: f64| {
+                            strip.left() + ((at - t0) / (t1 - t0)) as f32 * strip.width()
+                        };
+                        let at_x = |x: f32| {
+                            t0 + ((x - strip.left()) / strip.width()).clamp(0.0, 1.0) as f64 * (t1 - t0)
+                        };
+                        let p = ui.painter();
+                        let mid = strip.center().y;
+                        p.line_segment(
+                            [pos2(strip.left(), mid), pos2(strip.right(), mid)],
+                            Stroke::new(1.0, crate::RULE_LINE),
+                        );
+                        let pointer = resp.hover_pos();
+                        let near = pointer.and_then(|q| {
+                            visits
+                                .iter()
+                                .min_by(|a, b| {
+                                    (x_of(a.at) - q.x).abs().total_cmp(&(x_of(b.at) - q.x).abs())
+                                })
+                                .filter(|v| (x_of(v.at) - q.x).abs() < 8.0)
+                        });
+                        for v in &visits {
+                            let (r, c) = match v.touch {
+                                crate::trail::Touch::Edit => (4.5, DOT),
+                                crate::trail::Touch::Read => (3.5, LINK),
+                                crate::trail::Touch::Open => (3.5, MUTED),
+                            };
+                            let hot = near.is_some_and(|n| std::ptr::eq(n, v));
+                            p.circle_filled(pos2(x_of(v.at), mid), if hot { r + 1.5 } else { r }, c);
+                        }
+                        let marker = match self.scrub {
+                            Some((sid, at)) if sid == id => at,
+                            _ => wall,
+                        };
+                        let x = x_of(marker).min(strip.right());
+                        p.line_segment(
+                            [pos2(x, strip.top()), pos2(x, strip.bottom())],
+                            Stroke::new(1.5, INK),
+                        );
+                        if let Some(v) = near {
+                            resp.clone().on_hover_text(format!(
+                                "{} {}\n{} ago",
+                                touched(v.touch),
+                                shown_path(&root, &v.path),
+                                ago(wall - v.at)
+                            ));
+                        }
+                        if resp.dragged()
+                            && let Some(q) = resp.interact_pointer_pos()
+                        {
+                            scrub = Some((id, at_x(q.x)));
+                            scrubbing = true;
+                        } else if resp.clicked()
+                            && let Some(v) = near
+                        {
+                            show = Some(v.path.clone());
+                        }
+                    }
+
+                    // The last few files, newest first.
+                    ui.add_space(4.0);
+                    for v in visits.iter().rev().skip(1).take(4) {
+                        let line = format!("{} {}", touched(v.touch), shown_path(&root, &v.path));
+                        let link = ui.add(
+                            egui::Label::new(RichText::new(line).color(FAINT).size(13.0))
+                                .sense(Sense::click()),
+                        );
+                        if link.hovered() {
+                            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                        }
+                        if link.clicked() {
+                            show = Some(v.path.clone());
+                        }
+                    }
+                    ui.add_space(4.0);
+                    let label = if stays { "stays put · let it move" } else { "moves to its files · keep it put" };
+                    if quiet_link(ui, label, false).clicked() {
+                        if stays {
+                            self.stay.remove(&id);
+                        } else {
+                            self.stay.insert(id);
+                            self.term_home.insert(id, self.here.clone());
+                        }
+                    }
+                });
+            });
+            if inner.response.double_clicked() {
+                open = Some(id);
+            }
+            ui.add_space(14.0);
+        }
+        // Scrubbing lasts while the button is held.
+        if scrubbing {
+            self.scrub = scrub;
+            self.reveal_files = true;
+        } else if self.scrub.is_some() {
+            self.scrub = None;
+            self.watched_at = None;
+        }
+        if let Some(path) = show {
+            self.show_file(&path);
+            self.reveal_files = true;
+        }
+        if let Some(id) = open {
+            self.open_terminal(id, now);
+        }
+    }
+
+    /// Zoom by `factor`, keeping the point `at` (from the surface's corner)
+    /// where it is.
+    fn zoom_at(&mut self, at: Vec2, factor: f32) {
+        let old = self.zoom;
+        self.zoom = (self.zoom * factor).clamp(0.35, 2.5);
+        self.pan -= (at - self.pan) * (self.zoom / old - 1.0);
     }
 
     /// Read a file into a buffer, unless it's open already.
@@ -682,16 +1158,23 @@ impl Ide {
             if x_resp.clicked() {
                 close = Some(id);
             }
-            if resp.clicked() {
-                self.active_term = Some(id);
-            }
             if resp.double_clicked() {
                 grow = Some((id, r));
             }
+            let selecting = self
+                .terminals
+                .iter_mut()
+                .find(|t| t.id == id)
+                .is_some_and(|t| t.select_with(ui, &resp));
+            // Dragging the title moves the card; dragging the screen selects.
             if resp.dragged()
+                && !selecting
                 && let Some(p) = self.term_pos.get_mut(&id)
             {
+                // Moved by hand, it stays where it's put.
                 *p += resp.drag_delta() / z;
+                self.stay.insert(id);
+                self.term_home.insert(id, self.here.clone());
             }
             let active = self.active_term == Some(id);
             let Some(t) = self.terminals.iter_mut().find(|t| t.id == id) else {
@@ -706,6 +1189,7 @@ impl Ide {
                 if x_resp.hovered() { INK } else { FAINT },
             );
             t.draw(ui, &painter.with_clip_rect(body.intersect(surface)), body, 11.0 * z, active);
+            self.term_hits.push((id, r.intersect(surface)));
             if active {
                 self.term_drawn = true;
                 t.take_input(ui);
@@ -784,16 +1268,21 @@ impl Ide {
                 }
             }
             Focus::Term(id) => {
-                self.active_term = Some(*id);
+                let active = self.active_term == Some(*id);
+                let resp = ui.interact(body, ui.id().with(("term-open", *id)), Sense::click_and_drag());
                 if let Some(term) = self.terminals.iter_mut().find(|t| t.id == *id) {
-                    term.draw(ui, &painter.with_clip_rect(body), body, 13.0, true);
-                    self.term_drawn = true;
+                    term.select_with(ui, &resp);
+                    term.draw(ui, &painter.with_clip_rect(body), body, 13.0, active);
+                    self.term_hits.push((*id, r));
                     let over = ui.input(|i| i.pointer.hover_pos()).is_some_and(|p| body.contains(p));
                     let scroll = ui.input(|i| i.smooth_scroll_delta.y);
                     if over && scroll != 0.0 {
                         term.wheel(scroll, ui.input(|i| i.pointer.hover_pos()));
                     }
-                    term.take_input(ui);
+                    if active {
+                        self.term_drawn = true;
+                        term.take_input(ui);
+                    }
                 } else {
                     back = true;
                 }
@@ -880,15 +1369,22 @@ impl Ide {
             job.wrap.max_width = if lang.is_empty() { wrap } else { f32::INFINITY };
             ui.fonts_mut(|f| f.layout_job(job))
         };
+        let comment = crate::edit::comment_for(path);
+        let id = ui.make_persistent_id(("editor", path));
         egui::ScrollArea::both().auto_shrink(false).show(ui, |ui| {
+            crate::edit::keys(ui, id, &mut buf.text, comment);
             ui.add(
                 egui::TextEdit::multiline(&mut buf.text)
+                    .id(id)
                     .code_editor()
                     .desired_width(f32::INFINITY)
                     .frame(egui::Frame::NONE)
                     .layouter(&mut layouter),
             );
         });
+        if ui.memory(|m| m.has_focus(id)) {
+            self.editing = Some(shown_path(&self.root, path));
+        }
         if save {
             match std::fs::write(path, &buf.text) {
                 Ok(()) => {
@@ -915,6 +1411,37 @@ impl Ide {
 
     pub fn close(&mut self, path: &Path) {
         self.buffers.remove(path);
+    }
+}
+
+/// A path as short as it can be: from the folder open, or from home.
+fn shown_path(root: &Path, path: &Path) -> String {
+    if let Ok(rel) = path.strip_prefix(root) {
+        return rel.display().to_string();
+    }
+    match std::env::var_os("HOME").map(PathBuf::from) {
+        Some(home) if path.starts_with(&home) => {
+            format!("~/{}", path.strip_prefix(&home).unwrap_or(path).display())
+        }
+        _ => path.display().to_string(),
+    }
+}
+
+fn touched(t: crate::trail::Touch) -> &'static str {
+    match t {
+        crate::trail::Touch::Edit => "edited",
+        crate::trail::Touch::Read => "read",
+        crate::trail::Touch::Open => "opened",
+    }
+}
+
+fn ago(secs: f64) -> String {
+    let s = secs.max(0.0) as u64;
+    match s {
+        0..60 => format!("{s}s"),
+        60..3600 => format!("{}m", s / 60),
+        3600..86400 => format!("{}h", s / 3600),
+        _ => format!("{}d", s / 86400),
     }
 }
 
@@ -959,7 +1486,8 @@ fn read_entry(path: PathBuf, name: String) -> Entry {
         _ => Kind::Text,
     };
     let text = text.unwrap_or_default();
-    let preview: String = text.lines().take(14).collect::<Vec<_>>().join("\n");
+    // Enough to scroll through on the card.
+    let preview: String = text.lines().take(2000).collect::<Vec<_>>().join("\n");
     let links = if kind == Kind::Markdown {
         wikilinks(&text)
     } else {
@@ -996,7 +1524,15 @@ fn stem(name: &str) -> &str {
     name.rsplit_once('.').map_or(name, |(s, _)| s)
 }
 
-fn draw_card(painter: &egui::Painter, e: &Entry, r: Rect, z: f32, hot: bool, open: bool) {
+fn draw_card(
+    painter: &egui::Painter,
+    e: &Entry,
+    r: Rect,
+    z: f32,
+    hot: bool,
+    open: bool,
+    scroll: &mut f32,
+) -> CardBody {
     if e.kind == Kind::Folder {
         // A folder is a frame you step into: a second sheet behind it.
         painter.rect(
@@ -1083,7 +1619,25 @@ fn draw_card(painter: &egui::Painter, e: &Entry, r: Rect, z: f32, hot: bool, ope
         Kind::Text => (e.preview.clone(), FontId::monospace(10.5 * z), MUTED),
     };
     let galley = clip.layout(body, font, color, width);
-    clip.galley(body_at, galley, color);
+    // The text below the rule scrolls; the heading stays.
+    let window = Rect::from_min_max(pos2(r.left(), y + 1.0), r.max - vec2(0.0, pad / 2.0));
+    let room = (r.bottom() - pad / 2.0 - body_at.y) / z;
+    *scroll = scroll.clamp(0.0, (galley.size().y / z - room).max(0.0));
+    CardBody {
+        galley,
+        at: body_at - vec2(0.0, *scroll * z),
+        window: window.intersect(painter.clip_rect()),
+        color,
+    }
+}
+
+/// A card's text, laid out, for the caller to draw as selectable text.
+struct CardBody {
+    galley: Arc<egui::Galley>,
+    at: Pos2,
+    /// Where it shows: below the title, inside the card.
+    window: Rect,
+    color: Color32,
 }
 
 /// A Line Lab card: sheet, title, rule under it. Returns the body's rect.
@@ -1110,7 +1664,7 @@ fn card_frame(painter: &egui::Painter, r: Rect, z: f32, heading: &str, strong: b
 }
 
 /// `~/.local/state/tapestry` (or under `$XDG_STATE_HOME`).
-fn state_dir() -> Option<PathBuf> {
+pub(crate) fn state_dir() -> Option<PathBuf> {
     let base = std::env::var_os("XDG_STATE_HOME")
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|h| Path::new(&h).join(".local/state")))?;

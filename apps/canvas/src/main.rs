@@ -5,8 +5,13 @@
 //! replays around what you added.
 
 mod edit;
+mod highlight;
 mod ide;
+mod marks;
+mod notes;
+mod tabnote;
 mod term;
+mod trail;
 mod translate;
 
 use std::path::PathBuf;
@@ -118,6 +123,8 @@ enum Tab {
     Rules,
     Timeline,
     Files,
+    Terminals,
+    Notes,
     File(PathBuf),
 }
 
@@ -125,7 +132,9 @@ fn default_layout() -> DockState<Tab> {
     let mut dock = DockState::new(vec![Tab::Canvas]);
     let s = dock.main_surface_mut();
     let [top, _] = s.split_below(NodeIndex::root(), 0.8, vec![Tab::Timeline]);
-    let [middle, _] = s.split_right(top, 0.76, vec![Tab::Rules, Tab::Files]);
+    let [middle, right] = s.split_right(top, 0.76, vec![Tab::Rules, Tab::Files]);
+    s.split_below(right, 0.62, vec![Tab::Terminals]);
+    s.split_below(right, 0.7, vec![Tab::Notes]);
     s.split_left(middle, 0.11, vec![Tab::Brushes]);
     dock
 }
@@ -148,6 +157,8 @@ impl TabViewer for Tabs<'_> {
             Tab::Rules => "rules".to_owned(),
             Tab::Timeline => "timeline".to_owned(),
             Tab::Files => "files".to_owned(),
+            Tab::Terminals => "terminals".to_owned(),
+            Tab::Notes => "notes".to_owned(),
             Tab::File(p) => self.app.ide.tab_title(p),
         };
         RichText::new(name).size(15.0).into()
@@ -183,7 +194,8 @@ impl TabViewer for Tabs<'_> {
 
     fn scroll_bars(&self, tab: &Tab) -> [bool; 2] {
         match tab {
-            Tab::Rules | Tab::Brushes => [false, true],
+            Tab::Notes => [false, true],
+            Tab::Rules | Tab::Brushes | Tab::Terminals => [false, true],
             _ => [false, false],
         }
     }
@@ -211,6 +223,15 @@ struct App {
     /// A pane filling the whole window, if one does.
     maximized: Option<Tab>,
     ide: ide::Ide,
+    /// The notes pane: writing that isn't rules.
+    notebook: notes::Notes,
+    highlights: highlight::Highlights,
+    /// Brush marks drawn over any pane.
+    marks: marks::Marks,
+    /// Notes pulled out of the green select brush's tab.
+    tabnote: tabnote::TabNote,
+    /// The green select brush is chosen instead of `brush`.
+    selecting: bool,
     /// The world folder: rule notes live in `rules/` inside it.
     world: std::path::PathBuf,
     editing: Option<Editing>,
@@ -256,11 +277,16 @@ impl App {
             // `TAPESTRY_FILL=files` (or canvas, rules…) opens with that pane
             // filling the window.
             maximized: std::env::var("TAPESTRY_FILL").ok().and_then(|name| {
-                [Tab::Canvas, Tab::Brushes, Tab::Rules, Tab::Timeline, Tab::Files]
+                [Tab::Canvas, Tab::Brushes, Tab::Rules, Tab::Timeline, Tab::Files, Tab::Terminals, Tab::Notes]
                     .into_iter()
                     .find(|t| format!("{t:?}").eq_ignore_ascii_case(&name))
             }),
             ide: ide::Ide::new(engine),
+            notebook: notes::Notes::new(&world),
+            highlights: highlight::Highlights::new(&cc.egui_ctx),
+            marks: marks::Marks::new(),
+            tabnote: tabnote::TabNote::default(),
+            selecting: false,
             world,
             editing: None,
             translator: None,
@@ -292,7 +318,7 @@ impl App {
             if i.key_pressed(egui::Key::Space) {
                 self.playing = !self.playing;
             }
-            if i.modifiers.command && i.key_pressed(egui::Key::Z) && idle {
+            if i.modifiers.command && i.key_pressed(egui::Key::Z) && idle && !self.marks.undo() {
                 self.timeline.undo();
             }
             if (i.key_pressed(egui::Key::Delete) || i.key_pressed(egui::Key::Backspace))
@@ -316,7 +342,11 @@ impl App {
             {
                 if i.key_pressed(key) {
                     self.brush = Brush::ALL[n];
+                    self.selecting = false;
                 }
+            }
+            if i.key_pressed(egui::Key::Num6) {
+                self.choose_select();
             }
             if !self.playing && idle {
                 let t = self.timeline.playhead();
@@ -369,6 +399,10 @@ impl App {
             ui.label(RichText::new("Tapestry").font(title(24.0)));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.add_space(24.0);
+                if quiet_link(ui, "draw anywhere", self.marks.anywhere).clicked() {
+                    self.marks.anywhere = !self.marks.anywhere;
+                }
+                ui.add_space(16.0);
                 let s = self.timeline.state();
                 ui.label(
                     RichText::new(format!("{} particles", s.particles.len()))
@@ -386,12 +420,16 @@ impl App {
 
     fn palette(&mut self, ui: &mut egui::Ui) {
         ui.add_space(16.0);
-        for (n, brush) in Brush::ALL.into_iter().enumerate() {
-            let chosen = self.brush == brush;
+        let rows = Brush::ALL.into_iter().map(Some).chain([None]);
+        for (n, brush) in rows.enumerate() {
+            let chosen = match brush {
+                Some(b) => !self.selecting && self.brush == b,
+                None => self.selecting,
+            };
             let (rect, response) = ui.allocate_exact_size(vec2(118.0, 40.0), Sense::click());
             let p = ui.painter();
             let c = pos2(rect.left() + 28.0, rect.center().y);
-            p.circle_filled(c, 11.0, swatch(brush));
+            p.circle_filled(c, 11.0, brush.map_or(marks::SELECT, swatch));
             if chosen {
                 p.circle_stroke(c, 15.0, Stroke::new(1.5, INK));
             }
@@ -403,7 +441,7 @@ impl App {
             p.text(
                 pos2(c.x + 24.0, c.y),
                 Align2::LEFT_CENTER,
-                brush.name(),
+                brush.map_or("select", Brush::name),
                 FontId::proportional(20.0),
                 color,
             );
@@ -415,9 +453,30 @@ impl App {
                 RULE_LINE,
             );
             if response.clicked() {
-                self.brush = brush;
+                match brush {
+                    Some(b) => {
+                        self.brush = b;
+                        self.selecting = false;
+                    }
+                    None => self.choose_select(),
+                }
             }
         }
+        ui.add_space(16.0);
+        ui.horizontal(|ui| {
+            ui.add_space(16.0);
+            if quiet_link(ui, "draw anywhere", self.marks.anywhere).clicked() {
+                self.marks.anywhere = !self.marks.anywhere;
+            }
+        });
+        ui.horizontal_wrapped(|ui| {
+            ui.add_space(16.0);
+            ui.label(
+                RichText::new("or hold Option and drag, on any pane. Esc stops.")
+                    .color(FAINT)
+                    .size(14.0),
+            );
+        });
         ui.add_space(24.0);
         ui.horizontal(|ui| {
             ui.add_space(16.0);
@@ -442,6 +501,20 @@ impl App {
                     .size(14.0),
             );
         });
+    }
+
+    /// The green brush selects anywhere, so choosing it draws anywhere.
+    fn choose_select(&mut self) {
+        self.selecting = true;
+        self.marks.anywhere = true;
+    }
+
+    fn tool(&self) -> marks::Tool {
+        if self.selecting {
+            marks::Tool::Select
+        } else {
+            marks::Tool::Paint(self.brush)
+        }
     }
 
     fn notes(&mut self, ui: &mut egui::Ui) {
@@ -926,6 +999,7 @@ impl App {
 
         let response = ui.allocate_rect(sheet, Sense::drag());
         let pointer = response.hover_pos();
+        self.marks.sheet(sheet);
 
         if response.hovered() {
             let scroll = ui.input(|i| i.smooth_scroll_delta.y);
@@ -937,9 +1011,11 @@ impl App {
 
         // Painting: one keyframe per stroke, grown while the button is held.
         if response.drag_started_by(egui::PointerButton::Primary)
+            && !self.selecting
             && let Some(p) = response.interact_pointer_pos()
         {
             self.selected = None;
+            self.marks.fresh = false;
             let id = self
                 .timeline
                 .begin_stroke(self.brush, self.radius, to_world(p));
@@ -1007,7 +1083,7 @@ impl App {
         painter.add(Shape::mesh(Arc::new(hard)));
         painter.add(Shape::mesh(Arc::new(glow)));
 
-        if let Some(p) = pointer {
+        if let Some(p) = pointer.filter(|_| !self.selecting) {
             let r = match self.brush {
                 Brush::Smudge => self.radius * 2.5,
                 Brush::Tree => self.radius * 2.0,
@@ -1048,6 +1124,11 @@ impl App {
 }
 
 impl eframe::App for App {
+    fn raw_input_hook(&mut self, _ctx: &egui::Context, raw: &mut egui::RawInput) {
+        let (tool, radius) = (self.tool(), self.radius);
+        self.marks.intercept(raw, tool, radius);
+    }
+
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         // Rule files edited anywhere (here, or in another editor) take
         // effect within half a second.
@@ -1058,10 +1139,15 @@ impl eframe::App for App {
         }
         ui.ctx()
             .request_repaint_after(std::time::Duration::from_millis(500));
-        self.ide.begin_frame();
+        self.ide.begin_frame(ui.ctx());
+        self.marks.begin_frame();
+        let selected = self.ide.term_selection();
+        self.highlights
+            .begin_frame(ui.ctx(), selected.as_ref(), self.ide.terminal_active());
         self.keyboard(ui);
 
-        egui::Panel::top("top").show(ui, |ui| self.top_bar(ui));
+        let top = egui::Panel::top("top").show(ui, |ui| self.top_bar(ui));
+        self.marks.keep_clear(top.response.rect);
         if let Some(mut tab) = self.maximized.clone() {
             egui::CentralPanel::default().show(ui, |ui| {
                 ui.horizontal(|ui| {
@@ -1113,8 +1199,35 @@ impl eframe::App for App {
                     dock.push_to_focused_leaf(tab);
                 }
             }
+            // Opening or following a terminal from its pane brings the files forward.
+            if std::mem::take(&mut self.ide.reveal_files)
+                && let Some(files) = dock.find_tab(&Tab::Files)
+            {
+                let _ = dock.set_active_tab(files);
+            }
             self.dock = Some(dock);
         }
+        if std::mem::take(&mut self.ide.reveal_files) && self.maximized == Some(Tab::Terminals) {
+            self.maximized = None;
+        }
+
+        // Over everything: the "+" over a selection. What it keeps is a note.
+        let selected = self.ide.term_selection();
+        let source = self.ide.editing.clone();
+        if let Some(h) = self.highlights.show(ui.ctx(), selected, source) {
+            self.notebook.add(&h.to_note());
+        }
+        self.marks.keep_clear(self.highlights.plus_rect());
+
+        // In front of that: what the green brush picked and the notes it
+        // leads to, then every mark over its pane.
+        self.marks.read_selection(ui.ctx());
+        for note in self.tabnote.show(ui.ctx(), &mut self.marks) {
+            self.notebook.add(&note);
+        }
+        let (tool, radius) = (self.tool(), self.radius);
+        self.marks
+            .show(ui.ctx(), self.hard.id(), self.soft.id(), tool, radius);
 
         self.run_clock(ui);
         self.take_shot(ui);
@@ -1123,6 +1236,15 @@ impl eframe::App for App {
 
 impl App {
     fn tab_ui(&mut self, ui: &mut egui::Ui, tab: &mut Tab) {
+        // Marks drawn here belong to this pane.
+        let label = match &*tab {
+            Tab::File(p) => p.display().to_string(),
+            t => format!("{t:?}").to_lowercase(),
+        };
+        self.marks.pane(format!("{tab:?}"), ui.max_rect(), label);
+        if *tab == Tab::Brushes {
+            self.marks.keep_clear(ui.max_rect());
+        }
         match tab {
             Tab::Canvas => self.canvas(ui),
             Tab::Brushes => self.palette(ui),
@@ -1134,6 +1256,16 @@ impl App {
             }
             Tab::Timeline => self.timeline_bar(ui),
             Tab::Files => self.ide.files_ui(ui),
+            Tab::Terminals => {
+                egui::Frame::NONE
+                    .inner_margin(egui::Margin::symmetric(12, 0))
+                    .show(ui, |ui| self.ide.terminals_ui(ui));
+            }
+            Tab::Notes => {
+                egui::Frame::NONE
+                    .inner_margin(egui::Margin::symmetric(12, 0))
+                    .show(ui, |ui| self.notebook.ui(ui));
+            }
             Tab::File(path) => {
                 let path = path.clone();
                 self.ide.editor_ui(ui, &path);

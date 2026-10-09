@@ -41,6 +41,14 @@ pub struct Terminal {
     /// Wheel travel not yet worth a whole line, so slow trackpad scrolling
     /// adds up instead of rounding away each frame.
     wheel_rest: f32,
+    /// The files the program in it has read and changed.
+    pub trail: Arc<Mutex<crate::trail::Trail>>,
+    /// Unix time it was opened.
+    pub started: f64,
+    /// Text selected with the mouse: the (row, column) it started at and
+    /// the one it reaches, as dragged.
+    sel: Option<((u16, u16), (u16, u16))>,
+    selecting: bool,
 }
 
 impl Terminal {
@@ -61,6 +69,7 @@ impl Terminal {
         cmd.env("TERM", "xterm-256color");
         cmd.env("COLORTERM", "truecolor");
         let child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
+        let shell_pid = child.process_id();
         drop(pair.slave);
         let mut reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
         let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
@@ -86,8 +95,16 @@ impl Terminal {
                 ctx.request_repaint();
             });
         }
+        let trail = match shell_pid {
+            Some(pid) => crate::trail::watch(pid, exited.clone(), ctx.clone()),
+            None => Default::default(),
+        };
         Ok(Self {
             id,
+            trail,
+            started: crate::trail::now(),
+            sel: None,
+            selecting: false,
             cwd: cwd.to_path_buf(),
             parser,
             writer,
@@ -130,9 +147,84 @@ impl Terminal {
         self.parser.lock().unwrap().screen_mut().set_size(rows, cols);
     }
 
+    /// Whether `p` is over the screen (not the card's title).
+    pub fn in_grid(&self, p: Pos2) -> bool {
+        self.grid.is_some_and(|(o, cw, ch)| {
+            let (rows, cols) = self.size;
+            Rect::from_min_size(o, vec2(cols as f32 * cw, rows as f32 * ch)).contains(p)
+        })
+    }
+
+    /// The 0-based (row, column) under `p`, clamped to the grid.
+    fn cell(&self, p: Pos2) -> (u16, u16) {
+        let (col, row) = self.cell_at(Some(p));
+        (row - 1, col - 1)
+    }
+
+    fn select_from(&mut self, p: Pos2) {
+        let c = self.cell(p);
+        self.sel = Some((c, c));
+    }
+
+    fn select_to(&mut self, p: Pos2) {
+        let c = self.cell(p);
+        if let Some((_, end)) = &mut self.sel {
+            *end = c;
+        }
+    }
+
+    /// Dragging across the screen selects; a click clears. Returns whether
+    /// the pointer is selecting, so the card doesn't move with it.
+    pub fn select_with(&mut self, ui: &egui::Ui, resp: &egui::Response) -> bool {
+        let origin = ui.input(|i| i.pointer.press_origin());
+        if resp.drag_started() {
+            self.selecting = origin.is_some_and(|p| self.in_grid(p));
+            if self.selecting
+                && let Some(p) = origin
+            {
+                self.select_from(p);
+            }
+        }
+        if self.selecting {
+            if let Some(p) = resp.interact_pointer_pos() {
+                self.select_to(p);
+            }
+            if !resp.dragged() {
+                self.selecting = false;
+            }
+            return true;
+        }
+        if resp.clicked() && origin.is_some_and(|p| self.in_grid(p)) {
+            self.sel = None;
+        }
+        false
+    }
+
+    /// The selection, first cell first, end inclusive.
+    fn sel_range(&self) -> Option<((u16, u16), (u16, u16))> {
+        let (a, b) = self.sel?;
+        let (a, b) = if a <= b { (a, b) } else { (b, a) };
+        (a != b).then_some((a, b))
+    }
+
+    /// The selected text, and the screen point above where it starts.
+    pub fn selection(&self) -> Option<(String, Pos2)> {
+        let (a, b) = self.sel_range()?;
+        let (origin, cw, ch) = self.grid?;
+        let text = self
+            .parser
+            .lock()
+            .unwrap()
+            .screen()
+            .contents_between(a.0, a.1, b.0, b.1 + 1);
+        let at = origin + vec2(a.1 as f32 * cw, a.0 as f32 * ch);
+        (!text.trim().is_empty()).then_some((text, at))
+    }
+
     pub fn send(&mut self, bytes: &[u8]) {
         // Typing returns to the live screen, as any terminal does.
         self.parser.lock().unwrap().screen_mut().set_scrollback(0);
+        self.sel = None;
         let _ = self.writer.write_all(bytes);
         let _ = self.writer.flush();
     }
@@ -151,7 +243,11 @@ impl Terminal {
         for event in events {
             match event {
                 egui::Event::Text(t) => self.send(t.as_bytes()),
-                egui::Event::Copy => self.send(b"\x03"),
+                // With text selected, Cmd+C copies it; otherwise it interrupts.
+                egui::Event::Copy => match self.selection() {
+                    Some((text, _)) => ui.ctx().copy_text(text),
+                    None => self.send(b"\x03"),
+                },
                 egui::Event::Cut => self.send(b"\x18"),
                 egui::Event::Paste(t) => {
                     if bracketed {
@@ -285,6 +381,20 @@ impl Terminal {
             }
             painter.galley(at, galley, st.fg);
         };
+        if let Some((a, b)) = self.sel_range() {
+            for row in a.0..=b.0.min(rows.saturating_sub(1)) {
+                let from = if row == a.0 { a.1 } else { 0 };
+                let to = if row == b.0 { b.1 + 1 } else { cols };
+                painter.rect_filled(
+                    Rect::from_min_max(
+                        pos2(rect.left() + from as f32 * cw, rect.top() + row as f32 * ch),
+                        pos2(rect.left() + to as f32 * cw, rect.top() + (row + 1) as f32 * ch),
+                    ),
+                    0.0,
+                    Color32::from_rgba_unmultiplied(0x4a, 0x7f, 0xc1, 60),
+                );
+            }
+        }
         for row in 0..rows {
             let y = rect.top() + row as f32 * ch;
             let mut run = String::new();
@@ -388,19 +498,41 @@ fn key_bytes(key: egui::Key, m: egui::Modifiers, app_cursor: bool) -> Option<Vec
             vec![0x1b, b'[', c]
         }
     };
+    // Shift/Alt/Ctrl on an arrow, as xterm reports them (Shift+Up is ESC [1;2A).
+    let modified = |c: u8| {
+        let n = 1 + m.shift as u8 + 2 * m.alt as u8 + 4 * m.ctrl as u8;
+        format!("\x1b[1;{n}{}", c as char).into_bytes()
+    };
+    // The editing keys a Mac terminal gives a shell: Option moves and deletes
+    // by word (as Meta), Cmd by line.
     let bytes = match key {
+        // A new line without sending: what Claude Code and zsh take as Meta+Enter.
+        Enter if m.shift || m.alt => b"\x1b\r".to_vec(),
         Enter => b"\r".to_vec(),
+        Backspace if m.mac_cmd => b"\x15".to_vec(),
+        Backspace if m.alt => b"\x1b\x7f".to_vec(),
+        Backspace if m.ctrl => b"\x17".to_vec(),
         Backspace => b"\x7f".to_vec(),
+        Delete if m.mac_cmd => b"\x0b".to_vec(),
+        Delete if m.alt || m.ctrl => b"\x1bd".to_vec(),
+        Delete => b"\x1b[3~".to_vec(),
         Tab if m.shift => b"\x1b[Z".to_vec(),
         Tab => b"\t".to_vec(),
         Escape => b"\x1b".to_vec(),
+        ArrowLeft if m.mac_cmd => b"\x01".to_vec(),
+        ArrowRight if m.mac_cmd => b"\x05".to_vec(),
+        ArrowLeft if m.alt && !m.shift => b"\x1bb".to_vec(),
+        ArrowRight if m.alt && !m.shift => b"\x1bf".to_vec(),
+        ArrowUp if m.shift || m.alt || m.ctrl => modified(b'A'),
+        ArrowDown if m.shift || m.alt || m.ctrl => modified(b'B'),
+        ArrowRight if m.shift || m.alt || m.ctrl => modified(b'C'),
+        ArrowLeft if m.shift || m.alt || m.ctrl => modified(b'D'),
         ArrowUp => arrow(b'A'),
         ArrowDown => arrow(b'B'),
         ArrowRight => arrow(b'C'),
         ArrowLeft => arrow(b'D'),
         Home => b"\x1b[H".to_vec(),
         End => b"\x1b[F".to_vec(),
-        Delete => b"\x1b[3~".to_vec(),
         PageUp => b"\x1b[5~".to_vec(),
         PageDown => b"\x1b[6~".to_vec(),
         _ if m.ctrl => {
