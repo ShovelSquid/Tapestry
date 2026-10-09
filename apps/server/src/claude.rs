@@ -39,7 +39,7 @@ fn running() -> Vec<String> {
     dir.flatten()
         .filter_map(|e| {
             let pid: u32 = e.path().file_stem()?.to_str()?.parse().ok()?;
-            std::path::Path::new(&format!("/proc/{pid}")).exists().then_some(())?;
+            crate::procs::alive(pid).then_some(())?;
             running_session(pid)
         })
         .collect()

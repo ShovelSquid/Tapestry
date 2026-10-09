@@ -9,7 +9,9 @@
 //! from its own page, so a website in your browser can't drive it.
 
 mod claude;
+mod devices;
 mod notes;
+mod procs;
 mod session;
 
 use std::collections::BTreeMap;
@@ -32,7 +34,7 @@ use serde_json::json;
 use session::{Saved, Session};
 
 const PAGE: &str = include_str!("page.html");
-const DEFAULT_PORT: u16 = 7878;
+pub const DEFAULT_PORT: u16 = 7878;
 
 struct App {
     sessions: Mutex<BTreeMap<u64, Arc<Session>>>,
@@ -95,25 +97,32 @@ impl App {
     }
 }
 
-fn state_dir() -> PathBuf {
+pub fn state_dir() -> PathBuf {
     let base = std::env::var_os("XDG_STATE_HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|| session::home().join(".local/state"));
     base.join("tapestry/server")
 }
 
-/// This machine's Tailscale address: its address in 100.64.0.0/10.
+/// This machine's Tailscale address: the address it would send from to
+/// Tailscale's own resolver (nothing is sent), if that's a Tailscale one.
 fn tailscale_ip() -> Option<Ipv4Addr> {
-    let out = std::process::Command::new("ip").args(["-4", "-o", "addr", "show"]).output().ok()?;
-    String::from_utf8_lossy(&out.stdout).split_whitespace().find_map(|w| {
-        let ip: Ipv4Addr = w.split('/').next()?.parse().ok()?;
-        let [a, b, ..] = ip.octets();
-        (a == 100 && (64..128).contains(&b)).then_some(ip)
-    })
+    let sock = std::net::UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).ok()?;
+    sock.connect((Ipv4Addr::new(100, 100, 100, 100), 53)).ok()?;
+    let IpAddr::V4(ip) = sock.local_addr().ok()?.ip() else { return None };
+    let [a, b, ..] = ip.octets();
+    (a == 100 && (64..128).contains(&b)).then_some(ip)
 }
 
-fn hostname() -> Option<String> {
-    std::fs::read_to_string("/etc/hostname").ok().map(|h| h.trim().to_owned())
+/// This machine's name, without a `.local`.
+pub fn hostname() -> Option<String> {
+    let mut buf = [0u8; 256];
+    if unsafe { libc::gethostname(buf.as_mut_ptr().cast(), buf.len()) } != 0 {
+        return None;
+    }
+    let end = buf.iter().position(|&b| b == 0).unwrap_or(buf.len());
+    let name = String::from_utf8_lossy(&buf[..end]).trim_end_matches(".local").to_owned();
+    (!name.is_empty()).then_some(name)
 }
 
 #[tokio::main]
@@ -187,6 +196,7 @@ async fn main() {
         .route("/api/sessions", get(list).post(create))
         .route("/api/sessions/{id}", delete(close))
         .route("/api/claude", get(past))
+        .route("/api/devices", get(list_devices))
         .route("/api/world", get(get_world).put(set_world))
         .route("/api/notes", get(list_notes).post(new_note))
         .route("/api/notes/{name}", axum::routing::put(put_note).delete(delete_note))
@@ -274,6 +284,7 @@ async fn list(State(app): State<Shared>) -> impl IntoResponse {
                 "claude": saved.claude,
                 "title": saved.title(),
                 "pid": s.pid,
+                "device": saved.ssh.as_ref().map(|d| &d.name),
                 "started": s.started,
             })
         })
@@ -286,6 +297,10 @@ struct Create {
     cwd: Option<PathBuf>,
     /// "new" for a new Claude Code session, or the id of one to reopen.
     claude: Option<String>,
+    /// Open it on this other device instead (its host, from `/api/devices`),
+    /// logged in as `user`.
+    device: Option<String>,
+    user: Option<String>,
 }
 
 async fn create(State(app): State<Shared>, axum::Json(req): axum::Json<Create>) -> Response {
@@ -304,11 +319,27 @@ async fn create(State(app): State<Shared>, axum::Json(req): axum::Json<Create>) 
         }
         Some(_) => return (StatusCode::BAD_REQUEST, "not a session id").into_response(),
     };
-    let cwd = req.cwd.unwrap_or_else(session::home);
+    let ssh = match req.device {
+        None => None,
+        Some(host) => {
+            let devices = tokio::task::spawn_blocking(devices::list).await.unwrap_or_default();
+            let Some(d) = devices.into_iter().find(|d| d.host == host) else {
+                return (StatusCode::BAD_REQUEST, "not one of your devices").into_response();
+            };
+            let user = req.user.filter(|u| !u.is_empty()).unwrap_or(d.user);
+            if !devices::valid_word(&user) {
+                return (StatusCode::BAD_REQUEST, "not a user name").into_response();
+            }
+            devices::remember(&d.host, &user);
+            Some(devices::Ssh { name: d.name, host: d.host, user })
+        }
+    };
+    let cwd = if ssh.is_some() { session::home() } else { req.cwd.unwrap_or_else(session::home) };
     let saved = Saved {
         id: app.new_id(),
         cwd,
-        claude,
+        claude: if ssh.is_some() { None } else { claude },
+        ssh,
     };
     let app2 = app.clone();
     match tokio::task::spawn_blocking(move || app2.open(saved)).await {
@@ -477,4 +508,10 @@ async fn delete_note(State(app): State<Shared>, Path(name): Path<String>) -> Sta
         Ok(()) => StatusCode::NO_CONTENT,
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR,
     }
+}
+
+/// This machine, and the others you can open a terminal on.
+async fn list_devices() -> impl IntoResponse {
+    let devices = tokio::task::spawn_blocking(devices::list).await.unwrap_or_default();
+    axum::Json(json!({ "here": hostname(), "devices": devices }))
 }

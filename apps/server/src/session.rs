@@ -5,7 +5,7 @@
 //! browser tab or the phone doesn't end it; only "close" does.
 
 use std::io::{Read, Write};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -23,6 +23,9 @@ pub struct Saved {
     pub cwd: PathBuf,
     /// The Claude Code session running in it, reopened with `--resume`.
     pub claude: Option<String>,
+    /// A terminal on another device: `ssh` to it.
+    #[serde(default)]
+    pub ssh: Option<crate::devices::Ssh>,
 }
 
 impl Saved {
@@ -32,7 +35,11 @@ impl Saved {
             .cwd
             .file_name()
             .map_or_else(|| "/".into(), |n| n.to_string_lossy().into_owned());
-        if self.claude.is_some() { format!("claude · {place}") } else { format!("shell · {place}") }
+        match (&self.ssh, &self.claude) {
+            (Some(ssh), _) => format!("ssh · {}", ssh.name),
+            (None, Some(_)) => format!("claude · {place}"),
+            (None, None) => format!("shell · {place}"),
+        }
     }
 }
 
@@ -65,7 +72,7 @@ pub fn shell() -> String {
                 .find(|l| l.starts_with(&format!("{user}:")))
                 .and_then(|l| l.rsplit(':').next().map(str::to_owned))
         })
-        .unwrap_or_else(|| "/bin/bash".into())
+        .unwrap_or_else(|| if cfg!(target_os = "macos") { "/bin/zsh" } else { "/bin/bash" }.into())
 }
 
 /// A Claude Code session id is a UUID; anything else never reaches a shell line.
@@ -88,8 +95,14 @@ impl Session {
             .map_err(|e| e.to_string())?;
         let shell = shell();
         let mut cmd = CommandBuilder::new(&shell);
-        match &saved.claude {
-            Some(id) if valid_claude_id(id) => {
+        match (&saved.ssh, &saved.claude) {
+            // Logged out (`exit`): the terminal ends. Connection lost: try again.
+            (Some(ssh), _) if crate::devices::valid_word(&ssh.host) && crate::devices::valid_word(&ssh.user) => {
+                let script = r#"while :; do ssh -t -o ServerAliveInterval=15 -- "$1@$2"; [ $? -ne 255 ] && exit
+printf '\r\n[lost %s; trying again in 3 s. Ctrl+C for a shell here]\r\n' "$2"; sleep 3 || break; done; exec "$0" -l"#;
+                cmd.args(["-lc", script, &shell, &ssh.user, &ssh.host]);
+            }
+            (_, Some(id)) if valid_claude_id(id) => {
                 let how = if crate::claude::transcript(id).is_some() { "--resume" } else { "--session-id" };
                 cmd.args(["-lc", &format!("claude {how} {id}; exec \"$0\" -l"), &shell]);
             }
@@ -188,7 +201,7 @@ impl Session {
         };
         // The shell leads its own session and process group (the pty made it so),
         // but a program in it may have started groups of its own.
-        let all = descendants(pid, &parents());
+        let all = crate::procs::descendants(pid, &crate::procs::all());
         let signal = |sig| {
             for &p in &all {
                 unsafe { libc::kill(p as i32, sig) };
@@ -208,12 +221,16 @@ impl Session {
         if self.ended.load(Ordering::Relaxed) {
             return false;
         }
-        let procs = parents();
-        let under = descendants(pid, &procs);
-        let claude: Vec<u32> = under.iter().copied().filter(|&p| is_claude(p)).collect();
+        let procs = crate::procs::all();
+        let under = crate::procs::descendants(pid, &procs);
+        let claude: Vec<u32> = procs
+            .iter()
+            .filter(|p| p.name == "claude" && under.contains(&p.pid))
+            .map(|p| p.pid)
+            .collect();
         let mut saved = self.saved.lock().unwrap();
         let before = saved.clone();
-        if let Ok(cwd) = std::fs::read_link(format!("/proc/{pid}/cwd")) {
+        if let Some(cwd) = crate::procs::cwd(pid) {
             saved.cwd = cwd;
         }
         match claude.iter().find_map(|&p| crate::claude::running_session(p)) {
@@ -248,40 +265,4 @@ pub fn now() -> f64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0.0, |d| d.as_secs_f64())
-}
-
-/// Every process and its parent, from `/proc`.
-fn parents() -> Vec<(u32, u32)> {
-    let Ok(dir) = std::fs::read_dir("/proc") else {
-        return Vec::new();
-    };
-    dir.flatten()
-        .filter_map(|e| {
-            let pid: u32 = e.file_name().to_str()?.parse().ok()?;
-            let stat = std::fs::read_to_string(e.path().join("stat")).ok()?;
-            // The name is in parentheses and may hold spaces; fields follow the last ')'.
-            let rest = &stat[stat.rfind(')')? + 2..];
-            let ppid = rest.split(' ').nth(1)?.parse().ok()?;
-            Some((pid, ppid))
-        })
-        .collect()
-}
-
-fn descendants(root: u32, procs: &[(u32, u32)]) -> Vec<u32> {
-    let mut out = vec![root];
-    let mut i = 0;
-    while i < out.len() {
-        let p = out[i];
-        out.extend(procs.iter().filter(|(_, pp)| *pp == p).map(|(c, _)| *c));
-        i += 1;
-    }
-    out
-}
-
-fn is_claude(pid: u32) -> bool {
-    let cmd = std::fs::read(format!("/proc/{pid}/cmdline")).unwrap_or_default();
-    let argv0 = cmd.split(|&b| b == 0).next().unwrap_or_default();
-    Path::new(std::str::from_utf8(argv0).unwrap_or_default())
-        .file_name()
-        .is_some_and(|n| n == "claude")
 }

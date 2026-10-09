@@ -32,6 +32,8 @@
   .row .acts { display: flex; gap: 14px; white-space: nowrap; }
   .empty { color: var(--faint); padding: 8px 0; }
   .new { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .new select { padding: 6px 8px; border: 1px solid var(--rule); background: #fff; color: var(--ink);
+    border-radius: 4px; max-width: 100%; }
   .new input { flex: 1; min-width: 180px; padding: 7px 9px; border: 1px solid var(--rule);
     background: #fff; color: var(--ink); border-radius: 4px; }
   .live { color: var(--green); }
@@ -68,7 +70,9 @@
   <h2>Open</h2>
   <div id="open"></div>
   <div class="new" style="margin-top:12px">
+    <select id="on" class="mono" title="where it runs"></select>
     <input id="cwd" class="mono" placeholder="folder" autocapitalize="off" autocorrect="off" spellcheck="false">
+    <input id="user" class="mono" placeholder="user" autocapitalize="off" autocorrect="off" spellcheck="false" style="display:none; flex:0 1 120px; min-width:90px">
     <button id="newClaude">+ claude</button>
     <button id="newShell">+ shell</button>
   </div>
@@ -163,7 +167,8 @@ async function create(body) {
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
     });
     await refresh();
-    openTerm(id, body.claude ? "claude" : "shell");
+    const d = devices.find((d) => d.host === body.device);
+    openTerm(id, d ? "ssh · " + d.name : body.claude ? "claude" : "shell");
   } catch (e) { $("msg").textContent = e.message; }
 }
 
@@ -181,8 +186,34 @@ document.addEventListener("click", async (e) => {
     create({ claude: b.dataset.resume, cwd: b.dataset.cwd || undefined });
   }
 });
+// Where a new terminal runs: here, or on another of your devices over ssh.
+let devices = [];
+async function loadDevices() {
+  try {
+    const { here, devices: list } = await api("/api/devices");
+    devices = list;
+    const sel = $("on"), was = sel.value;
+    sel.innerHTML = `<option value="">on ${esc(here || "this machine")}</option>` + list.map((d) =>
+      `<option value="${esc(d.host)}"${d.online ? "" : " disabled"}>on ${esc(d.name)}${d.online ? "" : " (offline)"}</option>`).join("");
+    if ([...sel.options].some((o) => o.value === was && !o.disabled)) sel.value = was;
+    sel.style.display = list.length ? "" : "none";
+    onChanged(false);
+  } catch {}
+}
+function onChanged(fill = true) {
+  const host = $("on").value, d = devices.find((d) => d.host === host);
+  $("cwd").style.display = d ? "none" : "";
+  $("user").style.display = d ? "" : "none";
+  $("newClaude").style.display = d ? "none" : "";
+  if (d && (fill || !$("user").value)) $("user").value = d.user;
+}
+$("on").onchange = () => onChanged(true);
 $("newClaude").onclick = () => create({ claude: "new", cwd: expand($("cwd").value.trim() || "~") });
-$("newShell").onclick = () => create({ cwd: expand($("cwd").value.trim() || "~") });
+$("newShell").onclick = () => {
+  const host = $("on").value;
+  if (host) create({ device: host, user: $("user").value.trim() || undefined });
+  else create({ cwd: expand($("cwd").value.trim() || "~") });
+};
 $("more").onclick = () => { pastLimit += 30; loadPast(); };
 
 // The terminal view.
@@ -361,7 +392,8 @@ $("newNote").onclick = async () => {
 };
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && editing && current === null) putDown(); });
 
-refresh(); loadPast(); loadNotes();
+refresh(); loadPast(); loadNotes(); loadDevices();
+setInterval(() => { if (current === null) loadDevices(); }, 15000);
 setInterval(() => { if (current === null) { refresh(); loadNotes(); } }, 3000);
 </script>
 </body>
