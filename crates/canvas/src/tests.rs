@@ -332,3 +332,23 @@ fn editing_a_rule_replays_the_canvas_under_it() {
     t.seek(1200);
     assert!(t.state().count(Material::Tree) > 500);
 }
+
+/// What `tree-check --grammar` tells an agent is exactly what the parser takes.
+#[test]
+fn grammar_names_the_whole_vocabulary() {
+    let g = grammar();
+    for m in Material::ALL {
+        assert!(g.contains(m.name()), "grammar is missing {}", m.name());
+    }
+    for p in Prop::ALL {
+        assert!(g.contains(p.name()), "grammar is missing {}", p.name());
+    }
+    for line in [
+        "change tree heat -0.5/s within 30 of water or ink",
+        "convert ash to nothing at wet 2 ±10%",
+    ] {
+        let note = RuleNote::parse("t", line);
+        assert!(note.problems.is_empty(), "{line}: {:?}", note.problems);
+        assert_eq!(note.basics[0].to_string(), line);
+    }
+}

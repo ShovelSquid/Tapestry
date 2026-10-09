@@ -29,6 +29,8 @@ pub enum Prop {
 }
 
 impl Prop {
+    pub const ALL: [Prop; 2] = [Prop::Heat, Prop::Wet];
+
     fn from_name(s: &str) -> Option<Self> {
         match s {
             "heat" => Some(Prop::Heat),
@@ -71,6 +73,42 @@ pub enum Basic {
 
 const BUILT: [&str; 2] = ["change", "convert"];
 const NOT_YET: [&str; 4] = ["set", "spawn", "move", "remove"];
+
+/// The basic rules as they stand, in words: what an author (or an agent
+/// translating prose) can write today. Built from the same lists the parser
+/// reads, so it can't fall behind it.
+pub fn grammar() -> String {
+    let names = |v: Vec<&str>| v.join(", ");
+    let materials = names(Material::ALL.iter().map(|m| m.name()).collect());
+    let props = names(Prop::ALL.iter().map(|p| p.name()).collect());
+    format!(
+        "\
+Rule lines (one per line; every other line of a note is prose):
+
+  change <who> <prop> <±rate>/s within <distance> of <material> [or <material>...]
+      While a <who> is within <distance> of any of the listed materials, its
+      <prop> changes by <rate> each second. Rates may be negative.
+
+  convert <who> to <material|nothing> at <prop> <threshold> [±<spread>%]
+      When a <who>'s <prop> reaches <threshold> it becomes the material
+      (or vanishes, for \"nothing\"). The spread varies each particle's
+      threshold so a crowd doesn't turn all at once.
+
+Materials: {materials}
+Properties: {props}
+Built: {built}
+Recognised but not built yet: {not_yet}
+
+Every property starts at 0 when a particle is made or converted, and only
+change lines move it (except that wet ink dries a little each second by
+itself). Distances are canvas units (about a pixel; the canvas
+is {w} by {h}). Lines starting with // are comments.",
+        built = names(BUILT.to_vec()),
+        not_yet = names(NOT_YET.to_vec()),
+        w = crate::sim::WIDTH,
+        h = crate::sim::HEIGHT,
+    )
+}
 
 /// A line of a note that didn't read.
 #[derive(Clone, Debug, PartialEq)]
@@ -326,12 +364,18 @@ fn number(w: &str) -> Result<f32, String> {
         .map_err(|_| format!("“{w}” isn't a number"))
 }
 
-impl fmt::Display for Prop {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
+impl Prop {
+    pub fn name(self) -> &'static str {
+        match self {
             Prop::Heat => "heat",
             Prop::Wet => "wet",
-        })
+        }
+    }
+}
+
+impl fmt::Display for Prop {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.name())
     }
 }
 
