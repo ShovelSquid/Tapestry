@@ -1,0 +1,5 @@
+# Fire spreads to trees
+A tree near fire heats up, and catches.
+
+change tree heat +1.5/s within 18 of fire or flame
+convert tree to fire at heat 1 ±60%

@@ -62,8 +62,8 @@ pub struct Stroke {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Body {
     Stroke(Stroke),
-    /// Switch rule note `rule` (an index into [`crate::RULES`]) on or off.
-    Rule { rule: usize, on: bool },
+    /// Switch the rule note named `rule` (its file name) on or off.
+    Rule { rule: String, on: bool },
 }
 
 /// Something the author said: at `tick`, this.

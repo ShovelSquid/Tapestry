@@ -4,6 +4,7 @@ The Rust workspace for the narrative engine. The design lives on the `ws/writing
 (`narrative-engine-core-spec.md` and `log/`).
 
 ```
+world/rules     The canvas's rule notes, one .tree file each (log 0009). Edit them live.
 crates/canvas   Paint with particles (ink, water, trees, fire) that keep living; rule notes (log 0009).
 apps/canvas     The canvas app: palette, rule notes, and a timeline of keyframes.
 crates/core     The engine: keys, rules, a pure simulate(), history, and the gap report.
@@ -38,6 +39,22 @@ other comes only from the rule notes on the right. Click a note's dot to switch 
 the playhead on: fire sits among trees doing nothing until "Fire spreads to trees" is on.
 "Fire engulfs trees" says nothing definite, so it does nothing. Space plays, the timeline
 scrubs (the canvas replays to that moment).
+
+Rule notes are `.tree` files in `world/rules/` (or `--world <dir>`). The first `#` line is the
+title, prose says what the rule means, and lines starting with a basic rule say it:
+
+```
+# Fire spreads to trees
+A tree near fire heats up, and catches.
+
+change tree heat +1.5/s within 18 of fire or flame
+convert tree to fire at heat 1 ±60%
+```
+
+Edit a note on its card (edit, then save) or in any editor; the app rereads the folder every
+half second and the canvas replays under the new rules. A line that doesn't read is shown
+in red against its line number and the rest of the note still works; a note with no rule
+lines does nothing. "+ new rule" starts a file.
 
 The timeline has a lane per brush and one for rule switches. Click a keyframe to pick it
 (what it made stays bright on the canvas), drag it to another time, delete to remove it;

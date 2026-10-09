@@ -4,6 +4,7 @@ use std::time::Instant;
 use glam::Vec2;
 
 use crate::key::{Body, Brush, Dab, KeyId, Keyframe, Sample, Stroke, Tick, dabs};
+use crate::rules::Rulebook;
 use crate::sim::State;
 
 /// A keyframe and the dabs derived from it.
@@ -42,6 +43,8 @@ enum Edit {
 pub struct Timeline {
     /// Ordered by tick; within a tick, in the order they were placed there.
     script: Vec<Entry>,
+    /// The rule notes are inputs too: change one and everything replays.
+    rules: Rulebook,
     checkpoints: BTreeMap<Tick, State>,
     state: State,
     playhead: Tick,
@@ -51,9 +54,16 @@ pub struct Timeline {
 
 impl Default for Timeline {
     fn default() -> Self {
-        let state = State::start(&[]);
+        Self::new(Rulebook::default())
+    }
+}
+
+impl Timeline {
+    pub fn new(rules: Rulebook) -> Self {
+        let state = State::start(&[], &rules);
         Self {
             script: Vec::new(),
+            rules,
             checkpoints: BTreeMap::from([(0, state.clone())]),
             state,
             playhead: 0,
@@ -61,9 +71,22 @@ impl Default for Timeline {
             edits: Vec::new(),
         }
     }
-}
 
-impl Timeline {
+    pub fn rules(&self) -> &Rulebook {
+        &self.rules
+    }
+
+    /// Swap in rule notes as they now read. If anything changed, the whole
+    /// canvas replays under them (catching up as usual).
+    pub fn set_rules(&mut self, rules: Rulebook) {
+        if rules == self.rules {
+            return;
+        }
+        self.rules = rules;
+        self.checkpoints.clear();
+        self.invalidate(0);
+        self.restore(0);
+    }
     /// The canvas as far as it has been worked out (see [`Timeline::caught_up`]).
     pub fn state(&self) -> &State {
         &self.state
@@ -136,7 +159,7 @@ impl Timeline {
             if deadline.is_some_and(|d| Instant::now() >= d) {
                 return false;
             }
-            self.state.step(&self.script);
+            self.state.step(&self.script, &self.rules);
             let t = self.state.tick;
             if t.is_multiple_of(CHECKPOINT_EVERY) && !self.checkpoints.contains_key(&t) {
                 self.checkpoints.insert(t, self.state.clone());
@@ -210,11 +233,23 @@ impl Timeline {
     }
 
     /// Switch a rule note on or off from the playhead on.
-    pub fn set_rule(&mut self, rule: usize, on: bool) {
-        self.insert(Body::Rule { rule, on });
-        if self.caught_up() {
-            self.state.rules_on[rule] = on;
+    pub fn set_rule(&mut self, rule: &str, on: bool) {
+        self.insert(Body::Rule {
+            rule: rule.to_owned(),
+            on,
+        });
+        if self.caught_up()
+            && let Some(i) = self.rules.index(rule)
+        {
+            self.state.rules_on[i] = on;
         }
+    }
+
+    /// Whether the note named `rule` is on at the shown state.
+    pub fn rule_on(&self, rule: &str) -> bool {
+        self.rules
+            .index(rule)
+            .is_some_and(|i| self.state.rules_on[i])
     }
 
     /// Delete a keyframe. The canvas after it replays without it.
@@ -312,7 +347,8 @@ impl Timeline {
     fn invalidate(&mut self, tick: Tick) {
         self.checkpoints.split_off(&tick);
         if self.checkpoints.is_empty() {
-            self.checkpoints.insert(0, State::start(&self.script));
+            self.checkpoints
+                .insert(0, State::start(&self.script, &self.rules));
         }
     }
 

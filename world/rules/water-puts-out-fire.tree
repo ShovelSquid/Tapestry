@@ -1,0 +1,7 @@
+# Water puts out fire
+Wet fire goes out, leaving ash.
+
+change fire wet +6/s within 11 of water
+convert fire to ash at wet 0.3
+change flame wet +60/s within 9 of water
+convert flame to nothing at wet 0.5

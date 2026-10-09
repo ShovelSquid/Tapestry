@@ -12,7 +12,7 @@ use egui::{
     Stroke, TextureHandle, Vec2, pos2, vec2,
 };
 use tapestry_canvas::{
-    Body, Brush, DT, HEIGHT, KeyId, MadeBy, Material, Particle, RULES, TICKS_PER_SECOND, Tick,
+    Body, Brush, DT, HEIGHT, KeyId, MadeBy, Material, Particle, Rulebook, TICKS_PER_SECOND, Tick,
     Timeline, WIDTH,
 };
 
@@ -47,6 +47,18 @@ fn main() -> eframe::Result {
     )
 }
 
+/// The world folder: `--world <dir>`, else `world/` in this repository.
+fn world_dir() -> std::path::PathBuf {
+    let args: Vec<String> = std::env::args().collect();
+    if let Some(i) = args.iter().position(|a| a == "--world")
+        && let Some(dir) = args.get(i + 1)
+    {
+        return dir.into();
+    }
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../world");
+    dir.canonicalize().unwrap_or(dir)
+}
+
 /// A scene to start from: an ink cup with water poured in, and a row of
 /// trees that fire reaches once "Fire spreads to trees" is switched on.
 fn paint_demo(t: &mut Timeline) {
@@ -69,7 +81,7 @@ fn paint_demo(t: &mut Timeline) {
     t.seek(90);
     stroke(t, Brush::Fire, 6.0, &[(680.0, 880.0), (700.0, 850.0)]);
     t.seek(150);
-    t.set_rule(0, true);
+    t.set_rule("fire-spreads-to-trees", true);
     t.seek(0);
 }
 
@@ -81,8 +93,19 @@ struct Drag {
     to: Tick,
 }
 
+enum NoteAction {
+    Edit,
+    Save,
+    Cancel,
+}
+
 struct App {
     timeline: Timeline,
+    /// The world folder: rule notes live in `rules/` inside it.
+    world: std::path::PathBuf,
+    /// A rule note open for editing: its name and the text so far.
+    editing: Option<(String, String)>,
+    last_poll: f64,
     brush: Brush,
     radius: f32,
     playing: bool,
@@ -110,8 +133,16 @@ impl App {
         visuals.window_fill = PAPER;
         visuals.override_text_color = Some(INK);
         cc.egui_ctx.set_visuals(visuals);
+        let world = world_dir();
+        let rules = Rulebook::load(&world.join("rules")).unwrap_or_else(|e| {
+            eprintln!("no rules in {}: {e}", world.display());
+            Rulebook::default()
+        });
         Self {
-            timeline: Timeline::default(),
+            timeline: Timeline::new(rules),
+            world,
+            editing: None,
+            last_poll: 0.0,
             brush: Brush::Ink,
             radius: 5.0,
             playing: true,
@@ -292,16 +323,30 @@ impl App {
 
     fn notes(&mut self, ui: &mut egui::Ui) {
         ui.add_space(14.0);
-        ui.label(RichText::new("Rules").font(title(22.0)));
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("Rules").font(title(22.0)));
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if quiet_link(ui, "+ new rule", false).clicked() {
+                    self.new_rule();
+                }
+            });
+        });
         ui.label(
             RichText::new("Nothing acts on anything else until a note says how.")
                 .color(FAINT)
                 .size(15.0),
         );
+        ui.label(
+            RichText::new(format!("{}", self.world.join("rules").display()))
+                .color(RULE_LINE)
+                .size(12.0),
+        );
         ui.add_space(12.0);
-        let on_now = self.timeline.state().rules_on.clone();
-        for (i, note) in RULES.iter().enumerate() {
-            let on = on_now[i];
+        let notes = self.timeline.rules().notes.clone();
+        for note in &notes {
+            let on = self.timeline.rule_on(&note.name);
+            let editing = self.editing.as_ref().is_some_and(|(n, _)| *n == note.name);
+            let mut action = None;
             let card = egui::Frame::new()
                 .fill(SHEET)
                 .stroke(Stroke::new(1.5, if on { INK } else { MUTED }))
@@ -310,7 +355,19 @@ impl App {
                 .show(ui, |ui| {
                     ui.set_width(ui.available_width());
                     ui.horizontal(|ui| {
-                        ui.label(RichText::new(note.title).font(title(19.0)));
+                        ui.label(RichText::new(&note.title).font(title(19.0)));
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if editing {
+                                if quiet_link(ui, "save", true).clicked() {
+                                    action = Some(NoteAction::Save);
+                                }
+                                if quiet_link(ui, "cancel", false).clicked() {
+                                    action = Some(NoteAction::Cancel);
+                                }
+                            } else if quiet_link(ui, "edit", false).clicked() {
+                                action = Some(NoteAction::Edit);
+                            }
+                        });
                     });
                     let r = ui.max_rect();
                     let y = ui.cursor().top() + 2.0;
@@ -319,34 +376,44 @@ impl App {
                         Stroke::new(1.2, INK),
                     );
                     ui.add_space(8.0);
-                    ui.label(RichText::new(note.text).size(16.0));
-                    ui.add_space(4.0);
-                    match note.basics {
-                        Some(basics) => {
-                            for b in basics {
-                                ui.label(RichText::new(b.to_string()).color(FAINT).size(13.0));
-                            }
-                        }
-                        None => {
-                            let color = if on { DOT } else { FAINT };
-                            ui.label(
-                                RichText::new(format!("does nothing: {}", note.missing))
-                                    .color(color)
-                                    .size(14.0),
-                            );
-                        }
+                    if editing && let Some((_, text)) = &mut self.editing {
+                        ui.add(
+                            egui::TextEdit::multiline(text)
+                                .font(FontId::monospace(13.0))
+                                .desired_width(f32::INFINITY)
+                                .desired_rows(6)
+                                .frame(egui::Frame::NONE),
+                        );
+                        return;
+                    }
+                    if !note.text.is_empty() {
+                        ui.label(RichText::new(&note.text).size(16.0));
+                        ui.add_space(4.0);
+                    }
+                    for b in &note.basics {
+                        ui.label(RichText::new(b.to_string()).color(FAINT).size(13.0));
+                    }
+                    for problem in &note.problems {
+                        ui.label(
+                            RichText::new(format!("line {}: {}", problem.line, problem.message))
+                                .color(DOT)
+                                .size(13.0),
+                        );
+                    }
+                    if note.inert() {
+                        let color = if on { DOT } else { FAINT };
+                        ui.label(
+                            RichText::new("does nothing: nothing here says what to do yet")
+                                .color(color)
+                                .size(14.0),
+                        );
                     }
                 });
             // The red dot on the card's corner is its switch.
             let corner = card.response.rect.left_top() + vec2(4.0, 4.0);
             let dot = ui.interact(
                 Rect::from_center_size(corner, vec2(26.0, 26.0)),
-                ui.id().with(("rule-dot", i)),
-                Sense::click(),
-            );
-            let card_click = ui.interact(
-                card.response.rect,
-                ui.id().with(("rule-card", i)),
+                ui.id().with(("rule-dot", &note.name)),
                 Sense::click(),
             );
             let p = ui.painter();
@@ -356,16 +423,56 @@ impl App {
                 p.circle_filled(corner, 10.0, SHEET);
                 p.circle_stroke(corner, 10.0, Stroke::new(1.5, MUTED));
             }
-            if dot.hovered() || card_click.hovered() {
+            if dot.hovered() {
                 ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
             }
-            if (dot.clicked() || card_click.clicked())
-                && self.painting.is_none()
-                && self.timeline.caught_up()
-            {
-                self.timeline.set_rule(i, !on);
+            if dot.clicked() && self.painting.is_none() && self.timeline.caught_up() {
+                self.timeline.set_rule(&note.name, !on);
+            }
+            match action {
+                Some(NoteAction::Edit) => {
+                    self.editing = Some((note.name.clone(), note.source.clone()));
+                }
+                Some(NoteAction::Cancel) => self.editing = None,
+                Some(NoteAction::Save) => {
+                    if let Some((name, text)) = self.editing.take() {
+                        let path = self.rule_path(&name);
+                        if let Err(e) = std::fs::write(&path, text) {
+                            eprintln!("couldn't save {}: {e}", path.display());
+                        }
+                        self.reload_rules();
+                    }
+                }
+                None => {}
             }
             ui.add_space(14.0);
+        }
+    }
+
+    fn rule_path(&self, name: &str) -> std::path::PathBuf {
+        self.world.join("rules").join(format!("{name}.tree"))
+    }
+
+    /// Read `world/rules` again. Unchanged notes change nothing; a changed
+    /// one replays the canvas under it.
+    fn reload_rules(&mut self) {
+        match Rulebook::load(&self.world.join("rules")) {
+            Ok(rules) => self.timeline.set_rules(rules),
+            Err(e) => eprintln!("couldn't read rules: {e}"),
+        }
+    }
+
+    fn new_rule(&mut self) {
+        let dir = self.world.join("rules");
+        let _ = std::fs::create_dir_all(&dir);
+        let name = (1..)
+            .map(|n| format!("untitled-{n}"))
+            .find(|n| !self.rule_path(n).exists())
+            .unwrap();
+        let source = "# Untitled\nWhat should happen?\n\n// change tree heat +1/s within 10 of fire\n// convert tree to ash at heat 1\n";
+        if std::fs::write(self.rule_path(&name), source).is_ok() {
+            self.reload_rules();
+            self.editing = Some((name, source.to_owned()));
         }
     }
 
@@ -576,7 +683,10 @@ impl App {
                 Body::Stroke(s) => format!("{} stroke at {at:.2} s", s.brush.name()),
                 Body::Rule { rule, on } => format!(
                     "“{}” switched {} at {at:.2} s",
-                    RULES[*rule].title,
+                    self.timeline
+                        .rules()
+                        .get(rule)
+                        .map_or(format!("{rule} (no such note)"), |n| n.title.clone()),
                     if *on { "on" } else { "off" }
                 ),
             };
@@ -656,7 +766,9 @@ impl App {
             .and_then(|id| self.timeline.key(id))
             .map(|k| match k.body {
                 Body::Stroke(_) => MadeBy::Key(k.id),
-                Body::Rule { rule, .. } => MadeBy::Rule(rule),
+                Body::Rule { ref rule, .. } => {
+                    MadeBy::Rule(self.timeline.rules().index(rule).unwrap_or(usize::MAX))
+                }
             });
         let mut hard = Mesh::with_texture(self.hard.id());
         let mut soft = Mesh::with_texture(self.soft.id());
@@ -695,11 +807,14 @@ impl App {
         }
 
         // An empty note that's switched on is worth saying out loud.
-        let inert: Vec<_> = RULES
+        let inert: Vec<_> = self
+            .timeline
+            .rules()
+            .notes
             .iter()
             .enumerate()
-            .filter(|(i, r)| r.basics.is_none() && state.rules_on[*i])
-            .map(|(_, r)| format!("“{}” is on but does nothing: {}.", r.title, r.missing))
+            .filter(|(i, r)| r.inert() && state.rules_on[*i])
+            .map(|(_, r)| format!("“{}” is on but does nothing: nothing in it says what to do.", r.title))
             .collect();
         for (k, line) in inert.iter().enumerate() {
             painter.text(
@@ -724,6 +839,15 @@ impl App {
 
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        // Rule files edited anywhere (here, or in another editor) take
+        // effect within half a second.
+        let now = ui.input(|i| i.time);
+        if now - self.last_poll > 0.5 {
+            self.last_poll = now;
+            self.reload_rules();
+        }
+        ui.ctx()
+            .request_repaint_after(std::time::Duration::from_millis(500));
         self.keyboard(ui);
 
         egui::Panel::top("top").show(ui, |ui| self.top_bar(ui));

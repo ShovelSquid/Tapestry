@@ -20,6 +20,6 @@ mod timeline;
 mod tests;
 
 pub use key::{Body, Brush, DT, KeyId, Keyframe, Sample, Stroke, TICKS_PER_SECOND, Tick};
-pub use rules::{Basic, Becomes, Prop, RULES, RuleNote};
+pub use rules::{Basic, Becomes, Problem, Prop, RuleNote, Rulebook};
 pub use sim::{HEIGHT, MadeBy, Material, Particle, State, WIDTH};
 pub use timeline::Timeline;

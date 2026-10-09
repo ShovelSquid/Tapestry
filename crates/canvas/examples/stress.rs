@@ -13,13 +13,14 @@ fn line(t: &mut Timeline, brush: Brush, radius: f32, a: Vec2, b: Vec2) {
 }
 
 fn main() {
-    let mut t = Timeline::default();
+    let rules = concat!(env!("CARGO_MANIFEST_DIR"), "/../../world/rules");
+    let mut t = Timeline::new(Rulebook::load(rules.as_ref()).expect("world/rules"));
     for row in 0..6 {
         let y = 300.0 + row as f32 * 110.0;
         line(&mut t, Brush::Tree, 7.0, Vec2::new(100.0, y), Vec2::new(1500.0, y));
     }
     line(&mut t, Brush::Fire, 8.0, Vec2::new(100.0, 850.0), Vec2::new(1500.0, 850.0));
-    t.set_rule(0, true);
+    t.set_rule("fire-spreads-to-trees", true);
     let mut worst = 0.0f64;
     for s in 1..=1200 {
         let start = Instant::now();

@@ -1,0 +1,4 @@
+# Water makes ink run
+Ink that water touches gets wet, and wet ink flows.
+
+change ink wet +3/s within 10 of water

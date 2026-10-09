@@ -8,7 +8,7 @@ use glam::Vec2;
 
 use crate::grid::Grid;
 use crate::key::{Brush, DT, Dab, KeyId, Stroke, Tick};
-use crate::rules::{Basic, Becomes, Prop, RULES};
+use crate::rules::{Basic, Becomes, Prop, Rulebook};
 use crate::timeline::Entry;
 
 /// The canvas, in canvas units (about a pixel). y points down.
@@ -39,6 +39,15 @@ pub enum Material {
 }
 
 impl Material {
+    pub const ALL: [Material; 6] = [
+        Material::Ink,
+        Material::Water,
+        Material::Tree,
+        Material::Fire,
+        Material::Flame,
+        Material::Ash,
+    ];
+
     pub fn name(self) -> &'static str {
         match self {
             Material::Ink => "ink",
@@ -175,7 +184,7 @@ pub struct State {
     pub tick: Tick,
     pub particles: Vec<Particle>,
     pub trees: Vec<Tree>,
-    /// Which rule notes are switched on, by index into [`RULES`].
+    /// Which rule notes are switched on, by index into the [`Rulebook`].
     pub rules_on: Vec<bool>,
     /// Everything, for rules.
     grid: Grid,
@@ -186,16 +195,16 @@ pub struct State {
 
 impl State {
     /// Tick 0: an empty canvas, then whatever the keyframes put down at 0.
-    pub(crate) fn start(script: &[Entry]) -> Self {
+    pub(crate) fn start(script: &[Entry], rules: &Rulebook) -> Self {
         let mut s = Self {
             tick: 0,
             particles: Vec::new(),
             trees: Vec::new(),
-            rules_on: vec![false; RULES.len()],
+            rules_on: vec![false; rules.len()],
             grid: Grid::default(),
             solids: Grid::default(),
         };
-        s.apply_keys(script);
+        s.apply_keys(script, rules);
         s
     }
 
@@ -223,7 +232,7 @@ impl State {
     }
 
     /// One tick: physics, rules, nature, then any keyframes at the new tick.
-    pub(crate) fn step(&mut self, script: &[Entry]) {
+    pub(crate) fn step(&mut self, script: &[Entry], rules: &Rulebook) {
         self.tick += 1;
         let indexed = self.particles.iter().enumerate().map(|(i, p)| (i as u32, p.pos));
         self.solids
@@ -263,10 +272,10 @@ impl State {
             }
         }
 
-        self.apply_rules();
+        self.apply_rules(rules);
         self.nature();
         self.particles.retain(|p| !p.dead);
-        self.apply_keys(script);
+        self.apply_keys(script, rules);
     }
 
     fn move_particles(&mut self) {
@@ -413,23 +422,22 @@ impl State {
         }
     }
 
-    fn apply_rules(&mut self) {
+    fn apply_rules(&mut self, rules: &Rulebook) {
         if !self.rules_on.iter().any(|&on| on) {
             return;
         }
         self.grid
             .build(self.particles.iter().enumerate().map(|(i, p)| (i as u32, p.pos)));
         let mut hits = Vec::new();
-        for (rule, note) in RULES.iter().enumerate() {
-            let Some(basics) = note.basics else { continue };
+        for (rule, note) in rules.notes.iter().enumerate() {
             if !self.rules_on[rule] {
                 continue;
             }
-            for basic in basics {
+            for basic in &note.basics {
                 match *basic {
                     Basic::Change {
                         who,
-                        near: of,
+                        near: ref of,
                         radius,
                         prop,
                         rate,
@@ -513,14 +521,17 @@ impl State {
         self.particles.extend(born);
     }
 
-    pub(crate) fn apply_keys(&mut self, script: &[Entry]) {
+    pub(crate) fn apply_keys(&mut self, script: &[Entry], rules: &Rulebook) {
         for e in script {
             if e.key.tick > self.tick {
                 break;
             }
             match &e.key.body {
                 crate::key::Body::Rule { rule, on } if e.key.tick == self.tick => {
-                    self.rules_on[*rule] = *on;
+                    // A switch for a note that's since been deleted does nothing.
+                    if let Some(i) = rules.index(rule) {
+                        self.rules_on[i] = *on;
+                    }
                 }
                 crate::key::Body::Rule { .. } => {}
                 crate::key::Body::Stroke(stroke) => {
