@@ -243,7 +243,7 @@ impl App {
                     .into_iter()
                     .find(|t| format!("{t:?}").eq_ignore_ascii_case(&name))
             }),
-            ide: ide::Ide::new(engine, world.clone()),
+            ide: ide::Ide::new(engine),
             world,
             editing: None,
             last_poll: 0.0,

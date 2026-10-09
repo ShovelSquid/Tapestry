@@ -1,12 +1,15 @@
 //! The spatial IDE: any folder as note cards on a surface you can pan and
 //! zoom, folders as frames you step into, files opened as editor tabs.
 //!
-//! Open the world and its rule notes are cards; open the engine and its own
-//! source is. Saving a rule file takes effect at once (the canvas rereads
+//! Any folder works: a world's rule notes, a Markdown vault, or Tapestry's
+//! own source. Saving a rule file takes effect at once (the canvas rereads
 //! `world/rules`); saving engine source asks for a rebuild, then a restart
 //! into the new build.
+//!
+//! Where you put cards, and which folders you pin, are kept in
+//! `~/.local/state/tapestry/` so they're there next time.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
@@ -71,12 +74,16 @@ pub struct Ide {
     here: PathBuf,
     /// The Tapestry engine's own source (this repository).
     engine: PathBuf,
-    world: PathBuf,
+    /// Folders kept one click away.
+    pins: Vec<PathBuf>,
     path_input: String,
     entries: Vec<Entry>,
     listed_at: f64,
-    /// Where each card sits on the surface, once placed or moved.
+    /// Where each card sits on the surface.
     positions: HashMap<PathBuf, Vec2>,
+    /// Cards the author moved by hand. Only these are remembered; the rest
+    /// fall into a grid around them.
+    placed: HashSet<PathBuf>,
     pan: Vec2,
     zoom: f32,
     pub buffers: BTreeMap<PathBuf, Buffer>,
@@ -87,16 +94,24 @@ pub struct Ide {
 }
 
 impl Ide {
-    pub fn new(engine: PathBuf, world: PathBuf) -> Self {
+    pub fn new(engine: PathBuf) -> Self {
+        let positions = load_positions();
+        let placed = positions.keys().cloned().collect();
+        let mut pins = load_pins();
+        if pins.is_empty() {
+            pins.push(engine.clone());
+        }
+        let root = pins[0].clone();
         Self {
-            root: engine.clone(),
-            here: engine.clone(),
-            path_input: engine.display().to_string(),
+            here: root.clone(),
+            path_input: root.display().to_string(),
+            root,
             engine,
-            world,
+            pins,
             entries: Vec::new(),
             listed_at: f64::NEG_INFINITY,
-            positions: HashMap::new(),
+            positions,
+            placed,
             pan: vec2(24.0, 24.0),
             zoom: 1.0,
             buffers: BTreeMap::new(),
@@ -180,13 +195,31 @@ impl Ide {
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.add_space(8.0);
-                if quiet_link(ui, "engine", self.root == self.engine).clicked() {
-                    self.open_folder(self.engine.clone());
-                }
-                if quiet_link(ui, "world", self.root == self.world).clicked() {
-                    self.open_folder(self.world.clone());
+                let pinned = self.pins.contains(&self.here);
+                if quiet_link(ui, if pinned { "unpin" } else { "pin" }, false).clicked() {
+                    if pinned {
+                        self.pins.retain(|p| *p != self.here);
+                    } else {
+                        self.pins.push(self.here.clone());
+                    }
+                    save_pins(&self.pins);
                 }
             });
+        });
+        // Pinned folders, one click away.
+        ui.horizontal_wrapped(|ui| {
+            ui.add_space(8.0);
+            ui.label(RichText::new("pinned").color(FAINT).size(14.0));
+            for pin in self.pins.clone() {
+                let name = pin
+                    .file_name()
+                    .map_or("/".into(), |n| n.to_string_lossy().into_owned());
+                let here = self.root == pin;
+                let link = quiet_link(ui, &name, here).on_hover_text(pin.display().to_string());
+                if link.clicked() && !here {
+                    self.open_folder(pin);
+                }
+            }
         });
         ui.horizontal(|ui| {
             ui.add_space(8.0);
@@ -321,13 +354,33 @@ impl Ide {
         let cols = ((rect.width() - 24.0) / ((CARD.x + GAP.x) * self.zoom))
             .floor()
             .max(1.0) as usize;
-        for (i, e) in self.entries.iter().enumerate() {
-            self.positions.entry(e.path.clone()).or_insert_with(|| {
-                vec2(
-                    (i % cols) as f32 * (CARD.x + GAP.x),
-                    (i / cols) as f32 * (CARD.y + GAP.y),
-                )
-            });
+        // Cards nobody has moved fall into a grid, skipping spots that a
+        // moved card already covers.
+        let taken: Vec<Vec2> = self
+            .entries
+            .iter()
+            .filter(|e| self.placed.contains(&e.path))
+            .map(|e| self.positions[&e.path])
+            .collect();
+        let mut slot = 0;
+        for e in &self.entries {
+            if self.positions.contains_key(&e.path) {
+                continue;
+            }
+            let pos = loop {
+                let p = vec2(
+                    (slot % cols) as f32 * (CARD.x + GAP.x),
+                    (slot / cols) as f32 * (CARD.y + GAP.y),
+                );
+                slot += 1;
+                let clear = taken
+                    .iter()
+                    .all(|t| (t.x - p.x).abs() >= CARD.x || (t.y - p.y).abs() >= CARD.y);
+                if clear {
+                    break p;
+                }
+            };
+            self.positions.insert(e.path.clone(), pos);
         }
         let z = self.zoom;
         let place = |pos: Vec2| Rect::from_min_size(rect.min + self.pan + pos * z, CARD * z);
@@ -365,6 +418,7 @@ impl Ide {
         let mut enter = None;
         let mut open = None;
         let mut moved = None;
+        let mut dropped = false;
         for (i, e) in self.entries.iter().enumerate() {
             let r = rects[i];
             if !r.intersects(rect) {
@@ -374,6 +428,7 @@ impl Ide {
             if resp.dragged() {
                 moved = Some((e.path.clone(), resp.drag_delta() / z));
             }
+            dropped |= resp.drag_stopped();
             if resp.double_clicked() {
                 match e.kind {
                     Kind::Folder => enter = Some(e.path.clone()),
@@ -390,6 +445,10 @@ impl Ide {
             && let Some(p) = self.positions.get_mut(&path)
         {
             *p += d;
+            self.placed.insert(path);
+        }
+        if dropped {
+            save_positions(&self.positions, &self.placed);
         }
         if let Some(dir) = enter {
             self.go(dir);
@@ -433,7 +492,11 @@ impl Ide {
 
     /// An open file: a header with its path and save, then the text.
     pub fn editor_ui(&mut self, ui: &mut egui::Ui, path: &Path) {
-        let in_engine = path.starts_with(&self.engine) && !path.starts_with(&self.world);
+        // Rust source or a manifest in Tapestry's own repository: saving it
+        // means the program itself needs building again.
+        let in_engine = path.starts_with(&self.engine)
+            && (path.extension().is_some_and(|e| e == "rs")
+                || path.file_name().is_some_and(|n| n == "Cargo.toml"));
         let Some(buf) = self.buffers.get_mut(path) else {
             ui.label("This file isn't open any more.");
             return;
@@ -697,6 +760,68 @@ fn draw_card(painter: &egui::Painter, e: &Entry, r: Rect, z: f32, hot: bool, ope
     };
     let galley = clip.layout(body, font, color, width);
     clip.galley(body_at, galley, color);
+}
+
+/// `~/.local/state/tapestry` (or under `$XDG_STATE_HOME`).
+fn state_dir() -> Option<PathBuf> {
+    let base = std::env::var_os("XDG_STATE_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| Path::new(&h).join(".local/state")))?;
+    Some(base.join("tapestry"))
+}
+
+/// `cards.tsv`: one moved card per line, `x<TAB>y<TAB>path`.
+fn load_positions() -> HashMap<PathBuf, Vec2> {
+    let Some(text) = state_dir().and_then(|d| std::fs::read_to_string(d.join("cards.tsv")).ok())
+    else {
+        return HashMap::new();
+    };
+    text.lines()
+        .filter_map(|line| {
+            let mut parts = line.splitn(3, '\t');
+            let x = parts.next()?.parse().ok()?;
+            let y = parts.next()?.parse().ok()?;
+            Some((PathBuf::from(parts.next()?), vec2(x, y)))
+        })
+        .collect()
+}
+
+fn save_positions(positions: &HashMap<PathBuf, Vec2>, placed: &HashSet<PathBuf>) {
+    let Some(dir) = state_dir() else { return };
+    let mut lines: Vec<String> = placed
+        .iter()
+        .filter_map(|p| {
+            let v = positions.get(p)?;
+            Some(format!("{}\t{}\t{}", v.x, v.y, p.display()))
+        })
+        .collect();
+    lines.sort();
+    let _ = std::fs::create_dir_all(&dir);
+    if let Err(e) = std::fs::write(dir.join("cards.tsv"), lines.join("\n") + "\n") {
+        eprintln!("couldn't remember card positions: {e}");
+    }
+}
+
+/// `pins.txt`: one pinned folder per line.
+fn load_pins() -> Vec<PathBuf> {
+    state_dir()
+        .and_then(|d| std::fs::read_to_string(d.join("pins.txt")).ok())
+        .map(|t| {
+            t.lines()
+                .filter(|l| !l.trim().is_empty())
+                .map(PathBuf::from)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn save_pins(pins: &[PathBuf]) {
+    let Some(dir) = state_dir() else { return };
+    let text: String = pins.iter().map(|p| format!("{}\n", p.display())).collect();
+    let _ = std::fs::create_dir_all(&dir);
+    if let Err(e) = std::fs::write(dir.join("pins.txt"), text) {
+        eprintln!("couldn't remember pins: {e}");
+    }
 }
 
 fn expand_home(p: &str) -> String {

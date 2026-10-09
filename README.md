@@ -61,11 +61,11 @@ Drag a tab to move it or split beside another, drag an edge to resize, ▼ to co
 tab out to make it its own window, and double-click a tab (or right-click → fill the window)
 to have it fill the window; esc comes back.
 
-**files** is a small spatial IDE. It opens any folder (type a path, or jump to *world* or
-*engine*, this repository) as note cards: folders are frames you double-click to step into,
+**files** is a small spatial IDE. It opens any folder (type a path, or click a pinned one;
+*pin* keeps the folder you're in) as note cards: folders are frames you double-click to step into,
 files are cards you double-click to open as a tab, and Markdown `[[wikilinks]]` are drawn as
 ink lines between cards, so an Obsidian vault reads as a web. Drag cards around; scroll to
-zoom. Saving a rule file changes the canvas at once. Saving the engine's own source offers
+zoom. Moved cards and pins are remembered in `~/.local/state/tapestry/`. Saving a rule file changes the canvas at once. Saving the engine's own source offers
 **rebuild**, then **restart into it**.
 
 The timeline has a lane per brush and one for rule switches. Click a keyframe to pick it
