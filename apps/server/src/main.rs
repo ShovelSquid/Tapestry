@@ -258,7 +258,9 @@ async fn guard(State(app): State<Shared>, req: Request, next: Next) -> Response 
         return StatusCode::BAD_REQUEST.into_response();
     };
     let name = host.rsplit_once(':').map_or(host.as_str(), |(n, _)| n);
-    let known = app.hosts.lock().unwrap().iter().any(|h| h == name) || name.ends_with(".ts.net");
+    // Host names are any case: macOS calls itself `HyperMutant`, browsers say `hypermutant`.
+    let name = name.to_ascii_lowercase();
+    let known = app.hosts.lock().unwrap().iter().any(|h| h.eq_ignore_ascii_case(&name)) || name.ends_with(".ts.net");
     if !known {
         return (StatusCode::FORBIDDEN, "unknown host").into_response();
     }

@@ -331,6 +331,8 @@ impl Ide {
         let devices = self.devices.clone();
         std::thread::spawn(move || {
             let mut looked_at: Option<Instant> = None;
+            // What each device's server calls itself, once asked.
+            let mut named: HashMap<String, String> = HashMap::new();
             let add = |s: Server| {
                 if s.local
                     && let Some(w) = world.lock().unwrap().as_ref()
@@ -366,9 +368,15 @@ impl Ide {
                         let me = (!first.local).then(|| first.my_ip()).flatten();
                         let this = list.iter().position(|d| me.is_some() && d.ip == me).map(|i| list.remove(i));
                         for d in list.iter().filter(|d| d.server && d.online) {
-                            let have = known.iter().any(|s| s.name == d.name);
-                            if !have && let Some(s) = Server::of(d) {
-                                add(s);
+                            let have = |name: &str| servers.lock().unwrap().iter().any(|s| s.name == name);
+                            if named.get(&d.host).is_some_and(|n| have(n)) {
+                                continue;
+                            }
+                            if let Some(s) = Server::of(d) {
+                                named.insert(d.host.clone(), s.name.clone());
+                                if !have(&s.name) {
+                                    add(s);
+                                }
                             }
                         }
                         let any_local = servers.lock().unwrap().iter().any(|s| s.local);

@@ -78,9 +78,10 @@ impl Server {
         Some(s)
     }
 
-    /// A device's server, at its Tailscale name.
+    /// A device's server, at its Tailscale name. It's named by what it calls
+    /// itself, which may not be its Tailscale name (grumbus is `tapestry-server`).
     pub fn of(d: &Device) -> Option<Self> {
-        Self::at(format!("{}:{PORT}", d.host), Some(d.name.clone()))
+        Self::at(format!("{}:{PORT}", d.host), None)
     }
 
     /// This computer's address as the server sees it: on another computer,
