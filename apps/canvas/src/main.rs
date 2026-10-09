@@ -9,6 +9,7 @@ mod highlight;
 mod ide;
 mod marks;
 mod notes;
+mod server;
 mod tabnote;
 mod term;
 mod trail;
@@ -281,7 +282,11 @@ impl App {
                     .into_iter()
                     .find(|t| format!("{t:?}").eq_ignore_ascii_case(&name))
             }),
-            ide: ide::Ide::new(engine),
+            ide: {
+                let mut ide = ide::Ide::new(engine);
+                ide.serve_world(world.clone());
+                ide
+            },
             notebook: notes::Notes::new(&world),
             highlights: highlight::Highlights::new(&cc.egui_ctx),
             marks: marks::Marks::new(),

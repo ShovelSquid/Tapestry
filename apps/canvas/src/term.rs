@@ -2,6 +2,9 @@
 //! by a VT100 parser and drawn in the paper-and-ink palette.
 //!
 //! Run anything in it, `claude` included, beside the notes it's about.
+//!
+//! With tapestry-server running, the shell lives there instead (see
+//! `server.rs`): the card shows it, and so can every other device.
 
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -12,6 +15,7 @@ use eframe::egui;
 use egui::{Color32, FontId, Pos2, Rect, Stroke, pos2, vec2};
 use portable_pty::{Child, CommandBuilder, MasterPty, PtySize, native_pty_system};
 
+use crate::server::{Link, Remote, Server};
 use crate::{FAINT, INK};
 
 const SCROLLBACK: usize = 5000;
@@ -30,9 +34,7 @@ pub struct Terminal {
     pub id: u64,
     pub cwd: PathBuf,
     parser: Arc<Mutex<vt100::Parser>>,
-    writer: Box<dyn Write + Send>,
-    master: Box<dyn MasterPty + Send>,
-    child: Box<dyn Child + Send + Sync>,
+    backend: Backend,
     exited: Arc<AtomicBool>,
     size: (u16, u16),
     /// Where the grid was last drawn and its cell size, to find the cell
@@ -51,7 +53,63 @@ pub struct Terminal {
     selecting: bool,
 }
 
+enum Backend {
+    /// A shell of the app's own, which ends with it.
+    Local {
+        writer: Box<dyn Write + Send>,
+        master: Box<dyn MasterPty + Send>,
+        child: Box<dyn Child + Send + Sync>,
+    },
+    /// A shell the server keeps.
+    Remote { link: Link, server: Arc<Server> },
+}
+
 impl Terminal {
+    /// Show a terminal the server keeps.
+    pub fn attach(server: &Arc<Server>, remote: Remote, ctx: &egui::Context) -> Self {
+        let (rows, cols) = (24, 80);
+        let parser = Arc::new(Mutex::new(vt100::Parser::new(rows, cols, SCROLLBACK)));
+        let exited = Arc::new(AtomicBool::new(false));
+        let link = server.connect(remote.id, parser.clone(), exited.clone(), ctx.clone());
+        // Its processes are only ours to follow when it runs on this machine.
+        let trail = match remote.pid {
+            Some(pid) if server.local => crate::trail::watch(pid, exited.clone(), ctx.clone()),
+            _ => Default::default(),
+        };
+        Self {
+            id: remote.id,
+            trail,
+            started: crate::trail::now(),
+            sel: None,
+            selecting: false,
+            cwd: remote.cwd,
+            parser,
+            backend: Backend::Remote {
+                link,
+                server: server.clone(),
+            },
+            exited,
+            // Unknown until drawn, so the first draw sends the card's size.
+            size: (0, 0),
+            grid: None,
+            wheel_rest: 0.0,
+        }
+    }
+
+    /// End it: the app's own shell is killed; one on the server is closed
+    /// there, for every device.
+    pub fn close(&mut self) {
+        match &mut self.backend {
+            Backend::Local { child, .. } => {
+                let _ = child.kill();
+            }
+            Backend::Remote { server, .. } => {
+                let (server, id) = (server.clone(), self.id);
+                std::thread::spawn(move || server.close(id));
+            }
+        }
+    }
+
     /// Start the user's shell in `cwd`.
     pub fn spawn(id: u64, cwd: &Path, ctx: &egui::Context) -> Result<Self, String> {
         let (rows, cols) = (24, 80);
@@ -107,9 +165,11 @@ impl Terminal {
             selecting: false,
             cwd: cwd.to_path_buf(),
             parser,
-            writer,
-            master: pair.master,
-            child,
+            backend: Backend::Local {
+                writer,
+                master: pair.master,
+                child,
+            },
             exited,
             size: (rows, cols),
             grid: None,
@@ -138,12 +198,17 @@ impl Terminal {
             return;
         }
         self.size = (rows, cols);
-        let _ = self.master.resize(PtySize {
-            rows,
-            cols,
-            pixel_width: 0,
-            pixel_height: 0,
-        });
+        match &mut self.backend {
+            Backend::Local { master, .. } => {
+                let _ = master.resize(PtySize {
+                    rows,
+                    cols,
+                    pixel_width: 0,
+                    pixel_height: 0,
+                });
+            }
+            Backend::Remote { link, .. } => link.resize(rows, cols),
+        }
         self.parser.lock().unwrap().screen_mut().set_size(rows, cols);
     }
 
@@ -225,8 +290,7 @@ impl Terminal {
         // Typing returns to the live screen, as any terminal does.
         self.parser.lock().unwrap().screen_mut().set_scrollback(0);
         self.sel = None;
-        let _ = self.writer.write_all(bytes);
-        let _ = self.writer.flush();
+        self.write_raw(bytes);
     }
 
     /// Take this frame's keyboard input (all of it: while a terminal has the
@@ -324,8 +388,13 @@ impl Terminal {
 
     /// Send without leaving history: for wheel reports, not typing.
     fn write_raw(&mut self, bytes: &[u8]) {
-        let _ = self.writer.write_all(bytes);
-        let _ = self.writer.flush();
+        match &mut self.backend {
+            Backend::Local { writer, .. } => {
+                let _ = writer.write_all(bytes);
+                let _ = writer.flush();
+            }
+            Backend::Remote { link, .. } => link.send(bytes),
+        }
     }
 
     /// The 1-based (column, row) under `pointer`, clamped to the grid.
@@ -484,8 +553,11 @@ impl Terminal {
 }
 
 impl Drop for Terminal {
+    /// The app's own shell ends with its card; one on the server outlives it.
     fn drop(&mut self) {
-        let _ = self.child.kill();
+        if let Backend::Local { child, .. } = &mut self.backend {
+            let _ = child.kill();
+        }
     }
 }
 

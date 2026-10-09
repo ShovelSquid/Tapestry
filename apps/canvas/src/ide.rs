@@ -12,15 +12,23 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 use eframe::egui;
 use egui::{Align2, Color32, CornerRadius, FontId, Pos2, Rect, RichText, Sense, Stroke, Vec2, pos2, vec2};
 
+use crate::server::{Remote, Server};
 use crate::term::Terminal;
 use crate::{DOT, FAINT, INK, MUTED, SHEET, quiet_link, title};
 
 const CARD: Vec2 = vec2(230.0, 150.0);
 const TERM: Vec2 = vec2(500.0, 310.0);
+/// The app's own terminals (no server) are numbered from here, apart from
+/// the server's.
+const LOCAL_TERMS: u64 = 1 << 40;
+
+/// The server's terminals, and when it was asked.
+type Listed = (Instant, Vec<Remote>);
 /// How long a card takes to grow to fill the surface.
 const GROW: f64 = 0.2;
 const GAP: Vec2 = vec2(30.0, 30.0);
@@ -106,6 +114,16 @@ pub struct Ide {
     build: Option<Build>,
     /// Terminals, each living in the folder it was opened in.
     terminals: Vec<Terminal>,
+    /// tapestry-server, once found, and what it last said it keeps. Found
+    /// and asked off the UI thread; see `watch_server`.
+    server: Arc<Mutex<Option<Arc<Server>>>>,
+    remote: Arc<Mutex<Option<Listed>>>,
+    watching_server: bool,
+    /// When each terminal got its card: a list asked for before then
+    /// doesn't know it yet.
+    carded: HashMap<u64, Instant>,
+    /// The world folder, for the server to serve its notes.
+    world: Arc<Mutex<Option<PathBuf>>>,
     term_pos: HashMap<u64, Vec2>,
     next_term: u64,
     /// The terminal that has the keyboard: the last one clicked, until
@@ -176,8 +194,14 @@ impl Ide {
             engine_changed: false,
             build: None,
             terminals: Vec::new(),
+            server: Arc::default(),
+            remote: Arc::default(),
+            watching_server: false,
+            carded: HashMap::new(),
+            world: Arc::default(),
             term_pos: HashMap::new(),
-            next_term: 1,
+            // The app's own terminals are numbered apart from the server's.
+            next_term: LOCAL_TERMS,
             active_term: None,
             term_drawn: false,
             term_visible: false,
@@ -206,6 +230,7 @@ impl Ide {
     /// A click decides where keys go: on a terminal, to it; anywhere else
     /// (the timeline, the canvas, an editor), back to the app.
     pub fn begin_frame(&mut self, ctx: &egui::Context) {
+        self.sync_terminals(ctx);
         self.term_visible = std::mem::take(&mut self.term_drawn);
         self.editing = None;
         self.last_term_hits = std::mem::take(&mut self.term_hits);
@@ -252,31 +277,112 @@ impl Ide {
         self.active_term.is_some() && self.term_visible
     }
 
+    /// Serve `world`'s notes from the server too, once one is found.
+    pub fn serve_world(&mut self, world: PathBuf) {
+        *self.world.lock().unwrap() = Some(world);
+    }
+
+    /// Look for tapestry-server, and keep asking it what terminals it
+    /// keeps, once a second, off the UI thread.
+    fn watch_server(&self, ctx: &egui::Context) {
+        let (server, remote, world, ctx) = (self.server.clone(), self.remote.clone(), self.world.clone(), ctx.clone());
+        std::thread::spawn(move || {
+            loop {
+                let found = server.lock().unwrap().clone();
+                match found {
+                    None => {
+                        if let Some(s) = Server::find() {
+                            if s.local
+                                && let Some(w) = world.lock().unwrap().as_ref()
+                            {
+                                s.set_world(w);
+                            }
+                            *server.lock().unwrap() = Some(Arc::new(s));
+                            continue;
+                        }
+                        std::thread::sleep(std::time::Duration::from_secs(5));
+                    }
+                    Some(s) => {
+                        let asked = Instant::now();
+                        if let Some(list) = s.list() {
+                            *remote.lock().unwrap() = Some((asked, list));
+                            ctx.request_repaint();
+                        }
+                        std::thread::sleep(std::time::Duration::from_secs(1));
+                    }
+                }
+            }
+        });
+    }
+
+    /// Match the cards to the server's terminals: one opened elsewhere (on
+    /// the phone, say) gets a card here, and one closed elsewhere loses its.
+    fn sync_terminals(&mut self, ctx: &egui::Context) {
+        if !self.watching_server {
+            self.watching_server = true;
+            self.watch_server(ctx);
+        }
+        let Some(server) = self.server.lock().unwrap().clone() else { return };
+        let Some((asked, list)) = self.remote.lock().unwrap().take() else { return };
+        let gone: Vec<u64> = self
+            .terminals
+            .iter()
+            .filter(|t| t.id < LOCAL_TERMS && !list.iter().any(|r| r.id == t.id))
+            .filter(|t| self.carded.get(&t.id).is_none_or(|&at| at < asked))
+            .map(|t| t.id)
+            .collect();
+        for id in gone {
+            self.drop_terminal(id);
+        }
+        for r in list {
+            if !self.terminals.iter().any(|t| t.id == r.id) {
+                let home = r.cwd.canonicalize().unwrap_or_else(|_| r.cwd.clone());
+                let t = Terminal::attach(&server, Remote { cwd: home.clone(), ..r }, ctx);
+                self.add_terminal(t, home, false);
+            }
+        }
+    }
+
     fn spawn_terminal(&mut self, ctx: &egui::Context) {
-        let id = self.next_term;
-        match Terminal::spawn(id, &self.here, ctx) {
+        let server = self.server.lock().unwrap().clone();
+        let made = match &server {
+            Some(server) => server.create(&self.here).map(|r| Terminal::attach(server, r, ctx)),
+            None => Terminal::spawn(self.next_term, &self.here, ctx).inspect(|_| self.next_term += 1),
+        };
+        match made {
             Ok(t) => {
-                self.next_term += 1;
-                // In the middle of what's in view, a little offset from any
-                // terminal already there.
-                let view = self.view.size() / 2.0 - self.pan;
-                let nudge = self
-                    .terminals
-                    .iter()
-                    .filter(|t| t.cwd == self.here)
-                    .count() as f32
-                    * 28.0;
-                let pos = view / self.zoom - TERM / 2.0 + Vec2::splat(nudge);
-                self.term_pos.insert(id, pos);
-                self.term_home.insert(id, self.here.clone());
-                self.terminals.push(t);
-                self.active_term = Some(id);
+                let home = self.here.clone();
+                self.add_terminal(t, home, true);
             }
             Err(e) => eprintln!("couldn't start a terminal: {e}"),
         }
     }
 
+    /// Put a terminal's card in `home`: in the middle of what's in view, a
+    /// little offset from any terminal already there.
+    fn add_terminal(&mut self, t: Terminal, home: PathBuf, active: bool) {
+        let id = t.id;
+        let view = self.view.size() / 2.0 - self.pan;
+        let nudge = self.terminals.iter().filter(|t| t.cwd == home).count() as f32 * 28.0;
+        let pos = view / self.zoom - TERM / 2.0 + Vec2::splat(nudge);
+        self.term_pos.entry(id).or_insert(pos);
+        self.term_home.insert(id, home);
+        self.carded.insert(id, Instant::now());
+        self.terminals.push(t);
+        if active {
+            self.active_term = Some(id);
+        }
+    }
+
+    /// × on a card: the terminal ends, here and on every device.
     fn close_terminal(&mut self, id: u64) {
+        if let Some(t) = self.terminals.iter_mut().find(|t| t.id == id) {
+            t.close();
+        }
+        self.drop_terminal(id);
+    }
+
+    fn drop_terminal(&mut self, id: u64) {
         self.terminals.retain(|t| t.id != id);
         if self.active_term == Some(id) {
             self.active_term = None;
