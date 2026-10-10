@@ -292,6 +292,11 @@ impl Timeline {
         })
     }
 
+    /// Let mimics roam in depth from the playhead on, or not.
+    pub fn set_depth(&mut self, on: bool) -> KeyId {
+        self.swarm(Body::Depth { on })
+    }
+
     /// Take hold of a mimic at the playhead. It follows
     /// [`Timeline::extend_drag`] while time runs, until [`Timeline::end_drag`].
     pub fn begin_drag(&mut self, mimic: u64, pos: Vec2) -> KeyId {

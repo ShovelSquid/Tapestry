@@ -20,7 +20,7 @@
 
 use std::collections::HashMap;
 
-use glam::Vec2;
+use glam::{Vec2, Vec3};
 
 use crate::key::{DT, Tick};
 use crate::link::{Link, pair};
@@ -38,13 +38,15 @@ const PULSE_TICKS: f32 = 36.0;
 const HEAR: f32 = 0.5;
 /// Ticks a cut pair waits before either may take hold of the other again.
 const CUT_FOR: Tick = 600;
+/// How far in front of and behind the paper mimics roam, in depth.
+pub const DEPTH: f32 = 450.0;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Hold {
     /// Reaching for `goal`, or curled up.
     Free,
     /// Gripping the paper here, and pulling the core towards it.
-    Ground(Vec2),
+    Ground(Vec3),
     /// Holding the mimic with this id: acting out their link.
     Mimic(u64),
 }
@@ -62,14 +64,14 @@ pub struct Pulse {
 
 #[derive(Clone, Debug)]
 pub struct Arm {
-    pub points: [Vec2; SEGS],
-    prev: [Vec2; SEGS],
+    pub points: [Vec3; SEGS],
+    prev: [Vec3; SEGS],
     /// Which way it points from the core when nothing else says.
-    home: Vec2,
+    home: Vec3,
     /// How long it is now: it grows while reaching and shrinks while pulling.
     pub length: f32,
     pub hold: Hold,
-    goal: Vec2,
+    goal: Vec3,
     /// Reaching for `goal`; else curled up, resting.
     reaching: bool,
     /// The mimic it's reaching for, if any.
@@ -92,8 +94,10 @@ pub struct Carried {
 #[derive(Clone, Debug)]
 pub struct Mimic {
     pub id: u64,
-    pub core: Vec2,
-    vel: Vec2,
+    /// Where it is: x and y on the canvas, z in front of (less than 0) or
+    /// behind (more than 0) the paper.
+    pub core: Vec3,
+    vel: Vec3,
     /// The core's radius; tentacles reach eleven times it.
     pub size: f32,
     pub species: Species,
@@ -110,30 +114,34 @@ pub struct Mimic {
     pub jiggle: f32,
     jiggle_vel: f32,
     /// Which way it's wandering.
-    heading: Vec2,
+    heading: Vec3,
     pub arms: Vec<Arm>,
     pub made_by: MadeBy,
 }
 
 impl Mimic {
-    pub(crate) fn new(id: u64, at: Vec2, size: f32, made_by: MadeBy) -> Self {
+    pub(crate) fn new(id: u64, at: Vec3, size: f32, made_by: MadeBy) -> Self {
         let size = size.clamp(4.0, 16.0);
         let n = if unit(id, 1) < 0.5 { 4 } else { 5 };
         // Evenly round the core, from a turn of its own. cos and sin of a
         // quarter and a fifth of a turn, written out.
         let (c, s) = if n == 4 { (0.0, 1.0) } else { (0.309_017, 0.951_056_5) };
         let mut dir = disk(id, 2).normalize_or(Vec2::X);
+        // Each tentacle tilts out of the paper a little, so in depth they
+        // reach every way.
+        let tilt = |k: usize| (unit(id, 30 + k as u64) - 0.5) * 0.9;
         let mut arms = Vec::with_capacity(n);
         for k in 0..n {
             let length = size * 3.0;
+            let home = dir.extend(tilt(k)).normalize();
             let mut points = [at; SEGS];
             for (i, p) in points.iter_mut().enumerate() {
-                *p = at + dir * length * i as f32 / (SEGS - 1) as f32;
+                *p = at + home * length * i as f32 / (SEGS - 1) as f32;
             }
             arms.push(Arm {
                 points,
                 prev: points,
-                home: dir,
+                home,
                 length,
                 hold: Hold::Free,
                 goal: points[SEGS - 1],
@@ -150,7 +158,7 @@ impl Mimic {
         Self {
             id,
             core: at,
-            vel: Vec2::ZERO,
+            vel: Vec3::ZERO,
             size,
             species: Species::of(id),
             state: mind::think(&[0.0; N], &input, &[0.0; N]),
@@ -160,7 +168,7 @@ impl Mimic {
             pinned: false,
             jiggle: 0.0,
             jiggle_vel: 0.0,
-            heading: disk(id, 4).normalize_or(Vec2::Y),
+            heading: disk(id, 4).normalize_or(Vec2::Y).extend(0.0),
             arms,
             made_by,
         }
@@ -238,6 +246,9 @@ pub struct Swarm {
     /// How alike two minds in the swarm usually are: the mean and spread of
     /// their likeness, over a steady sample of pairs, as of the last thought.
     pub typical: (f32, f32),
+    /// Mimics roam in depth, in front of and behind the paper. Without, the
+    /// paper pulls them flat.
+    pub depth: bool,
 }
 
 /// A pulse got to the end of its tentacle: whose core takes it in.
@@ -296,7 +307,7 @@ impl Swarm {
             m.note = Some(note);
             return;
         }
-        let mut m = Mimic::new(id, pos, 9.0, made_by);
+        let mut m = Mimic::new(id, pos.extend(0.0), 9.0, made_by);
         m.input = vector;
         m.state = mind::think(&[0.0; N], &vector, &[0.0; N]);
         m.note = Some(note);
@@ -357,8 +368,12 @@ impl Swarm {
         }
     }
 
-    /// One tick. `drags` are mimics the author has hold of, and where.
+    /// One tick. `drags` are mimics the author has hold of, and where on
+    /// the canvas (they keep their depth).
     pub(crate) fn step(&mut self, tick: Tick, drags: &[(u64, Vec2)]) {
+        let depth = self.depth;
+        // Out of depth, what points into the paper doesn't count.
+        let flat = |v: Vec3| if depth { v } else { Vec3::new(v.x, v.y, 0.0) };
         let n = self.mimics.len();
         if n == 0 {
             return;
@@ -366,7 +381,7 @@ impl Swarm {
         self.cut.retain(|c| c.2 > tick);
         // Everyone as they were at the start of the tick: what one mimic
         // does can't depend on what those before it did this tick.
-        let cores: Vec<Vec2> = self.mimics.iter().map(|m| m.core).collect();
+        let cores: Vec<Vec3> = self.mimics.iter().map(|m| m.core).collect();
         let states: Vec<Vector> = self.mimics.iter().map(|m| m.state).collect();
         let ids: Vec<u64> = self.mimics.iter().map(|m| m.id).collect();
         let index: HashMap<u64, usize> = ids.iter().enumerate().map(|(i, &id)| (id, i)).collect();
@@ -392,7 +407,7 @@ impl Swarm {
         let refused: Vec<(u64, u64)> = self.verdicts.iter().filter(|v| !v.keep).map(|v| (v.a, v.b)).collect();
         let turned_down = |x: u64, y: u64| refused.contains(&pair(x, y));
 
-        let mut force = vec![Vec2::ZERO; n];
+        let mut force = vec![Vec3::ZERO; n];
         let mut arrivals: Vec<Arrival> = Vec::new();
         let mut made: Vec<(u64, u64)> = Vec::new();
 
@@ -402,10 +417,9 @@ impl Swarm {
             let (size, reach, temper) = (m.size, m.reach(), m.species.temper());
 
             // Wander: the heading drifts, and turns back from the edges.
-            let turn = (unit(id, 1000 + tick as u64) - 0.5) * 0.12;
-            m.heading = rotate(m.heading, turn);
+            m.heading = flat(m.heading + ball(id, 1000 + tick as u64) * 0.1).normalize_or(Vec3::Y);
             let margin = reach;
-            let mut back = Vec2::ZERO;
+            let mut back = Vec3::ZERO;
             if m.core.x < margin {
                 back.x += 1.0;
             }
@@ -418,6 +432,9 @@ impl Swarm {
             if m.core.y > HEIGHT - margin {
                 back.y -= 1.0;
             }
+            if depth && m.core.z.abs() > DEPTH - margin {
+                back.z -= m.core.z.signum();
+            }
             // Holding no one, it heads for the nearest mimic out of reach.
             let roam = reach * temper.roam;
             let near = (0..n)
@@ -425,8 +442,8 @@ impl Swarm {
                 .map(|j| (cores[j].distance_squared(m.core), j))
                 .filter(|&(d, _)| d < roam * roam)
                 .min_by(|a, b| a.0.total_cmp(&b.0));
-            let toward = near.map_or(Vec2::ZERO, |(_, j)| (cores[j] - m.core).normalize_or(Vec2::ZERO));
-            m.heading = (m.heading + back * 0.06 + toward * 0.03).normalize_or(Vec2::Y);
+            let toward = near.map_or(Vec3::ZERO, |(_, j)| (cores[j] - m.core).normalize_or(Vec3::ZERO));
+            m.heading = flat(m.heading + back * 0.06 + toward * 0.03).normalize_or(Vec3::Y);
 
             let mut gripping = m.arms.iter().filter(|a| matches!(a.hold, Hold::Ground(_))).count();
             let mut holding_here = held_count[i];
@@ -468,8 +485,8 @@ impl Swarm {
                                 arm.aim = Some(ids[j]);
                                 holding_here += 1;
                             } else {
-                                let jitter = disk(id, salt) * 0.6;
-                                let dir = (m.heading * 1.1 + arm.home * 0.8 + jitter).normalize_or(arm.home);
+                                let jitter = ball(id, salt) * 0.6;
+                                let dir = flat(m.heading * 1.1 + arm.home * 0.8 + jitter).normalize_or(arm.home);
                                 arm.goal = core + dir * reach * (0.6 + 0.35 * unit(id, salt ^ 7));
                             }
                             arm.reaching = true;
@@ -511,7 +528,7 @@ impl Swarm {
                         } else {
                             // Curled up, near the core.
                             arm.length += (reach * 0.3 - arm.length) * 0.08;
-                            arm.goal = core + arm.home * arm.length;
+                            arm.goal = core + flat(arm.home).normalize_or(arm.home) * arm.length;
                         }
                     }
                     Hold::Ground(at) => {
@@ -615,7 +632,7 @@ impl Swarm {
                 let dist = d.length();
                 let near = (self.mimics[i].reach() + self.mimics[j].reach()) * 0.22;
                 if dist < near {
-                    let dir = if dist > 1e-4 { d / dist } else { disk(ids[i] ^ ids[j], 5).normalize_or(Vec2::X) };
+                    let dir = if dist > 1e-4 { d / dist } else { flat(ball(ids[i] ^ ids[j], 5)).normalize_or(Vec3::X) };
                     let push = dir * (near - dist) * 12.0;
                     force[i] += push;
                     force[j] -= push;
@@ -628,16 +645,26 @@ impl Swarm {
             let before = m.core;
             let r = m.size;
             if let Some(&(_, to)) = drags.iter().find(|d| d.0 == m.id) {
-                // Held by the author: it goes where it's put.
-                m.core = Vec2::new(to.x.clamp(r, WIDTH - r), to.y.clamp(r, HEIGHT - r));
-                m.vel = Vec2::ZERO;
+                // Held by the author: it goes where it's put, at its depth.
+                m.core = Vec3::new(to.x.clamp(r, WIDTH - r), to.y.clamp(r, HEIGHT - r), m.core.z);
+                m.vel = Vec3::ZERO;
             } else if m.pinned {
-                m.vel = Vec2::ZERO;
+                m.vel = Vec3::ZERO;
             } else {
-                m.vel = (m.vel + *f * DT) * 0.86;
+                let mut f = *f;
+                if !depth {
+                    // The paper pulls it flat.
+                    f.z = -m.core.z * 12.0 - m.vel.z * 2.0;
+                }
+                m.vel = (m.vel + f * DT) * 0.86;
                 m.vel = m.vel.clamp_length_max(140.0);
                 m.core += m.vel * DT;
-                m.core = Vec2::new(m.core.x.clamp(r, WIDTH - r), m.core.y.clamp(r, HEIGHT - r));
+                let deep = if depth { DEPTH - r } else { DEPTH };
+                m.core = Vec3::new(
+                    m.core.x.clamp(r, WIDTH - r),
+                    m.core.y.clamp(r, HEIGHT - r),
+                    m.core.z.clamp(-deep, deep),
+                );
             }
             if thinking {
                 m.state = mind::think(&m.state, &m.input, &m.inbox);
@@ -681,7 +708,7 @@ impl Arm {
     /// where it's going, with a slow wave along it.
     /// `tip_to` is what the tip is holding, if anything; `sway` where its
     /// wave is up to.
-    fn body(&mut self, core: Vec2, moved: Vec2, tip_to: Option<Vec2>, sway: f32) {
+    fn body(&mut self, core: Vec3, moved: Vec3, tip_to: Option<Vec3>, sway: f32) {
         let seg = self.length / (SEGS - 1) as f32;
         for i in 1..SEGS {
             let p = self.points[i];
@@ -699,7 +726,8 @@ impl Arm {
         }
         // A wave along the tentacle, side to side, slower near the root.
         let along = (self.points[SEGS - 1] - core).normalize_or(self.home);
-        let side = Vec2::new(-along.y, along.x);
+        // Sideways: across the paper's plane where it can be.
+        let side = along.cross(Vec3::Z).try_normalize().unwrap_or(Vec3::X);
         for i in 1..SEGS - 1 {
             let f = i as f32 / (SEGS - 1) as f32;
             self.points[i] += side * wave(sway * 2.0 + f * 3.0) * 0.35 * f;
@@ -762,10 +790,15 @@ fn wave(x: f32) -> f32 {
     -y
 }
 
-/// Turn a unit vector by a small angle, renormalised.
-fn rotate(v: Vec2, a: f32) -> Vec2 {
-    let a2 = a * a;
-    let s = a * (1.0 - a2 / 6.0);
-    let c = 1.0 - a2 / 2.0;
-    Vec2::new(v.x * c - v.y * s, v.x * s + v.y * c).normalize_or(v)
+/// A steady point in the unit ball for `id` and `salt`.
+fn ball(id: u64, salt: u64) -> Vec3 {
+    let mut j = 0;
+    loop {
+        let k = salt.wrapping_mul(31).wrapping_add(j);
+        let v = Vec3::new(unit(id, k) * 2.0 - 1.0, unit(id, k ^ 0x5555) * 2.0 - 1.0, unit(id, k ^ 0xaaaa) * 2.0 - 1.0);
+        if v.length_squared() <= 1.0 {
+            return v;
+        }
+        j += 1;
+    }
 }

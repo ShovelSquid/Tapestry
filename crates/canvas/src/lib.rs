@@ -25,7 +25,7 @@ mod tests;
 
 pub use key::{Body, Brush, DT, KeyId, Keyframe, Sample, Stroke, TICKS_PER_SECOND, Tick};
 pub use link::{Link, PROPOSE_AFTER, STRONG};
-pub use mimic::{Arm, Carried, Hold, Mimic, Proposal, Pulse, SEGS, Swarm, Verdict};
+pub use mimic::{Arm, Carried, DEPTH, Hold, Mimic, Proposal, Pulse, SEGS, Swarm, Verdict};
 pub use mind::{N, Species, THINK, Vector, color as mind_color};
 pub use text::{note_id, shared as shared_words, vector as note_vector};
 pub use rules::{Basic, Becomes, Problem, Prop, RuleNote, Rulebook, grammar, is_rule_line};

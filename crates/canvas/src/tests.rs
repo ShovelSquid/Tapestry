@@ -372,7 +372,7 @@ fn mimics_wander_and_replay_the_same() {
     let mut t = timeline();
     mimics(&mut t, 6);
     t.seek(5);
-    let start: Vec<Vec2> = swarm(&t).mimics.iter().map(|m| m.core).collect();
+    let start: Vec<glam::Vec3> = swarm(&t).mimics.iter().map(|m| m.core).collect();
     assert_eq!(start.len(), 6);
     t.seek(900);
     let live = t.state().fingerprint();
@@ -495,7 +495,7 @@ fn dragging_a_mimic_pulls_its_partners() {
     let s = swarm(&t);
     let l = s.links.iter().max_by(|a, b| a.weight.total_cmp(&b.weight)).expect("no links");
     let (held, partner) = (l.a, l.b);
-    let from = s.mimic(held).unwrap().core;
+    let from = s.mimic(held).unwrap().core.truncate();
     let partner_from = s.mimic(partner).unwrap().core;
     let to = Vec2::new(if from.x < WIDTH / 2.0 { from.x + 400.0 } else { from.x - 400.0 }, from.y);
     let id = t.begin_drag(held, from);
@@ -506,7 +506,7 @@ fn dragging_a_mimic_pulls_its_partners() {
     t.end_drag(id);
     t.seek(t.playhead());
     let s = swarm(&t);
-    assert!(s.mimic(held).unwrap().core.distance(to) < 2.0, "the dragged mimic isn't where it was put");
+    assert!(s.mimic(held).unwrap().core.truncate().distance(to) < 2.0, "the dragged mimic isn't where it was put");
     // Let go, the group catches up.
     let settled = t.playhead() + 3 * TICKS_PER_SECOND;
     t.seek(settled);
@@ -567,4 +567,27 @@ fn topic_notes() -> Vec<(String, usize, String)> {
         }
     }
     out
+}
+
+#[test]
+fn in_depth_mimics_spread_out_and_flatten_again() {
+    let mut t = timeline();
+    notes_on_canvas(&mut t);
+    mimics(&mut t, 6);
+    t.seek(30);
+    t.set_depth(true);
+    t.seek(90 * TICKS_PER_SECOND);
+    let deep = swarm(&t).mimics.iter().map(|m| m.core.z.abs()).fold(0.0, f32::max);
+    assert!(deep > 100.0, "no mimic went into depth (deepest {deep})");
+    for m in &swarm(&t).mimics {
+        assert!(m.core.z.abs() <= DEPTH && m.arms.iter().all(|a| a.points.iter().all(|p| p.is_finite())));
+    }
+    let live = t.state().fingerprint();
+    t.seek(0);
+    t.seek(90 * TICKS_PER_SECOND);
+    assert_eq!(t.state().fingerprint(), live, "depth didn't replay the same");
+    t.set_depth(false);
+    t.seek(t.playhead() + 20 * TICKS_PER_SECOND);
+    let left = swarm(&t).mimics.iter().map(|m| m.core.z.abs()).fold(0.0, f32::max);
+    assert!(left < 5.0, "out of depth, a mimic stayed {left} off the paper");
 }

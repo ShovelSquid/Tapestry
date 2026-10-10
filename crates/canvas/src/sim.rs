@@ -234,6 +234,7 @@ impl State {
         for m in &self.swarm.mimics {
             h = mix(h, m.id);
             h = mix(h, (m.core.x.to_bits() as u64) << 32 | m.core.y.to_bits() as u64);
+            h = mix(h, m.core.z.to_bits() as u64);
             for s in m.state {
                 h = mix(h, s.to_bits() as u64);
             }
@@ -578,6 +579,7 @@ impl State {
             Body::Cut { a, b } => self.swarm.cut(*a, *b, tick),
             Body::Pin { mimic, on } => self.swarm.pin(*mimic, *on),
             Body::Verdict { a, b, keep } => self.swarm.rule(a, b, *keep, tick),
+            Body::Depth { on } => self.swarm.depth = *on,
             Body::Drag { .. } | Body::Stroke(_) | Body::Rule { .. } => {}
         }
     }
@@ -607,7 +609,7 @@ impl State {
                 self.particles.push(p);
             }
             Brush::Tree => self.plant(seed, dab.pos, r, made_by),
-            Brush::Mimic => self.swarm.add(Mimic::new(seed, dab.pos, r, made_by)),
+            Brush::Mimic => self.swarm.add(Mimic::new(seed, dab.pos.extend(0.0), r, made_by)),
             Brush::Smudge => {
                 let reach = r * 2.5;
                 for p in &mut self.particles {

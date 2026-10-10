@@ -97,6 +97,9 @@ pub enum Body {
     /// The author's say on a proposal: the notes `a` and `b` belong
     /// together (keep) or don't.
     Verdict { a: String, b: String, keep: bool },
+    /// Let mimics roam in depth, in front of and behind the paper, or pull
+    /// them flat onto it.
+    Depth { on: bool },
 }
 
 impl Body {
