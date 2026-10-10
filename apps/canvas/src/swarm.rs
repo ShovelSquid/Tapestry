@@ -11,8 +11,8 @@ use std::collections::HashMap;
 
 use eframe::egui;
 use egui::{Align2, Color32, CornerRadius, FontId, Pos2, Rect, Stroke, pos2, vec2};
-use glam::Vec2;
-use tapestry_canvas::{Hold, MadeBy, Mimic, Proposal, SEGS, Swarm, shared_words};
+use glam::{Vec2, Vec3};
+use tapestry_canvas::{DEPTH, HEIGHT, Hold, MadeBy, Mimic, Proposal, SEGS, Swarm, WIDTH, shared_words};
 
 use crate::{DOT, FAINT, INK, MUTED, SHEET, quiet_link, rgba};
 
@@ -31,6 +31,88 @@ pub const DEMO_NOTES: &[(&str, &str)] = &[
     ("demo-nebula", "# Nebula\nA long telescope exposure shows the nebula: a nursery where gravity pulls gas into new stars, far across the galaxy."),
     ("demo-asteroid", "# Asteroid\nThe asteroid's orbit crosses ours; gravity from the planet bends its path, and the telescope tracks every pass."),
 ];
+
+/// Which way the canvas is turned, for seeing the mimics in depth. Only how
+/// it's drawn: the canvas itself doesn't change.
+#[derive(Clone, Copy, Default, PartialEq)]
+pub struct View {
+    /// Turned about the up-down axis, in radians.
+    pub yaw: f32,
+    /// Tipped about the left-right axis.
+    pub pitch: f32,
+}
+
+impl View {
+    pub fn turned(&self) -> bool {
+        *self != View::default()
+    }
+
+    /// Turn by a pointer drag of `by` points.
+    pub fn turn(&mut self, by: egui::Vec2) {
+        self.yaw = (self.yaw + by.x * 0.006).clamp(-1.4, 1.4);
+        self.pitch = (self.pitch - by.y * 0.006).clamp(-1.4, 1.4);
+    }
+}
+
+/// From the canvas (x, y on the paper, z in depth) to the screen and back.
+/// Facing the paper, it's the plain flat mapping; turned, things in depth
+/// shift and shrink with distance.
+pub struct Camera {
+    origin: Pos2,
+    scale: f32,
+    /// Rows of the turn.
+    r: [Vec3; 3],
+}
+
+/// How far the eye is from the paper, in canvas units.
+const EYE: f32 = 2200.0;
+
+impl Camera {
+    pub fn new(origin: Pos2, scale: f32, view: View) -> Self {
+        let (sy, cy) = view.yaw.sin_cos();
+        let (sp, cp) = view.pitch.sin_cos();
+        // Yaw about y, then pitch about x.
+        let r = [
+            Vec3::new(cy, 0.0, sy),
+            Vec3::new(sp * sy, cp, -sp * cy),
+            Vec3::new(-cp * sy, sp, cp * cy),
+        ];
+        Self { origin, scale, r }
+    }
+
+    fn centre() -> Vec3 {
+        Vec3::new(WIDTH / 2.0, HEIGHT / 2.0, 0.0)
+    }
+
+    /// Where `p` shows, how much it's shrunk by distance, and its depth
+    /// from the eye's point of view (more is farther).
+    pub fn project(&self, p: Vec3) -> (Pos2, f32, f32) {
+        let d = p - Self::centre();
+        let q = Vec3::new(self.r[0].dot(d), self.r[1].dot(d), self.r[2].dot(d));
+        let f = EYE / (EYE + q.z).max(1.0);
+        let c = Self::centre();
+        let at = self.origin + vec2(c.x + q.x * f, c.y + q.y * f) * self.scale;
+        (at, f, q.z)
+    }
+
+    pub fn flat(&self, p: Vec2) -> Pos2 {
+        self.project(p.extend(0.0)).0
+    }
+
+    /// The point at depth `z` that shows at `screen`: where the pointer is
+    /// on the paper (z = 0), or at a mimic's depth.
+    pub fn unproject(&self, screen: Pos2, z: f32) -> Vec2 {
+        let c = Self::centre();
+        let u = (screen - self.origin) / self.scale - vec2(c.x, c.y);
+        // Back through the turn: columns of the rows.
+        let back = |v: Vec3| self.r[0] * v.x + self.r[1] * v.y + self.r[2] * v.z;
+        let a = back(Vec3::new(u.x, u.y, 0.0));
+        let b = back(Vec3::new(u.x / EYE, u.y / EYE, 1.0));
+        let t = if b.z.abs() > 1e-4 { (z - a.z) / b.z } else { 0.0 };
+        let p = c + a + b * t;
+        Vec2::new(p.x, p.y)
+    }
+}
 
 /// The title of a note: its first `#` line, or else its first line.
 pub fn title(text: &str) -> String {
@@ -52,66 +134,77 @@ fn short(s: &str, n: usize) -> String {
     }
 }
 
-/// Every link, then every mimic, then the notes' names.
-pub fn draw(
-    painter: &egui::Painter,
-    swarm: &Swarm,
-    to_screen: &impl Fn(Vec2) -> Pos2,
-    scale: f32,
-    focus: Option<MadeBy>,
-) {
+/// Every link, then every mimic, then the notes' names; farthest first,
+/// and in depth, fainter the farther.
+pub fn draw(painter: &egui::Painter, swarm: &Swarm, cam: &Camera, focus: Option<MadeBy>) {
     let dim = |m: &Mimic| matches!(focus, Some(made_by) if m.made_by != made_by);
+    let fog = |depth: f32| (1.0 - (depth / DEPTH).clamp(-1.0, 1.0) * 0.4).clamp(0.35, 1.0);
     for l in &swarm.links {
         let (Some(a), Some(b)) = (swarm.mimic(l.a), swarm.mimic(l.b)) else { continue };
+        let ((pa, fa, da), (pb, fb, db)) = (cam.project(a.core), cam.project(b.core));
         let (color, width) = if l.pinned {
             (DOT.gamma_multiply(0.8), 2.5)
         } else {
             (rgba(22, 25, 27, (25.0 + 140.0 * l.weight) as u8), 0.6 + 2.0 * l.weight)
         };
+        let color = color.gamma_multiply(fog((da + db) / 2.0));
         let color = if dim(a) && dim(b) { color.gamma_multiply(0.15) } else { color };
-        painter.line_segment([to_screen(a.core), to_screen(b.core)], Stroke::new(width * scale.max(0.6), color));
+        let width = width * cam.scale.max(0.6) * (fa + fb) / 2.0;
+        painter.line_segment([pa, pb], Stroke::new(width, color));
     }
-    for m in &swarm.mimics {
-        draw_mimic(painter, swarm, m, to_screen, scale, dim(m));
+    let mut order: Vec<(f32, &Mimic)> = swarm.mimics.iter().map(|m| (cam.project(m.core).2, m)).collect();
+    order.sort_by(|a, b| b.0.total_cmp(&a.0));
+    for (depth, m) in &order {
+        draw_mimic(painter, swarm, m, cam, fog(*depth), dim(m));
     }
-    for m in &swarm.mimics {
+    for (depth, m) in &order {
         if let Some(note) = &m.note {
-            let at = to_screen(m.core) + vec2(0.0, (m.size * 1.6 + 4.0) * scale);
-            let color = if dim(m) { FAINT.gamma_multiply(0.3) } else { MUTED };
-            painter.text(at, Align2::CENTER_TOP, short(&note.title, 22), FontId::proportional(13.0), color);
+            let (at, f, _) = cam.project(m.core);
+            let at = at + vec2(0.0, (m.size * 1.6 + 4.0) * cam.scale * f);
+            let color = if dim(m) { FAINT.gamma_multiply(0.3) } else { MUTED.gamma_multiply(fog(*depth)) };
+            painter.text(at, Align2::CENTER_TOP, short(&note.title, 22), FontId::proportional(13.0 * f.clamp(0.7, 1.3)), color);
         }
     }
+}
+
+/// The paper's edges, when the canvas is turned and they're not the sheet's.
+pub fn draw_paper(painter: &egui::Painter, cam: &Camera) {
+    let corners = [Vec2::ZERO, Vec2::new(WIDTH, 0.0), Vec2::new(WIDTH, HEIGHT), Vec2::new(0.0, HEIGHT)];
+    let mut pts: Vec<Pos2> = corners.iter().map(|c| cam.flat(*c)).collect();
+    pts.push(pts[0]);
+    painter.add(egui::Shape::line(pts, Stroke::new(1.0, FAINT.gamma_multiply(0.5))));
 }
 
 /// A mimic: inky tentacles, thick at the root and fine at the tip (holding
 /// another, as thick as their link is strong), messages running along them
 /// as dots in the sender's colour, and its core on top.
-fn draw_mimic(painter: &egui::Painter, swarm: &Swarm, m: &Mimic, to_screen: &impl Fn(Vec2) -> Pos2, scale: f32, dim: bool) {
-    let fade = |c: Color32| if dim { c.gamma_multiply(0.12) } else { c };
+fn draw_mimic(painter: &egui::Painter, swarm: &Swarm, m: &Mimic, cam: &Camera, fog: f32, dim: bool) {
+    let fade = |c: Color32| if dim { c.gamma_multiply(0.12) } else { c.gamma_multiply(fog) };
     let line = fade(rgba(22, 25, 27, 255));
+    let scale = cam.scale;
     for arm in &m.arms {
         let thick = match arm.hold {
             Hold::Mimic(other) => 0.7 + 0.8 * swarm.link(m.id, other).map_or(0.3, |l| l.weight),
             _ => 1.0,
         };
-        let pts: Vec<Pos2> = arm.points.iter().map(|p| to_screen(*p)).collect();
+        let pts: Vec<(Pos2, f32)> = arm.points.iter().map(|p| { let (s, f, _) = cam.project(*p); (s, f) }).collect();
         for (i, w) in pts.windows(2).enumerate() {
             let f = i as f32 / (SEGS - 1) as f32;
-            let width = (m.size * 0.5 * (1.0 - f) * thick + 0.6) * scale;
-            painter.line_segment([w[0], w[1]], Stroke::new(width.max(0.8), line));
-            painter.circle_filled(w[1], width * 0.5, line);
+            let width = (m.size * 0.5 * (1.0 - f) * thick + 0.6) * scale * w[1].1;
+            painter.line_segment([w[0].0, w[1].0], Stroke::new(width.max(0.8), line));
+            painter.circle_filled(w[1].0, width * 0.5, line);
         }
         for pulse in &arm.pulses {
             let at = pulse.at.clamp(0.0, 1.0) * (SEGS - 1) as f32;
             let i = (at as usize).min(SEGS - 2);
-            let p = pts[i].lerp(pts[i + 1], at - i as f32);
+            let p = pts[i].0.lerp(pts[i + 1].0, at - i as f32);
             let color = tapestry_canvas::mind_color(&pulse.message);
-            painter.circle_filled(p, (m.size * 0.42 * scale).max(2.0), fade(ink(color, 240)));
+            painter.circle_filled(p, (m.size * 0.42 * scale * pts[i].1).max(2.0), fade(ink(color, 240)));
         }
     }
     // The core bulges as messages get in.
-    let r = m.size * (1.0 + 0.3 * m.jiggle.clamp(-1.0, 1.0)) * scale;
-    let c = to_screen(m.core);
+    let (c, f, _) = cam.project(m.core);
+    let r = m.size * (1.0 + 0.3 * m.jiggle.clamp(-1.0, 1.0)) * scale * f;
     painter.circle_filled(c, r * 1.12, line);
     painter.circle_filled(c, r, fade(ink(m.color(), 255)));
     if m.pinned {
@@ -119,28 +212,30 @@ fn draw_mimic(painter: &egui::Painter, swarm: &Swarm, m: &Mimic, to_screen: &imp
     }
 }
 
-/// The mimic whose core is under `at`, if any (`slack` in canvas units).
-pub fn mimic_at(swarm: &Swarm, at: Vec2, slack: f32) -> Option<u64> {
+/// The mimic whose core shows under `at` on screen, nearest the eye first.
+pub fn mimic_at(swarm: &Swarm, cam: &Camera, at: Pos2) -> Option<u64> {
     swarm
         .mimics
         .iter()
-        .map(|m| (m.core.distance(at), m))
-        .filter(|(d, m)| *d < m.size * 1.6 + slack)
+        .filter_map(|m| {
+            let (c, f, depth) = cam.project(m.core);
+            (c.distance(at) < (m.size * 1.6 * f + 4.0) * cam.scale.max(0.5)).then_some((depth, m.id))
+        })
         .min_by(|a, b| a.0.total_cmp(&b.0))
-        .map(|(_, m)| m.id)
+        .map(|(_, id)| id)
 }
 
-/// The link passing within `within` of `at`, nearest first.
-pub fn link_at(swarm: &Swarm, at: Vec2, within: f32) -> Option<(u64, u64)> {
+/// The link that shows within a few points of `at` on screen.
+pub fn link_at(swarm: &Swarm, cam: &Camera, at: Pos2) -> Option<(u64, u64)> {
     swarm
         .links
         .iter()
         .filter_map(|l| {
-            let (a, b) = (swarm.mimic(l.a)?.core, swarm.mimic(l.b)?.core);
+            let (a, b) = (cam.project(swarm.mimic(l.a)?.core).0, cam.project(swarm.mimic(l.b)?.core).0);
             let ab = b - a;
-            let t = ((at - a).dot(ab) / ab.length_squared().max(1e-6)).clamp(0.0, 1.0);
+            let t = ((at - a).dot(ab) / ab.length_sq().max(1e-6)).clamp(0.0, 1.0);
             let d = at.distance(a + ab * t);
-            (d < within && t > 0.05 && t < 0.95).then_some((d, (l.a, l.b)))
+            (d < 6.0 && t > 0.05 && t < 0.95).then_some((d, (l.a, l.b)))
         })
         .min_by(|a, b| a.0.total_cmp(&b.0))
         .map(|(_, l)| l)

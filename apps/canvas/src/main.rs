@@ -5,6 +5,7 @@
 //! replays around what you added.
 
 mod edit;
+mod embed;
 mod highlight;
 mod ide;
 mod marks;
@@ -66,10 +67,20 @@ fn main() -> eframe::Result {
                 app.ide.show(PathBuf::from(path));
             }
             if demo {
-                paint_demo(&mut app.timeline);
+                // Downloaded already, the meaning model loads in a moment:
+                // worth waiting for, so the demo's notes start out read by it.
+                if embed::Embedder::cached() {
+                    app.embedder.start(&cc.egui_ctx);
+                    app.embedder.wait(5.0);
+                }
+                paint_demo(&mut app.timeline, &app.embedder);
                 for (name, text) in swarm::DEMO_NOTES {
                     app.note_texts.insert((*name).to_owned(), (*text).to_owned());
                 }
+                // The demo's notes go down read by their words; by meaning
+                // once the model's ready (at once, if it's been downloaded).
+                app.embedder.start(&cc.egui_ctx);
+                app.meaning_pending = true;
             }
             // `TAPESTRY_EDIT=<note>` opens that rule note for editing.
             if let Ok(name) = std::env::var("TAPESTRY_EDIT") {
@@ -95,7 +106,7 @@ fn world_dir() -> std::path::PathBuf {
 /// A scene to start from: an ink cup with water poured in, a row of trees
 /// that fire reaches once "Fire spreads to trees" is switched on, and a
 /// dozen mimics reading notes.
-fn paint_demo(t: &mut Timeline) {
+fn paint_demo(t: &mut Timeline, embedder: &embed::Embedder) {
     use glam::Vec2;
     fn stroke(t: &mut Timeline, brush: Brush, radius: f32, points: &[(f32, f32)]) {
         let p = |i: usize| Vec2::new(points[i].0, points[i].1);
@@ -116,11 +127,14 @@ fn paint_demo(t: &mut Timeline) {
     stroke(t, Brush::Fire, 6.0, &[(680.0, 880.0), (700.0, 850.0)]);
     t.seek(150);
     t.set_rule("fire-spreads-to-trees", true);
-    // Mimics reading notes on three topics, the topics mixed up.
+    // Mimics reading notes on three topics, the topics mixed up, free to
+    // roam in depth.
+    t.set_depth(true);
     for (k, (name, text)) in swarm::DEMO_NOTES.iter().enumerate() {
         let slot = (k * 5) % swarm::DEMO_NOTES.len();
         let pos = Vec2::new(820.0 + (slot % 4) as f32 * 200.0, 170.0 + (slot / 4) as f32 * 160.0);
-        t.read_note(name, &swarm::title(text), pos, tapestry_canvas::note_vector(text));
+        let vector = embedder.vector(text).unwrap_or_else(|| tapestry_canvas::note_vector(text));
+        t.read_note(name, &swarm::title(text), pos, vector);
     }
     t.seek(0);
 }
@@ -333,6 +347,13 @@ struct App {
     painting: Option<(KeyId, egui::Vec2)>,
     /// A mimic being dragged: the drag's keyframe.
     holding: Option<KeyId>,
+    /// Reads notes by meaning, once its model is ready.
+    embedder: embed::Embedder,
+    /// Which way the canvas is turned, to see mimics in depth.
+    view: swarm::View,
+    /// Notes were read by their words while the model loaded: read them
+    /// again by meaning once it's ready.
+    meaning_pending: bool,
     /// The text of every note a mimic has read, for saying what two share.
     note_texts: std::collections::HashMap<String, String>,
     /// The keyframe picked on the timeline. What it made stays bright.
@@ -401,6 +422,16 @@ impl App {
             clock: 0.0,
             painting: None,
             holding: None,
+            embedder: embed::Embedder::new(),
+            // `TAPESTRY_VIEW=yaw,pitch` (radians) opens with the canvas turned.
+            view: std::env::var("TAPESTRY_VIEW")
+                .ok()
+                .and_then(|v| {
+                    let (y, p) = v.split_once(',')?;
+                    Some(swarm::View { yaw: y.trim().parse().ok()?, pitch: p.trim().parse().ok()? })
+                })
+                .unwrap_or_default(),
+            meaning_pending: false,
             note_texts: std::collections::HashMap::new(),
             selected: None,
             drag: None,
@@ -620,9 +651,23 @@ impl App {
 
     /// A mimic for every note in `world/notes`, carrying what it says. A
     /// note already carried is read again only if it changed.
-    fn read_notes(&mut self) {
-        for (name, title, text) in self.notebook.all() {
-            let vector = tapestry_canvas::note_vector(&text);
+    fn read_notes(&mut self, ctx: &egui::Context) {
+        self.embedder.start(ctx);
+        let notes = self.notebook.all();
+        self.read_texts(notes);
+    }
+
+    /// Give each note (name, title, text) a mimic, or its mimic the note as
+    /// it now reads: by meaning if the model is ready, else by its words.
+    fn read_texts(&mut self, notes: Vec<(String, String, String)>) {
+        if self.embedder.loading() {
+            self.meaning_pending = true;
+        }
+        for (name, title, text) in notes {
+            let vector = self
+                .embedder
+                .vector(&text)
+                .unwrap_or_else(|| tapestry_canvas::note_vector(&text));
             let same = self.timeline.state().swarm.carrier(&name).is_some_and(|m| {
                 m.input == vector && m.note.as_ref().is_some_and(|n| n.title == title)
             });
@@ -635,6 +680,25 @@ impl App {
             let pos = glam::Vec2::new(150.0 + (id % 1300) as f32, 150.0 + ((id >> 20) % 700) as f32);
             self.timeline.read_note(&name, &title, pos, vector);
         }
+    }
+
+    /// Once the model's ready, the notes read by their words meanwhile are
+    /// read again by meaning.
+    fn reread_by_meaning(&mut self) {
+        if !self.meaning_pending || !self.embedder.ready() {
+            return;
+        }
+        self.meaning_pending = false;
+        let carried: Vec<(String, String, String)> = self
+            .timeline
+            .state()
+            .swarm
+            .mimics
+            .iter()
+            .filter_map(|m| m.note.as_ref())
+            .filter_map(|n| Some((n.name.clone(), n.title.clone(), self.note_texts.get(&n.name)?.clone())))
+            .collect();
+        self.read_texts(carried);
     }
 
     fn palette(&mut self, ui: &mut egui::Ui) {
@@ -691,8 +755,26 @@ impl App {
         ui.horizontal(|ui| {
             ui.add_space(16.0);
             if quiet_link(ui, "mimics read the notes", false).clicked() {
-                self.read_notes();
+                self.read_notes(ui.ctx());
             }
+        });
+        ui.horizontal(|ui| {
+            ui.add_space(20.0);
+            ui.label(RichText::new(self.embedder.describe()).size(13.0).color(FAINT));
+        });
+        ui.horizontal(|ui| {
+            ui.add_space(16.0);
+            let deep = self.timeline.state().swarm.depth;
+            if quiet_link(ui, "mimics in 3D", deep).clicked() {
+                self.timeline.set_depth(!deep);
+            }
+            if self.view.turned() && quiet_link(ui, "face the paper", false).clicked() {
+                self.view = swarm::View::default();
+            }
+        });
+        ui.horizontal(|ui| {
+            ui.add_space(20.0);
+            ui.label(RichText::new("right-drag the canvas to turn it").size(13.0).color(FAINT));
         });
         ui.horizontal_wrapped(|ui| {
             ui.add_space(16.0);
@@ -1236,6 +1318,7 @@ impl App {
                     samples.last().map_or(0, |s| s.dt) as f32 / TICKS_PER_SECOND as f32
                 ),
                 Body::Cut { .. } => format!("a link cut at {at:.2} s"),
+                Body::Depth { on } => format!("mimics {} at {at:.2} s", if *on { "in 3D" } else { "flat again" }),
                 Body::Pin { on, .. } => format!("a mimic {} at {at:.2} s", if *on { "pinned" } else { "let go" }),
                 Body::Verdict { a, b, keep } => {
                     let name = |n: &String| self.note_texts.get(n).map_or(n.clone(), |t| swarm::title(t));
@@ -1265,15 +1348,18 @@ impl App {
         let scale = (avail.width() / WIDTH).min(avail.height() / HEIGHT);
         let size = vec2(WIDTH, HEIGHT) * scale;
         let sheet = Rect::from_center_size(avail.center(), size);
-        let to_screen = |p: glam::Vec2| sheet.min + vec2(p.x, p.y) * scale;
-        let to_world = |p: Pos2| {
-            let v = (p - sheet.min) / scale;
-            glam::Vec2::new(v.x, v.y)
-        };
+        let cam = swarm::Camera::new(sheet.min, scale, self.view);
+        let to_screen = |p: glam::Vec2| cam.flat(p);
+        // Where the pointer is on the paper (the canvas may be turned).
+        let to_world = |p: Pos2| cam.unproject(p, 0.0);
 
         let response = ui.allocate_rect(sheet, Sense::drag());
         let pointer = response.hover_pos();
         self.marks.sheet(sheet);
+        // Dragging with the right button turns the canvas, to see in depth.
+        if response.dragged_by(egui::PointerButton::Secondary) {
+            self.view.turn(response.drag_delta());
+        }
 
         if response.hovered() {
             let scroll = ui.input(|i| i.smooth_scroll_delta.y);
@@ -1286,7 +1372,9 @@ impl App {
         // A press on a mimic takes hold of it rather than painting: it goes
         // where it's dragged, while time runs, and pulls its partners along.
         let swarm_now = &self.timeline.state().swarm;
-        let on_mimic = |p: Pos2| swarm::mimic_at(swarm_now, to_world(p), 4.0 / scale);
+        let on_mimic = |p: Pos2| swarm::mimic_at(swarm_now, &cam, p);
+        // Where the pointer is at a mimic's depth.
+        let at_depth = |id: u64, p: Pos2| cam.unproject(p, swarm_now.mimic(id).map_or(0.0, |m| m.core.z));
         let pressed_mimic = response
             .drag_started_by(egui::PointerButton::Primary)
             .then(|| response.interact_pointer_pos())
@@ -1299,16 +1387,24 @@ impl App {
         });
         let right = response.hovered() && ui.input(|i| i.pointer.secondary_clicked());
         let cut = right
-            .then(|| pointer.and_then(|p| swarm::link_at(swarm_now, to_world(p), 6.0 / scale)))
+            .then(|| pointer.and_then(|p| swarm::link_at(swarm_now, &cam, p)))
             .flatten();
-        if let Some((id, p)) = pressed_mimic {
+        let held = self.holding.and_then(|k| match self.timeline.key(k).map(|k| &k.body) {
+            Some(Body::Drag { mimic, .. }) => Some(*mimic),
+            _ => None,
+        });
+        let dragged_to = held
+            .zip(response.interact_pointer_pos())
+            .map(|(id, p)| at_depth(id, p));
+        let pressed_mimic = pressed_mimic.map(|(id, p)| (id, at_depth(id, p)));
+        if let Some((id, at)) = pressed_mimic {
             self.selected = None;
-            self.holding = Some(self.timeline.begin_drag(id, to_world(p)));
+            self.holding = Some(self.timeline.begin_drag(id, at));
         }
         if let Some(drag) = self.holding {
             if response.dragged_by(egui::PointerButton::Primary) {
-                if let Some(p) = response.interact_pointer_pos() {
-                    self.timeline.extend_drag(drag, to_world(p));
+                if let Some(at) = dragged_to {
+                    self.timeline.extend_drag(drag, at);
                 }
             } else {
                 // A press that never moved isn't worth keeping.
@@ -1403,13 +1499,15 @@ impl App {
         painter.add(Shape::mesh(Arc::new(soft)));
         painter.add(Shape::mesh(Arc::new(hard)));
         painter.add(Shape::mesh(Arc::new(glow)));
-        swarm::draw(&painter, &state.swarm, &to_screen, scale, focus);
+        if self.view.turned() {
+            swarm::draw_paper(&painter, &cam);
+        }
+        swarm::draw(&painter, &state.swarm, &cam, focus);
         // Hovering a mimic or a link says what it is.
         if let Some(p) = pointer.filter(|_| self.painting.is_none() && self.holding.is_none()) {
-            let at = to_world(p);
-            let text = match swarm::mimic_at(&state.swarm, at, 4.0 / scale) {
+            let text = match swarm::mimic_at(&state.swarm, &cam, p) {
                 Some(id) => Some(swarm::describe_mimic(&state.swarm, id)),
-                None => swarm::link_at(&state.swarm, at, 6.0 / scale).map(|l| swarm::describe_link(&state.swarm, l)),
+                None => swarm::link_at(&state.swarm, &cam, p).map(|l| swarm::describe_link(&state.swarm, l)),
             };
             if let Some(text) = text {
                 swarm::tooltip(&painter, p, &text);
@@ -1475,6 +1573,7 @@ impl eframe::App for App {
             self.last_poll = now;
             self.reload_rules();
         }
+        self.reread_by_meaning();
         ui.ctx()
             .request_repaint_after(std::time::Duration::from_millis(500));
         self.ide.begin_frame(ui.ctx());
