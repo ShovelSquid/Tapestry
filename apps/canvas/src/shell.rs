@@ -198,6 +198,36 @@ pub fn resolve_editor(
     }
 }
 
+/// `TAPESTRY_SHOT=path:seconds`: save the window `seconds` of wall-clock
+/// time after the app starts, from whichever view shows, then close. It
+/// never waits on the simulation, which stands still while hidden.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ShotSchedule {
+    pub path: String,
+    pub delay: std::time::Duration,
+    /// The capture has been asked for; it's asked for once.
+    pub asked: bool,
+}
+
+impl ShotSchedule {
+    pub fn parse(_value: &str) -> Option<Self> {
+        None
+    }
+
+    /// Whether to ask for the capture this frame, `elapsed` after startup.
+    pub fn take_due(&mut self, _elapsed: std::time::Duration) -> bool {
+        false
+    }
+}
+
+impl Destination {
+    /// Simulation clock work runs only while the grouped Simulation view
+    /// shows.
+    pub fn runs_simulation_clock(&self) -> bool {
+        true
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NavigationKind {
     Note,
@@ -1408,6 +1438,60 @@ mod tests {
             Destination::Notes,
         );
         assert_eq!(buffers, before);
+    }
+
+    fn every_destination() -> Vec<Destination> {
+        vec![
+            Destination::Graph,
+            Destination::Simulation,
+            Destination::Rules,
+            Destination::Files,
+            Destination::Terminals,
+            Destination::Notes,
+            Destination::File("/vault/a.md".into()),
+        ]
+    }
+
+    #[test]
+    fn screenshot_routing_zero_delay_is_due_on_the_first_frame() {
+        let mut shot = ShotSchedule::parse("target/shell-graph.png:0").unwrap();
+        assert_eq!(shot.path, "target/shell-graph.png");
+        assert_eq!(shot.delay, std::time::Duration::ZERO);
+        assert!(shot.take_due(std::time::Duration::ZERO));
+        // Asked for once only.
+        assert!(!shot.take_due(std::time::Duration::from_secs(5)));
+    }
+
+    #[test]
+    fn screenshot_routing_waits_for_the_elapsed_wall_clock_delay() {
+        let mut shot = ShotSchedule::parse("target/shell-terminal.png:0.5").unwrap();
+        assert_eq!(shot.delay, std::time::Duration::from_millis(500));
+        assert!(!shot.take_due(std::time::Duration::from_millis(100)));
+        assert!(!shot.take_due(std::time::Duration::from_millis(499)));
+        assert!(shot.take_due(std::time::Duration::from_millis(500)));
+        assert!(shot.asked);
+        assert!(!shot.take_due(std::time::Duration::from_millis(900)));
+    }
+
+    #[test]
+    fn screenshot_routing_parses_paths_with_colons_and_rejects_bad_delays() {
+        let shot = ShotSchedule::parse("C:/shots/a.png:2.25").unwrap();
+        assert_eq!(shot.path, "C:/shots/a.png");
+        assert_eq!(shot.delay, std::time::Duration::from_millis(2250));
+        for bad in ["no-delay.png", "a.png:soon", "a.png:-1", "a.png:NaN", "a.png:inf", ":1"] {
+            assert_eq!(ShotSchedule::parse(bad), None, "{bad}");
+        }
+    }
+
+    #[test]
+    fn screenshot_routing_only_the_simulation_view_runs_its_clock() {
+        for destination in every_destination() {
+            assert_eq!(
+                destination.runs_simulation_clock(),
+                destination == Destination::Simulation,
+                "{destination:?}"
+            );
+        }
     }
 
     fn scanned(rel: &str) -> ScannedNote {

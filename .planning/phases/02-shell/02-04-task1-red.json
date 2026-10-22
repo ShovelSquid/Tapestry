@@ -1,0 +1,8 @@
+{
+  "command": "cargo test -p tapestry-canvas-app --offline screenshot_routing",
+  "exitCode": 101,
+  "targetTest": "tests::screenshot_routing_hidden_simulation_does_no_clock_work",
+  "expected": "clock_step returns None for Graph and every hosted destination other than Simulation, so a hidden simulation does no clock work; ShotSchedule fires once by wall-clock delay from any destination.",
+  "actual": "Assertion failed: clock_step returned Some((0.01, 1)) for Graph (the stub ignores the destination, as run_clock does today). The shell screenshot_routing tests fail because ShotSchedule::parse returns None and runs_simulation_clock returns true for Graph; the every-view wall-clock test fails on the parse unwrap.",
+  "output": "not ok 1 - tests::screenshot_routing_hidden_simulation_does_no_clock_work\nnot ok 2 - tests::screenshot_routing_fires_by_wall_clock_from_every_view\nnot ok 3 - shell::tests::screenshot_routing_only_the_simulation_view_runs_its_clock\nnot ok 4 - shell::tests::screenshot_routing_parses_paths_with_colons_and_rejects_bad_delays\nnot ok 5 - shell::tests::screenshot_routing_waits_for_the_elapsed_wall_clock_delay\nnot ok 6 - shell::tests::screenshot_routing_zero_delay_is_due_on_the_first_frame\nok 7 - tests::screenshot_routing_visible_simulation_advances_its_clock\n# tests 7\n# pass 1\n# fail 6\n"
+}

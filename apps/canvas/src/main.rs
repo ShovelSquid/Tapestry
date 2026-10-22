@@ -388,6 +388,24 @@ struct App {
 /// it plays in slow motion rather than freezing the window.
 const BUDGET: std::time::Duration = std::time::Duration::from_millis(12);
 
+/// One frame of simulation clock work. `None` while the Simulation view is
+/// hidden: no clock, no catching up. Otherwise the clock left over and how
+/// many ticks the playhead moves; it moves only while `running` (playing,
+/// with the canvas caught up).
+fn clock_step(
+    _destination: &shell::Destination,
+    running: bool,
+    clock: f32,
+    dt: f32,
+) -> Option<(f32, Tick)> {
+    if !running {
+        return Some((0.0, 0));
+    }
+    let clock = clock + dt.min(0.1);
+    let ticks = (clock / DT) as Tick;
+    Some((clock - ticks as f32 * DT, ticks.min(2)))
+}
+
 impl App {
     fn new(cc: &eframe::CreationContext<'_>) -> Self {
         install_fonts(&cc.egui_ctx);
@@ -2094,6 +2112,70 @@ fn install_fonts(ctx: &egui::Context) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn every_destination() -> Vec<shell::Destination> {
+        use shell::Destination as D;
+        vec![
+            D::Graph,
+            D::Simulation,
+            D::Rules,
+            D::Files,
+            D::Terminals,
+            D::Notes,
+            D::File("/vault/a.md".into()),
+        ]
+    }
+
+    #[test]
+    fn screenshot_routing_hidden_simulation_does_no_clock_work() {
+        for destination in every_destination() {
+            let step = clock_step(&destination, true, 0.01, 1.0 / 60.0);
+            if destination == shell::Destination::Simulation {
+                assert!(step.is_some());
+            } else {
+                assert_eq!(step, None, "{destination:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn screenshot_routing_visible_simulation_advances_its_clock() {
+        let sim = shell::Destination::Simulation;
+        let (mut clock, mut ticks) = (0.0, 0);
+        for _ in 0..60 {
+            let (c, t) = clock_step(&sim, true, clock, 1.0 / 60.0).unwrap();
+            clock = c;
+            ticks += t;
+        }
+        assert!(ticks > 0);
+        // Paused or behind: the clock resets and the playhead holds.
+        assert_eq!(clock_step(&sim, false, 0.3, 1.0 / 60.0), Some((0.0, 0)));
+    }
+
+    #[test]
+    fn screenshot_routing_fires_by_wall_clock_from_every_view() {
+        for destination in every_destination() {
+            let mut shot = shell::ShotSchedule::parse("target/shell.png:0.5").unwrap();
+            let (mut clock, mut tick, mut fired) = (0.0, 0, Vec::new());
+            for frame in 1..=60u32 {
+                let elapsed = std::time::Duration::from_secs_f64(f64::from(frame) / 60.0);
+                if let Some((c, t)) = clock_step(&destination, true, clock, 1.0 / 60.0) {
+                    clock = c;
+                    tick += t;
+                }
+                if shot.take_due(elapsed) {
+                    fired.push(frame);
+                }
+            }
+            // Half a second in, once, whether or not the simulation moved.
+            assert_eq!(fired, vec![30], "{destination:?}");
+            if destination == shell::Destination::Simulation {
+                assert!(tick > 0);
+            } else {
+                assert_eq!(tick, 0, "{destination:?}");
+            }
+        }
+    }
 
     #[test]
     fn panes_travel_without_this_screen() {
