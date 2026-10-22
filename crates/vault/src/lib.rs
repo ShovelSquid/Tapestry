@@ -12,6 +12,7 @@
 //! every change goes through `store::Store`, which writes atomically and
 //! records what happened in the vault's journal so growth can be replayed.
 
+pub mod blocks;
 pub mod frontmatter;
 pub mod links;
 pub mod index;
