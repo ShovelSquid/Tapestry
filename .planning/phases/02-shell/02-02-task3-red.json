@@ -1,0 +1,8 @@
+{
+  "command": "cargo test -p tapestry-canvas-app --offline shell::tests::navigation_action_is_shared_by_explorer_and_palette_for_notes_and_folders -- --exact",
+  "exitCode": 101,
+  "targetTest": "shell::tests::navigation_action_is_shared_by_explorer_and_palette_for_notes_and_folders",
+  "expected": "Explorer and palette selections for the same note or folder produce equal normalized navigation targets.",
+  "actual": "Assertion failed: the explorer selection produced None instead of the expected normalized note target.",
+  "output": "not ok 1 - shell::tests::navigation_action_is_shared_by_explorer_and_palette_for_notes_and_folders\n# tests 1\n# pass 0\n# fail 1\n"
+}

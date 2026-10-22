@@ -53,9 +53,37 @@ pub enum PaletteAction {
     OpenTerminals,
     OpenNotes,
     OpenEditor(PathBuf),
-    Navigate(String),
+    Navigate(NavigationTarget),
     OpenVault,
     OpenExplorer,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NavigationKind {
+    Note,
+    Folder,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NavigationTarget {
+    pub kind: NavigationKind,
+    pub key: String,
+}
+
+impl NavigationTarget {
+    pub fn new(kind: NavigationKind, key: &str) -> Self {
+        Self {
+            kind,
+            key: tapestry_vault::index::key(key),
+        }
+    }
+}
+
+pub fn explorer_navigation_target(
+    _view: &VaultView,
+    _row: &ExplorerRow,
+) -> Option<NavigationTarget> {
+    None
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -179,7 +207,7 @@ pub fn palette_entries(view: &VaultView, editor_tabs: &[PathBuf]) -> Vec<Palette
                 label: label.to_owned(),
                 full_path: Some(snapshot.root.join(key).display().to_string()),
                 group: PaletteGroup::Notes,
-                action: PaletteAction::Navigate(key.clone()),
+                action: PaletteAction::Navigate(NavigationTarget::new(NavigationKind::Note, key)),
             }
         }));
         entries.extend(
@@ -192,7 +220,10 @@ pub fn palette_entries(view: &VaultView, editor_tabs: &[PathBuf]) -> Vec<Palette
                     label: key.rsplit('/').next().unwrap_or(key).to_owned(),
                     full_path: Some(snapshot.root.join(key).display().to_string()),
                     group: PaletteGroup::Folders,
-                    action: PaletteAction::Navigate(key.clone()),
+                    action: PaletteAction::Navigate(NavigationTarget::new(
+                        NavigationKind::Folder,
+                        key,
+                    )),
                 }),
         );
     }
@@ -710,7 +741,10 @@ mod tests {
                 label: "Notebook".into(),
                 full_path: Some("research/Notebook.md".into()),
                 group: PaletteGroup::Notes,
-                action: PaletteAction::Navigate("research/Notebook.md".into()),
+                action: PaletteAction::Navigate(NavigationTarget::new(
+                    NavigationKind::Note,
+                    "research/Notebook.md",
+                )),
             },
         ];
         assert_eq!(fuzzy_rank("opv", &entries), vec![0]);
@@ -761,7 +795,7 @@ mod tests {
         let matches = fuzzy_rank("child", &entries);
         assert!(matches.iter().any(|index| matches!(
             &entries[*index].action,
-            PaletteAction::Navigate(key) if key == "research/child/Notebook.md"
+            PaletteAction::Navigate(target) if target.key == "research/child/notebook.md"
         )));
         let actions: Vec<_> = entries.iter().map(|entry| &entry.action).collect();
         for action in [
@@ -771,12 +805,61 @@ mod tests {
             PaletteAction::OpenTerminals,
             PaletteAction::OpenNotes,
             PaletteAction::OpenEditor(PathBuf::from("/vault/drafts/open.md")),
-            PaletteAction::Navigate("research/Notebook.md".into()),
-            PaletteAction::Navigate("research/child".into()),
+            PaletteAction::Navigate(NavigationTarget::new(
+                NavigationKind::Note,
+                "research/Notebook.md",
+            )),
+            PaletteAction::Navigate(NavigationTarget::new(
+                NavigationKind::Folder,
+                "research/child",
+            )),
             PaletteAction::OpenVault,
             PaletteAction::OpenExplorer,
         ] {
             assert!(actions.contains(&&action));
+        }
+    }
+
+    #[test]
+    fn navigation_action_is_shared_by_explorer_and_palette_for_notes_and_folders() {
+        let index = VaultIndex::build(&Scan {
+            root: "/vault".into(),
+            folders: vec!["".into(), "Research".into()],
+            notes: vec![scanned("Research/Notebook.md")],
+            skipped: Vec::new(),
+            truncated: false,
+        });
+        let view = VaultView {
+            status: VaultStatus::Ready,
+            snapshot: Some(VaultSnapshot {
+                root: "/vault".into(),
+                index: std::sync::Arc::new(index),
+            }),
+        };
+        let rows = explorer_rows(&view);
+        let entries = palette_entries(&view, &[]);
+        for (kind, key) in [
+            (NavigationKind::Note, "Research/Notebook.md"),
+            (NavigationKind::Folder, "Research"),
+        ] {
+            let expected = NavigationTarget::new(kind, key);
+            let row = rows
+                .iter()
+                .find(|row| match (row, kind) {
+                    (ExplorerRow::Note { key: row_key, .. }, NavigationKind::Note)
+                    | (ExplorerRow::Folder { key: row_key, .. }, NavigationKind::Folder) => {
+                        row_key == key
+                    }
+                    _ => false,
+                })
+                .unwrap();
+            let from_explorer = explorer_navigation_target(&view, row);
+            let from_palette = entries.iter().find_map(|entry| {
+                (entry.action == PaletteAction::Navigate(expected.clone()))
+                    .then_some(expected.clone())
+            });
+            assert_eq!(from_explorer, from_palette);
+            assert_eq!(from_explorer, Some(expected));
         }
     }
 
