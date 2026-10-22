@@ -128,5 +128,14 @@ mod tests {
                 h: 150.0
             }
         );
+        let point = stable_point("Topic", 0);
+        assert_eq!(point, (0.5465028097387403, 0.16080470476299524));
+        assert_eq!(stable_point("./Topic/", 0), point);
+        let mut occupied = Vec::new();
+        for _ in 0..50 {
+            let next = place_free(&occupied, (CARD_W, CARD_H), (0.0, 0.0), GAP);
+            assert!(occupied.iter().all(|rect: &Rect| !rect.intersects(&next)));
+            occupied.push(next);
+        }
     }
 }
