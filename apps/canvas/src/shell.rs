@@ -87,33 +87,82 @@ impl Destination {
     /// The existing panes this destination draws, side panels first so the
     /// center takes what remains.
     pub fn regions(&self) -> Vec<(Region, crate::Tab)> {
-        Vec::new()
+        use crate::Tab;
+        match self {
+            Self::Graph => Vec::new(),
+            Self::Simulation => vec![
+                (Region::Left, Tab::Brushes),
+                (Region::Bottom, Tab::Timeline),
+                (Region::Center, Tab::Canvas),
+            ],
+            Self::Rules => vec![(Region::Center, Tab::Rules)],
+            Self::Files => vec![(Region::Center, Tab::Files)],
+            Self::Terminals => vec![(Region::Center, Tab::Terminals)],
+            Self::Notes => vec![(Region::Center, Tab::Notes)],
+            Self::File(path) => vec![(Region::Center, Tab::File(path.clone()))],
+        }
     }
 
     /// The destination that hosts `tab`.
-    pub fn from_tab(_tab: &crate::Tab) -> Self {
-        Self::Graph
+    pub fn from_tab(tab: &crate::Tab) -> Self {
+        use crate::Tab;
+        match tab {
+            Tab::Canvas | Tab::Brushes | Tab::Timeline => Self::Simulation,
+            Tab::Rules => Self::Rules,
+            Tab::Files => Self::Files,
+            Tab::Terminals => Self::Terminals,
+            Tab::Notes => Self::Notes,
+            Tab::File(path) => Self::File(path.clone()),
+        }
     }
 
     /// The tab recorded for this destination in the synced layout.
     pub fn primary_tab(&self) -> Option<crate::Tab> {
-        None
+        self.regions()
+            .into_iter()
+            .find(|(region, _)| *region == Region::Center)
+            .map(|(_, tab)| tab)
     }
 
     pub fn is_hosted(&self) -> bool {
-        false
+        *self != Self::Graph
     }
 }
 
 /// `TAPESTRY_FILL=<name>`: a destination by its existing Tab Debug name.
-pub fn fill_destination(_name: &str) -> Option<Destination> {
-    None
+pub fn fill_destination(name: &str) -> Option<Destination> {
+    use crate::Tab;
+    if name.trim().eq_ignore_ascii_case("simulation") {
+        return Some(Destination::Simulation);
+    }
+    [
+        Tab::Canvas,
+        Tab::Brushes,
+        Tab::Rules,
+        Tab::Timeline,
+        Tab::Files,
+        Tab::Terminals,
+        Tab::Notes,
+    ]
+    .into_iter()
+    .find(|tab| format!("{tab:?}").eq_ignore_ascii_case(name.trim()))
+    .map(|tab| Destination::from_tab(&tab))
 }
 
 /// Where a palette action takes the main window. Only the destination
 /// changes; tool owners live on the app and are never rebuilt here.
-pub fn route_palette_action(current: &Destination, _action: &PaletteAction) -> Destination {
-    current.clone()
+pub fn route_palette_action(_current: &Destination, action: &PaletteAction) -> Destination {
+    match action {
+        PaletteAction::OpenSimulation => Destination::Simulation,
+        PaletteAction::OpenRules => Destination::Rules,
+        PaletteAction::OpenFiles => Destination::Files,
+        PaletteAction::OpenTerminals => Destination::Terminals,
+        PaletteAction::OpenNotes => Destination::Notes,
+        PaletteAction::OpenEditor(path) => Destination::File(path.clone()),
+        PaletteAction::Navigate(_) | PaletteAction::OpenVault | PaletteAction::OpenExplorer => {
+            Destination::Graph
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

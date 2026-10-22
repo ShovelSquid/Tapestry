@@ -217,13 +217,13 @@ impl TabViewer for Tabs<'_> {
 
     fn on_tab_button(&mut self, tab: &mut Tab, response: &egui::Response) {
         if response.double_clicked() {
-            self.app.maximized = Some(tab.clone());
+            self.app.destination = shell::Destination::from_tab(tab);
         }
     }
 
     fn context_menu(&mut self, ui: &mut egui::Ui, tab: &mut Tab, _: egui_dock::NodePath) {
         if ui.button("fill the window").clicked() {
-            self.app.maximized = Some(tab.clone());
+            self.app.destination = shell::Destination::from_tab(tab);
             ui.close();
         }
     }
@@ -325,8 +325,9 @@ struct App {
     timeline: Timeline,
     /// Taken out while it's drawn, since the tabs borrow the app.
     dock: Option<DockState<Tab>>,
-    /// A pane filling the whole window, if one does.
-    maximized: Option<Tab>,
+    /// What fills the main window: the graph workspace or a hosted tool.
+    /// Switching it never rebuilds the tool owners below.
+    destination: shell::Destination,
     ide: ide::Ide,
     vault_host: vault_host::VaultHost,
     explorer: shell::ExplorerState,
@@ -406,13 +407,12 @@ impl App {
         Self {
             timeline: Timeline::new(rules),
             dock: Some(default_layout()),
-            // `TAPESTRY_FILL=files` (or canvas, rules…) opens with that pane
-            // filling the window.
-            maximized: std::env::var("TAPESTRY_FILL").ok().and_then(|name| {
-                [Tab::Canvas, Tab::Brushes, Tab::Rules, Tab::Timeline, Tab::Files, Tab::Terminals, Tab::Notes]
-                    .into_iter()
-                    .find(|t| format!("{t:?}").eq_ignore_ascii_case(&name))
-            }),
+            // `TAPESTRY_FILL=files` (or canvas, rules…) opens with that pane's
+            // destination filling the window.
+            destination: std::env::var("TAPESTRY_FILL")
+                .ok()
+                .and_then(|name| shell::fill_destination(&name))
+                .unwrap_or_default(),
             ide: {
                 let mut ide = ide::Ide::new(engine);
                 ide.serve_world(world.clone());
@@ -494,11 +494,16 @@ impl App {
             self.dock = Some(dock);
         }
         // `TAPESTRY_FILL` still wins at the start.
-        if self.panes_kept.is_some() || self.maximized.is_none() {
-            self.maximized = panes.maximized.map(|t| local_tab(&t)).filter(|t| match t {
-                Tab::File(p) => self.ide.buffers.contains_key(p),
-                _ => true,
-            });
+        if self.panes_kept.is_some() || !self.destination.is_hosted() {
+            self.destination = panes
+                .maximized
+                .map(|t| local_tab(&t))
+                .filter(|t| match t {
+                    Tab::File(p) => self.ide.buffers.contains_key(p),
+                    _ => true,
+                })
+                .map(|t| shell::Destination::from_tab(&t))
+                .unwrap_or_default();
         }
         self.ide.return_to(sync::path_of(&panes.root), sync::path_of(&panes.here));
     }
@@ -509,7 +514,7 @@ impl App {
         let (root, here) = self.ide.place();
         let mut v = serde_json::to_value(Panes {
             dock,
-            maximized: self.maximized.as_ref().map(shared_tab),
+            maximized: self.destination.primary_tab().as_ref().map(shared_tab),
             root: sync::key_of(&root),
             here: sync::key_of(&here),
         })
@@ -1609,19 +1614,18 @@ impl eframe::App for App {
 
         let top = egui::Panel::top("top").show(ui, |ui| self.top_bar(ui));
         self.marks.keep_clear(top.response.rect);
-        if let Some(mut tab) = self.maximized.clone() {
+        if self.destination.is_hosted() {
             egui::CentralPanel::default().show(ui, |ui| {
                 ui.horizontal(|ui| {
                     ui.add_space(8.0);
                     let esc = ui.input(|i| i.key_pressed(egui::Key::Escape))
                         && !self.ide.terminal_active()
                         && !self.ide.has_focus();
-                    if quiet_link(ui, "back to the layout", false).clicked() || esc
-                    {
-                        self.maximized = None;
+                    if quiet_link(ui, "back to the canvas", false).clicked() || esc {
+                        self.destination = shell::Destination::Graph;
                     }
                 });
-                self.tab_ui(ui, &mut tab);
+                self.hosted_view(ui);
             });
         } else {
             let view = self.vault_host.view();
@@ -1644,8 +1648,10 @@ impl eframe::App for App {
             }
             shell::workspace(ui, &view, &self.graph_camera);
         }
-        if std::mem::take(&mut self.ide.reveal_files) && self.maximized == Some(Tab::Terminals) {
-            self.maximized = None;
+        if std::mem::take(&mut self.ide.reveal_files)
+            && self.destination == shell::Destination::Terminals
+        {
+            self.destination = shell::Destination::Graph;
         }
 
         let editor_tabs: Vec<_> = self.ide.buffers.keys().cloned().collect();
@@ -1692,29 +1698,60 @@ impl eframe::App for App {
 
 impl App {
     fn palette_action(&mut self, action: shell::PaletteAction) {
+        let next = shell::route_palette_action(&self.destination, &action);
         match action {
-            shell::PaletteAction::OpenSimulation => self.maximized = Some(Tab::Canvas),
-            shell::PaletteAction::OpenRules => self.maximized = Some(Tab::Rules),
-            shell::PaletteAction::OpenFiles => self.maximized = Some(Tab::Files),
-            shell::PaletteAction::OpenTerminals => self.maximized = Some(Tab::Terminals),
-            shell::PaletteAction::OpenNotes => self.maximized = Some(Tab::Notes),
-            shell::PaletteAction::OpenEditor(path) => {
-                self.ide.show(path.clone());
-                self.maximized = Some(Tab::File(path));
-            }
+            shell::PaletteAction::OpenEditor(path) => self.ide.show(path),
             shell::PaletteAction::Navigate(target) => {
-                self.maximized = None;
                 self.graph_camera.navigate(&self.vault_host.view(), target);
             }
             shell::PaletteAction::OpenVault => {
-                self.maximized = None;
                 self.explorer.reopen();
                 self.explorer.focus_path = true;
             }
-            shell::PaletteAction::OpenExplorer => {
-                self.maximized = None;
-                self.explorer.reopen();
+            shell::PaletteAction::OpenExplorer => self.explorer.reopen(),
+            shell::PaletteAction::OpenSimulation
+            | shell::PaletteAction::OpenRules
+            | shell::PaletteAction::OpenFiles
+            | shell::PaletteAction::OpenTerminals
+            | shell::PaletteAction::OpenNotes => {}
+        }
+        self.destination = next;
+    }
+
+    /// The hosted destination's existing panes, full-window. Simulation puts
+    /// the brushes on the left and the timeline along the bottom of its
+    /// canvas; every other destination is a single pane.
+    fn hosted_view(&mut self, ui: &mut egui::Ui) {
+        for (region, mut tab) in self.destination.regions() {
+            let id = egui::Id::new(("hosted-pane", format!("{tab:?}")));
+            match region {
+                shell::Region::Left => {
+                    egui::Panel::left(id)
+                        .frame(egui::Frame::NONE.fill(PAPER))
+                        .resizable(true)
+                        .default_size(170.0)
+                        .show(ui, |ui| self.hosted_pane(ui, &mut tab));
+                }
+                shell::Region::Bottom => {
+                    egui::Panel::bottom(id)
+                        .frame(egui::Frame::NONE.fill(PAPER))
+                        .resizable(false)
+                        .show(ui, |ui| self.hosted_pane(ui, &mut tab));
+                }
+                shell::Region::Center => self.hosted_pane(ui, &mut tab),
             }
+        }
+    }
+
+    /// One pane, scrolling where the old dock let it scroll.
+    fn hosted_pane(&mut self, ui: &mut egui::Ui, tab: &mut Tab) {
+        if matches!(tab, Tab::Notes | Tab::Rules | Tab::Brushes | Tab::Terminals) {
+            egui::ScrollArea::vertical()
+                .id_salt(("hosted-scroll", format!("{tab:?}")))
+                .auto_shrink(false)
+                .show(ui, |ui| self.tab_ui(ui, tab));
+        } else {
+            self.tab_ui(ui, tab);
         }
     }
 
