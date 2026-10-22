@@ -331,6 +331,7 @@ struct App {
     vault_host: vault_host::VaultHost,
     explorer: shell::ExplorerState,
     palette: shell::PaletteState,
+    graph_camera: shell::GraphCamera,
     /// The notes pane: writing that isn't rules.
     notebook: notes::Notes,
     highlights: highlight::Highlights,
@@ -420,6 +421,7 @@ impl App {
             vault_host,
             explorer: shell::ExplorerState::default(),
             palette: shell::PaletteState::default(),
+            graph_camera: shell::GraphCamera::default(),
             notebook: notes::Notes::new(&world),
             highlights: highlight::Highlights::new(&cc.egui_ctx),
             marks: marks::Marks::new(),
@@ -1635,10 +1637,12 @@ impl eframe::App for App {
                             self.explorer.command_error = None;
                         }
                     }
-                    shell::ExplorerAction::Select(_) => {}
+                    shell::ExplorerAction::Navigate(target) => {
+                        self.graph_camera.navigate(&view, target);
+                    }
                 }
             }
-            shell::workspace(ui, &view);
+            shell::workspace(ui, &view, &self.graph_camera);
         }
         if std::mem::take(&mut self.ide.reveal_files) && self.maximized == Some(Tab::Terminals) {
             self.maximized = None;
@@ -1698,7 +1702,10 @@ impl App {
                 self.ide.show(path.clone());
                 self.maximized = Some(Tab::File(path));
             }
-            shell::PaletteAction::Navigate(_) => {}
+            shell::PaletteAction::Navigate(target) => {
+                self.maximized = None;
+                self.graph_camera.navigate(&self.vault_host.view(), target);
+            }
             shell::PaletteAction::OpenVault => {
                 self.maximized = None;
                 self.explorer.reopen();

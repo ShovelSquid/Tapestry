@@ -24,7 +24,7 @@ pub enum ExplorerMode {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ExplorerAction {
     OpenVault(PathBuf),
-    Select(String),
+    Navigate(NavigationTarget),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -79,11 +79,131 @@ impl NavigationTarget {
     }
 }
 
-pub fn explorer_navigation_target(
-    _view: &VaultView,
-    _row: &ExplorerRow,
+pub fn explorer_navigation_target(view: &VaultView, row: &ExplorerRow) -> Option<NavigationTarget> {
+    match row {
+        ExplorerRow::Folder { key, .. } => navigation_target(view, NavigationKind::Folder, key),
+        ExplorerRow::Note { key, .. } => navigation_target(view, NavigationKind::Note, key),
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ResolvedNavigation {
+    pub target: NavigationTarget,
+    pub title: String,
+    pub center: [f64; 2],
+    pub scale: f64,
+}
+
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct GraphCamera {
+    pub focus: Option<ResolvedNavigation>,
+}
+
+impl GraphCamera {
+    pub fn navigate(&mut self, view: &VaultView, target: NavigationTarget) -> bool {
+        let Some(resolved) = resolve_navigation(view, &target) else {
+            return false;
+        };
+        self.focus = Some(resolved);
+        true
+    }
+}
+
+pub fn navigation_target(
+    view: &VaultView,
+    kind: NavigationKind,
+    rel: &str,
 ) -> Option<NavigationTarget> {
-    None
+    let snapshot = view.snapshot.as_ref()?;
+    let normalized = tapestry_vault::index::key(rel);
+    let exists = match kind {
+        NavigationKind::Note => snapshot
+            .index
+            .notes
+            .keys()
+            .any(|candidate| tapestry_vault::index::key(candidate) == normalized),
+        NavigationKind::Folder => snapshot
+            .index
+            .folders
+            .keys()
+            .any(|candidate| tapestry_vault::index::key(candidate) == normalized),
+    };
+    exists.then_some(NavigationTarget {
+        kind,
+        key: normalized,
+    })
+}
+
+pub fn resolve_navigation(
+    view: &VaultView,
+    target: &NavigationTarget,
+) -> Option<ResolvedNavigation> {
+    let snapshot = view.snapshot.as_ref()?;
+    match target.kind {
+        NavigationKind::Note => {
+            let note = snapshot
+                .index
+                .notes
+                .values()
+                .find(|note| tapestry_vault::index::key(&note.rel) == target.key)?;
+            Some(ResolvedNavigation {
+                target: target.clone(),
+                title: note.title.clone(),
+                center: [
+                    note.placed.x + note.placed.w / 2.0,
+                    note.placed.y + note.placed.h / 2.0,
+                ],
+                scale: 1.0,
+            })
+        }
+        NavigationKind::Folder => {
+            let folder = snapshot
+                .index
+                .folders
+                .values()
+                .find(|folder| tapestry_vault::index::key(&folder.rel) == target.key)?;
+            let prefix = format!("{}/", folder.rel);
+            let contained: Vec<_> = snapshot
+                .index
+                .notes
+                .values()
+                .filter(|note| note.folder == folder.rel || note.rel.starts_with(&prefix))
+                .collect();
+            let (center, scale) = if let Some((x, y, scale)) = folder.world {
+                ([x, y], scale)
+            } else if contained.is_empty() {
+                ([0.0, 0.0], 1.0)
+            } else {
+                let count = contained.len() as f64;
+                let x = contained
+                    .iter()
+                    .map(|note| note.placed.x + note.placed.w / 2.0)
+                    .sum::<f64>()
+                    / count;
+                let y = contained
+                    .iter()
+                    .map(|note| note.placed.y + note.placed.h / 2.0)
+                    .sum::<f64>()
+                    / count;
+                ([x, y], 1.0)
+            };
+            Some(ResolvedNavigation {
+                target: target.clone(),
+                title: if folder.rel.is_empty() {
+                    "Vault".into()
+                } else {
+                    folder
+                        .rel
+                        .rsplit('/')
+                        .next()
+                        .unwrap_or(&folder.rel)
+                        .to_owned()
+                },
+                center,
+                scale,
+            })
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -605,9 +725,9 @@ fn explorer_contents(
         .id_salt("vault-explorer-rows")
         .show(ui, |ui| {
             for row in rows {
-                let (key, label, is_folder) = match row {
-                    ExplorerRow::Folder { key, label } => (key, label, true),
-                    ExplorerRow::Note { key, label } => (key, label, false),
+                let (key, label, is_folder) = match &row {
+                    ExplorerRow::Folder { key, label } => (key.clone(), label.clone(), true),
+                    ExplorerRow::Note { key, label } => (key.clone(), label.clone(), false),
                 };
                 let full_path = key.clone();
                 let response = ui
@@ -618,7 +738,7 @@ fn explorer_contents(
                     .on_hover_text(full_path);
                 if response.clicked() {
                     state.selected = Some(key.clone());
-                    action = Some(ExplorerAction::Select(key));
+                    action = explorer_navigation_target(view, &row).map(ExplorerAction::Navigate);
                 }
             }
         });
@@ -863,6 +983,60 @@ mod tests {
         }
     }
 
+    #[test]
+    fn navigation_centers_valid_targets_and_ignores_stale_snapshot_keys() {
+        let index = VaultIndex::build(&Scan {
+            root: "/vault".into(),
+            folders: vec!["".into(), "research".into()],
+            notes: vec![scanned("research/A deliberately long note title.md")],
+            skipped: Vec::new(),
+            truncated: false,
+        });
+        let view = VaultView {
+            status: VaultStatus::Ready,
+            snapshot: Some(VaultSnapshot {
+                root: "/vault".into(),
+                index: std::sync::Arc::new(index),
+            }),
+        };
+        let target = navigation_target(
+            &view,
+            NavigationKind::Note,
+            "RESEARCH/A deliberately long note title.MD",
+        )
+        .unwrap();
+        let resolved = resolve_navigation(&view, &target).unwrap();
+        let note = view
+            .snapshot
+            .as_ref()
+            .unwrap()
+            .index
+            .notes
+            .get("research/A deliberately long note title.md")
+            .unwrap();
+        assert_eq!(resolved.title, "A deliberately long note title");
+        assert_eq!(
+            resolved.center,
+            [
+                note.placed.x + note.placed.w / 2.0,
+                note.placed.y + note.placed.h / 2.0
+            ]
+        );
+
+        let mut camera = GraphCamera::default();
+        assert!(camera.navigate(&view, target.clone()));
+        let previous = camera.clone();
+        let empty_view = VaultView {
+            status: VaultStatus::Ready,
+            snapshot: Some(VaultSnapshot {
+                root: "/vault".into(),
+                index: std::sync::Arc::new(VaultIndex::default()),
+            }),
+        };
+        assert!(!camera.navigate(&empty_view, target));
+        assert_eq!(camera, previous);
+    }
+
     fn scanned(rel: &str) -> ScannedNote {
         ScannedNote {
             rel: rel.into(),
@@ -876,12 +1050,25 @@ mod tests {
     }
 }
 
-pub fn workspace(ui: &mut egui::Ui, view: &VaultView) {
+pub fn workspace(ui: &mut egui::Ui, view: &VaultView, camera: &GraphCamera) {
     egui::CentralPanel::default()
         .frame(egui::Frame::NONE.fill(PAPER))
         .show(ui, |ui| {
             let canvas = ui.max_rect();
             ui.painter().rect_filled(canvas, 0, PAPER);
+            if let Some(focus) = &camera.focus {
+                let center = canvas.center();
+                ui.painter().circle_filled(center, 4.0, crate::DOT);
+                let title_rect = egui::Rect::from_min_size(
+                    canvas.left_top() + egui::vec2(16.0, 16.0),
+                    egui::vec2((canvas.width() - 32.0).max(0.0), 24.0),
+                );
+                ui.put(
+                    title_rect,
+                    egui::Label::new(focus.title.clone()).truncate(),
+                )
+                .on_hover_text(&focus.title);
+            }
             match &view.status {
                 VaultStatus::Loading if view.snapshot.is_none() => {
                     ui.painter().text(
