@@ -88,12 +88,16 @@ pub fn split(text: &str) -> Frontmatter {
     let le = open.ending(text);
     let inner_start = open.end;
     let mut pos = inner_start;
-    let close = loop {
+    let (close, dots) = loop {
         let Some(line) = line_at(text, pos) else {
             return Frontmatter::Invalid { region: None, reason: Invalid::Unterminated };
         };
-        if is_delim(line.content(text), "---") {
-            break line;
+        let content = line.content(text);
+        if is_delim(content, "---") {
+            break (line, false);
+        }
+        if is_delim(content, "...") {
+            break (line, true);
         }
         pos = line.end;
     };
@@ -104,6 +108,13 @@ pub fn split(text: &str) -> Frontmatter {
         body_start: close.end,
         le,
     };
+    if dots {
+        return Frontmatter::Invalid { region: Some(region), reason: Invalid::DotsTerminator };
+    }
+    // Checked before the YAML parser ever sees the text.
+    if region.inner.len() > MAX_FRONTMATTER_BYTES {
+        return Frontmatter::Invalid { region: Some(region), reason: Invalid::TooLarge };
+    }
     match yaml_serde::from_str::<Value>(&text[region.inner.clone()]) {
         Ok(Value::Mapping(map)) => Frontmatter::Parsed { region, map },
         Ok(Value::Null) => Frontmatter::Parsed { region, map: Mapping::new() },
@@ -160,14 +171,45 @@ pub fn read_layout(fm: &Frontmatter) -> Layout {
         return out;
     };
     for key in LAYOUT_KEYS {
-        if let Some(v) = map.get(key)
-            && let Some(slot) = out.slot(key)
-        {
-            *slot = v.as_f64().filter(|n| n.is_finite());
+        let Some(v) = map.get(key) else { continue };
+        match number(v) {
+            Num::Finite(n) => *out.slot(key).expect("layout key") = Some(n),
+            Num::Null | Num::NonFinite => {}
+            Num::NotANumber => out.conflicts.push(key),
         }
     }
-    out.created = map.get("created").and_then(|v| v.as_str()).map(str::to_owned);
+    out.created = map.get("created").and_then(|v| match v {
+        Value::String(s) => Some(s.clone()),
+        Value::Number(n) => Some(n.to_string()),
+        _ => None,
+    });
     out
+}
+
+/// How an app key's YAML value reads as a number.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Num {
+    Finite(f64),
+    /// `x:` or `x: ~`: no value yet.
+    Null,
+    /// `.inf`, `.nan`, or a string that parses to one: ignored, safe to overwrite.
+    NonFinite,
+    /// Text, a list, a mapping, a bool: the user's, never overwritten.
+    NotANumber,
+}
+
+fn number(v: &Value) -> Num {
+    let n = match v {
+        Value::Null => return Num::Null,
+        Value::Number(n) => n.as_f64(),
+        Value::String(s) => s.trim().parse::<f64>().ok(),
+        _ => None,
+    };
+    match n {
+        Some(n) if n.is_finite() => Num::Finite(n),
+        Some(_) => Num::NonFinite,
+        None => Num::NotANumber,
+    }
 }
 
 /// A layout write: each `Some` key is set, each `None` key is left alone.
@@ -246,23 +288,45 @@ pub fn splice_layout(text: &str, patch: &LayoutPatch) -> Result<Option<String>, 
     }
     let lines: Vec<String> = entries.iter().map(|&(k, v)| format!("{k}: {}", format_num(v))).collect();
     match split(text) {
-        Frontmatter::Absent => Ok(Some(prepend_block(text, &lines))),
+        Frontmatter::Absent => {
+            let out = prepend_block(text, &lines);
+            let written: Vec<(&str, Want)> = entries.iter().map(|&(k, v)| (k, Want::Num(v))).collect();
+            verify(&Mapping::new(), &out, &written)?;
+            Ok(Some(out))
+        }
         Frontmatter::Invalid { reason, .. } => Err(SpliceError::Unparseable(reason)),
         Frontmatter::Parsed { region, map } => {
             let mut edits: Vec<(Range<usize>, String)> = Vec::new();
             let mut insert = String::new();
             for &(key, v) in &entries {
                 let new = format_num(v);
-                if map.get(key).is_none() {
+                let Some(old) = map.get(key) else {
                     insert.push_str(&format!("{key}: {new}{}", region.le.as_str()));
                     continue;
+                };
+                let old = number(old);
+                if old == Num::NotANumber {
+                    return Err(SpliceError::Conflict(key));
                 }
-                let Some(value) = find_value(text, &region, key) else {
+                let Some(slot) = find_value(text, &region, key) else {
                     return Err(SpliceError::KeyNotSpliceable(key));
                 };
-                if text[value.clone()] != new {
-                    edits.push((value, new));
+                if slot.value.is_empty() {
+                    // `x:` alone is null; an empty line with a non-null value
+                    // means the value continues on the next lines.
+                    if old != Num::Null {
+                        return Err(SpliceError::KeyNotSpliceable(key));
+                    }
+                    let gap = if slot.value.end < slot.content_end { " " } else { "" };
+                    edits.push((slot.after_colon..slot.value.start, format!(" {new}{gap}")));
+                    continue;
                 }
+                if let Num::Finite(o) = old
+                    && format_num(o) == new
+                {
+                    continue;
+                }
+                edits.push((slot.value, new));
             }
             if !insert.is_empty() {
                 edits.push((region.close.start..region.close.start, insert));
@@ -270,25 +334,67 @@ pub fn splice_layout(text: &str, patch: &LayoutPatch) -> Result<Option<String>, 
             if edits.is_empty() {
                 return Ok(None);
             }
-            Ok(Some(apply(text, edits)))
+            let out = apply(text, edits);
+            let written: Vec<(&str, Want)> = entries.iter().map(|&(k, v)| (k, Want::Num(v))).collect();
+            verify(&map, &out, &written)?;
+            Ok(Some(out))
         }
     }
+}
+
+/// What a written key must read back as.
+enum Want<'a> {
+    Num(f64),
+    Text(&'a str),
+}
+
+/// The guard after every edit: the output must parse, each written key must
+/// read back as intended, and every other key must equal the input's value.
+fn verify(before: &Mapping, out: &str, written: &[(&str, Want)]) -> Result<(), SpliceError> {
+    let Frontmatter::Parsed { map: after, .. } = split(out) else {
+        return Err(SpliceError::Verify("the edited frontmatter does not parse".into()));
+    };
+    for (key, want) in written {
+        let got = after.get(*key);
+        let ok = match (want, got) {
+            (Want::Num(v), Some(got)) => matches!(number(got), Num::Finite(n) if format_num(n) == format_num(*v)),
+            (Want::Text(t), Some(Value::String(s))) => s == t,
+            _ => false,
+        };
+        if !ok {
+            return Err(SpliceError::Verify(format!("`{key}` reads back as {got:?}")));
+        }
+    }
+    let is_written = |k: &Value| k.as_str().is_some_and(|k| written.iter().any(|(w, _)| *w == k));
+    for (k, v) in before {
+        if !is_written(k) && after.get(k) != Some(v) {
+            return Err(SpliceError::Verify(format!("key {k:?} changed")));
+        }
+    }
+    for k in after.keys() {
+        if !is_written(k) && before.get(k).is_none() {
+            return Err(SpliceError::Verify(format!("key {k:?} appeared")));
+        }
+    }
+    Ok(())
 }
 
 /// Adds `created: ISO` unless the note already has a `created` key (never overwritten).
 pub fn ensure_created(text: &str, iso: &str) -> Result<Option<String>, SpliceError> {
     let line = format!("created: {iso}");
-    match split(text) {
-        Frontmatter::Absent => Ok(Some(prepend_block(text, &[line]))),
-        Frontmatter::Invalid { reason, .. } => Err(SpliceError::Unparseable(reason)),
+    let (out, before) = match split(text) {
+        Frontmatter::Absent => (prepend_block(text, &[line]), Mapping::new()),
+        Frontmatter::Invalid { reason, .. } => return Err(SpliceError::Unparseable(reason)),
         Frontmatter::Parsed { region, map } => {
             if map.get("created").is_some() {
                 return Ok(None);
             }
             let at = region.close.start;
-            Ok(Some(apply(text, vec![(at..at, format!("{line}{}", region.le.as_str()))])))
+            (apply(text, vec![(at..at, format!("{line}{}", region.le.as_str()))]), map)
         }
-    }
+    };
+    verify(&before, &out, &[("created", Want::Text(iso))])?;
+    Ok(Some(out))
 }
 
 /// A number as the app writes it: one decimal at most, integers without `.0`,
@@ -326,9 +432,20 @@ fn first_line_ending(text: &str) -> LineEnding {
     }
 }
 
-/// The byte range of `key`'s value on its top-level line, when there is
-/// exactly one such line and the value sits on it.
-fn find_value(text: &str, region: &Region, key: &str) -> Option<Range<usize>> {
+/// Where a key's value sits on its line.
+struct Slot {
+    /// The first byte after the `:`.
+    after_colon: usize,
+    /// The value bytes (empty when nothing but a comment or nothing at all follows).
+    value: Range<usize>,
+    /// The end of the line's content (before its line ending).
+    content_end: usize,
+}
+
+/// `key`'s top-level line: one that starts at column 0 with the key as a
+/// plain unquoted scalar, then optional spaces or tabs and `:`. `None` unless
+/// there is exactly one such line.
+fn find_value(text: &str, region: &Region, key: &str) -> Option<Slot> {
     let mut found = None;
     let mut pos = region.inner.start;
     while let Some(line) = line_at(text, pos).filter(|l| l.start < region.inner.end) {
@@ -343,12 +460,13 @@ fn find_value(text: &str, region: &Region, key: &str) -> Option<Range<usize>> {
         if found.is_some() {
             return None;
         }
-        let colon = line.start + (content.len() - after_colon.len());
+        let content_end = line.start + content.len();
+        let colon = content_end - after_colon.len();
         let value_start = colon + (after_colon.len() - after_colon.trim_start_matches([' ', '\t']).len());
-        let value = &text[value_start..line.start + content.len()];
+        let value = &text[value_start..content_end];
         let value_len = comment_start(value).unwrap_or(value.len());
         let value_len = value[..value_len].trim_end_matches([' ', '\t']).len();
-        found = Some(value_start..value_start + value_len);
+        found = Some(Slot { after_colon: colon, value: value_start..value_start + value_len, content_end });
     }
     found
 }
