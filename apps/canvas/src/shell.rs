@@ -941,7 +941,9 @@ pub fn explorer(
                     }
                     ui.separator();
                     action = explorer_contents(ui, state, view);
-                    if header_response.dragged() && header_response.drag_delta().length() >= 28.0 {
+                    if header_response.dragged()
+                        && drag_floats_explorer(header_response.total_drag_delta())
+                    {
                         let at = ui.ctx().pointer_interact_pos().unwrap_or(header.center());
                         state.float(at - egui::vec2(132.0, 18.0));
                     }
@@ -969,6 +971,17 @@ pub fn explorer(
         }
     }
     action
+}
+
+/// How far the docked explorer's header is dragged, in total since the
+/// press, before it comes off the edge to float.
+const FLOAT_DRAG_DISTANCE: f32 = 28.0;
+
+/// Whether a header drag has gone far enough to float the explorer. Takes
+/// the drag's total since the press, not one frame's movement, so an
+/// ordinary slow drag floats it too.
+pub fn drag_floats_explorer(total_drag: Option<egui::Vec2>) -> bool {
+    total_drag.is_some_and(|drag| drag.length() >= FLOAT_DRAG_DISTANCE)
 }
 
 fn explorer_contents(
@@ -1151,6 +1164,23 @@ mod tests {
         assert_eq!(state.mode, ExplorerMode::Docked);
         assert_eq!(state.width, 336.0);
         assert_eq!(state.selected.as_deref(), Some("notes/a.md"));
+    }
+
+    #[test]
+    fn explorer_floats_after_a_slow_drag_adds_up_to_the_distance() {
+        // A slow drag: two points a frame, so no single frame moves far.
+        let mut total = egui::Vec2::ZERO;
+        let mut floated_at = None;
+        for frame in 1..=20 {
+            total += egui::vec2(2.0, 0.0);
+            if drag_floats_explorer(Some(total)) {
+                floated_at = Some(frame);
+                break;
+            }
+        }
+        assert_eq!(floated_at, Some(14));
+        assert!(!drag_floats_explorer(Some(egui::vec2(10.0, 10.0))));
+        assert!(!drag_floats_explorer(None));
     }
 
     #[test]
