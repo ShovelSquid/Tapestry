@@ -2,19 +2,21 @@
 //!
 //! Shell-global chords are taken out of the raw input before egui (and so
 //! before any terminal drains `InputState.events`) sees them: Cmd-K opens the
-//! palette, and Cmd-Shift-W leaves a hosted view, terminals included. Esc
+//! palette, Cmd-Shift-W leaves a hosted view, terminals included, and Cmd-\
+//! closes or reopens the explorer. Esc
 //! then follows one precedence, and the simulation's own keys run only while
 //! the Simulation destination is showing.
 
 use eframe::egui;
 
-use crate::shell::Destination;
+use crate::shell::{Destination, ExplorerMode};
 
 /// Shell chords found in this frame's raw input, for `App::ui` to apply.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct ShellChords {
     pub open_palette: bool,
     pub exit_view: bool,
+    pub toggle_explorer: bool,
 }
 
 /// A shell chord on a key event, and the text its press would type.
@@ -34,6 +36,9 @@ fn chord(event: &egui::Event) -> Option<(Chord, bool)> {
         egui::Key::K if modifiers.command && !modifiers.shift => {
             Some((Chord::OpenPalette, *pressed))
         }
+        egui::Key::Backslash if modifiers.command && !modifiers.shift => {
+            Some((Chord::ToggleExplorer, *pressed))
+        }
         _ => None,
     }
 }
@@ -42,6 +47,7 @@ fn chord(event: &egui::Event) -> Option<(Chord, bool)> {
 enum Chord {
     OpenPalette,
     ExitView,
+    ToggleExplorer,
 }
 
 impl Chord {
@@ -49,12 +55,13 @@ impl Chord {
         match self {
             Self::OpenPalette => "k",
             Self::ExitView => "w",
+            Self::ToggleExplorer => "\\",
         }
     }
 }
 
-/// Remove Cmd-K and Cmd-Shift-W, with the text each press would type, from
-/// the raw events and report them.
+/// Remove Cmd-K, Cmd-Shift-W, and Cmd-\, with the text each press would
+/// type, from the raw events and report them.
 pub fn filter_shell_chords(events: &mut Vec<egui::Event>) -> ShellChords {
     let mut found = ShellChords::default();
     let mut pending_text: Option<Chord> = None;
@@ -64,6 +71,7 @@ pub fn filter_shell_chords(events: &mut Vec<egui::Event>) -> ShellChords {
                 match chord {
                     Chord::OpenPalette => found.open_palette = true,
                     Chord::ExitView => found.exit_view = true,
+                    Chord::ToggleExplorer => found.toggle_explorer = true,
                 }
                 pending_text = Some(chord);
             } else {
@@ -148,6 +156,21 @@ pub fn tool_claims_escape(destination: &Destination, open: ToolEscape) -> bool {
 /// card left open must not swallow Esc and marks undo.
 pub fn opened_card_claims_keyboard(destination: &Destination, card_open: bool) -> bool {
     card_open && *destination == Destination::Files
+}
+
+/// What Cmd-\ does: on the graph it closes the explorer, or reopens it
+/// docked; from a hosted view, where the explorer isn't drawn, it goes back
+/// to the graph with the explorer open, as the palette's "Open explorer" does.
+pub fn route_explorer_toggle(
+    destination: &Destination,
+    mode: ExplorerMode,
+) -> (Destination, ExplorerMode) {
+    let mode = match (destination.is_hosted(), mode) {
+        (false, ExplorerMode::Docked | ExplorerMode::Floating) => ExplorerMode::Closed,
+        (true, open @ (ExplorerMode::Docked | ExplorerMode::Floating)) => open,
+        (_, ExplorerMode::Closed) => ExplorerMode::Docked,
+    };
+    (Destination::Graph, mode)
 }
 
 /// Where the exit chord takes the window: from any hosted view back to the
@@ -237,7 +260,7 @@ mod tests {
             chords,
             ShellChords {
                 open_palette: true,
-                exit_view: false
+                ..ShellChords::default()
             }
         );
         assert_eq!(
@@ -277,6 +300,40 @@ mod tests {
             assert_eq!(route_exit_chord(&hosted), Some(Destination::Graph));
         }
         assert_eq!(route_exit_chord(&Destination::Graph), None);
+    }
+
+    #[test]
+    fn cmd_backslash_toggles_the_explorer_and_never_types() {
+        let mut events = vec![
+            key(egui::Key::Backslash, true, egui::Modifiers::COMMAND),
+            egui::Event::Text("\\".into()),
+            key(egui::Key::Backslash, false, egui::Modifiers::COMMAND),
+            egui::Event::Text("x".into()),
+        ];
+        let chords = filter_shell_chords(&mut events);
+        assert!(chords.toggle_explorer);
+        assert!(!chords.open_palette && !chords.exit_view);
+        assert_eq!(events, vec![egui::Event::Text("x".into())]);
+        // A plain backslash still types.
+        let plain = vec![
+            key(egui::Key::Backslash, true, egui::Modifiers::NONE),
+            egui::Event::Text("\\".into()),
+        ];
+        let mut kept = plain.clone();
+        assert_eq!(filter_shell_chords(&mut kept), ShellChords::default());
+        assert_eq!(kept, plain);
+
+        use ExplorerMode::{Closed, Docked, Floating};
+        let graph = Destination::Graph;
+        assert_eq!(route_explorer_toggle(&graph, Docked), (Destination::Graph, Closed));
+        assert_eq!(route_explorer_toggle(&graph, Floating), (Destination::Graph, Closed));
+        assert_eq!(route_explorer_toggle(&graph, Closed), (Destination::Graph, Docked));
+        for (mode, expected) in [(Closed, Docked), (Docked, Docked), (Floating, Floating)] {
+            assert_eq!(
+                route_explorer_toggle(&Destination::Terminals, mode),
+                (Destination::Graph, expected)
+            );
+        }
     }
 
     #[test]

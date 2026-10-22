@@ -468,6 +468,12 @@ impl App {
         {
             self.destination = next;
         }
+        if chords.toggle_explorer {
+            let (next, mode) =
+                shell_input::route_explorer_toggle(&self.destination, self.explorer.mode);
+            self.destination = next;
+            self.explorer.mode = mode;
+        }
     }
 
     /// Who has the keyboard this frame, for the shell's one input policy.
@@ -1557,6 +1563,7 @@ impl eframe::App for App {
         let chords = shell_input::filter_shell_chords(&mut raw.events);
         self.chords.open_palette |= chords.open_palette;
         self.chords.exit_view |= chords.exit_view;
+        self.chords.toggle_explorer |= chords.toggle_explorer;
         // An open palette, or one opening this frame, takes Esc first.
         self.marks.palette_open = self.palette.open || self.chords.open_palette;
         let (tool, radius) = (self.tool(), self.radius);
