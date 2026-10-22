@@ -141,6 +141,16 @@ pub fn fill_destination(name: &str) -> Option<Destination> {
     .map(|tab| Destination::from_tab(&tab))
 }
 
+/// Where `TAPESTRY_OPEN` leaves the window: on Files, the view that draws
+/// the opened file's card, unless `TAPESTRY_FILL` chose a view.
+pub fn opened_file_destination(current: &Destination, fill: Option<&str>) -> Destination {
+    if fill.and_then(fill_destination).is_some() {
+        current.clone()
+    } else {
+        Destination::Files
+    }
+}
+
 /// Where a palette action takes the main window. Only the destination
 /// changes; tool owners live on the app and are never rebuilt here.
 pub fn route_palette_action(_current: &Destination, action: &PaletteAction) -> Destination {
@@ -1545,6 +1555,23 @@ mod tests {
         for tab in [Tab::Canvas, Tab::Brushes, Tab::Timeline] {
             assert_eq!(Destination::from_tab(&tab), Destination::Simulation);
         }
+    }
+
+    #[test]
+    fn tapestry_open_shows_the_files_view_unless_fill_chose_one() {
+        assert_eq!(
+            opened_file_destination(&Destination::Graph, None),
+            Destination::Files
+        );
+        assert_eq!(
+            opened_file_destination(&Destination::Rules, Some("rules")),
+            Destination::Rules
+        );
+        // A fill name that isn't a view chose nothing.
+        assert_eq!(
+            opened_file_destination(&Destination::Graph, Some("nowhere")),
+            Destination::Files
+        );
     }
 
     #[test]

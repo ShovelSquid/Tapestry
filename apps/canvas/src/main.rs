@@ -66,6 +66,9 @@ fn main() -> eframe::Result {
             // `TAPESTRY_OPEN=<file>` opens a file in the files pane at startup.
             if let Ok(path) = std::env::var("TAPESTRY_OPEN") {
                 app.ide.show(PathBuf::from(path));
+                // The opened card is drawn by the Files view: show it.
+                let fill = std::env::var("TAPESTRY_FILL").ok();
+                app.destination = shell::opened_file_destination(&app.destination, fill.as_deref());
             }
             if demo {
                 // Downloaded already, the meaning model loads in a moment:
