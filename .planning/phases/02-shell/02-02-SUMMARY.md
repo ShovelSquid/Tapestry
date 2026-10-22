@@ -17,7 +17,7 @@ affects: [02-shell, 03-canvas, shell-navigation, tool-routing]
 
 # Actuals (#2632)
 actuals:
-  tokens: 11353
+  tokens: 11997
   tasks: 3
   commits: 6
 commits: 6
@@ -51,7 +51,8 @@ coverage:
       - kind: unit
         ref: "cargo test -p tapestry-canvas-app --offline shell"
         status: pass
-    human_judgment: false
+    human_judgment: true
+    notes: "Automated state and row behavior passed; native dock resizing, drag-to-float, and window reopening need a host UI check (question 15)."
   - id: D2
     description: "Open vault dispatches to the serialized VaultHost root switch, and a failed switch keeps the last snapshot."
     requirement: VAULT-01
@@ -67,7 +68,8 @@ coverage:
       - kind: unit
         ref: "cargo test -p tapestry-canvas-app --offline palette"
         status: pass
-    human_judgment: false
+    human_judgment: true
+    notes: "Matcher and entry behavior passed; palette rendering needs a host UI check (question 15)."
   - id: D4
     description: "Cmd-K opens the palette and removes its Key and associated Text events before terminal input, while plain K still reaches the terminal."
     requirement: SHELL-03
@@ -75,7 +77,8 @@ coverage:
       - kind: unit
         ref: "cargo test -p tapestry-canvas-app --offline shell_input"
         status: pass
-    human_judgment: false
+    human_judgment: true
+    notes: "Raw input filtering passed; confirm in a focused native terminal that Cmd-K opens the palette without delivering a character to the PTY (question 15)."
   - id: D5
     description: "Explorer and palette produce equal NavigationTargets for the same note or folder. The camera centers on valid targets, and stale snapshot keys are ignored without panicking."
     requirement: SHELL-06
@@ -157,7 +160,7 @@ Each RED commit includes a `02-02-taskN-red.json` evidence file. Each one record
 
 ## Deviations from Plan
 
-None. The plan was executed as written. No close-out fixes were needed: every acceptance criterion and verification command passed when re-checked.
+None. The plan was executed as written. All automated acceptance criteria and verification commands passed when re-checked. Native rendering and focus behavior remain for the non-blocking host UI check in question 15.
 
 ## Issues Encountered
 
