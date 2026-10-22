@@ -193,15 +193,22 @@ fn run_worker(
                 path,
                 create_if_missing,
             }) => {
-                // Dropping the watcher before replacement keeps watcher
-                // ownership and replacement fully serialized.
-                active = None;
+                // Open the replacement first and swap only when it opened:
+                // a failed switch leaves the current vault, its Store, and
+                // its watcher live, so the snapshot still on screen keeps
+                // refreshing. Both watchers live on this thread, so the swap
+                // is as serialized as dropping first.
                 match open_vault(&path, create_if_missing, &watch_tx) {
                     Ok((replacement, snapshot)) => {
-                        remember_root(&replacement.root);
+                        // Dropping the old ActiveVault drops its watcher.
+                        active = Some(replacement);
+                        // Paths the old watcher queued belong to the old root.
+                        while watch_rx.try_recv().is_ok() {}
+                        if let Some(active) = active.as_ref() {
+                            remember_root(&active.root);
+                        }
                         publish(&published, VaultStatus::Ready, Some(snapshot));
                         ctx.request_repaint();
-                        active = Some(replacement);
                     }
                     Err(error) => {
                         publish_error_keep_snapshot(&published, error);
@@ -494,6 +501,38 @@ mod tests {
             !invalid.exists(),
             "opening a selected folder must not create it"
         );
+
+        drop(host);
+        thread::sleep(POLL_INTERVAL + Duration::from_millis(20));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn failed_root_switch_keeps_the_original_vault_refreshing() {
+        let root = temp_root("switch-still-live");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("keep.md"), "still here\n").unwrap();
+        let host = VaultHost::start_with(
+            root.clone(),
+            false,
+            Duration::from_secs(60),
+            egui::Context::default(),
+        );
+        wait_for(&host, |view| matches!(view.status, VaultStatus::Ready));
+
+        assert!(host.select_root(temp_root("missing-vault-live")).is_ok());
+        wait_for(&host, |view| matches!(view.status, VaultStatus::Error(_)));
+
+        // The vault still on screen keeps its Store: an outside change to
+        // it shows up in a later snapshot.
+        std::fs::write(root.join("arrived.md"), "after the failed switch\n").unwrap();
+        assert!(host.request_rescan());
+        let refreshed = wait_for(&host, |view| {
+            view.snapshot
+                .as_ref()
+                .is_some_and(|snapshot| snapshot.index.notes.contains_key("arrived.md"))
+        });
+        assert!(refreshed.snapshot.unwrap().index.notes.contains_key("keep.md"));
 
         drop(host);
         thread::sleep(POLL_INTERVAL + Duration::from_millis(20));
