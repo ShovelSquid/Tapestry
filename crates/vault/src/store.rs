@@ -1,7 +1,7 @@
 //! The one serialized writer for a vault. All command offsets are applied to
 //! fresh bytes; writes use a same-directory temp file and atomic rename.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fs::{self, File, OpenOptions, Permissions};
 use std::io::Write;
 use std::ops::Range;
@@ -13,7 +13,7 @@ use crate::frontmatter::{self, LayoutPatch, SpliceError};
 use crate::journal::{self, Entry, Event};
 use crate::layout::fnv1a64;
 use crate::links::{self, LinkError};
-use crate::scan::{Scan, is_ignored_name};
+use crate::scan::{FileStat, Scan, is_ignored_name, stat_tree};
 use crate::time;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -156,6 +156,7 @@ pub struct Store {
     own_writes: HashMap<String, u64>,
     known: HashMap<String, u64>,
     stamped: HashSet<String>,
+    stats: BTreeMap<String, FileStat>,
     temps: u64,
 }
 
@@ -182,6 +183,7 @@ impl Store {
                 _ => None,
             })
             .collect();
+        let stats = stat_tree(&root)?;
         cleanup_stale_temps(&root);
         Ok(Store {
             root,
@@ -190,6 +192,7 @@ impl Store {
             own_writes: HashMap::new(),
             known: HashMap::new(),
             stamped,
+            stats,
             temps: 0,
         })
     }
@@ -208,6 +211,28 @@ impl Store {
         for note in &scan.notes {
             self.known.insert(note.rel.clone(), note.hash);
         }
+    }
+
+    /// Metadata-only fallback for watcher events that were coalesced or lost.
+    /// Candidate paths still use content hashes as the identity of change.
+    pub fn rescan(&mut self) -> std::io::Result<Vec<(String, Change)>> {
+        let current = stat_tree(&self.root)?;
+        let candidates: BTreeSet<String> = self
+            .stats
+            .keys()
+            .chain(current.keys())
+            .filter(|rel| self.stats.get(*rel) != current.get(*rel))
+            .cloned()
+            .collect();
+        let mut changes = Vec::new();
+        for rel in candidates {
+            let change = self.classify(&rel);
+            if matches!(change, Change::External | Change::Removed) {
+                changes.push((rel, change));
+            }
+        }
+        self.stats = current;
+        Ok(changes)
     }
 
     pub fn classify(&mut self, rel: &str) -> Change {
@@ -728,6 +753,17 @@ impl Store {
         })();
         if result.is_err() {
             let _ = fs::remove_file(&tmp);
+        }
+        if result.is_ok() {
+            if let Ok(meta) = fs::metadata(path) {
+                self.stats.insert(
+                    rel.to_owned(),
+                    FileStat {
+                        len: meta.len(),
+                        mtime: meta.modified().ok(),
+                    },
+                );
+            }
         }
         result.map_err(WriteError::Io)
     }

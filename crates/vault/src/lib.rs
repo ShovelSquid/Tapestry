@@ -20,9 +20,11 @@ pub mod index;
 pub mod journal;
 pub mod scan;
 pub mod store;
+pub mod watch;
 pub mod time;
 
 pub use frontmatter::LayoutPatch;
 pub use index::VaultIndex;
 pub use scan::{Scan, scan};
 pub use store::{Change, Outcome, Store, VaultCmd, WriteError};
+pub use watch::{Watch, WatchMsg};
