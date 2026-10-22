@@ -11,12 +11,14 @@ mod ide;
 mod marks;
 mod notes;
 mod server;
+mod shell;
 mod swarm;
 mod sync;
 mod tabnote;
 mod term;
 mod trail;
 mod translate;
+mod vault_host;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -27,7 +29,7 @@ use egui::{
     Stroke, TextureHandle, Vec2, pos2, vec2,
 };
 use egui_dock::tab_viewer::OnCloseResponse;
-use egui_dock::{DockArea, DockState, NodeIndex, TabViewer};
+use egui_dock::{DockState, NodeIndex, TabViewer};
 use tapestry_canvas::{
     Body, Brush, DT, HEIGHT, KeyId, MadeBy, Material, Particle, Rulebook, TICKS_PER_SECOND, Tick,
     Timeline, WIDTH,
@@ -325,6 +327,7 @@ struct App {
     /// A pane filling the whole window, if one does.
     maximized: Option<Tab>,
     ide: ide::Ide,
+    vault_host: vault_host::VaultHost,
     /// The notes pane: writing that isn't rules.
     notebook: notes::Notes,
     highlights: highlight::Highlights,
@@ -392,6 +395,10 @@ impl App {
             Rulebook::default()
         });
         let engine = world.parent().map_or(world.clone(), |p| p.to_path_buf());
+        let vault_host = vault_host::VaultHost::start(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../world/vault"),
+            cc.egui_ctx.clone(),
+        );
         Self {
             timeline: Timeline::new(rules),
             dock: Some(default_layout()),
@@ -407,6 +414,7 @@ impl App {
                 ide.serve_world(world.clone());
                 ide
             },
+            vault_host,
             notebook: notes::Notes::new(&world),
             highlights: highlight::Highlights::new(&cc.egui_ctx),
             marks: marks::Marks::new(),
@@ -1600,50 +1608,8 @@ impl eframe::App for App {
                 });
                 self.tab_ui(ui, &mut tab);
             });
-        } else if let Some(mut dock) = self.dock.take() {
-            let mut style = egui_dock::Style::from_egui(ui.style());
-            style.tab_bar.bg_fill = PAPER;
-            style.tab_bar.hline_color = RULE_LINE;
-            style.tab.tab_body.bg_fill = PAPER;
-            style.tab.tab_body.stroke = Stroke::NONE;
-            style.tab.active.bg_fill = PAPER;
-            style.tab.active.text_color = INK;
-            style.tab.focused.bg_fill = PAPER;
-            style.tab.focused.text_color = INK;
-            style.tab.inactive.bg_fill = PAPER;
-            style.tab.inactive.text_color = FAINT;
-            style.tab.hovered.bg_fill = PAPER;
-            style.tab.hovered.text_color = INK;
-            style.separator.color_idle = RULE_LINE;
-            style.separator.color_hovered = FAINT;
-            style.separator.color_dragged = INK;
-            style.overlay.selection_color = DOT.gamma_multiply(0.25);
-            egui::CentralPanel::default()
-                .frame(egui::Frame::NONE.fill(PAPER))
-                .show(ui, |ui| {
-                    DockArea::new(&mut dock)
-                        .style(style)
-                        .show_leaf_close_all_buttons(false)
-                        .show_inside(ui, &mut Tabs { app: self });
-                });
-            for path in std::mem::take(&mut self.ide.open_requests) {
-                let tab = Tab::File(path);
-                if let Some(at) = dock.find_tab(&tab) {
-                    let _ = dock.set_active_tab(at);
-                } else {
-                    if let Some(files) = dock.find_tab(&Tab::Files) {
-                        dock.set_focused_node_and_surface(files.node_path());
-                    }
-                    dock.push_to_focused_leaf(tab);
-                }
-            }
-            // Opening or following a terminal from its pane brings the files forward.
-            if std::mem::take(&mut self.ide.reveal_files)
-                && let Some(files) = dock.find_tab(&Tab::Files)
-            {
-                let _ = dock.set_active_tab(files);
-            }
-            self.dock = Some(dock);
+        } else {
+            shell::workspace(ui, &self.vault_host.view());
         }
         if std::mem::take(&mut self.ide.reveal_files) && self.maximized == Some(Tab::Terminals) {
             self.maximized = None;
