@@ -40,13 +40,13 @@ fn layout_round_trip_through_store() {
     assert_eq!(out.written, vec!["C.md".to_owned()]);
     assert_eq!(fs::read_to_string(root.join("C.md")).unwrap(), "---\ncreated: 2026-10-21T10:11:12\n---\nGamma\n");
 
+    let entries = journal::read(&root).unwrap();
+    assert_eq!(entries.len(), 2);
+    assert!(matches!(&entries[0].event, Event::NoteEstimated { path, from, .. } if path == "B.md" && (from == "birth" || from == "mtime")));
+    assert_eq!(entries[1], Entry { t: common::FIXED_MS, event: Event::NoteCreated { path: "C.md".into() } });
     assert_eq!(
-        journal::read(&root).unwrap(),
-        vec![Entry { t: common::FIXED_MS, event: Event::NoteCreated { path: "C.md".into() } }]
-    );
-    assert_eq!(
-        fs::read_to_string(journal::path(&root)).unwrap(),
-        "{\"t\":1792577472000,\"kind\":\"note_created\",\"path\":\"C.md\"}\n"
+        fs::read_to_string(journal::path(&root)).unwrap().lines().last().unwrap(),
+        "{\"t\":1792577472000,\"kind\":\"note_created\",\"path\":\"C.md\"}"
     );
     assert_eq!(fs::read_to_string(root.join("A.md")).unwrap(), A);
 

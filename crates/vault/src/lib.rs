@@ -25,4 +25,4 @@ pub mod time;
 pub use frontmatter::LayoutPatch;
 pub use index::VaultIndex;
 pub use scan::{Scan, scan};
-pub use store::{Outcome, Store, VaultCmd, WriteError};
+pub use store::{Change, Outcome, Store, VaultCmd, WriteError};

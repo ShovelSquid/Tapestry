@@ -22,7 +22,34 @@ pub fn path(root: &Path) -> PathBuf {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Event {
     /// The app created a note at this vault-relative path.
-    NoteCreated { path: String },
+    NoteCreated {
+        path: String,
+    },
+    NoteEstimated {
+        path: String,
+        created: i64,
+        from: String,
+    },
+    LinkAdded {
+        path: String,
+        line: usize,
+        block: Option<String>,
+        target: String,
+        target_block: Option<String>,
+        description: String,
+    },
+    LinkRemoved {
+        path: String,
+        line: usize,
+        target: String,
+        description: Option<String>,
+    },
+    CardKept {
+        path: String,
+    },
+    CardDismissed {
+        path: String,
+    },
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
@@ -38,7 +65,10 @@ pub fn append(root: &Path, entry: &Entry) -> std::io::Result<()> {
     fs::create_dir_all(root.join(DIR))?;
     let mut line = serde_json::to_string(entry).map_err(std::io::Error::other)?;
     line.push('\n');
-    let mut file = OpenOptions::new().create(true).append(true).open(path(root))?;
+    let mut file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path(root))?;
     file.write_all(line.as_bytes())?;
     file.sync_data()
 }
@@ -52,5 +82,8 @@ pub fn read(root: &Path) -> std::io::Result<Vec<Entry>> {
     };
     // Lossy: a torn multi-byte tail must not hide the lines before it.
     let text = String::from_utf8_lossy(&bytes);
-    Ok(text.lines().filter_map(|line| serde_json::from_str(line).ok()).collect())
+    Ok(text
+        .lines()
+        .filter_map(|line| serde_json::from_str(line).ok())
+        .collect())
 }

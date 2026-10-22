@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
@@ -128,5 +128,21 @@ pub fn add_test_time_entries(root: &Path) {
         symlink("Welcome.md", root.join("link.md")).unwrap();
         symlink("Sub", root.join("linkdir")).unwrap();
         symlink(".", root.join("loop")).unwrap();
+    }
+}
+
+pub struct ScriptedIds(VecDeque<String>);
+
+impl ScriptedIds {
+    pub fn new(ids: &[&str]) -> Self {
+        Self(ids.iter().map(|id| (*id).to_owned()).collect())
+    }
+}
+
+impl tapestry_vault::blocks::IdGen for ScriptedIds {
+    fn next_id(&mut self) -> String {
+        self.0
+            .pop_front()
+            .expect("ScriptedIds ran out of configured ids")
     }
 }
