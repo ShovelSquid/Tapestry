@@ -13,7 +13,7 @@ Defaults chosen for open questions: `.context/HUMAN-QUESTIONS.md`.
 - [ ] **VAULT-01**: User can open any folder as a vault; the app remembers the last one and defaults to `world/vault/` (created if missing)
 - [ ] **VAULT-02**: Every `.md` file in the vault is a note; every folder is a graph; `.obsidian/`, `.git/` and the app's hidden folder are ignored; symlinks are not followed
 - [ ] **VAULT-03**: A note's card position and size are read from YAML frontmatter `x`, `y`, `w`, `h`; notes without them get a computed placement that is not written until the user moves them (opening a vault never rewrites files)
-- [ ] **VAULT-04**: Layout writes splice only the app-owned keys (`x`, `y`, `w`, `h`, `created`, `world-x`, `world-y`, `world-scale`) and leave every other byte of the file identical; a file whose frontmatter fails to parse is never rewritten
+- [x] **VAULT-04**: Layout writes splice only the app-owned keys (`x`, `y`, `w`, `h`, `created`, `world-x`, `world-y`, `world-scale`) and leave every other byte of the file identical; a file whose frontmatter fails to parse is never rewritten
 - [ ] **VAULT-05**: Notes created by the app get a `created:` timestamp in frontmatter, and vault changes (note created, link added/removed, card kept/dismissed) are appended to an event journal in the app's hidden folder
 - [ ] **VAULT-06**: All note writes go through one serialized writer (atomic write); the file watcher picks up outside edits (Obsidian, git, editors) and ignores the app's own writes
 
@@ -95,7 +95,7 @@ Filled by roadmap creation (2026-10-21). Each requirement maps to exactly one ph
 | VAULT-01 | Phase 2 | Pending |
 | VAULT-02 | Phase 1 | Pending |
 | VAULT-03 | Phase 1 | Pending |
-| VAULT-04 | Phase 1 | Pending |
+| VAULT-04 | Phase 1 | Complete |
 | VAULT-05 | Phase 1 | Pending |
 | VAULT-06 | Phase 1 | Pending |
 | LINK-01 | Phase 1 | Pending |
@@ -132,6 +132,7 @@ Filled by roadmap creation (2026-10-21). Each requirement maps to exactly one ph
 | TREE-03 | Phase 6 | Pending |
 
 **Coverage:**
+
 - v1 requirements: 38 total
 - Mapped to phases: 38
 - Unmapped: 0
