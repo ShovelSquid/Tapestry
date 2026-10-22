@@ -328,6 +328,7 @@ struct App {
     maximized: Option<Tab>,
     ide: ide::Ide,
     vault_host: vault_host::VaultHost,
+    explorer: shell::ExplorerState,
     /// The notes pane: writing that isn't rules.
     notebook: notes::Notes,
     highlights: highlight::Highlights,
@@ -415,6 +416,7 @@ impl App {
                 ide
             },
             vault_host,
+            explorer: shell::ExplorerState::default(),
             notebook: notes::Notes::new(&world),
             highlights: highlight::Highlights::new(&cc.egui_ctx),
             marks: marks::Marks::new(),
@@ -1609,7 +1611,23 @@ impl eframe::App for App {
                 self.tab_ui(ui, &mut tab);
             });
         } else {
-            shell::workspace(ui, &self.vault_host.view());
+            let view = self.vault_host.view();
+            if let Some(action) = shell::explorer(ui, &mut self.explorer, &view) {
+                match action {
+                    shell::ExplorerAction::OpenVault(path) => {
+                        if self.vault_host.select_root(path).is_err() {
+                            self.explorer.command_error = Some(
+                                "Vault switch is busy. Try opening the folder again in a moment."
+                                    .into(),
+                            );
+                        } else {
+                            self.explorer.command_error = None;
+                        }
+                    }
+                    shell::ExplorerAction::Select(_) => {}
+                }
+            }
+            shell::workspace(ui, &view);
         }
         if std::mem::take(&mut self.ide.reveal_files) && self.maximized == Some(Tab::Terminals) {
             self.maximized = None;

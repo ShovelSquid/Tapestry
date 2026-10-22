@@ -1,6 +1,7 @@
 //! The Phase 2 read-only graph workspace.
 
 use eframe::egui;
+use std::path::PathBuf;
 
 use crate::vault_host::{VaultStatus, VaultView};
 
@@ -13,8 +14,292 @@ pub enum ExplorerRow {
     Note { key: String, label: String },
 }
 
-pub fn explorer_rows(_view: &VaultView) -> Vec<ExplorerRow> {
-    Vec::new()
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExplorerMode {
+    Closed,
+    Docked,
+    Floating,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ExplorerAction {
+    OpenVault(PathBuf),
+    Select(String),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExplorerPresentation {
+    Loading,
+    Error,
+    Partial,
+    Empty,
+    Ready,
+}
+
+#[derive(Debug, Clone)]
+pub struct ExplorerState {
+    pub mode: ExplorerMode,
+    pub width: f32,
+    pub selected: Option<String>,
+    pub path: String,
+    pub path_dirty: bool,
+    pub command_error: Option<String>,
+    pub floating_pos: Option<egui::Pos2>,
+}
+
+impl Default for ExplorerState {
+    fn default() -> Self {
+        Self {
+            mode: ExplorerMode::Docked,
+            width: 264.0,
+            selected: None,
+            path: String::new(),
+            path_dirty: false,
+            command_error: None,
+            floating_pos: None,
+        }
+    }
+}
+
+impl ExplorerState {
+    pub fn close(&mut self) {
+        self.mode = ExplorerMode::Closed;
+    }
+
+    pub fn reopen(&mut self) {
+        if self.mode == ExplorerMode::Closed {
+            self.mode = ExplorerMode::Docked;
+        }
+    }
+
+    pub fn resize(&mut self, width: f32) {
+        self.width = width.clamp(200.0, 480.0);
+    }
+
+    pub fn float(&mut self, at: egui::Pos2) {
+        self.mode = ExplorerMode::Floating;
+        self.floating_pos = Some(at);
+    }
+}
+
+pub fn explorer_rows(view: &VaultView) -> Vec<ExplorerRow> {
+    let Some(snapshot) = &view.snapshot else {
+        return Vec::new();
+    };
+    let mut folders: Vec<_> = snapshot
+        .index
+        .folders
+        .keys()
+        .filter(|rel| !rel.is_empty())
+        .map(|rel| ExplorerRow::Folder {
+            key: rel.clone(),
+            label: rel.rsplit('/').next().unwrap_or(rel).to_owned(),
+        })
+        .collect();
+    let mut notes: Vec<_> = snapshot
+        .index
+        .notes
+        .keys()
+        .map(|rel| ExplorerRow::Note {
+            key: rel.clone(),
+            label: rel
+                .rsplit('/')
+                .next()
+                .unwrap_or(rel)
+                .strip_suffix(".md")
+                .unwrap_or(rel.rsplit('/').next().unwrap_or(rel))
+                .to_owned(),
+        })
+        .collect();
+    let sort = |a: &ExplorerRow, b: &ExplorerRow| {
+        let (a_label, a_key) = row_parts(a);
+        let (b_label, b_key) = row_parts(b);
+        (a_label.to_lowercase(), a_key).cmp(&(b_label.to_lowercase(), b_key))
+    };
+    folders.sort_by(sort);
+    notes.sort_by(sort);
+    folders.extend(notes);
+    folders
+}
+
+pub fn explorer_presentation(view: &VaultView) -> ExplorerPresentation {
+    match (&view.status, view.snapshot.as_ref()) {
+        (VaultStatus::Loading, None) => ExplorerPresentation::Loading,
+        (VaultStatus::Error(_), None) => ExplorerPresentation::Error,
+        (VaultStatus::Error(_), Some(_)) => ExplorerPresentation::Partial,
+        (_, Some(snapshot)) if snapshot.index.notes.is_empty() => ExplorerPresentation::Empty,
+        (_, Some(_)) => ExplorerPresentation::Ready,
+        _ => ExplorerPresentation::Loading,
+    }
+}
+
+fn row_parts(row: &ExplorerRow) -> (&str, &str) {
+    match row {
+        ExplorerRow::Folder { key, label } | ExplorerRow::Note { key, label } => (label, key),
+    }
+}
+
+pub fn explorer(
+    ui: &mut egui::Ui,
+    state: &mut ExplorerState,
+    view: &VaultView,
+) -> Option<ExplorerAction> {
+    if state.path_dirty
+        && view
+            .snapshot
+            .as_ref()
+            .is_some_and(|snapshot| snapshot.root == PathBuf::from(&state.path))
+    {
+        state.path_dirty = false;
+        state.command_error = None;
+    }
+    if !state.path_dirty {
+        if let Some(snapshot) = &view.snapshot {
+            state.path = snapshot.root.display().to_string();
+        }
+    }
+    let mut action = None;
+    match state.mode {
+        ExplorerMode::Closed => {}
+        ExplorerMode::Docked => {
+            let response = egui::Panel::left("vault-explorer")
+                .frame(egui::Frame::NONE.fill(crate::SHEET))
+                .resizable(true)
+                .default_size(state.width)
+                .size_range(200.0..=480.0)
+                .show(ui, |ui| {
+                    let (header, header_response) = ui.allocate_exact_size(
+                        egui::vec2(ui.available_width(), 36.0),
+                        egui::Sense::drag(),
+                    );
+                    ui.painter().text(
+                        header.left_center() + egui::vec2(12.0, 0.0),
+                        egui::Align2::LEFT_CENTER,
+                        "Explorer",
+                        egui::FontId::proportional(20.0),
+                        crate::INK,
+                    );
+                    let close = ui.put(
+                        egui::Rect::from_min_size(
+                            header.right_top() - egui::vec2(36.0, 0.0),
+                            egui::vec2(36.0, 36.0),
+                        ),
+                        egui::Button::new("×").frame(false),
+                    );
+                    if close.clicked() {
+                        state.close();
+                    }
+                    ui.separator();
+                    action = explorer_contents(ui, state, view);
+                    if header_response.dragged() && header_response.drag_delta().length() >= 28.0 {
+                        let at = ui.ctx().pointer_interact_pos().unwrap_or(header.center());
+                        state.float(at - egui::vec2(132.0, 18.0));
+                    }
+                });
+            state.resize(response.response.rect.width());
+        }
+        ExplorerMode::Floating => {
+            let mut open = true;
+            let mut window = egui::Window::new("Explorer")
+                .id(egui::Id::new("vault-explorer-floating"))
+                .default_width(state.width)
+                .resizable(true)
+                .open(&mut open);
+            if let Some(pos) = state.floating_pos {
+                window = window.current_pos(pos);
+            }
+            if let Some(inner) = window.show(ui.ctx(), |ui| explorer_contents(ui, state, view)) {
+                action = inner.inner.flatten();
+                state.resize(inner.response.rect.width());
+                state.floating_pos = Some(inner.response.rect.min);
+            }
+            if !open {
+                state.close();
+            }
+        }
+    }
+    action
+}
+
+fn explorer_contents(
+    ui: &mut egui::Ui,
+    state: &mut ExplorerState,
+    view: &VaultView,
+) -> Option<ExplorerAction> {
+    let mut action = None;
+    ui.add_space(8.0);
+    ui.horizontal(|ui| {
+        ui.add_space(12.0);
+        let response = ui.add_sized(
+            [(ui.available_width() - 24.0).max(0.0), 28.0],
+            egui::TextEdit::singleline(&mut state.path)
+                .hint_text("Choose a folder to open as a vault"),
+        );
+        state.path_dirty |= response.changed();
+    });
+    ui.horizontal(|ui| {
+        ui.add_space(12.0);
+        if ui.button("Open vault").clicked() && !state.path.trim().is_empty() {
+            action = Some(ExplorerAction::OpenVault(PathBuf::from(state.path.trim())));
+        }
+    });
+    ui.add_space(8.0);
+    if let VaultStatus::Error(error) = &view.status {
+        ui.label(egui::RichText::new(error).size(12.0).color(FAINT));
+    }
+    if let Some(error) = &state.command_error {
+        ui.label(egui::RichText::new(error).size(12.0).color(FAINT));
+    }
+    match explorer_presentation(view) {
+        ExplorerPresentation::Loading => {
+            ui.label(
+                egui::RichText::new("Loading vault…")
+                    .size(14.0)
+                    .color(FAINT),
+            );
+            return action;
+        }
+        ExplorerPresentation::Error => {
+            ui.label(
+                egui::RichText::new("Couldn’t open this folder. Check that it exists and is readable, then choose another folder.")
+                    .size(14.0)
+                    .color(FAINT),
+            );
+            return action;
+        }
+        ExplorerPresentation::Partial
+        | ExplorerPresentation::Empty
+        | ExplorerPresentation::Ready => {}
+    }
+    let rows = explorer_rows(view);
+    if rows.is_empty() {
+        ui.add_space(12.0);
+        ui.label(egui::RichText::new("This vault is empty").size(20.0));
+        ui.label(egui::RichText::new("Open a folder with Markdown notes, or add notes to this folder and they will appear here.").size(14.0).color(FAINT));
+        return action;
+    }
+    egui::ScrollArea::vertical()
+        .id_salt("vault-explorer-rows")
+        .show(ui, |ui| {
+            for row in rows {
+                let (key, label, is_folder) = match row {
+                    ExplorerRow::Folder { key, label } => (key, label, true),
+                    ExplorerRow::Note { key, label } => (key, label, false),
+                };
+                let full_path = key.clone();
+                let response = ui
+                    .selectable_label(
+                        state.selected.as_deref() == Some(&key),
+                        format!("{}  {label}", if is_folder { "▸" } else { "▫" }),
+                    )
+                    .on_hover_text(full_path);
+                if response.clicked() {
+                    state.selected = Some(key.clone());
+                    action = Some(ExplorerAction::Select(key));
+                }
+            }
+        });
+    action
 }
 
 #[cfg(test)]
@@ -22,14 +307,22 @@ mod tests {
     use super::*;
     use crate::vault_host::VaultSnapshot;
     use tapestry_vault::index::VaultIndex;
-    use tapestry_vault::scan::Scan;
+    use tapestry_vault::scan::{NoteStatus, Scan, ScannedNote};
 
     #[test]
     fn explorer_rows_lists_indexed_folders_before_notes() {
         let index = VaultIndex::build(&Scan {
             root: "/vault".into(),
             folders: vec!["".into(), "z-folder".into(), "a-folder".into()],
-            notes: Vec::new(),
+            notes: vec![ScannedNote {
+                rel: "notes/readme.md".into(),
+                text: None,
+                status: NoteStatus::NotUtf8,
+                len: 4,
+                mtime_ms: None,
+                birth_ms: None,
+                hash: 0,
+            }],
             skipped: Vec::new(),
             truncated: false,
         });
@@ -43,10 +336,67 @@ mod tests {
         assert_eq!(
             explorer_rows(&view),
             vec![
-                ExplorerRow::Folder { key: "a-folder".into(), label: "a-folder".into() },
-                ExplorerRow::Folder { key: "z-folder".into(), label: "z-folder".into() },
+                ExplorerRow::Folder {
+                    key: "a-folder".into(),
+                    label: "a-folder".into()
+                },
+                ExplorerRow::Folder {
+                    key: "z-folder".into(),
+                    label: "z-folder".into()
+                },
+                ExplorerRow::Note {
+                    key: "notes/readme.md".into(),
+                    label: "readme".into()
+                },
             ]
         );
+    }
+
+    #[test]
+    fn explorer_distinguishes_loading_empty_partial_and_error_states() {
+        let loading = VaultView {
+            status: VaultStatus::Loading,
+            snapshot: None,
+        };
+        let error = VaultView {
+            status: VaultStatus::Error("unreadable".into()),
+            snapshot: None,
+        };
+        let empty = VaultView {
+            status: VaultStatus::Ready,
+            snapshot: Some(VaultSnapshot {
+                root: "/vault".into(),
+                index: std::sync::Arc::new(VaultIndex::default()),
+            }),
+        };
+        let partial = VaultView {
+            status: VaultStatus::Error("some files unreadable".into()),
+            snapshot: empty.snapshot.clone(),
+        };
+        assert_eq!(
+            explorer_presentation(&loading),
+            ExplorerPresentation::Loading
+        );
+        assert_eq!(explorer_presentation(&empty), ExplorerPresentation::Empty);
+        assert_eq!(
+            explorer_presentation(&partial),
+            ExplorerPresentation::Partial
+        );
+        assert_eq!(explorer_presentation(&error), ExplorerPresentation::Error);
+    }
+
+    #[test]
+    fn explorer_state_keeps_selection_and_width_across_close_float_and_reopen() {
+        let mut state = ExplorerState::default();
+        state.selected = Some("notes/a.md".into());
+        state.resize(336.0);
+        state.float(egui::pos2(40.0, 72.0));
+        state.close();
+        assert_eq!(state.mode, ExplorerMode::Closed);
+        state.reopen();
+        assert_eq!(state.mode, ExplorerMode::Docked);
+        assert_eq!(state.width, 336.0);
+        assert_eq!(state.selected.as_deref(), Some("notes/a.md"));
     }
 }
 
