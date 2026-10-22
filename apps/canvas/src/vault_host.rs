@@ -50,25 +50,62 @@ pub struct VaultHost {
     watch_messages: mpsc::Sender<WatchMsg>,
 }
 
+/// Which folder the worker opens first, and what it does if it can't.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Startup {
+    root: PathBuf,
+    create_if_missing: bool,
+    /// Opened, created if missing, when `root` can't be. It isn't
+    /// remembered: the user's own choice stays in `vault.json` until they
+    /// pick another folder.
+    fallback: Option<PathBuf>,
+    /// Write `root` to `vault.json` once it opens.
+    remember_initial: bool,
+}
+
+impl Startup {
+    fn new(root: PathBuf, create_if_missing: bool) -> Self {
+        Self {
+            root,
+            create_if_missing,
+            fallback: None,
+            remember_initial: true,
+        }
+    }
+}
+
+/// The remembered vault if there is one, falling back to the default
+/// (`world/vault`, created when missing) when it can't be opened.
+fn startup_choice(remembered: Option<PathBuf>, default_root: PathBuf) -> Startup {
+    match remembered {
+        Some(path) => Startup {
+            fallback: Some(default_root),
+            ..Startup::new(path, false)
+        },
+        None => Startup::new(default_root, true),
+    }
+}
+
 impl VaultHost {
     pub fn start(default_root: PathBuf, ctx: egui::Context) -> Self {
-        let (selected_root, create_if_missing) = remembered_root()
-            .map(|path| (path, false))
-            .unwrap_or((default_root, true));
-        Self::start_with(
-            selected_root,
-            create_if_missing,
+        Self::start_startup(
+            startup_choice(remembered_root(), default_root),
             Duration::from_secs(60),
             ctx,
         )
     }
 
+    #[cfg(test)]
     fn start_with(
         root: PathBuf,
         create_if_missing: bool,
         fallback_interval: Duration,
         ctx: egui::Context,
     ) -> Self {
+        Self::start_startup(Startup::new(root, create_if_missing), fallback_interval, ctx)
+    }
+
+    fn start_startup(startup: Startup, fallback_interval: Duration, ctx: egui::Context) -> Self {
         let (command_tx, command_rx) = mpsc::sync_channel(COMMAND_CAPACITY);
         let (watch_tx, watch_rx) = mpsc::channel();
         #[cfg(test)]
@@ -82,8 +119,7 @@ impl VaultHost {
             .name("tapestry-vault".into())
             .spawn(move || {
                 run_worker(
-                    root,
-                    create_if_missing,
+                    startup,
                     command_rx,
                     watch_tx,
                     watch_rx,
@@ -164,8 +200,7 @@ fn classify_changed_paths(store: &mut Store, paths: &[String]) -> bool {
 }
 
 fn run_worker(
-    initial_root: PathBuf,
-    create_initial_if_missing: bool,
+    startup: Startup,
     commands: Receiver<Command>,
     watch_tx: mpsc::Sender<WatchMsg>,
     watch_rx: Receiver<WatchMsg>,
@@ -173,18 +208,8 @@ fn run_worker(
     fallback_interval: Duration,
     ctx: egui::Context,
 ) {
-    let mut active = open_vault(&initial_root, create_initial_if_missing, &watch_tx)
-        .map(|(active, snapshot)| {
-            remember_root(&active.root);
-            publish(&published, VaultStatus::Ready, Some(snapshot));
-            ctx.request_repaint();
-            active
-        })
-        .map_err(|error| {
-            publish(&published, VaultStatus::Error(error), None);
-            ctx.request_repaint();
-        })
-        .ok();
+    let mut active = open_initial(&startup, &watch_tx, &published);
+    ctx.request_repaint();
     let mut last_rescan = Instant::now();
 
     loop {
@@ -254,6 +279,34 @@ fn run_worker(
             }
         }
     }
+}
+
+/// Open the startup folder, or the fallback when it can't be opened. The
+/// fallback shows with the first folder's error, and isn't remembered.
+fn open_initial(
+    startup: &Startup,
+    watch_tx: &mpsc::Sender<WatchMsg>,
+    published: &Arc<Mutex<VaultView>>,
+) -> Option<ActiveVault> {
+    let error = match open_vault(&startup.root, startup.create_if_missing, watch_tx) {
+        Ok((active, snapshot)) => {
+            if startup.remember_initial {
+                remember_root(&active.root);
+            }
+            publish(published, VaultStatus::Ready, Some(snapshot));
+            return Some(active);
+        }
+        Err(error) => error,
+    };
+    if let Some(fallback) = &startup.fallback
+        && let Ok((active, snapshot)) = open_vault(fallback, true, watch_tx)
+    {
+        let status = VaultStatus::Error(format!("{error}. Showing the default vault instead."));
+        publish(published, status, Some(snapshot));
+        return Some(active);
+    }
+    publish(published, VaultStatus::Error(error), None);
+    None
 }
 
 fn open_vault(
@@ -450,6 +503,40 @@ mod tests {
         drop(host);
         thread::sleep(POLL_INTERVAL + Duration::from_millis(20));
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn startup_prefers_the_remembered_vault_and_falls_back_to_the_default() {
+        let default = PathBuf::from("/repo/world/vault");
+        let remembered = startup_choice(Some("/notes".into()), default.clone());
+        assert_eq!(remembered.root, PathBuf::from("/notes"));
+        assert!(!remembered.create_if_missing);
+        assert_eq!(remembered.fallback, Some(default.clone()));
+        let fresh = startup_choice(None, default.clone());
+        assert_eq!(fresh, Startup::new(default, true));
+    }
+
+    #[test]
+    fn missing_remembered_vault_opens_the_default_with_the_error() {
+        let missing = temp_root("remembered-gone");
+        let default = temp_root("default-vault");
+        let host = VaultHost::start_startup(
+            Startup {
+                fallback: Some(default.clone()),
+                remember_initial: false,
+                ..Startup::new(missing.clone(), false)
+            },
+            Duration::from_secs(60),
+            egui::Context::default(),
+        );
+        let view = wait_for(&host, |view| view.snapshot.is_some());
+        assert!(matches!(view.status, VaultStatus::Error(_)));
+        assert_eq!(view.snapshot.unwrap().root, default.canonicalize().unwrap());
+        assert!(!missing.exists(), "the remembered folder is never created");
+
+        drop(host);
+        thread::sleep(POLL_INTERVAL + Duration::from_millis(20));
+        std::fs::remove_dir_all(default).unwrap();
     }
 
     #[test]
