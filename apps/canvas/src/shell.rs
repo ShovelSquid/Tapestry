@@ -165,6 +165,28 @@ pub fn route_palette_action(_current: &Destination, action: &PaletteAction) -> D
     }
 }
 
+/// Where the Ide's own requests take the main window this frame: a file's
+/// "own tab" opens its editor destination, and a terminal revealing its
+/// files brings Files forward. Buffers and terminals stay with the Ide.
+pub fn apply_ide_handoffs(
+    current: &Destination,
+    _open_requests: &[PathBuf],
+    _reveal_files: bool,
+    _is_open: impl Fn(&std::path::Path) -> bool,
+) -> Destination {
+    current.clone()
+}
+
+/// The editor destination for an already open buffer, by its own path; a
+/// path with no buffer leaves the window where it is.
+pub fn resolve_editor(
+    current: &Destination,
+    _path: &std::path::Path,
+    _is_open: impl Fn(&std::path::Path) -> bool,
+) -> Destination {
+    current.clone()
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NavigationKind {
     Note,
@@ -1265,6 +1287,116 @@ mod tests {
         assert!(std::sync::Arc::ptr_eq(&owners.2, &timeline));
         assert_eq!(buffers[&PathBuf::from("/vault/drafts/open.md")], "unsaved edit");
         assert_eq!(*terminals, vec![7, 9]);
+    }
+
+    /// Editor buffers as the Ide keeps them: path to (text, saved text).
+    fn open_buffers() -> std::collections::BTreeMap<PathBuf, (String, String)> {
+        std::collections::BTreeMap::from([
+            (
+                PathBuf::from("/vault/drafts/dirty.md"),
+                ("unsaved edit".to_owned(), "saved".to_owned()),
+            ),
+            (
+                PathBuf::from("/vault/drafts/clean.md"),
+                ("same".to_owned(), "same".to_owned()),
+            ),
+        ])
+    }
+
+    #[test]
+    fn ide_handoffs_open_request_selects_matching_file_destination() {
+        let buffers = open_buffers();
+        let before = buffers.clone();
+        let dirty = PathBuf::from("/vault/drafts/dirty.md");
+        let is_open = |p: &std::path::Path| buffers.contains_key(p);
+        for start in [Destination::Files, Destination::Graph, Destination::Simulation] {
+            assert_eq!(
+                apply_ide_handoffs(&start, std::slice::from_ref(&dirty), false, is_open),
+                Destination::File(dirty.clone()),
+            );
+        }
+        // The last request wins when several arrive in one frame.
+        let clean = PathBuf::from("/vault/drafts/clean.md");
+        assert_eq!(
+            apply_ide_handoffs(&Destination::Files, &[dirty.clone(), clean.clone()], false, is_open),
+            Destination::File(clean),
+        );
+        // A request for a file with no buffer changes nothing.
+        assert_eq!(
+            apply_ide_handoffs(&Destination::Files, &["/vault/gone.md".into()], false, is_open),
+            Destination::Files,
+        );
+        assert_eq!(buffers, before, "editor buffers are never discarded");
+    }
+
+    #[test]
+    fn ide_handoffs_terminal_reveal_selects_files() {
+        let never = |_: &std::path::Path| false;
+        assert_eq!(
+            apply_ide_handoffs(&Destination::Terminals, &[], true, never),
+            Destination::Files
+        );
+        assert_eq!(
+            apply_ide_handoffs(&Destination::Files, &[], true, never),
+            Destination::Files
+        );
+        // A reveal never pulls the window away from an unrelated view.
+        for other in [Destination::Graph, Destination::Simulation, Destination::Rules] {
+            assert_eq!(apply_ide_handoffs(&other, &[], true, never), other);
+        }
+        // No request, no change.
+        assert_eq!(
+            apply_ide_handoffs(&Destination::Terminals, &[], false, never),
+            Destination::Terminals
+        );
+    }
+
+    #[test]
+    fn ide_handoffs_hidden_terminals_keep_session_owner() {
+        // The terminal sessions the Ide owns, by id.
+        let sessions = std::sync::Arc::new(vec![3_u64, 5]);
+        let held = sessions.clone();
+        let never = |_: &std::path::Path| false;
+        let mut destination = route_palette_action(&Destination::Graph, &PaletteAction::OpenTerminals);
+        assert_eq!(destination, Destination::Terminals);
+        destination = apply_ide_handoffs(&destination, &[], true, never);
+        assert_eq!(destination, Destination::Files);
+        destination = route_palette_action(&destination, &PaletteAction::OpenExplorer);
+        assert_eq!(destination, Destination::Graph);
+        destination = route_palette_action(&destination, &PaletteAction::OpenTerminals);
+        assert_eq!(destination, Destination::Terminals);
+        assert!(std::sync::Arc::ptr_eq(&sessions, &held));
+        assert_eq!(*sessions, vec![3, 5]);
+    }
+
+    #[test]
+    fn ide_handoffs_palette_file_result_reuses_buffer_identity() {
+        let buffers = open_buffers();
+        let before = buffers.clone();
+        let is_open = |p: &std::path::Path| buffers.contains_key(p);
+        let entries = palette_entries(
+            &VaultView {
+                status: VaultStatus::Loading,
+                snapshot: None,
+            },
+            &buffers.keys().cloned().collect::<Vec<_>>(),
+        );
+        for entry in &entries {
+            let PaletteAction::OpenEditor(path) = &entry.action else {
+                continue;
+            };
+            let resolved = resolve_editor(&Destination::Graph, path, is_open);
+            let Destination::File(chosen) = &resolved else {
+                panic!("{path:?} resolved to {resolved:?}");
+            };
+            let (key, _) = buffers.get_key_value(chosen.as_path()).unwrap();
+            assert_eq!(key, path);
+        }
+        assert_eq!(
+            resolve_editor(&Destination::Notes, std::path::Path::new("/vault/gone.md"), is_open),
+            Destination::Notes,
+        );
+        assert_eq!(buffers, before);
     }
 
     fn scanned(rel: &str) -> ScannedNote {

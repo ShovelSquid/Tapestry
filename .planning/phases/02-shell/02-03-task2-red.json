@@ -1,0 +1,8 @@
+{
+  "command": "cargo test -p tapestry-canvas-app --offline ide_handoffs",
+  "exitCode": 101,
+  "targetTest": "shell::tests::ide_handoffs_open_request_selects_matching_file_destination",
+  "expected": "An Ide open request for an open buffer selects Destination::File for that path from any view, without discarding editor buffers.",
+  "actual": "Assertion failed: apply_ide_handoffs returned Files instead of File(\"/vault/drafts/dirty.md\") (stub keeps the current destination). The reveal, hidden-terminal, and palette buffer-identity tests also fail on assertions (Terminals instead of Files; resolve_editor does not return a File destination).",
+  "output": "not ok 1 - shell::tests::ide_handoffs_open_request_selects_matching_file_destination\nnot ok 2 - shell::tests::ide_handoffs_terminal_reveal_selects_files\nnot ok 3 - shell::tests::ide_handoffs_hidden_terminals_keep_session_owner\nnot ok 4 - shell::tests::ide_handoffs_palette_file_result_reuses_buffer_identity\n# tests 4\n# pass 0\n# fail 4\n"
+}
