@@ -46,6 +46,8 @@ enum Command {
 pub struct VaultHost {
     commands: SyncSender<Command>,
     published: Arc<Mutex<VaultView>>,
+    #[cfg(test)]
+    watch_messages: mpsc::Sender<WatchMsg>,
 }
 
 impl VaultHost {
@@ -69,6 +71,8 @@ impl VaultHost {
     ) -> Self {
         let (command_tx, command_rx) = mpsc::sync_channel(COMMAND_CAPACITY);
         let (watch_tx, watch_rx) = mpsc::channel();
+        #[cfg(test)]
+        let watch_messages = watch_tx.clone();
         let published = Arc::new(Mutex::new(VaultView {
             status: VaultStatus::Loading,
             snapshot: None,
@@ -92,6 +96,8 @@ impl VaultHost {
         Self {
             commands: command_tx,
             published,
+            #[cfg(test)]
+            watch_messages,
         }
     }
 
@@ -118,6 +124,11 @@ impl VaultHost {
     pub fn request_rescan(&self) -> bool {
         self.commands.try_send(Command::Rescan).is_ok()
     }
+
+    #[cfg(test)]
+    fn inject_watch_message(&self, message: WatchMsg) {
+        self.watch_messages.send(message).unwrap();
+    }
 }
 
 /// Load a local-only vault choice. The simulation's `--world` path is not read
@@ -141,7 +152,15 @@ struct ActiveVault {
 }
 
 fn change_requires_refresh(change: Change) -> bool {
-    matches!(change, Change::External | Change::Removed | Change::OwnEcho)
+    matches!(change, Change::External | Change::Removed)
+}
+
+fn classify_changed_paths(store: &mut Store, paths: &[String]) -> bool {
+    let mut external = false;
+    for path in paths {
+        external |= change_requires_refresh(store.classify(path));
+    }
+    external
 }
 
 fn run_worker(
@@ -214,10 +233,7 @@ fn run_worker(
             }
         }
         if let Some(active) = active.as_mut() {
-            let mut external = false;
-            for path in changed_paths {
-                external |= change_requires_refresh(active.store.classify(&path));
-            }
+            let external = classify_changed_paths(&mut active.store, &changed_paths);
             if external {
                 // Classification already updated Store's known hash; rescan
                 // now only advances its stat baseline, while this known
@@ -342,16 +358,36 @@ fn snapshot_generation(published: &Arc<Mutex<VaultView>>) -> Option<u64> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn shell_boot_to_snapshot() {
-        let root = std::env::temp_dir().join(format!(
-            "tapestry-shell-boot-{}-{}",
+    fn temp_root(label: &str) -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "tapestry-{label}-{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
                 .as_nanos()
-        ));
+        ))
+    }
+
+    fn wait_for(host: &VaultHost, mut ready: impl FnMut(&VaultView) -> bool) -> VaultView {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            let view = host.view();
+            if ready(&view) {
+                return view;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "vault worker did not reach state: {:?}",
+                view.status
+            );
+            thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    #[test]
+    fn shell_boot_to_snapshot() {
+        let root = temp_root("shell-boot");
         let _ = std::fs::remove_dir_all(&root);
         let host = VaultHost::start_with(
             root.clone(),
@@ -359,22 +395,10 @@ mod tests {
             Duration::from_secs(60),
             egui::Context::default(),
         );
-        let deadline = Instant::now() + Duration::from_secs(5);
-        loop {
-            let view = host.view();
-            if matches!(view.status, VaultStatus::Ready) {
-                let snapshot = view.snapshot.expect("ready host publishes a snapshot");
-                assert_eq!(snapshot.root, root.canonicalize().unwrap());
-                assert!(snapshot.index.notes.is_empty());
-                break;
-            }
-            assert!(
-                Instant::now() < deadline,
-                "vault worker did not publish: {:?}",
-                view.status
-            );
-            thread::sleep(Duration::from_millis(10));
-        }
+        let view = wait_for(&host, |view| matches!(view.status, VaultStatus::Ready));
+        let snapshot = view.snapshot.expect("ready host publishes a snapshot");
+        assert_eq!(snapshot.root, root.canonicalize().unwrap());
+        assert!(snapshot.index.notes.is_empty());
         drop(host);
         thread::sleep(POLL_INTERVAL + Duration::from_millis(20));
         std::fs::remove_dir_all(root).unwrap();
@@ -382,14 +406,7 @@ mod tests {
 
     #[test]
     fn own_write_hash_classification_does_not_request_refresh() {
-        let root = std::env::temp_dir().join(format!(
-            "tapestry-own-echo-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
-        ));
+        let root = temp_root("own-echo");
         std::fs::create_dir_all(&root).unwrap();
         let mut store = Store::open(&root).unwrap();
         store
@@ -399,9 +416,156 @@ mod tests {
             })
             .unwrap();
 
-        let change = store.classify("own.md");
-        assert_eq!(change, Change::OwnEcho);
-        assert!(!change_requires_refresh(change));
+        assert_eq!(store.classify("own.md"), Change::OwnEcho);
+        assert!(!classify_changed_paths(&mut store, &["own.md".into()]));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn external_change_and_removal_publish_fresh_snapshots() {
+        let root = temp_root("external-refresh");
+        std::fs::create_dir_all(&root).unwrap();
+        let note = root.join("note.md");
+        std::fs::write(&note, "before\n").unwrap();
+        let host = VaultHost::start_with(
+            root.clone(),
+            false,
+            Duration::from_secs(60),
+            egui::Context::default(),
+        );
+        let initial = wait_for(&host, |view| matches!(view.status, VaultStatus::Ready));
+        let first = initial.snapshot.unwrap();
+        assert!(first.index.notes.contains_key("note.md"));
+
+        std::fs::write(&note, "after\n").unwrap();
+        assert!(host.request_rescan());
+        let updated = wait_for(&host, |view| {
+            view.snapshot
+                .as_ref()
+                .is_some_and(|snapshot| !Arc::ptr_eq(&snapshot.index, &first.index))
+        });
+        let second = updated.snapshot.unwrap();
+        assert_ne!(
+            second.index.notes["note.md"].hash,
+            first.index.notes["note.md"].hash
+        );
+
+        std::fs::remove_file(&note).unwrap();
+        assert!(host.request_rescan());
+        let removed = wait_for(&host, |view| {
+            view.snapshot
+                .as_ref()
+                .is_some_and(|snapshot| !snapshot.index.notes.contains_key("note.md"))
+        });
+        assert!(
+            !removed
+                .snapshot
+                .unwrap()
+                .index
+                .notes
+                .contains_key("note.md")
+        );
+        drop(host);
+        thread::sleep(POLL_INTERVAL + Duration::from_millis(20));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn failed_root_switch_keeps_last_snapshot_and_does_not_create_folder() {
+        let root = temp_root("switch-source");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("keep.md"), "still here\n").unwrap();
+        let host = VaultHost::start_with(
+            root.clone(),
+            false,
+            Duration::from_secs(60),
+            egui::Context::default(),
+        );
+        let ready = wait_for(&host, |view| matches!(view.status, VaultStatus::Ready));
+        let original = ready.snapshot.unwrap();
+
+        let invalid = temp_root("missing-vault");
+        assert!(host.select_root(invalid.clone()).is_ok());
+        let failed = wait_for(&host, |view| matches!(view.status, VaultStatus::Error(_)));
+        let retained = failed.snapshot.unwrap();
+        assert!(Arc::ptr_eq(&retained.index, &original.index));
+        assert_eq!(retained.root, original.root);
+        assert!(
+            !invalid.exists(),
+            "opening a selected folder must not create it"
+        );
+
+        drop(host);
+        thread::sleep(POLL_INTERVAL + Duration::from_millis(20));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn periodic_fallback_rescan_publishes_external_changes() {
+        let root = temp_root("fallback-refresh");
+        std::fs::create_dir_all(&root).unwrap();
+        let host = VaultHost::start_with(
+            root.clone(),
+            false,
+            Duration::from_millis(30),
+            egui::Context::default(),
+        );
+        wait_for(&host, |view| matches!(view.status, VaultStatus::Ready));
+        let note = root.join("fallback.md");
+        std::fs::write(&note, "arrived outside\n").unwrap();
+        let refreshed = wait_for(&host, |view| {
+            view.snapshot
+                .as_ref()
+                .is_some_and(|snapshot| snapshot.index.notes.contains_key("fallback.md"))
+        });
+        assert!(
+            refreshed
+                .snapshot
+                .unwrap()
+                .index
+                .notes
+                .contains_key("fallback.md")
+        );
+        drop(host);
+        thread::sleep(POLL_INTERVAL + Duration::from_millis(20));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn watcher_message_refreshes_through_the_worker_store() {
+        let root = temp_root("watch-message");
+        std::fs::create_dir_all(&root).unwrap();
+        let note = root.join("changed.md");
+        std::fs::write(&note, "initial\n").unwrap();
+        let host = VaultHost::start_with(
+            root.clone(),
+            false,
+            Duration::from_secs(60),
+            egui::Context::default(),
+        );
+        let initial = wait_for(&host, |view| matches!(view.status, VaultStatus::Ready));
+        let original = initial.snapshot.unwrap();
+
+        std::fs::write(&note, "changed externally\n").unwrap();
+        host.inject_watch_message(WatchMsg::Changed(vec!["changed.md".into()]));
+        let refreshed = wait_for(&host, |view| {
+            view.snapshot.as_ref().is_some_and(|snapshot| {
+                !Arc::ptr_eq(&snapshot.index, &original.index)
+                    && snapshot.index.notes["changed.md"].hash
+                        != original.index.notes["changed.md"].hash
+            })
+        });
+        assert!(
+            refreshed
+                .snapshot
+                .unwrap()
+                .index
+                .notes
+                .contains_key("changed.md")
+        );
+
+        drop(host);
+        thread::sleep(POLL_INTERVAL + Duration::from_millis(20));
         std::fs::remove_dir_all(root).unwrap();
     }
 }
