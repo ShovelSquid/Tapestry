@@ -3,17 +3,17 @@ gsd_state_version: "1.0"
 current_phase: 1
 current_phase_name: Vault model
 status: executing
-stopped_at: Completed 01-03-PLAN.md
-last_updated: "2026-10-22T07:03:04.000Z"
+stopped_at: Completed 01-04-PLAN.md
+last_updated: "2026-10-22T07:15:55.000Z"
 last_activity: 2026-10-22
-last_activity_desc: Completed Phase 1 Plan 03; ready for Plan 04
-state_head: 016bebd163e8a7e493b99de1df5ee854ec2fbef7
+last_activity_desc: Completed Phase 1 Plan 04; ready for Plan 05
+state_head: c48be3cd3b52adeb9ac60e704245c54471ec139e
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 5
-  completed_plans: 3
-  percent: 60
+  completed_plans: 4
+  percent: 80
 ---
 
 # Project State
@@ -28,25 +28,25 @@ See: .planning/PROJECT.md (updated 2026-10-21)
 ## Current Position
 
 Phase: 1 (Vault model) — EXECUTING
-Plan: 4 of 5
+Plan: 5 of 5
 Status: Ready to execute
-Last activity: 2026-10-22 — Completed Plan 03; ready for Plan 04
+Last activity: 2026-10-22 — Completed Plan 04; ready for Plan 05
 
-Progress: [██████░░░░] 60%
+Progress: [████████░░] 80%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 3
+- Total plans completed: 4
 - Average duration: 14 min
-- Total execution time: 0.7 hours
+- Total execution time: 0.9 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| Phase 01 | 3 | 14 min | 14 |
+| Phase 01 | 4 | 14 min | 14 |
 
 **Recent Trend:**
 
@@ -61,6 +61,7 @@ Progress: [██████░░░░] 60%
 | Phase 01 P01 | 8 min | 2 tasks | 12 files |
 | Phase 01 P02 | 20 min | 3 tasks | 8 files |
 | Phase 01 P03 | 15 min | 3 tasks | 19 files |
+| Phase 01 P04 | 13 min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -77,6 +78,7 @@ Recent decisions affecting current work:
 - [Phase 01]: 01-01: Store refuses any write whose folder path passes through a symlink (checked before create_dir_all)
 - [Phase 01]: 01-02: Link and block parsers use byte ranges over plain text; block segmentation reuses shared fence detection
 - [Phase 01]: 01-03: Scans are read-only; placements are computed per folder; ambiguous links retain candidates with a deterministic pick
+- [Phase 01]: 01-04: Store writes use fresh reads, atomic replacement, and hash-based classification; journal estimates are recorded before first legacy-note rewrites
 
 ### Pending Todos
 
@@ -99,6 +101,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-22T07:03:04.000Z
-Stopped at: Completed 01-03-PLAN.md
+Last session: 2026-10-22T07:15:55.000Z
+Stopped at: Completed 01-04-PLAN.md
 Resume file: None
