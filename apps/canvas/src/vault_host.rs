@@ -219,11 +219,7 @@ fn run_worker(
             }
             Ok(Command::Rescan) => {
                 if let Some(active) = active.as_mut() {
-                    let before = snapshot_generation(&published);
-                    refresh_if_changed(active, &published);
-                    if snapshot_generation(&published) != before {
-                        ctx.request_repaint();
-                    }
+                    refresh_and_repaint(active, &published, &ctx);
                 }
             }
             Err(mpsc::RecvTimeoutError::Disconnected) => break,
@@ -253,11 +249,7 @@ fn run_worker(
                 ctx.request_repaint();
                 last_rescan = Instant::now();
             } else if rescan || last_rescan.elapsed() >= fallback_interval {
-                let before = snapshot_generation(&published);
-                refresh_if_changed(active, &published);
-                if snapshot_generation(&published) != before {
-                    ctx.request_repaint();
-                }
+                refresh_and_repaint(active, &published, &ctx);
                 last_rescan = Instant::now();
             }
         }
@@ -330,6 +322,32 @@ fn refresh_if_changed(active: &mut ActiveVault, published: &Arc<Mutex<VaultView>
             Ok(snapshot) => publish(published, VaultStatus::Ready, Some(snapshot)),
             Err(error) => publish_error_keep_snapshot(published, error),
         }
+    } else {
+        // A rescan that worked shows the vault is readable again: an error
+        // left by an earlier failed rescan clears even when no note changed.
+        clear_error(published);
+    }
+}
+
+/// Refresh, and repaint when what the UI shows changed: a new snapshot or a
+/// new status.
+fn refresh_and_repaint(
+    active: &mut ActiveVault,
+    published: &Arc<Mutex<VaultView>>,
+    ctx: &egui::Context,
+) {
+    let before = view_signature(published);
+    refresh_if_changed(active, published);
+    if view_signature(published) != before {
+        ctx.request_repaint();
+    }
+}
+
+fn clear_error(published: &Arc<Mutex<VaultView>>) {
+    if let Ok(mut current) = published.lock()
+        && matches!(current.status, VaultStatus::Error(_))
+    {
+        current.status = VaultStatus::Ready;
     }
 }
 
@@ -352,13 +370,15 @@ fn publish_error_keep_snapshot(published: &Arc<Mutex<VaultView>>, error: String)
     }
 }
 
-fn snapshot_generation(published: &Arc<Mutex<VaultView>>) -> Option<u64> {
-    published
-        .lock()
-        .ok()?
+/// The published snapshot's identity and the status, to tell whether a
+/// refresh changed anything the UI shows.
+fn view_signature(published: &Arc<Mutex<VaultView>>) -> Option<(Option<usize>, VaultStatus)> {
+    let current = published.lock().ok()?;
+    let generation = current
         .snapshot
         .as_ref()
-        .map(|snapshot| Arc::as_ptr(&snapshot.index) as usize as u64)
+        .map(|snapshot| Arc::as_ptr(&snapshot.index) as usize);
+    Some((generation, current.status.clone()))
 }
 
 #[cfg(test)]
@@ -533,6 +553,34 @@ mod tests {
                 .is_some_and(|snapshot| snapshot.index.notes.contains_key("arrived.md"))
         });
         assert!(refreshed.snapshot.unwrap().index.notes.contains_key("keep.md"));
+
+        drop(host);
+        thread::sleep(POLL_INTERVAL + Duration::from_millis(20));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_working_rescan_clears_an_earlier_rescan_error() {
+        let root = temp_root("rescan-error-clears");
+        std::fs::create_dir_all(&root).unwrap();
+        let host = VaultHost::start_with(
+            root.clone(),
+            false,
+            Duration::from_secs(60),
+            egui::Context::default(),
+        );
+        wait_for(&host, |view| matches!(view.status, VaultStatus::Ready));
+
+        // The folder goes away for a moment: the rescan fails.
+        std::fs::remove_dir_all(&root).unwrap();
+        assert!(host.request_rescan());
+        let failed = wait_for(&host, |view| matches!(view.status, VaultStatus::Error(_)));
+        assert!(failed.snapshot.is_some());
+
+        // Back, with nothing changed in it: the next rescan clears the error.
+        std::fs::create_dir_all(&root).unwrap();
+        assert!(host.request_rescan());
+        wait_for(&host, |view| matches!(view.status, VaultStatus::Ready));
 
         drop(host);
         thread::sleep(POLL_INTERVAL + Duration::from_millis(20));
