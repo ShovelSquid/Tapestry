@@ -29,8 +29,6 @@ use egui::{
     Align2, Color32, CornerRadius, FontFamily, FontId, Mesh, Pos2, Rect, RichText, Sense, Shape,
     Stroke, TextureHandle, Vec2, pos2, vec2,
 };
-use egui_dock::tab_viewer::OnCloseResponse;
-use egui_dock::{DockState, NodeIndex, TabViewer};
 use tapestry_canvas::{
     Body, Brush, DT, HEIGHT, KeyId, MadeBy, Material, Particle, Rulebook, TICKS_PER_SECOND, Tick,
     Timeline, WIDTH,
@@ -150,9 +148,9 @@ struct Drag {
     to: Tick,
 }
 
-/// The panes of the window. Each can be dragged, split, resized, torn off
-/// into its own window, or double-clicked to fill the window.
-#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+/// The tool panes the shell's destinations host. Their Debug names are the
+/// marks pane keys and `TAPESTRY_FILL` names, so they never change.
+#[derive(Clone, Debug, PartialEq)]
 enum Tab {
     Canvas,
     Brushes,
@@ -162,79 +160,6 @@ enum Tab {
     Terminals,
     Notes,
     File(PathBuf),
-}
-
-fn default_layout() -> DockState<Tab> {
-    let mut dock = DockState::new(vec![Tab::Canvas]);
-    let s = dock.main_surface_mut();
-    let [top, _] = s.split_below(NodeIndex::root(), 0.8, vec![Tab::Timeline]);
-    let [middle, right] = s.split_right(top, 0.76, vec![Tab::Rules, Tab::Files]);
-    s.split_below(right, 0.62, vec![Tab::Terminals]);
-    s.split_below(right, 0.7, vec![Tab::Notes]);
-    s.split_left(middle, 0.11, vec![Tab::Brushes]);
-    dock
-}
-
-struct Tabs<'a> {
-    app: &'a mut App,
-}
-
-impl TabViewer for Tabs<'_> {
-    type Tab = Tab;
-
-    fn id(&mut self, tab: &mut Tab) -> egui::Id {
-        egui::Id::new(format!("{tab:?}"))
-    }
-
-    fn title(&mut self, tab: &mut Tab) -> egui::WidgetText {
-        let name = match tab {
-            Tab::Canvas => "canvas".to_owned(),
-            Tab::Brushes => "brushes".to_owned(),
-            Tab::Rules => "rules".to_owned(),
-            Tab::Timeline => "timeline".to_owned(),
-            Tab::Files => "files".to_owned(),
-            Tab::Terminals => "terminals".to_owned(),
-            Tab::Notes => "notes".to_owned(),
-            Tab::File(p) => self.app.ide.tab_title(p),
-        };
-        RichText::new(name).size(15.0).into()
-    }
-
-    fn ui(&mut self, ui: &mut egui::Ui, tab: &mut Tab) {
-        self.app.tab_ui(ui, tab);
-    }
-
-    fn is_closeable(&self, tab: &Tab) -> bool {
-        matches!(tab, Tab::File(_))
-    }
-
-    fn on_close(&mut self, tab: &mut Tab) -> OnCloseResponse {
-        if let Tab::File(p) = tab {
-            self.app.ide.close(p);
-        }
-        OnCloseResponse::Close
-    }
-
-    fn on_tab_button(&mut self, tab: &mut Tab, response: &egui::Response) {
-        if response.double_clicked() {
-            self.app.destination = shell::Destination::from_tab(tab);
-        }
-    }
-
-    fn context_menu(&mut self, ui: &mut egui::Ui, tab: &mut Tab, _: egui_dock::NodePath) {
-        if ui.button("fill the window").clicked() {
-            self.app.destination = shell::Destination::from_tab(tab);
-            ui.close();
-        }
-    }
-
-    fn scroll_bars(&self, tab: &Tab) -> [bool; 2] {
-        match tab {
-            Tab::Notes => [false, true],
-            Tab::Rules | Tab::Brushes | Tab::Terminals => [false, true],
-            _ => [false, false],
-        }
-    }
 }
 
 /// Start from the default window: `TAPESTRY_FRESH`, or a screenshot run,
@@ -258,52 +183,8 @@ impl Window {
     }
 }
 
-/// The panes as they were left and the folder the files pane showed, the
-/// same on every computer (`layout` in the synced state). Paths in it are
-/// as another computer would find them.
-#[derive(serde::Serialize, serde::Deserialize)]
-struct Panes {
-    dock: DockState<Tab>,
-    maximized: Option<Tab>,
-    root: String,
-    here: String,
-}
-
-/// A tab as another computer would find it, and back.
-fn shared_tab(tab: &Tab) -> Tab {
-    match tab {
-        Tab::File(p) => Tab::File(sync::key_of(p).into()),
-        t => t.clone(),
-    }
-}
-
-fn local_tab(tab: &Tab) -> Tab {
-    match tab {
-        Tab::File(p) => Tab::File(sync::path_of(&p.to_string_lossy())),
-        t => t.clone(),
-    }
-}
-
-/// Where each pane sat on this screen is worked out again on the next; leave
-/// it out, so a bigger or smaller screen isn't a change.
-fn forget_rects(v: &mut serde_json::Value) {
-    match v {
-        serde_json::Value::Object(o) => {
-            for (k, v) in o.iter_mut() {
-                if k == "rect" || k == "viewport" {
-                    *v = serde_json::json!({ "min": { "x": 0.0, "y": 0.0 }, "max": { "x": 0.0, "y": 0.0 } });
-                } else {
-                    forget_rects(v);
-                }
-            }
-        }
-        serde_json::Value::Array(a) => a.iter_mut().for_each(forget_rects),
-        _ => {}
-    }
-}
-
-/// How often the layout is written down while the window is open, so a
-/// crash or a kill loses little of it.
+/// How often the shell state and window are written down while the window
+/// is open, so a crash or a kill loses little of them.
 const LAYOUT_EVERY: f64 = 3.0;
 
 /// A rule note open for editing. It saves itself as you write.
@@ -323,8 +204,6 @@ const AUTOSAVE: f64 = 0.4;
 
 struct App {
     timeline: Timeline,
-    /// Taken out while it's drawn, since the tabs borrow the app.
-    dock: Option<DockState<Tab>>,
     /// What fills the main window: the graph workspace or a hosted tool.
     /// Switching it never rebuilds the tool owners below.
     destination: shell::Destination,
@@ -382,9 +261,8 @@ struct App {
     window: (egui::Vec2, Option<Pos2>),
     window_saved: String,
     layout_at: f64,
-    /// The panes as last kept or taken from another computer: only a change
-    /// from these is kept.
-    panes_kept: Option<serde_json::Value>,
+    /// `shell.json` as last written: only a change is written.
+    shell_saved: String,
 }
 
 /// Time per frame spent working out the canvas. When a scene costs more,
@@ -432,7 +310,6 @@ impl App {
         );
         Self {
             timeline: Timeline::new(rules),
-            dock: Some(default_layout()),
             // `TAPESTRY_FILL=files` (or canvas, rules…) opens with that pane's
             // destination filling the window.
             destination: std::env::var("TAPESTRY_FILL")
@@ -486,79 +363,60 @@ impl App {
             window: (vec2(1480.0, 920.0), None),
             window_saved: String::new(),
             layout_at: 0.0,
-            panes_kept: None,
+            shell_saved: String::new(),
         }
     }
 
-    /// Put the panes back as they were left, here or on another computer.
+    /// Put the shell back as it was left on this computer: the explorer,
+    /// the files view's folder, and the open editors. Before there was a
+    /// `shell.json`, take the folder and editors from the old synced layout
+    /// record, which is only read. The window opens on the graph workspace.
     fn reopen(&mut self) {
-        if !fresh_start()
-            && let Some(v) = self.ide.synced.get("layout")
-        {
-            self.take_panes(v);
+        if fresh_start() {
+            return;
         }
-        self.panes_kept = self.panes();
-    }
-
-    /// Lay the panes out as `v` says. File tabs whose files aren't on this
-    /// computer close.
-    fn take_panes(&mut self, v: serde_json::Value) {
-        let Ok(panes) = serde_json::from_value::<Panes>(v) else { return };
-        let mut dock = panes.dock.filter_map_tabs(|t| Some(local_tab(t)));
-        dock.retain_tabs(|tab| match tab {
-            Tab::File(p) => self.ide.reopen(p),
-            _ => true,
-        });
-        // A file with unsaved changes keeps its tab.
-        for (path, buf) in &self.ide.buffers {
-            let tab = Tab::File(path.clone());
-            if buf.dirty() && dock.find_tab(&tab).is_none() {
-                dock.push_to_first_leaf(tab);
+        let saved = ide::state_dir()
+            .and_then(|dir| std::fs::read_to_string(dir.join("shell.json")).ok())
+            .and_then(|text| shell::ShellState::from_json(&text));
+        let (root, here, editors) = match saved {
+            Some(state) => {
+                state.apply_explorer(&mut self.explorer);
+                (state.files_root, state.files_here, state.editors)
             }
+            None => {
+                let legacy = self
+                    .ide
+                    .synced
+                    .get("layout")
+                    .map(|v| shell::legacy_layout_place(&v))
+                    .unwrap_or_default();
+                (
+                    legacy.root.map(|k| sync::path_of(&k)),
+                    legacy.here.map(|k| sync::path_of(&k)),
+                    legacy.files.iter().map(|k| sync::path_of(k)).collect(),
+                )
+            }
+        };
+        // An editor whose file isn't on this computer just doesn't open.
+        for path in &editors {
+            self.ide.reopen(path);
         }
-        if dock.iter_all_tabs().next().is_some() {
-            self.dock = Some(dock);
+        if let (Some(root), Some(here)) = (root, here) {
+            self.ide.return_to(root, here);
         }
-        // `TAPESTRY_FILL` still wins at the start.
-        if self.panes_kept.is_some() || !self.destination.is_hosted() {
-            self.destination = panes
-                .maximized
-                .map(|t| local_tab(&t))
-                .filter(|t| match t {
-                    Tab::File(p) => self.ide.buffers.contains_key(p),
-                    _ => true,
-                })
-                .map(|t| shell::Destination::from_tab(&t))
-                .unwrap_or_default();
-        }
-        self.ide.return_to(sync::path_of(&panes.root), sync::path_of(&panes.here));
     }
 
-    /// The panes as another computer would take them.
-    fn panes(&self) -> Option<serde_json::Value> {
-        let dock = self.dock.as_ref()?.filter_map_tabs(|t| Some(shared_tab(t)));
-        let (root, here) = self.ide.place();
-        let mut v = serde_json::to_value(Panes {
-            dock,
-            maximized: self.destination.primary_tab().as_ref().map(shared_tab),
-            root: sync::key_of(&root),
-            here: sync::key_of(&here),
-        })
-        .ok()?;
-        forget_rects(&mut v);
-        Some(v)
-    }
-
-    /// Keep what changed: the panes, the folder's camera, the window.
+    /// Keep what changed: the shell, the folder's camera, the window. The
+    /// synced `layout` record from the old docked panes is never written.
     fn save_layout(&mut self) {
         if self.shot.is_some() {
             return;
         }
-        if let Some(v) = self.panes()
-            && self.panes_kept.as_ref() != Some(&v)
-        {
-            self.ide.synced.set("layout", v.clone());
-            self.panes_kept = Some(v);
+        let editors = self.ide.buffers.keys().cloned().collect();
+        let text = shell::ShellState::capture(&self.explorer, self.ide.place(), editors).to_json();
+        if !text.is_empty() && text != self.shell_saved {
+            ide::save_state("shell.json", &text);
+            self.shell_saved = text;
         }
         self.ide.remember_view();
         self.ide.synced.write();
@@ -574,14 +432,7 @@ impl App {
 
     /// Take up what another computer changed.
     fn take_synced(&mut self) {
-        let keys = self.ide.take_synced();
-        if self.shot.is_none()
-            && keys.iter().any(|k| k == "layout")
-            && let Some(v) = self.ide.synced.get("layout")
-        {
-            self.take_panes(v);
-            self.panes_kept = self.panes();
-        }
+        self.ide.take_synced();
     }
 
     /// Apply the shell chords the raw-input hook took out this frame.
@@ -1718,6 +1569,9 @@ impl eframe::App for App {
                     if quiet_link(ui, "back to the canvas", false).clicked() {
                         self.destination = shell::Destination::Graph;
                     }
+                    if let shell::Destination::File(path) = self.destination.clone() {
+                        self.file_header(ui, &path);
+                    }
                 });
                 self.hosted_view(ui);
             });
@@ -1802,7 +1656,6 @@ impl App {
                 next = shell::resolve_editor(&self.destination, &path, |p| {
                     self.ide.buffers.contains_key(p)
                 });
-                self.keep_file_tab(&path);
             }
             shell::PaletteAction::Navigate(target) => {
                 self.graph_camera.navigate(&self.vault_host.view(), target);
@@ -1834,22 +1687,20 @@ impl App {
         self.destination = shell::apply_ide_handoffs(&self.destination, &requests, reveal, |p| {
             buffers.contains_key(p)
         });
-        for path in &requests {
-            self.keep_file_tab(path);
-        }
     }
 
-    /// Keep an open editor in the synced layout's tabs, so it reopens with
-    /// the window until the old layout record is retired.
-    fn keep_file_tab(&mut self, path: &std::path::Path) {
-        if !self.ide.buffers.contains_key(path) {
-            return;
-        }
-        let tab = Tab::File(path.to_path_buf());
-        if let Some(dock) = &mut self.dock
-            && dock.find_tab(&tab).is_none()
-        {
-            dock.push_to_first_leaf(tab);
+    /// An editor's name, marked while it has unsaved changes, and a way to
+    /// close it once they're saved. A closed editor leaves for the graph.
+    fn file_header(&mut self, ui: &mut egui::Ui, path: &std::path::Path) {
+        ui.add_space(24.0);
+        ui.label(RichText::new(self.ide.tab_title(path)).size(15.0).color(MUTED));
+        let dirty = self.ide.buffers.get(path).is_some_and(|b| b.dirty());
+        if !dirty {
+            ui.add_space(12.0);
+            if quiet_link(ui, "close", false).clicked() {
+                self.ide.close(path);
+                self.destination = shell::Destination::Graph;
+            }
         }
     }
 
@@ -1878,7 +1729,7 @@ impl App {
         }
     }
 
-    /// One pane, scrolling where the old dock let it scroll.
+    /// One pane, scrolling where it always has.
     fn hosted_pane(&mut self, ui: &mut egui::Ui, tab: &mut Tab) {
         if matches!(tab, Tab::Notes | Tab::Rules | Tab::Brushes | Tab::Terminals) {
             egui::ScrollArea::vertical()
@@ -2180,32 +2031,5 @@ mod tests {
                 assert_eq!(tick, 0, "{destination:?}");
             }
         }
-    }
-
-    #[test]
-    fn panes_travel_without_this_screen() {
-        let mut dock = default_layout();
-        let file = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/main.rs");
-        dock.push_to_first_leaf(Tab::File(file.clone()));
-        let shared = dock.filter_map_tabs(|t| Some(shared_tab(t)));
-        assert!(shared.find_tab(&Tab::File("@tapestry/apps/canvas/src/main.rs".into())).is_some());
-        let panes = |rect_x: f32| {
-            let mut v = serde_json::to_value(Panes {
-                dock: shared.clone(),
-                maximized: None,
-                root: "@tapestry".into(),
-                here: "@tapestry".into(),
-            })
-            .unwrap();
-            // Pretend a pane sat somewhere on this screen.
-            v["dock"]["surfaces"][0]["Main"]["nodes"][0]["Vertical"]["rect"]["min"]["x"] = rect_x.into();
-            forget_rects(&mut v);
-            v
-        };
-        assert_eq!(panes(0.0), panes(500.0));
-        let back: Panes = serde_json::from_value(panes(500.0)).unwrap();
-        let local = back.dock.filter_map_tabs(|t| Some(local_tab(t)));
-        assert!(local.find_tab(&Tab::File(file)).is_some());
-        assert!(local.find_tab(&Tab::Notes).is_some());
     }
 }

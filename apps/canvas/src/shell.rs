@@ -60,8 +60,8 @@ pub enum PaletteAction {
 
 /// What fills the main window. The graph workspace is the default; every
 /// other destination hosts existing tool panes full-window. Kept apart from
-/// `Tab` so the tab variants and their Debug names (marks pane keys, synced
-/// layouts, `TAPESTRY_FILL`) never change.
+/// `Tab` so the tab variants and their Debug names (marks pane keys,
+/// `TAPESTRY_FILL`) never change.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub enum Destination {
     #[default]
@@ -114,14 +114,6 @@ impl Destination {
             Tab::Notes => Self::Notes,
             Tab::File(path) => Self::File(path.clone()),
         }
-    }
-
-    /// The tab recorded for this destination in the synced layout.
-    pub fn primary_tab(&self) -> Option<crate::Tab> {
-        self.regions()
-            .into_iter()
-            .find(|(region, _)| *region == Region::Center)
-            .map(|(_, tab)| tab)
     }
 
     pub fn is_hosted(&self) -> bool {
@@ -759,8 +751,8 @@ impl Default for SavedExplorer {
 
 impl ShellState {
     /// The saved shell, or `None` when the text isn't one.
-    pub fn from_json(_text: &str) -> Option<Self> {
-        None
+    pub fn from_json(text: &str) -> Option<Self> {
+        serde_json::from_str(text).ok()
     }
 
     pub fn to_json(&self) -> String {
@@ -769,15 +761,37 @@ impl ShellState {
 
     /// What to keep from the running shell.
     pub fn capture(
-        _explorer: &ExplorerState,
-        _files: (PathBuf, PathBuf),
-        _editors: Vec<PathBuf>,
+        explorer: &ExplorerState,
+        (root, here): (PathBuf, PathBuf),
+        editors: Vec<PathBuf>,
     ) -> Self {
-        Self::default()
+        Self {
+            explorer: SavedExplorer {
+                mode: explorer.mode,
+                width: explorer.width,
+                floating_pos: explorer.floating_pos.map(|p| [p.x, p.y]),
+                selected: explorer.selected.clone(),
+            },
+            files_root: Some(root),
+            files_here: Some(here),
+            editors,
+        }
     }
 
-    /// Put the saved explorer presentation back.
-    pub fn apply_explorer(&self, _explorer: &mut ExplorerState) {}
+    /// Put the saved explorer presentation back. A width out of range is
+    /// brought into it, and a place that isn't a number is dropped.
+    pub fn apply_explorer(&self, explorer: &mut ExplorerState) {
+        let saved = &self.explorer;
+        explorer.mode = saved.mode;
+        if saved.width.is_finite() {
+            explorer.resize(saved.width);
+        }
+        explorer.floating_pos = saved
+            .floating_pos
+            .filter(|[x, y]| x.is_finite() && y.is_finite())
+            .map(|[x, y]| egui::pos2(x, y));
+        explorer.selected = saved.selected.clone();
+    }
 }
 
 /// What the synced `layout` record from the old docked panes still says
@@ -790,8 +804,32 @@ pub struct LegacyPlace {
     pub files: Vec<String>,
 }
 
-pub fn legacy_layout_place(_layout: &serde_json::Value) -> LegacyPlace {
-    LegacyPlace::default()
+pub fn legacy_layout_place(layout: &serde_json::Value) -> LegacyPlace {
+    fn file_tabs(value: &serde_json::Value, files: &mut Vec<String>) {
+        match value {
+            serde_json::Value::Object(o) => {
+                if o.len() == 1
+                    && let Some(serde_json::Value::String(key)) = o.get("File")
+                {
+                    files.push(key.clone());
+                    return;
+                }
+                o.values().for_each(|v| file_tabs(v, files));
+            }
+            serde_json::Value::Array(a) => a.iter().for_each(|v| file_tabs(v, files)),
+            _ => {}
+        }
+    }
+    let text = |key: &str| layout.get(key)?.as_str().map(str::to_owned);
+    let mut files = Vec::new();
+    if let Some(dock) = layout.get("dock") {
+        file_tabs(dock, &mut files);
+    }
+    LegacyPlace {
+        root: text("root"),
+        here: text("here"),
+        files,
+    }
 }
 
 pub fn explorer_rows(view: &VaultView) -> Vec<ExplorerRow> {
@@ -1396,13 +1434,6 @@ mod tests {
             "File(\"/vault/a.md\")"
         );
         assert_eq!(fill_destination("nowhere"), None);
-        // The synced layout keeps recording an existing Tab per destination.
-        assert_eq!(Destination::Simulation.primary_tab(), Some(Tab::Canvas));
-        assert_eq!(Destination::Graph.primary_tab(), None);
-        assert_eq!(
-            Destination::File("/vault/a.md".into()).primary_tab(),
-            Some(Tab::File("/vault/a.md".into()))
-        );
     }
 
     #[test]
@@ -1743,7 +1774,12 @@ pub fn workspace_overlay_rects(
     let line = |height: f32| {
         egui::Rect::from_min_size(canvas.left_top() + egui::vec2(16.0, 16.0), egui::vec2(width, height))
     };
-    (has_error.then(|| line(18.0)), has_title.then(|| line(24.0)))
+    let error = has_error.then(|| line(18.0));
+    let title = has_title.then(|| {
+        let below = error.map_or(0.0, |e| e.height() + 8.0);
+        line(24.0).translate(egui::vec2(0.0, below))
+    });
+    (error, title)
 }
 
 pub fn workspace(ui: &mut egui::Ui, view: &VaultView, camera: &GraphCamera) {
@@ -1752,13 +1788,12 @@ pub fn workspace(ui: &mut egui::Ui, view: &VaultView, camera: &GraphCamera) {
         .show(ui, |ui| {
             let canvas = ui.max_rect();
             ui.painter().rect_filled(canvas, 0, PAPER);
-            if let Some(focus) = &camera.focus {
+            let partial = matches!(view.status, VaultStatus::Error(_)) && view.snapshot.is_some();
+            let (error_rect, title_rect) =
+                workspace_overlay_rects(canvas, partial, camera.focus.is_some());
+            if let (Some(focus), Some(title_rect)) = (&camera.focus, title_rect) {
                 let center = canvas.center();
                 ui.painter().circle_filled(center, 4.0, crate::DOT);
-                let title_rect = egui::Rect::from_min_size(
-                    canvas.left_top() + egui::vec2(16.0, 16.0),
-                    egui::vec2((canvas.width() - 32.0).max(0.0), 24.0),
-                );
                 ui.put(
                     title_rect,
                     egui::Label::new(focus.title.clone()).truncate(),
@@ -1786,7 +1821,7 @@ pub fn workspace(ui: &mut egui::Ui, view: &VaultView, camera: &GraphCamera) {
                 }
                 VaultStatus::Error(_) => {
                     ui.painter().text(
-                        canvas.left_top() + egui::vec2(16.0, 16.0),
+                        error_rect.map_or(canvas.left_top(), |r| r.left_top()),
                         egui::Align2::LEFT_TOP,
                         "Couldn’t open this folder. Check that it exists and is readable, then choose another folder.",
                         egui::FontId::proportional(12.0),
