@@ -2,19 +2,19 @@
 gsd_state_version: "1.0"
 current_phase: 2
 current_phase_name: Shell
-current_plan: 3
+current_plan: 4
 status: executing
-stopped_at: Completed 02-02-PLAN.md
-last_updated: "2026-10-22T09:27:59.816Z"
+stopped_at: Completed 02-03-PLAN.md
+last_updated: "2026-10-22T09:42:55.648Z"
 last_activity: 2026-10-22
 last_activity_desc: Phase 1 complete, transitioned to Phase 2
-state_head: 12e59e9386653edfa4db5b7b41c112ba5de1d250
+state_head: 7d576df5733e856d3a7199f43473e5b5db590333
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 9
-  completed_plans: 7
-  percent: 78
+  completed_plans: 8
+  percent: 89
 ---
 
 # Project State
@@ -29,12 +29,12 @@ See: .planning/PROJECT.md (updated 2026-10-21)
 ## Current Position
 
 Phase: 2 — Shell
-Current Plan: 3
+Current Plan: 4
 Total Plans in Phase: 4
 Status: Ready to execute
 Last activity: 2026-10-22 — Phase 1 complete, transitioned to Phase 2
 
-Progress: [████████░░] 78%
+Progress: [█████████░] 89%
 
 ## Performance Metrics
 
@@ -67,6 +67,7 @@ Progress: [████████░░] 78%
 | Phase 01 P05 | 35 min | 2 tasks | 8 files |
 | Phase 02 P01 | 34 | 2 tasks | 3 files |
 | Phase 02 P02 | 12min | 3 tasks | 3 files |
+| Phase 02 P03 | 9min | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -90,6 +91,10 @@ Recent decisions affecting current work:
 - [Phase 2]: Explorer docked and floating modes share one ExplorerState; selection, width, and path survive close, float, and reopen.
 - [Phase 2]: Explorer and palette both emit NavigationTarget keyed by normalized VaultIndex keys; stale targets leave the camera unchanged.
 - [Phase 2]: Cmd-K is consumed in raw_input_hook before Terminal::take_input, so the shortcut never reaches the PTY.
+- [Phase 2]: 02-03: shell::Destination is separate from Tab; switching views only changes App::destination, so App/Ide owners, buffers, and terminals persist
+- [Phase 2]: 02-03: Shell chords (Cmd-K, Cmd-Shift-W) are filtered from raw input as Key and Text before marks and Terminal::take_input, then queued for App::ui
+- [Phase 2]: 02-03: Esc precedence palette > focused owner/tool > hosted-view return > graph cancel; simulation keys only while Simulation is hosted and keyboard is free
+- [Phase 2]: 02-03: Open palette withholds keyboard events from views drawn under it and restores them before drawing itself
 
 ### Pending Todos
 
@@ -112,6 +117,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-22T09:27:59.799Z
-Stopped at: Completed 02-02-PLAN.md
+Last session: 2026-10-22T09:42:55.631Z
+Stopped at: Completed 02-03-PLAN.md
 Resume file: None

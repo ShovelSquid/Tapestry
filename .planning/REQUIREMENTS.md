@@ -30,8 +30,8 @@ Defaults chosen for open questions: `.context/HUMAN-QUESTIONS.md`.
 - [x] **SHELL-01**: The main window is one infinite 2D canvas showing the vault; egui_dock is removed
 - [x] **SHELL-02**: An Obsidian-style explorer on the left lists folders (graphs) and notes; it can be resized by its edge, closed and reopened, and dragged off to float
 - [x] **SHELL-03**: Cmd-K opens a fuzzy command palette listing every tool, note, folder and command
-- [ ] **SHELL-04**: Every existing tool keeps working and opens full-window from the palette — Simulation (sim canvas + brushes + timeline + swarm), Rules, Files (spatial IDE), Terminals, Notes, editor tabs; highlight notes, tab notes and marks still work over any view
-- [ ] **SHELL-05**: Esc returns from a tool to the canvas through one input router with a defined precedence; terminals get an exit chord that is never sent to the PTY; sim keyboard shortcuts only fire while the sim is shown
+- [x] **SHELL-04**: Every existing tool keeps working and opens full-window from the palette — Simulation (sim canvas + brushes + timeline + swarm), Rules, Files (spatial IDE), Terminals, Notes, editor tabs; highlight notes, tab notes and marks still work over any view
+- [x] **SHELL-05**: Esc returns from a tool to the canvas through one input router with a defined precedence; terminals get an exit chord that is never sent to the PTY; sim keyboard shortcuts only fire while the sim is shown
 - [x] **SHELL-06**: Selecting a note or folder in the explorer or palette flies the camera to it
 
 ### Canvas & graph editing (CANV)
@@ -106,8 +106,8 @@ Filled by roadmap creation (2026-10-21). Each requirement maps to exactly one ph
 | SHELL-01 | Phase 2 | Complete |
 | SHELL-02 | Phase 2 | Complete |
 | SHELL-03 | Phase 2 | Complete |
-| SHELL-04 | Phase 2 | Pending |
-| SHELL-05 | Phase 2 | Pending |
+| SHELL-04 | Phase 2 | Complete |
+| SHELL-05 | Phase 2 | Complete |
 | SHELL-06 | Phase 2 | Complete |
 | CANV-01 | Phase 3 | Pending |
 | CANV-02 | Phase 3 | Pending |

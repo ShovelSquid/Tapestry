@@ -70,12 +70,12 @@ Plans:
   4. Simulation (sim canvas + brushes + timeline + swarm), Rules, Files, Terminals, Notes and editor tabs each open full-window from the palette and pass a per-tool smoke checklist; highlight notes, tab notes and marks still work; screenshots (`TAPESTRY_VIEW`) can be captured from any view, not only while the sim is shown; terminals stay alive while hidden
   5. Esc returns from a tool to the canvas through one input router with a defined precedence (covered by a precedence test); the terminal exit chord is never sent to the PTY; sim shortcuts (Space, digits, Delete, Cmd-Z) fire only while the sim is shown
 
-**Plans**: 2/4 plans executed
+**Plans**: 3/4 plans executed
 Plans:
 
 - [x] 02-01-PLAN.md — Tracer: open the selected vault off-frame and render its initial graph snapshot
 - [x] 02-02-PLAN.md — Add explorer, folder selection, fuzzy palette, and shared graph navigation
-- [ ] 02-03-PLAN.md — Route every existing tool full-window through one focus-aware shell router
+- [x] 02-03-PLAN.md — Route every existing tool full-window through one focus-aware shell router
 - [ ] 02-04-PLAN.md — Decouple screenshots and simulation timing, then remove dock persistence
 
 **UI hint**: yes
@@ -153,7 +153,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Vault model | 5/5 | Complete    | 2026-10-22 |
-| 2. Shell | 2/4 | In Progress|  |
+| 2. Shell | 3/4 | In Progress|  |
 | 3. Canvas & graph editing | 0/TBD | Not started | - |
 | 4. Silent research | 0/TBD | Not started | - |
 | 5. Proposed connections | 0/TBD | Not started | - |
