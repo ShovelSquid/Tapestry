@@ -2086,11 +2086,19 @@ fn seed_from_files(synced: &Synced) {
 }
 
 /// `~/.local/state/tapestry` (or under `$XDG_STATE_HOME`).
+#[cfg(not(test))]
 pub(crate) fn state_dir() -> Option<PathBuf> {
     let base = std::env::var_os("XDG_STATE_HOME")
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|h| Path::new(&h).join(".local/state")))?;
     Some(base.join("tapestry"))
+}
+
+/// Tests get a throwaway state folder so they never overwrite the user's
+/// real vault choice, shell layout, or marks.
+#[cfg(test)]
+pub(crate) fn state_dir() -> Option<PathBuf> {
+    Some(std::env::temp_dir().join(format!("tapestry-test-state-{}", std::process::id())))
 }
 
 /// Write one file in the state folder.
