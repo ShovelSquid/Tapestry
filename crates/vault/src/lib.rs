@@ -13,6 +13,7 @@
 //! records what happened in the vault's journal so growth can be replayed.
 
 pub mod frontmatter;
+pub mod links;
 pub mod index;
 pub mod journal;
 pub mod scan;
