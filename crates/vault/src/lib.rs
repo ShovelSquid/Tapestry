@@ -15,6 +15,7 @@
 pub mod blocks;
 pub mod frontmatter;
 pub mod links;
+pub mod layout;
 pub mod index;
 pub mod journal;
 pub mod scan;
