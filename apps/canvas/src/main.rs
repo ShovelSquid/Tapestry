@@ -314,8 +314,10 @@ impl App {
             Rulebook::default()
         });
         let engine = world.parent().map_or(world.clone(), |p| p.to_path_buf());
+        // Fresh and screenshot runs never write the user's vault choice.
         let vault_host = vault_host::VaultHost::start(
             std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../world/vault"),
+            !fresh_start(),
             cc.egui_ctx.clone(),
         );
         Self {

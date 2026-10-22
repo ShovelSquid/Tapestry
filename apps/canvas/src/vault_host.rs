@@ -83,6 +83,9 @@ struct Startup {
     fallback: Option<PathBuf>,
     /// Write `root` to `vault.json` once it opens.
     remember_initial: bool,
+    /// Vault choices are written to `vault.json` at all. Off for fresh and
+    /// screenshot runs, which never write the user's state.
+    persist: bool,
 }
 
 impl Startup {
@@ -92,6 +95,16 @@ impl Startup {
             create_if_missing,
             fallback: None,
             remember_initial: true,
+            persist: true,
+        }
+    }
+
+    /// Never write `vault.json`.
+    fn without_persisting(self) -> Self {
+        Self {
+            remember_initial: false,
+            persist: false,
+            ..self
         }
     }
 }
@@ -110,8 +123,8 @@ enum Remembered {
 /// The remembered vault if there is one, falling back to the default
 /// (`world/vault`, created when missing) when it can't be opened. The
 /// default is remembered only when nothing was remembered before.
-fn startup_choice(remembered: Remembered, default_root: PathBuf) -> Startup {
-    match remembered {
+fn startup_choice(remembered: Remembered, default_root: PathBuf, persist: bool) -> Startup {
+    let startup = match remembered {
         Remembered::Root(path) => Startup {
             fallback: Some(default_root),
             ..Startup::new(path, false)
@@ -124,13 +137,20 @@ fn startup_choice(remembered: Remembered, default_root: PathBuf) -> Startup {
                 ..Startup::new(default_root, true)
             }
         }
+    };
+    if persist {
+        startup
+    } else {
+        startup.without_persisting()
     }
 }
 
 impl VaultHost {
-    pub fn start(default_root: PathBuf, ctx: egui::Context) -> Self {
+    /// `persist` is false for fresh and screenshot runs: they read the
+    /// remembered vault but never write `vault.json`.
+    pub fn start(default_root: PathBuf, persist: bool, ctx: egui::Context) -> Self {
         Self::start_startup(
-            startup_choice(remembered_root(), default_root),
+            startup_choice(remembered_root(), default_root, persist),
             Duration::from_secs(60),
             ctx,
         )
@@ -143,7 +163,12 @@ impl VaultHost {
         fallback_interval: Duration,
         ctx: egui::Context,
     ) -> Self {
-        Self::start_startup(Startup::new(root, create_if_missing), fallback_interval, ctx)
+        // Tests never write vault.json, even into their throwaway state folder.
+        Self::start_startup(
+            Startup::new(root, create_if_missing).without_persisting(),
+            fallback_interval,
+            ctx,
+        )
     }
 
     fn start_startup(startup: Startup, fallback_interval: Duration, ctx: egui::Context) -> Self {
@@ -311,7 +336,9 @@ fn run_worker(
                         active = Some(replacement);
                         // Paths the old watcher queued belong to the old root.
                         while watch_rx.try_recv().is_ok() {}
-                        if let Some(active) = active.as_ref() {
+                        if startup.persist
+                            && let Some(active) = active.as_ref()
+                        {
                             remember_root(&active.root);
                         }
                         publish(&published, VaultStatus::Ready, Some(snapshot));
@@ -594,16 +621,53 @@ mod tests {
     #[test]
     fn startup_prefers_the_remembered_vault_and_falls_back_to_the_default() {
         let default = PathBuf::from("/repo/world/vault");
-        let remembered = startup_choice(Remembered::Root("/notes".into()), default.clone());
+        let remembered =
+            startup_choice(Remembered::Root("/notes".into()), default.clone(), true);
         assert_eq!(remembered.root, PathBuf::from("/notes"));
         assert!(!remembered.create_if_missing);
         assert_eq!(remembered.fallback, Some(default.clone()));
-        let fresh = startup_choice(Remembered::Missing, default.clone());
+        let fresh = startup_choice(Remembered::Missing, default.clone(), true);
         assert_eq!(fresh, Startup::new(default.clone(), true));
         // A truncated or malformed vault.json is never written over.
-        let unusable = startup_choice(Remembered::Unusable("truncated".into()), default.clone());
+        let unusable =
+            startup_choice(Remembered::Unusable("truncated".into()), default.clone(), true);
         assert_eq!(unusable.root, default);
         assert!(!unusable.remember_initial);
+    }
+
+    #[test]
+    fn fresh_and_screenshot_runs_never_remember_a_vault() {
+        let default = PathBuf::from("/repo/world/vault");
+        for remembered in [Remembered::Missing, Remembered::Root("/notes".into())] {
+            let startup = startup_choice(remembered, default.clone(), false);
+            assert!(!startup.persist && !startup.remember_initial, "{startup:?}");
+        }
+
+        // A non-persisting host opens and switches vaults without writing
+        // vault.json. No test persists, so the test state folder has none.
+        let first = temp_root("no-persist-a");
+        let second = temp_root("no-persist-b");
+        std::fs::create_dir_all(&second).unwrap();
+        let host = VaultHost::start_startup(
+            startup_choice(Remembered::Missing, first.clone(), false),
+            Duration::from_secs(60),
+            egui::Context::default(),
+        );
+        wait_for(&host, |view| matches!(view.status, VaultStatus::Ready));
+        let ticket = host.select_root(second.clone()).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while host.settled() < ticket {
+            assert!(Instant::now() < deadline, "the switch never settled");
+            thread::sleep(Duration::from_millis(10));
+        }
+        assert_eq!(host.view().snapshot.unwrap().root, second.canonicalize().unwrap());
+        let vault_json = crate::ide::state_dir().unwrap().join("vault.json");
+        assert!(!vault_json.exists(), "{} was written", vault_json.display());
+
+        drop(host);
+        thread::sleep(POLL_INTERVAL + Duration::from_millis(20));
+        std::fs::remove_dir_all(first).unwrap();
+        std::fs::remove_dir_all(second).unwrap();
     }
 
     #[test]
