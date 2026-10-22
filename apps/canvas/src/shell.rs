@@ -14,7 +14,7 @@ pub enum ExplorerRow {
     Note { key: String, label: String },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ExplorerMode {
     Closed,
     Docked,
@@ -708,6 +708,90 @@ impl ExplorerState {
         self.mode = ExplorerMode::Floating;
         self.floating_pos = Some(at);
     }
+}
+
+/// The shell as it was left, on this computer only (`shell.json` in the
+/// state folder): the explorer's presentation, the folder the files view
+/// had open, and the editors that were open. The vault choice keeps its own
+/// `vault.json`, and the synced `layout` record from the old docked panes is
+/// never written.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct ShellState {
+    pub explorer: SavedExplorer,
+    pub files_root: Option<PathBuf>,
+    pub files_here: Option<PathBuf>,
+    pub editors: Vec<PathBuf>,
+}
+
+/// The explorer's open, docked, or floating mode, its size and place, and
+/// the row selected in it.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct SavedExplorer {
+    pub mode: ExplorerMode,
+    pub width: f32,
+    pub floating_pos: Option<[f32; 2]>,
+    pub selected: Option<String>,
+}
+
+impl Default for ShellState {
+    fn default() -> Self {
+        Self {
+            explorer: SavedExplorer::default(),
+            files_root: None,
+            files_here: None,
+            editors: Vec::new(),
+        }
+    }
+}
+
+impl Default for SavedExplorer {
+    fn default() -> Self {
+        Self {
+            mode: ExplorerMode::Docked,
+            width: 264.0,
+            floating_pos: None,
+            selected: None,
+        }
+    }
+}
+
+impl ShellState {
+    /// The saved shell, or `None` when the text isn't one.
+    pub fn from_json(_text: &str) -> Option<Self> {
+        None
+    }
+
+    pub fn to_json(&self) -> String {
+        serde_json::to_string(self).unwrap_or_default()
+    }
+
+    /// What to keep from the running shell.
+    pub fn capture(
+        _explorer: &ExplorerState,
+        _files: (PathBuf, PathBuf),
+        _editors: Vec<PathBuf>,
+    ) -> Self {
+        Self::default()
+    }
+
+    /// Put the saved explorer presentation back.
+    pub fn apply_explorer(&self, _explorer: &mut ExplorerState) {}
+}
+
+/// What the synced `layout` record from the old docked panes still says
+/// that the shell can use: the files view's folders and the open editors,
+/// as sync keys. It's only read; the record itself is left as it is.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct LegacyPlace {
+    pub root: Option<String>,
+    pub here: Option<String>,
+    pub files: Vec<String>,
+}
+
+pub fn legacy_layout_place(_layout: &serde_json::Value) -> LegacyPlace {
+    LegacyPlace::default()
 }
 
 pub fn explorer_rows(view: &VaultView) -> Vec<ExplorerRow> {
@@ -1513,6 +1597,128 @@ mod tests {
         }
     }
 
+    #[test]
+    fn shell_state_restart_defaults_when_missing_or_malformed() {
+        // A missing file reads as no text; a malformed one is not a state.
+        for bad in ["", "{not json", "[1, 2]", r#"{"explorer": {"mode": "Sideways"}}"#] {
+            assert_eq!(ShellState::from_json(bad), None, "{bad}");
+        }
+        // Fields left out take their defaults.
+        assert_eq!(ShellState::from_json("{}"), Some(ShellState::default()));
+        let mut explorer = ExplorerState::default();
+        ShellState::default().apply_explorer(&mut explorer);
+        assert_eq!(explorer.mode, ExplorerMode::Docked);
+        assert_eq!(explorer.width, 264.0);
+        assert_eq!(explorer.floating_pos, None);
+        assert_eq!(explorer.selected, None);
+    }
+
+    #[test]
+    fn shell_state_restores_saved_explorer_presentation_and_place() {
+        let mut explorer = ExplorerState::default();
+        explorer.selected = Some("notes/a.md".into());
+        explorer.resize(336.0);
+        explorer.float(egui::pos2(40.0, 72.0));
+        let saved = ShellState::capture(
+            &explorer,
+            (PathBuf::from("/work"), PathBuf::from("/work/notes")),
+            vec![PathBuf::from("/work/notes/a.md")],
+        );
+        let back = ShellState::from_json(&saved.to_json()).unwrap();
+        assert_eq!(back, saved);
+        assert_eq!(back.files_root.as_deref(), Some(std::path::Path::new("/work")));
+        assert_eq!(back.files_here.as_deref(), Some(std::path::Path::new("/work/notes")));
+        assert_eq!(back.editors, vec![PathBuf::from("/work/notes/a.md")]);
+
+        let mut restored = ExplorerState::default();
+        back.apply_explorer(&mut restored);
+        assert_eq!(restored.mode, ExplorerMode::Floating);
+        assert_eq!(restored.width, 336.0);
+        assert_eq!(restored.floating_pos, Some(egui::pos2(40.0, 72.0)));
+        assert_eq!(restored.selected.as_deref(), Some("notes/a.md"));
+
+        // Closed stays closed across a restart.
+        explorer.close();
+        let closed = ShellState::capture(&explorer, (PathBuf::new(), PathBuf::new()), Vec::new());
+        let mut restored = ExplorerState::default();
+        ShellState::from_json(&closed.to_json()).unwrap().apply_explorer(&mut restored);
+        assert_eq!(restored.mode, ExplorerMode::Closed);
+    }
+
+    #[test]
+    fn shell_state_clamps_an_out_of_range_saved_width() {
+        let mut explorer = ExplorerState::default();
+        ShellState::from_json(r#"{"explorer": {"width": 9000.0}}"#)
+            .unwrap()
+            .apply_explorer(&mut explorer);
+        assert_eq!(explorer.width, 480.0);
+    }
+
+    #[test]
+    fn shell_state_never_carries_the_legacy_layout_or_vault_choice() {
+        let mut explorer = ExplorerState::default();
+        explorer.selected = Some("a.md".into());
+        let text = ShellState::capture(
+            &explorer,
+            (PathBuf::from("/work"), PathBuf::from("/work")),
+            vec![PathBuf::from("/work/a.md")],
+        )
+        .to_json();
+        let value: serde_json::Value = serde_json::from_str(&text).unwrap();
+        let keys: Vec<_> = value.as_object().unwrap().keys().cloned().collect();
+        assert_eq!(keys, ["editors", "explorer", "files_here", "files_root"]);
+        for legacy in ["dock", "maximized", "layout", "root", "vault"] {
+            assert!(value.get(legacy).is_none(), "{legacy}");
+        }
+    }
+
+    /// A trimmed `layout` record as the docked panes wrote it.
+    fn legacy_layout() -> serde_json::Value {
+        serde_json::json!({
+            "dock": {"focused_surface": null, "surfaces": [{"Main": {
+                "collapsed": false,
+                "focused_node": 2,
+                "nodes": [
+                    {"Vertical": {"fraction": 0.8, "rect": {"max": {"x": 0.0, "y": 0.0}, "min": {"x": 0.0, "y": 0.0}}}},
+                    {"Leaf": {"active": 1, "tabs": ["Timeline", {"File": "@tapestry/world/notes/a.md"}]}},
+                    "Empty",
+                    {"Leaf": {"active": 0, "tabs": ["Rules", "Files", {"File": "@home/b.md"}]}},
+                    {"Leaf": {"active": 0, "tabs": ["Canvas"]}}
+                ]
+            }}]},
+            "here": "@tapestry/world",
+            "maximized": "Rules",
+            "root": "@tapestry"
+        })
+    }
+
+    #[test]
+    fn shell_legacy_layout_is_read_without_change() {
+        let layout = legacy_layout();
+        let before = layout.clone();
+        let place = legacy_layout_place(&layout);
+        assert_eq!(place.root.as_deref(), Some("@tapestry"));
+        assert_eq!(place.here.as_deref(), Some("@tapestry/world"));
+        assert_eq!(place.files, ["@tapestry/world/notes/a.md", "@home/b.md"]);
+        assert_eq!(layout, before);
+        // Anything else reads as nothing, not an error.
+        assert_eq!(legacy_layout_place(&serde_json::json!("garbage")), LegacyPlace::default());
+        assert_eq!(legacy_layout_place(&serde_json::json!({"root": 3})), LegacyPlace::default());
+    }
+
+    #[test]
+    fn shell_workspace_title_and_partial_error_do_not_overlap() {
+        let canvas = egui::Rect::from_min_size(egui::pos2(0.0, 40.0), egui::vec2(800.0, 600.0));
+        let (error, title) = workspace_overlay_rects(canvas, true, true);
+        let (error, title) = (error.unwrap(), title.unwrap());
+        assert!(!error.intersects(title), "{error:?} {title:?}");
+        assert!(title.min.y >= error.max.y);
+        // Without an error line the title keeps the top-left spot.
+        let (none, alone) = workspace_overlay_rects(canvas, false, true);
+        assert_eq!(none, None);
+        assert_eq!(alone.unwrap().min, canvas.left_top() + egui::vec2(16.0, 16.0));
+    }
+
     fn scanned(rel: &str) -> ScannedNote {
         ScannedNote {
             rel: rel.into(),
@@ -1524,6 +1730,20 @@ mod tests {
             hash: 0,
         }
     }
+}
+
+/// Where the graph workspace's top-left lines sit: the vault's partial-error
+/// line, then the selected note's title below it.
+pub fn workspace_overlay_rects(
+    canvas: egui::Rect,
+    has_error: bool,
+    has_title: bool,
+) -> (Option<egui::Rect>, Option<egui::Rect>) {
+    let width = (canvas.width() - 32.0).max(0.0);
+    let line = |height: f32| {
+        egui::Rect::from_min_size(canvas.left_top() + egui::vec2(16.0, 16.0), egui::vec2(width, height))
+    };
+    (has_error.then(|| line(18.0)), has_title.then(|| line(24.0)))
 }
 
 pub fn workspace(ui: &mut egui::Ui, view: &VaultView, camera: &GraphCamera) {

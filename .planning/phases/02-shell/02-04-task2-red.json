@@ -1,0 +1,8 @@
+{
+  "command": "cargo test -p tapestry-canvas-app --offline shell",
+  "exitCode": 101,
+  "targetTest": "shell::tests::shell_state_restart_defaults_when_missing_or_malformed",
+  "expected": "ShellState::from_json(\"{}\") returns the default shell state, malformed text returns None, and the saved explorer mode, width, floating place, selection, files folders, and editors round-trip; legacy_layout_place reads root, here, and File tabs from the old synced layout without changing it; the workspace title sits below the partial-error line.",
+  "actual": "Assertion failed: from_json(\"{}\") returned None instead of Some(ShellState::default()) (stub). The round-trip and clamp tests fail on the from_json unwrap, legacy_layout_place returned root None instead of Some(\"@tapestry\"), and workspace_overlay_rects put the error line and title at the same top-left spot (the 02-02 overlap bug).",
+  "output": "not ok 1 - shell::tests::shell_state_restart_defaults_when_missing_or_malformed\nnot ok 2 - shell::tests::shell_state_restores_saved_explorer_presentation_and_place\nnot ok 3 - shell::tests::shell_state_clamps_an_out_of_range_saved_width\nnot ok 4 - shell::tests::shell_legacy_layout_is_read_without_change\nnot ok 5 - shell::tests::shell_workspace_title_and_partial_error_do_not_overlap\nok 6 - shell::tests::shell_state_never_carries_the_legacy_layout_or_vault_choice\n# tests 34\n# pass 29\n# fail 5\n"
+}
