@@ -2,19 +2,19 @@
 gsd_state_version: "1.0"
 current_phase: 2
 current_phase_name: Shell
-current_plan: 2
+current_plan: 3
 status: executing
-stopped_at: Completed 02-01-PLAN.md
-last_updated: "2026-10-22T08:40:26.277Z"
+stopped_at: Completed 02-02-PLAN.md
+last_updated: "2026-10-22T09:27:59.816Z"
 last_activity: 2026-10-22
 last_activity_desc: Phase 1 complete, transitioned to Phase 2
-state_head: 2290341869c674e048257f013ec23132b2c28ef3
+state_head: 12e59e9386653edfa4db5b7b41c112ba5de1d250
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 9
-  completed_plans: 6
-  percent: 67
+  completed_plans: 7
+  percent: 78
 ---
 
 # Project State
@@ -29,12 +29,12 @@ See: .planning/PROJECT.md (updated 2026-10-21)
 ## Current Position
 
 Phase: 2 — Shell
-Current Plan: 2
+Current Plan: 3
 Total Plans in Phase: 4
 Status: Ready to execute
 Last activity: 2026-10-22 — Phase 1 complete, transitioned to Phase 2
 
-Progress: [███████░░░] 67%
+Progress: [████████░░] 78%
 
 ## Performance Metrics
 
@@ -66,6 +66,7 @@ Progress: [███████░░░] 67%
 | Phase 01 P04 | 13 min | 2 tasks | 6 files |
 | Phase 01 P05 | 35 min | 2 tasks | 8 files |
 | Phase 02 P01 | 34 | 2 tasks | 3 files |
+| Phase 02 P02 | 12min | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -86,6 +87,9 @@ Recent decisions affecting current work:
 - [Phase 01]: 01-05: Watcher events and stat-diff recovery both feed hash classification; native event delivery was unavailable in the sandbox runner and remains pending host validation
 - [Phase 2]: 02-01: Keep vault selection independent from the simulation world path.
 - [Phase 2]: 02-01: Serialize vault filesystem and index work on one background worker; UI consumes immutable snapshots.
+- [Phase 2]: Explorer docked and floating modes share one ExplorerState; selection, width, and path survive close, float, and reopen.
+- [Phase 2]: Explorer and palette both emit NavigationTarget keyed by normalized VaultIndex keys; stale targets leave the camera unchanged.
+- [Phase 2]: Cmd-K is consumed in raw_input_hook before Terminal::take_input, so the shortcut never reaches the PTY.
 
 ### Pending Todos
 
@@ -108,6 +112,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-22T08:40:26.259Z
-Stopped at: Completed 02-01-PLAN.md
+Last session: 2026-10-22T09:27:59.799Z
+Stopped at: Completed 02-02-PLAN.md
 Resume file: None
