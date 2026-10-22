@@ -12,6 +12,7 @@ mod marks;
 mod notes;
 mod server;
 mod shell;
+mod shell_input;
 mod swarm;
 mod sync;
 mod tabnote;
@@ -329,6 +330,7 @@ struct App {
     ide: ide::Ide,
     vault_host: vault_host::VaultHost,
     explorer: shell::ExplorerState,
+    palette: shell::PaletteState,
     /// The notes pane: writing that isn't rules.
     notebook: notes::Notes,
     highlights: highlight::Highlights,
@@ -417,6 +419,7 @@ impl App {
             },
             vault_host,
             explorer: shell::ExplorerState::default(),
+            palette: shell::PaletteState::default(),
             notebook: notes::Notes::new(&world),
             highlights: highlight::Highlights::new(&cc.egui_ctx),
             marks: marks::Marks::new(),
@@ -549,6 +552,10 @@ impl App {
     }
 
     fn keyboard(&mut self, ui: &egui::Ui) {
+        if self.palette.open && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+            self.palette.open = false;
+            return;
+        }
         // A terminal with the keyboard gets every key, Space and Ctrl+Z too.
         if ui.ctx().egui_wants_keyboard_input() || self.ide.terminal_active() {
             return;
@@ -1571,6 +1578,10 @@ impl App {
 
 impl eframe::App for App {
     fn raw_input_hook(&mut self, _ctx: &egui::Context, raw: &mut egui::RawInput) {
+        if shell_input::filter_palette_shortcut(&mut raw.events) {
+            self.palette.open = true;
+            self.palette.focus_query = true;
+        }
         let (tool, radius) = (self.tool(), self.radius);
         self.marks.intercept(raw, tool, radius);
     }
@@ -1633,6 +1644,12 @@ impl eframe::App for App {
             self.maximized = None;
         }
 
+        let editor_tabs: Vec<_> = self.ide.buffers.keys().cloned().collect();
+        let entries = shell::palette_entries(&self.vault_host.view(), &editor_tabs);
+        if let Some(action) = shell::palette(ui.ctx(), &mut self.palette, &entries) {
+            self.palette_action(action);
+        }
+
         // Over everything: the "+" over a selection. What it keeps is a note.
         let selected = self.ide.term_selection();
         let source = self.ide.editing.clone();
@@ -1670,6 +1687,30 @@ impl eframe::App for App {
 }
 
 impl App {
+    fn palette_action(&mut self, action: shell::PaletteAction) {
+        match action {
+            shell::PaletteAction::OpenSimulation => self.maximized = Some(Tab::Canvas),
+            shell::PaletteAction::OpenRules => self.maximized = Some(Tab::Rules),
+            shell::PaletteAction::OpenFiles => self.maximized = Some(Tab::Files),
+            shell::PaletteAction::OpenTerminals => self.maximized = Some(Tab::Terminals),
+            shell::PaletteAction::OpenNotes => self.maximized = Some(Tab::Notes),
+            shell::PaletteAction::OpenEditor(path) => {
+                self.ide.show(path.clone());
+                self.maximized = Some(Tab::File(path));
+            }
+            shell::PaletteAction::Navigate(_) => {}
+            shell::PaletteAction::OpenVault => {
+                self.maximized = None;
+                self.explorer.reopen();
+                self.explorer.focus_path = true;
+            }
+            shell::PaletteAction::OpenExplorer => {
+                self.maximized = None;
+                self.explorer.reopen();
+            }
+        }
+    }
+
     fn tab_ui(&mut self, ui: &mut egui::Ui, tab: &mut Tab) {
         // Marks drawn here belong to this pane.
         let label = match &*tab {

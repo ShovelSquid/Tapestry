@@ -66,8 +66,260 @@ pub struct PaletteEntry {
     pub action: PaletteAction,
 }
 
-pub fn fuzzy_rank(_query: &str, _entries: &[PaletteEntry]) -> Vec<usize> {
-    Vec::new()
+#[derive(Debug, Clone, Default)]
+pub struct PaletteState {
+    pub open: bool,
+    pub query: String,
+    pub selected: usize,
+    pub focus_query: bool,
+}
+
+pub fn fuzzy_rank(query: &str, entries: &[PaletteEntry]) -> Vec<usize> {
+    let query: Vec<char> = query
+        .chars()
+        .filter(|ch| ch.is_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect();
+    let mut scored: Vec<(usize, i32)> = entries
+        .iter()
+        .enumerate()
+        .filter_map(|(index, entry)| {
+            if query.is_empty() {
+                return Some((index, 0));
+            }
+            let mut candidates = vec![entry.label.as_str()];
+            if let Some(path) = entry.full_path.as_deref() {
+                candidates.push(path);
+            }
+            candidates
+                .into_iter()
+                .filter_map(|candidate| fuzzy_score(&query, candidate).map(|score| (index, score)))
+                .max_by_key(|(_, score)| *score)
+        })
+        .collect();
+    scored.sort_by(|(a_index, a_score), (b_index, b_score)| {
+        group_order(entries[*a_index].group)
+            .cmp(&group_order(entries[*b_index].group))
+            .then_with(|| b_score.cmp(a_score))
+            .then_with(|| a_index.cmp(b_index))
+    });
+    scored.into_iter().map(|(index, _)| index).collect()
+}
+
+fn fuzzy_score(query: &[char], candidate: &str) -> Option<i32> {
+    let chars: Vec<char> = candidate.chars().flat_map(char::to_lowercase).collect();
+    let mut next = 0;
+    let mut score = 0;
+    let mut previous = None;
+    for wanted in query {
+        let found = chars[next..].iter().position(|ch| ch == wanted)? + next;
+        score += 10;
+        if previous.is_some_and(|prev| found == prev + 1) {
+            score += 8;
+        }
+        if found == 0 || !chars[found - 1].is_alphanumeric() {
+            score += 6;
+        }
+        if found == next {
+            score += 2;
+        }
+        previous = Some(found);
+        next = found + 1;
+    }
+    Some(score - (chars.len() as i32 / 20))
+}
+
+pub fn palette_entries(view: &VaultView, editor_tabs: &[PathBuf]) -> Vec<PaletteEntry> {
+    let mut entries = vec![
+        palette_entry(
+            "Simulation",
+            PaletteGroup::Simulation,
+            PaletteAction::OpenSimulation,
+        ),
+        palette_entry("Rules", PaletteGroup::Tools, PaletteAction::OpenRules),
+        palette_entry("Files", PaletteGroup::Tools, PaletteAction::OpenFiles),
+        palette_entry(
+            "Terminals",
+            PaletteGroup::Tools,
+            PaletteAction::OpenTerminals,
+        ),
+        palette_entry("Notes", PaletteGroup::Tools, PaletteAction::OpenNotes),
+        palette_entry(
+            "Open vault…",
+            PaletteGroup::Commands,
+            PaletteAction::OpenVault,
+        ),
+        palette_entry(
+            "Open explorer",
+            PaletteGroup::Commands,
+            PaletteAction::OpenExplorer,
+        ),
+    ];
+    entries.extend(editor_tabs.iter().map(|path| {
+        PaletteEntry {
+            label: path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("Untitled")
+                .to_owned(),
+            full_path: Some(path.display().to_string()),
+            group: PaletteGroup::Notes,
+            action: PaletteAction::OpenEditor(path.clone()),
+        }
+    }));
+    if let Some(snapshot) = &view.snapshot {
+        entries.extend(snapshot.index.notes.keys().map(|key| {
+            let label = key
+                .rsplit('/')
+                .next()
+                .unwrap_or(key)
+                .strip_suffix(".md")
+                .unwrap_or(key.rsplit('/').next().unwrap_or(key));
+            PaletteEntry {
+                label: label.to_owned(),
+                full_path: Some(snapshot.root.join(key).display().to_string()),
+                group: PaletteGroup::Notes,
+                action: PaletteAction::Navigate(key.clone()),
+            }
+        }));
+        entries.extend(
+            snapshot
+                .index
+                .folders
+                .keys()
+                .filter(|key| !key.is_empty())
+                .map(|key| PaletteEntry {
+                    label: key.rsplit('/').next().unwrap_or(key).to_owned(),
+                    full_path: Some(snapshot.root.join(key).display().to_string()),
+                    group: PaletteGroup::Folders,
+                    action: PaletteAction::Navigate(key.clone()),
+                }),
+        );
+    }
+    entries
+}
+
+fn palette_entry(label: &str, group: PaletteGroup, action: PaletteAction) -> PaletteEntry {
+    PaletteEntry {
+        label: label.into(),
+        full_path: None,
+        group,
+        action,
+    }
+}
+
+pub fn palette(
+    ctx: &egui::Context,
+    state: &mut PaletteState,
+    entries: &[PaletteEntry],
+) -> Option<PaletteAction> {
+    if !state.open {
+        return None;
+    }
+    let matches = fuzzy_rank(&state.query, entries);
+    if matches.is_empty() {
+        state.selected = 0;
+    } else {
+        state.selected = state.selected.min(matches.len() - 1);
+    }
+    let mut chosen = None;
+    egui::Area::new(egui::Id::new("command-palette"))
+        .order(egui::Order::Foreground)
+        .anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, 72.0))
+        .show(ctx, |ui| {
+            egui::Frame::popup(ui.style()).show(ui, |ui| {
+                ui.set_min_width(520.0);
+                ui.label(egui::RichText::new("Command palette").font(crate::title(20.0)));
+                let query = ui.add_sized(
+                    [ui.available_width(), 40.0],
+                    egui::TextEdit::singleline(&mut state.query)
+                        .hint_text("Search tools, notes, folders, and commands…"),
+                );
+                if state.focus_query {
+                    query.request_focus();
+                    state.focus_query = false;
+                }
+                let (up, down, enter, escape) = ui.input(|input| {
+                    (
+                        input.key_pressed(egui::Key::ArrowUp),
+                        input.key_pressed(egui::Key::ArrowDown),
+                        input.key_pressed(egui::Key::Enter),
+                        input.key_pressed(egui::Key::Escape),
+                    )
+                });
+                if escape {
+                    state.open = false;
+                }
+                if !matches.is_empty() {
+                    if down {
+                        state.selected = (state.selected + 1).min(matches.len() - 1);
+                    }
+                    if up {
+                        state.selected = state.selected.saturating_sub(1);
+                    }
+                    if enter {
+                        chosen = Some(entries[matches[state.selected]].action.clone());
+                        state.open = false;
+                    }
+                }
+                ui.separator();
+                if matches.is_empty() {
+                    ui.label("No matches. Try a different search.");
+                } else {
+                    egui::ScrollArea::vertical()
+                        .max_height(420.0)
+                        .show(ui, |ui| {
+                            let mut last_group = None;
+                            for (position, entry_index) in matches.iter().enumerate() {
+                                let entry = &entries[*entry_index];
+                                if last_group != Some(entry.group) {
+                                    last_group = Some(entry.group);
+                                    ui.add_space(8.0);
+                                    ui.label(
+                                        egui::RichText::new(group_label(entry.group))
+                                            .size(12.0)
+                                            .color(FAINT),
+                                    );
+                                }
+                                let detail = entry.full_path.as_deref().unwrap_or("");
+                                let label = if detail.is_empty() {
+                                    entry.label.clone()
+                                } else {
+                                    format!("{}    {detail}", entry.label)
+                                };
+                                let response = ui
+                                    .selectable_label(position == state.selected, label)
+                                    .on_hover_text(detail);
+                                if response.clicked() {
+                                    chosen = Some(entry.action.clone());
+                                    state.open = false;
+                                }
+                            }
+                        });
+                }
+            });
+        });
+    chosen
+}
+
+fn group_label(group: PaletteGroup) -> &'static str {
+    match group {
+        PaletteGroup::Simulation => "Simulation",
+        PaletteGroup::Tools => "Tools",
+        PaletteGroup::Notes => "Notes",
+        PaletteGroup::Folders => "Folders",
+        PaletteGroup::Commands => "Commands",
+    }
+}
+
+fn group_order(group: PaletteGroup) -> u8 {
+    match group {
+        PaletteGroup::Simulation => 0,
+        PaletteGroup::Tools => 1,
+        PaletteGroup::Notes => 2,
+        PaletteGroup::Folders => 3,
+        PaletteGroup::Commands => 4,
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -78,6 +330,7 @@ pub struct ExplorerState {
     pub path: String,
     pub path_dirty: bool,
     pub command_error: Option<String>,
+    pub focus_path: bool,
     pub floating_pos: Option<egui::Pos2>,
 }
 
@@ -90,6 +343,7 @@ impl Default for ExplorerState {
             path: String::new(),
             path_dirty: false,
             command_error: None,
+            focus_path: false,
             floating_pos: None,
         }
     }
@@ -270,6 +524,10 @@ fn explorer_contents(
                 .hint_text("Choose a folder to open as a vault"),
         );
         state.path_dirty |= response.changed();
+        if state.focus_path {
+            response.request_focus();
+            state.focus_path = false;
+        }
     });
     ui.horizontal(|ui| {
         ui.add_space(12.0);
@@ -457,7 +715,81 @@ mod tests {
         ];
         assert_eq!(fuzzy_rank("opv", &entries), vec![0]);
         assert_eq!(fuzzy_rank("notebook", &entries), vec![2]);
+        assert_eq!(fuzzy_rank("RESEARCH", &entries), vec![2]);
         assert!(fuzzy_rank("zzz", &entries).is_empty());
+    }
+
+    #[test]
+    fn palette_tool_and_command_entries_remain_available_while_vault_loads() {
+        let view = VaultView {
+            status: VaultStatus::Loading,
+            snapshot: None,
+        };
+        let entries = palette_entries(&view, &[]);
+        assert!(entries.iter().any(|entry| entry.label == "Simulation"));
+        assert!(entries.iter().any(|entry| entry.label == "Rules"));
+        assert!(entries.iter().any(|entry| entry.label == "Open vault…"));
+        assert!(entries.iter().any(|entry| entry.label == "Open explorer"));
+    }
+
+    #[test]
+    fn palette_entries_include_duplicate_notes_folders_tabs_and_typed_destinations() {
+        let index = VaultIndex::build(&Scan {
+            root: "/vault".into(),
+            folders: vec!["".into(), "research".into(), "research/child".into()],
+            notes: vec![
+                scanned("research/Notebook.md"),
+                scanned("research/child/Notebook.md"),
+            ],
+            skipped: Vec::new(),
+            truncated: false,
+        });
+        let view = VaultView {
+            status: VaultStatus::Ready,
+            snapshot: Some(VaultSnapshot {
+                root: "/vault".into(),
+                index: std::sync::Arc::new(index),
+            }),
+        };
+        let entries = palette_entries(&view, &[PathBuf::from("/vault/drafts/open.md")]);
+        let notes: Vec<_> = entries
+            .iter()
+            .filter(|entry| entry.label == "Notebook")
+            .collect();
+        assert_eq!(notes.len(), 2);
+        assert_ne!(notes[0].full_path, notes[1].full_path);
+        let matches = fuzzy_rank("child", &entries);
+        assert!(matches.iter().any(|index| matches!(
+            &entries[*index].action,
+            PaletteAction::Navigate(key) if key == "research/child/Notebook.md"
+        )));
+        let actions: Vec<_> = entries.iter().map(|entry| &entry.action).collect();
+        for action in [
+            PaletteAction::OpenSimulation,
+            PaletteAction::OpenRules,
+            PaletteAction::OpenFiles,
+            PaletteAction::OpenTerminals,
+            PaletteAction::OpenNotes,
+            PaletteAction::OpenEditor(PathBuf::from("/vault/drafts/open.md")),
+            PaletteAction::Navigate("research/Notebook.md".into()),
+            PaletteAction::Navigate("research/child".into()),
+            PaletteAction::OpenVault,
+            PaletteAction::OpenExplorer,
+        ] {
+            assert!(actions.contains(&&action));
+        }
+    }
+
+    fn scanned(rel: &str) -> ScannedNote {
+        ScannedNote {
+            rel: rel.into(),
+            text: Some(String::new()),
+            status: NoteStatus::Ok,
+            len: 0,
+            mtime_ms: None,
+            birth_ms: None,
+            hash: 0,
+        }
     }
 }
 
