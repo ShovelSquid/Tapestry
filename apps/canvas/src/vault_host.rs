@@ -1,6 +1,7 @@
 //! Serialized owner of the selected vault, its Store, watcher, and read model.
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, SyncSender, TryRecvError};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -46,6 +47,10 @@ enum Command {
 pub struct VaultHost {
     commands: SyncSender<Command>,
     published: Arc<Mutex<VaultView>>,
+    /// Folder switches sent, and those the worker has finished (opened or
+    /// failed), so the UI can tell when its own request has settled.
+    sent: AtomicU64,
+    settled: Arc<AtomicU64>,
     #[cfg(test)]
     watch_messages: mpsc::Sender<WatchMsg>,
 }
@@ -134,6 +139,8 @@ impl VaultHost {
             snapshot: None,
         }));
         let worker_published = Arc::clone(&published);
+        let settled = Arc::new(AtomicU64::new(0));
+        let worker_settled = Arc::clone(&settled);
         thread::Builder::new()
             .name("tapestry-vault".into())
             .spawn(move || {
@@ -143,6 +150,7 @@ impl VaultHost {
                     watch_tx,
                     watch_rx,
                     worker_published,
+                    worker_settled,
                     fallback_interval,
                     ctx,
                 )
@@ -151,6 +159,8 @@ impl VaultHost {
         Self {
             commands: command_tx,
             published,
+            sent: AtomicU64::new(0),
+            settled,
             #[cfg(test)]
             watch_messages,
         }
@@ -167,13 +177,22 @@ impl VaultHost {
     }
 
     /// A full command queue returns immediately so an egui frame never waits.
-    pub fn select_root(&self, path: PathBuf) -> Result<(), PathBuf> {
+    /// A sent switch returns its ticket: it has settled once `settled()`
+    /// reaches it.
+    pub fn select_root(&self, path: PathBuf) -> Result<u64, PathBuf> {
         self.commands
             .try_send(Command::SelectRoot {
                 path: path.clone(),
                 create_if_missing: false,
             })
-            .map_err(|_| path)
+            .map_err(|_| path)?;
+        Ok(self.sent.fetch_add(1, Ordering::SeqCst) + 1)
+    }
+
+    /// How many folder switches the worker has finished. Read it before
+    /// `view()`: a switch's result is published before it counts as settled.
+    pub fn settled(&self) -> u64 {
+        self.settled.load(Ordering::SeqCst)
     }
 
     pub fn request_rescan(&self) -> bool {
@@ -239,6 +258,7 @@ fn run_worker(
     watch_tx: mpsc::Sender<WatchMsg>,
     watch_rx: Receiver<WatchMsg>,
     published: Arc<Mutex<VaultView>>,
+    settled: Arc<AtomicU64>,
     fallback_interval: Duration,
     ctx: egui::Context,
 ) {
@@ -274,6 +294,8 @@ fn run_worker(
                         ctx.request_repaint();
                     }
                 }
+                // Counted only once its result is published.
+                settled.fetch_add(1, Ordering::SeqCst);
                 last_rescan = Instant::now();
             }
             Ok(Command::Rescan) => {
@@ -673,7 +695,13 @@ mod tests {
         let original = ready.snapshot.unwrap();
 
         let invalid = temp_root("missing-vault");
-        assert!(host.select_root(invalid.clone()).is_ok());
+        let ticket = host.select_root(invalid.clone()).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while host.settled() < ticket {
+            assert!(Instant::now() < deadline, "the switch never settled");
+            thread::sleep(Duration::from_millis(10));
+        }
+        assert!(matches!(host.view().status, VaultStatus::Error(_)));
         let failed = wait_for(&host, |view| matches!(view.status, VaultStatus::Error(_)));
         let retained = failed.snapshot.unwrap();
         assert!(Arc::ptr_eq(&retained.index, &original.index));

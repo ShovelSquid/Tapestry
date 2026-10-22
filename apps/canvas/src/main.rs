@@ -1605,19 +1605,25 @@ impl eframe::App for App {
                 self.hosted_view(ui);
             });
         } else {
+            // Settled count first: a switch's result is published before it
+            // counts, so the view read after it is never older.
+            let settled = self.vault_host.settled();
             let view = self.vault_host.view();
+            self.explorer.settle_open(settled, &view);
             if let Some(action) = shell::explorer(ui, &mut self.explorer, &view) {
                 match action {
-                    shell::ExplorerAction::OpenVault(path) => {
-                        if self.vault_host.select_root(path).is_err() {
+                    shell::ExplorerAction::OpenVault(path) => match self.vault_host.select_root(path) {
+                        Ok(ticket) => {
+                            self.explorer.pending_open = Some(ticket);
+                            self.explorer.command_error = None;
+                        }
+                        Err(_) => {
                             self.explorer.command_error = Some(
                                 "Vault switch is busy. Try opening the folder again in a moment."
                                     .into(),
                             );
-                        } else {
-                            self.explorer.command_error = None;
                         }
-                    }
+                    },
                     shell::ExplorerAction::Navigate(target) => {
                         self.graph_camera.navigate(&view, target);
                     }

@@ -723,6 +723,9 @@ pub struct ExplorerState {
     pub selected: Option<String>,
     pub path: String,
     pub path_dirty: bool,
+    /// The folder switch sent from the path field, until the vault host
+    /// has finished it.
+    pub pending_open: Option<u64>,
     pub command_error: Option<String>,
     pub focus_path: bool,
     pub floating_pos: Option<egui::Pos2>,
@@ -736,6 +739,7 @@ impl Default for ExplorerState {
             selected: None,
             path: String::new(),
             path_dirty: false,
+            pending_open: None,
             command_error: None,
             focus_path: false,
             floating_pos: None,
@@ -744,6 +748,23 @@ impl Default for ExplorerState {
 }
 
 impl ExplorerState {
+    /// Once the vault host has finished the switch this field sent: on
+    /// success the field follows the opened vault again; on failure the
+    /// typed path stays to be corrected. Read `settled` before `view`.
+    pub fn settle_open(&mut self, settled: u64, view: &VaultView) {
+        let Some(ticket) = self.pending_open else {
+            return;
+        };
+        if settled < ticket {
+            return;
+        }
+        self.pending_open = None;
+        if view.status == VaultStatus::Ready {
+            self.path_dirty = false;
+            self.command_error = None;
+        }
+    }
+
     pub fn close(&mut self) {
         self.mode = ExplorerMode::Closed;
     }
@@ -985,15 +1006,6 @@ pub fn explorer(
     state: &mut ExplorerState,
     view: &VaultView,
 ) -> Option<ExplorerAction> {
-    if state.path_dirty
-        && view
-            .snapshot
-            .as_ref()
-            .is_some_and(|snapshot| snapshot.root == PathBuf::from(&state.path))
-    {
-        state.path_dirty = false;
-        state.command_error = None;
-    }
     if !state.path_dirty {
         if let Some(snapshot) = &view.snapshot {
             state.path = snapshot.root.display().to_string();
@@ -1064,6 +1076,36 @@ pub fn explorer(
     action
 }
 
+/// The folder typed in the vault field: `~` is the home folder, and a
+/// relative path is refused rather than resolved against wherever the app
+/// was started.
+pub fn vault_path_from_field(text: &str) -> Result<PathBuf, &'static str> {
+    let text = text.trim();
+    if text.is_empty() {
+        return Err("Type the folder to open.");
+    }
+    let expanded = match (text, std::env::var("HOME")) {
+        ("~", Ok(home)) => home,
+        _ => crate::ide::expand_home(text),
+    };
+    let path = PathBuf::from(expanded);
+    if path.is_relative() {
+        return Err("Type the folder’s full path, starting with / or ~/.");
+    }
+    Ok(path)
+}
+
+/// Open the typed folder, or say why it can't be opened.
+fn submit_vault_path(state: &mut ExplorerState) -> Option<ExplorerAction> {
+    match vault_path_from_field(&state.path) {
+        Ok(path) => Some(ExplorerAction::OpenVault(path)),
+        Err(message) => {
+            state.command_error = Some(message.into());
+            None
+        }
+    }
+}
+
 /// How far the docked explorer's header is dragged, in total since the
 /// press, before it comes off the edge to float.
 const FLOAT_DRAG_DISTANCE: f32 = 28.0;
@@ -1098,7 +1140,7 @@ fn explorer_contents(
     ui.horizontal(|ui| {
         ui.add_space(12.0);
         if ui.button("Open vault").clicked() && !state.path.trim().is_empty() {
-            action = Some(ExplorerAction::OpenVault(PathBuf::from(state.path.trim())));
+            action = submit_vault_path(state);
         }
     });
     ui.add_space(8.0);
@@ -1255,6 +1297,58 @@ mod tests {
         assert_eq!(state.mode, ExplorerMode::Docked);
         assert_eq!(state.width, 336.0);
         assert_eq!(state.selected.as_deref(), Some("notes/a.md"));
+    }
+
+    #[test]
+    fn vault_field_expands_home_and_refuses_relative_paths() {
+        let home = std::env::var("HOME").unwrap();
+        assert_eq!(
+            vault_path_from_field("  ~/notes "),
+            Ok(PathBuf::from(format!("{home}/notes")))
+        );
+        assert_eq!(vault_path_from_field("~"), Ok(PathBuf::from(&home)));
+        assert_eq!(vault_path_from_field("/srv/vault"), Ok(PathBuf::from("/srv/vault")));
+        assert!(vault_path_from_field("notes").is_err());
+        assert!(vault_path_from_field("../notes").is_err());
+        assert!(vault_path_from_field("   ").is_err());
+    }
+
+    #[test]
+    fn vault_field_follows_the_vault_once_its_switch_settles() {
+        let ready = |root: &str| VaultView {
+            status: VaultStatus::Ready,
+            snapshot: Some(VaultSnapshot {
+                root: root.into(),
+                index: std::sync::Arc::new(VaultIndex::default()),
+            }),
+        };
+        // Typed through a symlink; the host reports the canonical root.
+        let mut state = ExplorerState {
+            path: "/tmp/notes".into(),
+            path_dirty: true,
+            pending_open: Some(3),
+            ..ExplorerState::default()
+        };
+        state.settle_open(2, &ready("/old"));
+        assert!(state.path_dirty, "not settled yet");
+        state.settle_open(3, &ready("/private/tmp/notes"));
+        assert!(!state.path_dirty);
+        assert_eq!(state.pending_open, None);
+
+        // A failed switch keeps the typed path to correct.
+        let mut state = ExplorerState {
+            path: "/typo".into(),
+            path_dirty: true,
+            pending_open: Some(1),
+            ..ExplorerState::default()
+        };
+        let failed = VaultView {
+            status: VaultStatus::Error("missing".into()),
+            ..ready("/old")
+        };
+        state.settle_open(1, &failed);
+        assert!(state.path_dirty);
+        assert_eq!(state.pending_open, None);
     }
 
     #[test]

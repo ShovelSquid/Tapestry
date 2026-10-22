@@ -2132,7 +2132,7 @@ fn write_atomic(dir: &Path, name: &str, text: &str) -> std::io::Result<()> {
     })
 }
 
-fn expand_home(p: &str) -> String {
+pub(crate) fn expand_home(p: &str) -> String {
     match (p.strip_prefix("~/"), std::env::var("HOME")) {
         (Some(rest), Ok(home)) => format!("{home}/{rest}"),
         _ => p.to_owned(),
