@@ -1,0 +1,8 @@
+{
+  "command": "cargo test -p tapestry-canvas-app --offline input_router",
+  "exitCode": 101,
+  "targetTest": "shell_input::tests::input_router_exit_chord_is_filtered_in_both_event_forms",
+  "expected": "Cmd-Shift-W sets exit_view and both its Key and associated Text events are removed before terminal input; the chord routes any hosted view back to Graph.",
+  "actual": "Assertion failed: filter_shell_chords reported exit_view=false and left the W key/text events in place (stub only handles Cmd-K). The Esc precedence, simulation-only bindings, and palette keyboard withholding tests also fail on assertions. input_router_cmd_k_with_terminal_focus_opens_palette_before_pty_input passes because 02-02 already filters Cmd-K; it is kept as a regression guard for the shared router.",
+  "output": "ok 1 - shell_input::tests::input_router_cmd_k_with_terminal_focus_opens_palette_before_pty_input\nnot ok 2 - shell_input::tests::input_router_exit_chord_is_filtered_in_both_event_forms\nnot ok 3 - shell_input::tests::input_router_escape_follows_the_locked_precedence\nnot ok 4 - shell_input::tests::input_router_simulation_bindings_fire_only_while_simulation_is_hosted\nnot ok 5 - shell_input::tests::input_router_open_palette_withholds_keyboard_from_hosted_views\n# tests 5\n# pass 1\n# fail 4\n"
+}
