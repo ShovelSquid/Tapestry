@@ -10,7 +10,7 @@ Defaults chosen for open questions: `.context/HUMAN-QUESTIONS.md`.
 
 ### Vault model (VAULT)
 
-- [ ] **VAULT-01**: User can open any folder as a vault; the app remembers the last one and defaults to `world/vault/` (created if missing)
+- [x] **VAULT-01**: User can open any folder as a vault; the app remembers the last one and defaults to `world/vault/` (created if missing)
 - [x] **VAULT-02**: Every `.md` file in the vault is a note; every folder is a graph; `.obsidian/`, `.git/` and the app's hidden folder are ignored; symlinks are not followed
 - [x] **VAULT-03**: A note's card position and size are read from YAML frontmatter `x`, `y`, `w`, `h`; notes without them get a computed placement that is not written until the user moves them (opening a vault never rewrites files)
 - [x] **VAULT-04**: Layout writes splice only the app-owned keys (`x`, `y`, `w`, `h`, `created`, `world-x`, `world-y`, `world-scale`) and leave every other byte of the file identical; a file whose frontmatter fails to parse is never rewritten
@@ -27,7 +27,7 @@ Defaults chosen for open questions: `.context/HUMAN-QUESTIONS.md`.
 
 ### Shell (SHELL)
 
-- [ ] **SHELL-01**: The main window is one infinite 2D canvas showing the vault; egui_dock is removed
+- [x] **SHELL-01**: The main window is one infinite 2D canvas showing the vault; egui_dock is removed
 - [ ] **SHELL-02**: An Obsidian-style explorer on the left lists folders (graphs) and notes; it can be resized by its edge, closed and reopened, and dragged off to float
 - [ ] **SHELL-03**: Cmd-K opens a fuzzy command palette listing every tool, note, folder and command
 - [ ] **SHELL-04**: Every existing tool keeps working and opens full-window from the palette — Simulation (sim canvas + brushes + timeline + swarm), Rules, Files (spatial IDE), Terminals, Notes, editor tabs; highlight notes, tab notes and marks still work over any view
@@ -92,7 +92,7 @@ Filled by roadmap creation (2026-10-21). Each requirement maps to exactly one ph
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| VAULT-01 | Phase 2 | Pending |
+| VAULT-01 | Phase 2 | Complete |
 | VAULT-02 | Phase 1 | Complete |
 | VAULT-03 | Phase 1 | Complete |
 | VAULT-04 | Phase 1 | Complete |
@@ -103,7 +103,7 @@ Filled by roadmap creation (2026-10-21). Each requirement maps to exactly one ph
 | LINK-03 | Phase 1 | Complete |
 | LINK-04 | Phase 1 | Complete |
 | LINK-05 | Phase 1 | Complete |
-| SHELL-01 | Phase 2 | Pending |
+| SHELL-01 | Phase 2 | Complete |
 | SHELL-02 | Phase 2 | Pending |
 | SHELL-03 | Phase 2 | Pending |
 | SHELL-04 | Phase 2 | Pending |

@@ -2,18 +2,19 @@
 gsd_state_version: "1.0"
 current_phase: 2
 current_phase_name: Shell
-status: planning
-stopped_at: Phase 2 research and validation strategy complete
-last_updated: "2026-10-22T08:05:31.082Z"
+current_plan: 2
+status: executing
+stopped_at: Completed 02-01-PLAN.md
+last_updated: "2026-10-22T08:40:26.277Z"
 last_activity: 2026-10-22
 last_activity_desc: Phase 1 complete, transitioned to Phase 2
-state_head: ff1122356d07b1d8922216e55dbfeba97dcd3bea
+state_head: 2290341869c674e048257f013ec23132b2c28ef3
 progress:
   total_phases: 6
   completed_phases: 1
-  total_plans: 5
-  completed_plans: 5
-  percent: 17
+  total_plans: 9
+  completed_plans: 6
+  percent: 67
 ---
 
 # Project State
@@ -28,11 +29,12 @@ See: .planning/PROJECT.md (updated 2026-10-21)
 ## Current Position
 
 Phase: 2 — Shell
-Plan: Not started
-Status: Ready to plan
+Current Plan: 2
+Total Plans in Phase: 4
+Status: Ready to execute
 Last activity: 2026-10-22 — Phase 1 complete, transitioned to Phase 2
 
-Progress: [██░░░░░░░░] 17%
+Progress: [███████░░░] 67%
 
 ## Performance Metrics
 
@@ -63,6 +65,7 @@ Progress: [██░░░░░░░░] 17%
 | Phase 01 P03 | 15 min | 3 tasks | 19 files |
 | Phase 01 P04 | 13 min | 2 tasks | 6 files |
 | Phase 01 P05 | 35 min | 2 tasks | 8 files |
+| Phase 02 P01 | 34 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -81,6 +84,8 @@ Recent decisions affecting current work:
 - [Phase 01]: 01-03: Scans are read-only; placements are computed per folder; ambiguous links retain candidates with a deterministic pick
 - [Phase 01]: 01-04: Store writes use fresh reads, atomic replacement, and hash-based classification; journal estimates are recorded before first legacy-note rewrites
 - [Phase 01]: 01-05: Watcher events and stat-diff recovery both feed hash classification; native event delivery was unavailable in the sandbox runner and remains pending host validation
+- [Phase 2]: 02-01: Keep vault selection independent from the simulation world path.
+- [Phase 2]: 02-01: Serialize vault filesystem and index work on one background worker; UI consumes immutable snapshots.
 
 ### Pending Todos
 
@@ -103,6 +108,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-22T08:05:31.053Z
-Stopped at: Phase 2 research and validation strategy complete
-Resume file: .planning/phases/02-shell/02-RESEARCH.md
+Last session: 2026-10-22T08:40:26.259Z
+Stopped at: Completed 02-01-PLAN.md
+Resume file: None
