@@ -2101,13 +2101,24 @@ pub(crate) fn state_dir() -> Option<PathBuf> {
     Some(std::env::temp_dir().join(format!("tapestry-test-state-{}", std::process::id())))
 }
 
-/// Write one file in the state folder.
+/// Write one file in the state folder, atomically: a kill mid-write leaves
+/// the old file whole rather than a truncated one.
 pub(crate) fn save_state(name: &str, text: &str) {
     let Some(dir) = state_dir() else { return };
-    let _ = std::fs::create_dir_all(&dir);
-    if let Err(e) = std::fs::write(dir.join(name), text) {
+    if let Err(e) = write_atomic(&dir, name, text) {
         eprintln!("couldn't remember {name}: {e}");
     }
+}
+
+/// Write `text` to a temporary file beside `dir/name`, then rename it over
+/// the target, which replaces it in one step on POSIX.
+fn write_atomic(dir: &Path, name: &str, text: &str) -> std::io::Result<()> {
+    std::fs::create_dir_all(dir)?;
+    let tmp = dir.join(format!(".{name}.{}.tmp", std::process::id()));
+    std::fs::write(&tmp, text)?;
+    std::fs::rename(&tmp, dir.join(name)).inspect_err(|_| {
+        let _ = std::fs::remove_file(&tmp);
+    })
 }
 
 fn expand_home(p: &str) -> String {
@@ -2124,5 +2135,34 @@ fn restart(ctx: &egui::Context) {
         if std::process::Command::new(exe).args(args).spawn().is_ok() {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn state_writes_replace_the_file_whole_and_leave_no_temporary() {
+        let dir = std::env::temp_dir().join(format!(
+            "tapestry-atomic-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        write_atomic(&dir, "vault.json", r#"{"root":"/first"}"#).unwrap();
+        write_atomic(&dir, "vault.json", r#"{"root":"/second"}"#).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(dir.join("vault.json")).unwrap(),
+            r#"{"root":"/second"}"#
+        );
+        let names: Vec<_> = std::fs::read_dir(&dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect();
+        assert_eq!(names, ["vault.json"]);
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }

@@ -794,6 +794,35 @@ impl ShellState {
     }
 }
 
+/// What reading `shell.json` found.
+#[derive(Debug, Clone, PartialEq)]
+pub enum SavedShell {
+    Saved(ShellState),
+    /// Never written: the old synced layout may stand in for it.
+    Missing,
+    /// There but unreadable or malformed, say cut short by a kill: start
+    /// from the default shell, not from the old synced layout, which may be
+    /// months out of date.
+    Unusable,
+}
+
+pub fn read_saved_shell(read: std::io::Result<String>) -> SavedShell {
+    match read {
+        Ok(text) => ShellState::from_json(&text).map_or_else(
+            || {
+                eprintln!("shell.json is malformed; starting from the default shell");
+                SavedShell::Unusable
+            },
+            SavedShell::Saved,
+        ),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => SavedShell::Missing,
+        Err(error) => {
+            eprintln!("couldn't read shell.json: {error}");
+            SavedShell::Unusable
+        }
+    }
+}
+
 /// What the synced `layout` record from the old docked panes still says
 /// that the shell can use: the files view's folders and the open editors,
 /// as sync keys. It's only read; the record itself is left as it is.
@@ -1672,6 +1701,20 @@ mod tests {
         assert_eq!(explorer.width, 264.0);
         assert_eq!(explorer.floating_pos, None);
         assert_eq!(explorer.selected, None);
+    }
+
+    #[test]
+    fn shell_json_missing_is_told_apart_from_malformed() {
+        let missing = std::io::Error::from(std::io::ErrorKind::NotFound);
+        assert_eq!(read_saved_shell(Err(missing)), SavedShell::Missing);
+        let denied = std::io::Error::from(std::io::ErrorKind::PermissionDenied);
+        assert_eq!(read_saved_shell(Err(denied)), SavedShell::Unusable);
+        // Cut short mid-write: not a reason to bring back the legacy layout.
+        assert_eq!(read_saved_shell(Ok(r#"{"explorer": {"mo"#.into())), SavedShell::Unusable);
+        assert_eq!(
+            read_saved_shell(Ok("{}".into())),
+            SavedShell::Saved(ShellState::default())
+        );
     }
 
     #[test]

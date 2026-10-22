@@ -74,15 +74,34 @@ impl Startup {
     }
 }
 
+/// What `vault.json` says.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Remembered {
+    /// No choice has been written yet.
+    Missing,
+    Root(PathBuf),
+    /// The file is there but can't be read or isn't a vault choice. It's
+    /// left alone rather than written over with the default.
+    Unusable(String),
+}
+
 /// The remembered vault if there is one, falling back to the default
-/// (`world/vault`, created when missing) when it can't be opened.
-fn startup_choice(remembered: Option<PathBuf>, default_root: PathBuf) -> Startup {
+/// (`world/vault`, created when missing) when it can't be opened. The
+/// default is remembered only when nothing was remembered before.
+fn startup_choice(remembered: Remembered, default_root: PathBuf) -> Startup {
     match remembered {
-        Some(path) => Startup {
+        Remembered::Root(path) => Startup {
             fallback: Some(default_root),
             ..Startup::new(path, false)
         },
-        None => Startup::new(default_root, true),
+        Remembered::Missing => Startup::new(default_root, true),
+        Remembered::Unusable(why) => {
+            eprintln!("vault.json is unusable, leaving it as it is: {why}");
+            Startup {
+                remember_initial: false,
+                ..Startup::new(default_root, true)
+            }
+        }
     }
 }
 
@@ -169,11 +188,26 @@ impl VaultHost {
 
 /// Load a local-only vault choice. The simulation's `--world` path is not read
 /// here and cannot affect this default.
-fn remembered_root() -> Option<PathBuf> {
-    let path = crate::ide::state_dir()?.join("vault.json");
-    let text = std::fs::read_to_string(path).ok()?;
-    let value: serde_json::Value = serde_json::from_str(&text).ok()?;
-    value.get("root")?.as_str().map(PathBuf::from)
+fn remembered_root() -> Remembered {
+    match crate::ide::state_dir() {
+        Some(dir) => read_remembered(&dir.join("vault.json")),
+        None => Remembered::Missing,
+    }
+}
+
+fn read_remembered(path: &Path) -> Remembered {
+    let text = match std::fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Remembered::Missing,
+        Err(error) => return Remembered::Unusable(error.to_string()),
+    };
+    serde_json::from_str::<serde_json::Value>(&text)
+        .ok()
+        .and_then(|value| value.get("root")?.as_str().map(PathBuf::from))
+        .map_or_else(
+            || Remembered::Unusable(format!("no vault root in {}", path.display())),
+            Remembered::Root,
+        )
 }
 
 fn remember_root(root: &Path) {
@@ -508,12 +542,31 @@ mod tests {
     #[test]
     fn startup_prefers_the_remembered_vault_and_falls_back_to_the_default() {
         let default = PathBuf::from("/repo/world/vault");
-        let remembered = startup_choice(Some("/notes".into()), default.clone());
+        let remembered = startup_choice(Remembered::Root("/notes".into()), default.clone());
         assert_eq!(remembered.root, PathBuf::from("/notes"));
         assert!(!remembered.create_if_missing);
         assert_eq!(remembered.fallback, Some(default.clone()));
-        let fresh = startup_choice(None, default.clone());
-        assert_eq!(fresh, Startup::new(default, true));
+        let fresh = startup_choice(Remembered::Missing, default.clone());
+        assert_eq!(fresh, Startup::new(default.clone(), true));
+        // A truncated or malformed vault.json is never written over.
+        let unusable = startup_choice(Remembered::Unusable("truncated".into()), default.clone());
+        assert_eq!(unusable.root, default);
+        assert!(!unusable.remember_initial);
+    }
+
+    #[test]
+    fn vault_json_missing_is_told_apart_from_malformed() {
+        let dir = temp_root("vault-json");
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("vault.json");
+        assert_eq!(read_remembered(&file), Remembered::Missing);
+        std::fs::write(&file, r#"{"root":"/no"#).unwrap();
+        assert!(matches!(read_remembered(&file), Remembered::Unusable(_)));
+        std::fs::write(&file, r#"{"other":1}"#).unwrap();
+        assert!(matches!(read_remembered(&file), Remembered::Unusable(_)));
+        std::fs::write(&file, r#"{"root":"/notes"}"#).unwrap();
+        assert_eq!(read_remembered(&file), Remembered::Root("/notes".into()));
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

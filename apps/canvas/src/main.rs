@@ -384,15 +384,18 @@ impl App {
             // over the saved one (see `shell_write_due`).
             return;
         }
-        let saved = ide::state_dir()
-            .and_then(|dir| std::fs::read_to_string(dir.join("shell.json")).ok())
-            .and_then(|text| shell::ShellState::from_json(&text));
+        let saved = match ide::state_dir() {
+            Some(dir) => shell::read_saved_shell(std::fs::read_to_string(dir.join("shell.json"))),
+            None => shell::SavedShell::Missing,
+        };
         let (root, here, editors) = match saved {
-            Some(state) => {
+            shell::SavedShell::Saved(state) => {
                 state.apply_explorer(&mut self.explorer);
                 (state.files_root, state.files_here, state.editors)
             }
-            None => {
+            // Unreadable: the default shell, written only once it changes.
+            shell::SavedShell::Unusable => (None, None, Vec::new()),
+            shell::SavedShell::Missing => {
                 let legacy = self
                     .ide
                     .synced
