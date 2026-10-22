@@ -477,11 +477,10 @@ impl App {
             owner_claims_keyboard: ui.ctx().egui_wants_keyboard_input()
                 || self.ide.terminal_active()
                 // An opened card counts only while its view shows.
-                || (self.ide.has_focus()
-                    && matches!(
-                        self.destination,
-                        shell::Destination::Files | shell::Destination::Terminals
-                    )),
+                || shell_input::opened_card_claims_keyboard(
+                    &self.destination,
+                    self.ide.has_focus(),
+                ),
             // A picked keyframe is the simulation's own use for Esc.
             tool_claims_escape: self.destination == shell::Destination::Simulation
                 && self.selected.is_some(),

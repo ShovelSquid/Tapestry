@@ -120,6 +120,13 @@ pub fn route_escape(destination: &Destination, focus: KeyFocus) -> EscapeRoute {
     }
 }
 
+/// An opened file or terminal card has the keyboard only in Files, the one
+/// view that draws it and reads its Esc. Elsewhere, Terminals included, a
+/// card left open must not swallow Esc and marks undo.
+pub fn opened_card_claims_keyboard(destination: &Destination, card_open: bool) -> bool {
+    card_open && *destination == Destination::Files
+}
+
 /// Where the exit chord takes the window: from any hosted view back to the
 /// graph workspace.
 pub fn route_exit_chord(destination: &Destination) -> Option<Destination> {
@@ -282,6 +289,29 @@ mod tests {
         assert_eq!(
             route_escape(&Destination::Graph, free),
             EscapeRoute::GraphCancel
+        );
+    }
+
+    #[test]
+    fn input_router_opened_card_claims_esc_only_where_it_is_drawn() {
+        assert!(opened_card_claims_keyboard(&Destination::Files, true));
+        assert!(!opened_card_claims_keyboard(&Destination::Files, false));
+        for other in [
+            Destination::Terminals,
+            Destination::Graph,
+            Destination::Simulation,
+            Destination::File("/vault/a.md".into()),
+        ] {
+            assert!(!opened_card_claims_keyboard(&other, true), "{other:?}");
+        }
+        // With a card left open, Esc in Terminals still returns to the graph.
+        let focus = KeyFocus {
+            owner_claims_keyboard: opened_card_claims_keyboard(&Destination::Terminals, true),
+            ..KeyFocus::default()
+        };
+        assert_eq!(
+            route_escape(&Destination::Terminals, focus),
+            EscapeRoute::ReturnToGraph
         );
     }
 
