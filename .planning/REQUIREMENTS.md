@@ -88,14 +88,56 @@ Defaults chosen for open questions: `.context/HUMAN-QUESTIONS.md`.
 
 ## Traceability
 
-Filled by roadmap creation.
+Filled by roadmap creation (2026-10-21). Each requirement maps to exactly one phase.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
+| VAULT-01 | Phase 2 | Pending |
+| VAULT-02 | Phase 1 | Pending |
+| VAULT-03 | Phase 1 | Pending |
+| VAULT-04 | Phase 1 | Pending |
+| VAULT-05 | Phase 1 | Pending |
+| VAULT-06 | Phase 1 | Pending |
+| LINK-01 | Phase 1 | Pending |
+| LINK-02 | Phase 1 | Pending |
+| LINK-03 | Phase 1 | Pending |
+| LINK-04 | Phase 1 | Pending |
+| LINK-05 | Phase 1 | Pending |
+| SHELL-01 | Phase 2 | Pending |
+| SHELL-02 | Phase 2 | Pending |
+| SHELL-03 | Phase 2 | Pending |
+| SHELL-04 | Phase 2 | Pending |
+| SHELL-05 | Phase 2 | Pending |
+| SHELL-06 | Phase 2 | Pending |
+| CANV-01 | Phase 3 | Pending |
+| CANV-02 | Phase 3 | Pending |
+| CANV-03 | Phase 3 | Pending |
+| CANV-04 | Phase 3 | Pending |
+| CANV-05 | Phase 3 | Pending |
+| CANV-06 | Phase 3 | Pending |
+| CANV-07 | Phase 3 | Pending |
+| CANV-08 | Phase 3 | Pending |
+| CANV-09 | Phase 3 | Pending |
+| RSRCH-01 | Phase 4 | Pending |
+| RSRCH-02 | Phase 4 | Pending |
+| RSRCH-03 | Phase 4 | Pending |
+| RSRCH-04 | Phase 4 | Pending |
+| RSRCH-05 | Phase 4 | Pending |
+| RSRCH-06 | Phase 4 | Pending |
+| PROP-01 | Phase 5 | Pending |
+| PROP-02 | Phase 5 | Pending |
+| PROP-03 | Phase 5 | Pending |
+| TREE-01 | Phase 6 | Pending |
+| TREE-02 | Phase 6 | Pending |
+| TREE-03 | Phase 6 | Pending |
 
 **Coverage:**
 - v1 requirements: 38 total
+- Mapped to phases: 38
+- Unmapped: 0
+
+Per phase: Phase 1 = 10, Phase 2 = 7, Phase 3 = 9, Phase 4 = 6, Phase 5 = 3, Phase 6 = 3.
 
 ---
 *Requirements defined: 2026-10-21*
-*Last updated: 2026-10-21 after initial definition*
+*Last updated: 2026-10-21 after roadmap creation (traceability filled)*
