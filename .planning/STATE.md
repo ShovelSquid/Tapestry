@@ -3,18 +3,18 @@ gsd_state_version: "1.0"
 current_phase: 2
 current_phase_name: Shell
 current_plan: 4
-status: executing
-stopped_at: Completed 02-03-PLAN.md
-last_updated: "2026-10-22T09:42:55.648Z"
+status: verifying
+stopped_at: Completed 02-04-PLAN.md
+last_updated: "2026-10-22T09:56:09.822Z"
 last_activity: 2026-10-22
-last_activity_desc: Phase 1 complete, transitioned to Phase 2
-state_head: 7d576df5733e856d3a7199f43473e5b5db590333
+last_activity_desc: Phase 2 plans 4/4 executed, awaiting phase verification
+state_head: b3b14f05d69e289cc05e17d12cb92ebf439eca71
 progress:
   total_phases: 6
   completed_phases: 1
   total_plans: 9
-  completed_plans: 8
-  percent: 89
+  completed_plans: 9
+  percent: 100
 ---
 
 # Project State
@@ -31,10 +31,10 @@ See: .planning/PROJECT.md (updated 2026-10-21)
 Phase: 2 — Shell
 Current Plan: 4
 Total Plans in Phase: 4
-Status: Ready to execute
-Last activity: 2026-10-22 — Phase 1 complete, transitioned to Phase 2
+Status: All 4 plans executed — awaiting Phase 2 verification (phase not yet marked complete)
+Last activity: 2026-10-22 — 02-04 complete (screenshots on wall clock, hidden sim paused, egui_dock removed)
 
-Progress: [█████████░] 89%
+Progress: [██████████] 100% of planned plans (9/9)
 
 ## Performance Metrics
 
@@ -68,6 +68,7 @@ Progress: [█████████░] 89%
 | Phase 02 P01 | 34 | 2 tasks | 3 files |
 | Phase 02 P02 | 12min | 3 tasks | 3 files |
 | Phase 02 P03 | 9min | 3 tasks | 3 files |
+| Phase 02 P04 | 8min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -95,6 +96,10 @@ Recent decisions affecting current work:
 - [Phase 2]: 02-03: Shell chords (Cmd-K, Cmd-Shift-W) are filtered from raw input as Key and Text before marks and Terminal::take_input, then queued for App::ui
 - [Phase 2]: 02-03: Esc precedence palette > focused owner/tool > hosted-view return > graph cancel; simulation keys only while Simulation is hosted and keyboard is free
 - [Phase 2]: 02-03: Open palette withholds keyboard events from views drawn under it and restores them before drawing itself
+- [Phase 2]: 02-04: TAPESTRY_SHOT fires once by wall-clock delay from App startup from any destination; TAPESTRY_VIEW unchanged
+- [Phase 2]: 02-04: Simulation clock and catch-up run only while Simulation is the destination (clock_step returns None when hidden)
+- [Phase 2]: 02-04: Shell presentation, files folder, and open editors persist in local shell.json; vault choice stays in vault.json; the synced legacy layout record is read once as fallback and never written
+- [Phase 2]: 02-04: egui_dock removed; Tab variants and Debug names kept for marks pane keys; saved editors close from the File view header
 
 ### Pending Todos
 
@@ -103,7 +108,7 @@ None yet.
 ### Blockers/Concerns
 
 - [Phase 3]: Camera/coordinate spike must come first (f32 precision at nesting depth, egui text/IME/hit-test under transforms, galley line y for line-anchored edges)
-- [Phase 2]: `take_shot` waits on a sim tick; must be decoupled or agent screenshots hang when the sim is hidden
+- [Phase 2]: vault_host tests write the real ~/.local/state/tapestry/vault.json (see 02-shell/deferred-items.md, HUMAN-QUESTIONS #17)
 - [Phase 4]: Re-verify free-provider limits at phase start (OpenAlex keyless ~100 searches/day, DDG challenge behavior)
 - Shared worktree: commit only own paths; `cargo build`/`cargo test` for `tapestry-canvas` and `tapestry-canvas-app` must pass after every plan
 
@@ -117,6 +122,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-10-22T09:42:55.631Z
-Stopped at: Completed 02-03-PLAN.md
+Last session: 2026-10-22T09:56:09.805Z
+Stopped at: Completed 02-04-PLAN.md
 Resume file: None
