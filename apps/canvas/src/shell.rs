@@ -401,6 +401,30 @@ pub struct PaletteState {
     pub query: String,
     pub selected: usize,
     pub focus_query: bool,
+    /// The query the selection was made against: a new query starts the
+    /// selection over at the best match.
+    pub selected_for: String,
+}
+
+impl PaletteState {
+    /// Open from Cmd-K: an empty search, the keyboard in the field.
+    pub fn open_fresh(&mut self) {
+        self.open = true;
+        self.focus_query = true;
+        self.query.clear();
+        self.selected_for.clear();
+        self.selected = 0;
+    }
+
+    /// Start the selection over when the query changed, and keep it on a
+    /// row that exists.
+    pub fn sync_selection(&mut self, match_count: usize) {
+        if self.query != self.selected_for {
+            self.selected = 0;
+            self.selected_for.clone_from(&self.query);
+        }
+        self.selected = self.selected.min(match_count.saturating_sub(1));
+    }
 }
 
 pub fn fuzzy_rank(query: &str, entries: &[PaletteEntry]) -> Vec<usize> {
@@ -549,12 +573,10 @@ pub fn palette(
         return None;
     }
     let matches = fuzzy_rank(&state.query, entries);
-    if matches.is_empty() {
-        state.selected = 0;
-    } else {
-        state.selected = state.selected.min(matches.len() - 1);
-    }
+    state.sync_selection(matches.len());
     let mut chosen = None;
+    // The selection moved by keyboard this frame: scroll it into view.
+    let mut moved = false;
     egui::Area::new(egui::Id::new("command-palette"))
         .order(egui::Order::Foreground)
         .anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, 72.0))
@@ -583,12 +605,14 @@ pub fn palette(
                     state.open = false;
                 }
                 if !matches.is_empty() {
+                    let before = state.selected;
                     if down {
                         state.selected = (state.selected + 1).min(matches.len() - 1);
                     }
                     if up {
                         state.selected = state.selected.saturating_sub(1);
                     }
+                    moved = state.selected != before;
                     if enter {
                         chosen = Some(entries[matches[state.selected]].action.clone());
                         state.open = false;
@@ -622,6 +646,9 @@ pub fn palette(
                                 let response = ui
                                     .selectable_label(position == state.selected, label)
                                     .on_hover_text(detail);
+                                if moved && position == state.selected {
+                                    response.scroll_to_me(None);
+                                }
                                 if response.clicked() {
                                     chosen = Some(entry.action.clone());
                                     state.open = false;
@@ -1241,6 +1268,30 @@ mod tests {
         assert_eq!(fuzzy_rank("notebook", &entries), vec![2]);
         assert_eq!(fuzzy_rank("RESEARCH", &entries), vec![2]);
         assert!(fuzzy_rank("zzz", &entries).is_empty());
+    }
+
+    #[test]
+    fn palette_selection_starts_over_for_a_new_query_and_a_fresh_open() {
+        let mut state = PaletteState::default();
+        state.open_fresh();
+        state.sync_selection(10);
+        state.selected = 4;
+        state.sync_selection(10);
+        assert_eq!(state.selected, 4, "same query keeps the selection");
+        state.query.push_str("note");
+        state.sync_selection(10);
+        assert_eq!(state.selected, 0, "a new query selects its best match");
+        state.selected = 9;
+        state.sync_selection(3);
+        assert_eq!(state.selected, 2, "clamped to the rows there are");
+        state.sync_selection(0);
+        assert_eq!(state.selected, 0);
+        // Cmd-K opens on an empty search, not the last one.
+        state.selected = 2;
+        state.open_fresh();
+        assert!(state.open && state.focus_query);
+        assert!(state.query.is_empty());
+        assert_eq!(state.selected, 0);
     }
 
     #[test]

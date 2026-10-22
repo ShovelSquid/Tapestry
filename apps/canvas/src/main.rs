@@ -458,8 +458,7 @@ impl App {
     fn apply_chords(&mut self) {
         let chords = std::mem::take(&mut self.chords);
         if chords.open_palette {
-            self.palette.open = true;
-            self.palette.focus_query = true;
+            self.palette.open_fresh();
         }
         if chords.exit_view
             && let Some(next) = shell_input::route_exit_chord(&self.destination)
