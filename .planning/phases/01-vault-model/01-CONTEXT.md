@@ -15,17 +15,17 @@ A vault of plain `.md` notes can be scanned, indexed, linked and written by a he
 ## Implementation Decisions
 
 ### Locked (Kaelen, 2026-10-21 — do not change, do not re-ask)
-- **D-01** egui_dock removed. Main view is one blank infinite 2D canvas. Obsidian-style explorer on the left: resizable by edge, closable, can be dragged off to float.
-- **D-02** Every existing tool keeps its functionality and opens full-window from a Cmd-K palette; Esc returns to the canvas.
-- **D-03** Vault = folder of plain `.md` files, Obsidian-compatible, no custom format. A folder is a graph; its notes are cards.
-- **D-04** Card `x`, `y`, `w`, `h` in each note's YAML frontmatter; written on drag/resize end, never per frame; unknown keys preserved.
-- **D-05** Top-level folders get deterministic regions from a stable hash (FNV-1a or similar, never `DefaultHasher`) of the normalized vault-relative path; subfolders nested inside the parent at smaller scale, zoom-to-fill; a moved folder's position stored as `world-x`, `world-y`, `world-scale` in `Folder/Folder.md` frontmatter (separate keys from the card's own `x/y/w/h`).
-- **D-06** Obsidian block refs: `^id` anchors; links `[[Note#^id|description]]`, `[[Folder/Note#^id|description]]` across graphs; plain `[[Note]]` keeps working.
-- **D-07** The user writes every connection description. The app may only propose; never writes description text.
-- **D-08** Silent research, no chat model: queries from keywords + Model2Vec embeddings (no LLM), debounced on topic shift, daily cap, visible "out of searches". Source cards placed near the prompting note and linked to it; research never edits the note being typed (provenance `found_from` on the source note + drawn edge; `^id` added to the prompting line only on keep/idle).
-- **D-09** Free search only: OpenAlex, arXiv, Wikipedia, Tavily only if `TAVILY_API_KEY` set, DuckDuckGo HTML fallback. `ureq`, background threads, never block UI.
-- **D-10** Knowledge tree: live whole-vault graph + growth replay scrubber.
-- **D-11** Open any folder as vault, remember last; default `world/vault/`.
+- **D-01:** egui_dock removed. Main view is one blank infinite 2D canvas. Obsidian-style explorer on the left: resizable by edge, closable, can be dragged off to float.
+- **D-02:** Every existing tool keeps its functionality and opens full-window from a Cmd-K palette; Esc returns to the canvas.
+- **D-03:** Vault = folder of plain `.md` files, Obsidian-compatible, no custom format. A folder is a graph; its notes are cards.
+- **D-04:** Card `x`, `y`, `w`, `h` in each note's YAML frontmatter; written on drag/resize end, never per frame; unknown keys preserved.
+- **D-05:** Top-level folders get deterministic regions from a stable hash (FNV-1a or similar, never `DefaultHasher`) of the normalized vault-relative path; subfolders nested inside the parent at smaller scale, zoom-to-fill; a moved folder's position stored as `world-x`, `world-y`, `world-scale` in `Folder/Folder.md` frontmatter (separate keys from the card's own `x/y/w/h`).
+- **D-06:** Obsidian block refs: `^id` anchors; links `[[Note#^id|description]]`, `[[Folder/Note#^id|description]]` across graphs; plain `[[Note]]` keeps working.
+- **D-07:** The user writes every connection description. The app may only propose; never writes description text.
+- **D-08:** Silent research, no chat model: queries from keywords + Model2Vec embeddings (no LLM), debounced on topic shift, daily cap, visible "out of searches". Source cards placed near the prompting note and linked to it; research never edits the note being typed (provenance `found_from` on the source note + drawn edge; `^id` added to the prompting line only on keep/idle).
+- **D-09:** Free search only: OpenAlex, arXiv, Wikipedia, Tavily only if `TAVILY_API_KEY` set, DuckDuckGo HTML fallback. `ureq`, background threads, never block UI.
+- **D-10:** Knowledge tree: live whole-vault graph + growth replay scrubber.
+- **D-11:** Open any folder as vault, remember last; default `world/vault/`.
 
 ### Defaults chosen by the orchestrator (logged in .context/HUMAN-QUESTIONS.md; treat as decided)
 - Source cards are real `.md` notes with `source: auto`, `status: suggested`, provenance frontmatter, in a sources subfolder of the graph; never used as research input.

@@ -520,16 +520,20 @@ description "a | b"                                                     → Err(
 | A7 | Splitting at the first `\|` matches Obsidian for `[[a\|b\|c]]` | Pattern 3 | Low: the builder forbids `\|` in descriptions |
 | A8 | Obsidian ignores dot-prefixed files and folders (`.tapestry`, temp files), so they never appear in its UI | Pattern 8 | Low |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Should `created` be local time with an offset?**
    - What we know: Obsidian documents only the naive `2020-08-21T10:30:00` form. Forum reports say `+HH:MM` displays correctly but `Z` and `+HHMM` are flaky.
    - Recommendation: naive UTC now, logged. Revisit only if Kaelen cares how it displays.
+   - RESOLVED: naive UTC via `iso_utc` (plan 01-01); logged as HUMAN-QUESTIONS #12 and assumption A1 (plan 01-05).
 2. **NFC normalisation of link keys** (PITFALLS #37).
    - What we know: `unicode-normalization` is not in the lock or the registry cache. APFS preserves name bytes.
    - Recommendation: route all key-making through one `fn key(&str) -> String` (lowercase) so NFC can be added later. Do not add the dependency in Phase 1.
+   - RESOLVED: every link key goes through `index::key()` (plan 01-03); NFC deferred.
 3. **Should `.tapestry/` be git-ignored or committed?** Deferred to Phase 6 per ARCHITECTURE. The store must not write a `.gitignore` there in Phase 1.
+   - RESOLVED: deferred to Phase 6; no Phase 1 plan writes a `.gitignore`.
 4. **Links in frontmatter properties** (`found_from: "[[Note]]"`). Needed by Phase 4. Recommendation: Phase 1's index records them as `LinkRec{ in_frontmatter: true }` only if cheap; otherwise defer to Phase 4.
+   - RESOLVED: deferred to Phase 4; `links::mask()` excludes frontmatter from the link scan (plan 01-02).
 
 ## Environment Availability
 
