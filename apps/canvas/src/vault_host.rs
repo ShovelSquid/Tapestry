@@ -317,7 +317,9 @@ fn refresh_if_changed(active: &mut ActiveVault, published: &Arc<Mutex<VaultView>
             return;
         }
     };
-    if changed {
+    // Store's stat baseline holds notes only, so a folder made, renamed, or
+    // removed outside the app is found by comparing the folder set.
+    if changed || folders_changed(&active.root, published) {
         match build_snapshot(&active.root) {
             Ok(snapshot) => publish(published, VaultStatus::Ready, Some(snapshot)),
             Err(error) => publish_error_keep_snapshot(published, error),
@@ -327,6 +329,25 @@ fn refresh_if_changed(active: &mut ActiveVault, published: &Arc<Mutex<VaultView>
         // left by an earlier failed rescan clears even when no note changed.
         clear_error(published);
     }
+}
+
+/// Whether the vault's folders differ from the published snapshot's. The
+/// walk reads metadata only: no note is read past an empty one.
+fn folders_changed(root: &Path, published: &Arc<Mutex<VaultView>>) -> bool {
+    let options = scan::ScanOptions {
+        max_note_bytes: 0,
+        ..scan::ScanOptions::default()
+    };
+    let Ok(fresh) = scan::scan_with(root, &options) else {
+        return false;
+    };
+    let Ok(current) = published.lock() else {
+        return false;
+    };
+    current
+        .snapshot
+        .as_ref()
+        .is_some_and(|snapshot| !snapshot.index.folders.keys().eq(fresh.folders.iter()))
 }
 
 /// Refresh, and repaint when what the UI shows changed: a new snapshot or a
@@ -581,6 +602,39 @@ mod tests {
         std::fs::create_dir_all(&root).unwrap();
         assert!(host.request_rescan());
         wait_for(&host, |view| matches!(view.status, VaultStatus::Ready));
+
+        drop(host);
+        thread::sleep(POLL_INTERVAL + Duration::from_millis(20));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn folder_only_changes_publish_fresh_snapshots() {
+        let root = temp_root("folder-refresh");
+        std::fs::create_dir_all(&root).unwrap();
+        let host = VaultHost::start_with(
+            root.clone(),
+            false,
+            Duration::from_secs(60),
+            egui::Context::default(),
+        );
+        wait_for(&host, |view| matches!(view.status, VaultStatus::Ready));
+
+        std::fs::create_dir(root.join("made-outside")).unwrap();
+        assert!(host.request_rescan());
+        wait_for(&host, |view| {
+            view.snapshot
+                .as_ref()
+                .is_some_and(|snapshot| snapshot.index.folders.contains_key("made-outside"))
+        });
+
+        std::fs::remove_dir(root.join("made-outside")).unwrap();
+        assert!(host.request_rescan());
+        wait_for(&host, |view| {
+            view.snapshot
+                .as_ref()
+                .is_some_and(|snapshot| !snapshot.index.folders.contains_key("made-outside"))
+        });
 
         drop(host);
         thread::sleep(POLL_INTERVAL + Duration::from_millis(20));
