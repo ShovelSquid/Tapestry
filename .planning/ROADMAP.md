@@ -50,7 +50,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 Plans:
 
 - [x] 01-01-PLAN.md — Tracer (scan → index → single Store writer → journal) + byte-exact frontmatter splice (VAULT-03, VAULT-04)
-- [ ] 01-02-PLAN.md — Wikilink parser, `^id` anchors, described-link builder; ide.rs `wikilinks()` delegates (LINK-01, LINK-02, LINK-03)
+- [x] 01-02-PLAN.md — Wikilink parser, `^id` anchors, described-link builder; ide.rs `wikilinks()` delegates (LINK-01, LINK-02, LINK-03)
 - [ ] 01-03-PLAN.md — Read-only scan with skips/caps, computed placement, Obsidian link resolution + backlinks (VAULT-02, VAULT-03, LINK-04)
 - [ ] 01-04-PLAN.md — Hardened atomic writer, every vault command, journal events, own-write classification (VAULT-05, VAULT-06, LINK-02, LINK-03)
 - [ ] 01-05-PLAN.md — FSEvents watcher + fallback rescan, independent Obsidian grammar check, read-only vault-check (VAULT-06, LINK-05)
