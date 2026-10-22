@@ -1617,9 +1617,16 @@ impl eframe::App for App {
                             self.explorer.pending_open = Some(ticket);
                             self.explorer.command_error = None;
                         }
-                        Err(_) => {
+                        Err(vault_host::SelectError::Busy) => {
                             self.explorer.command_error = Some(
                                 "Vault switch is busy. Try opening the folder again in a moment."
+                                    .into(),
+                            );
+                        }
+                        // The host's own status says the worker stopped.
+                        Err(vault_host::SelectError::Stopped) => {
+                            self.explorer.command_error = Some(
+                                "The vault worker stopped. Restart Tapestry to open another folder."
                                     .into(),
                             );
                         }

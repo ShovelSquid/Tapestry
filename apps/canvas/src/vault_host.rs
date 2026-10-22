@@ -40,12 +40,29 @@ enum Command {
         create_if_missing: bool,
     },
     Rescan,
+    /// Stands in for a bug that panics inside Store, scan, or the index.
+    #[cfg(test)]
+    Panic,
 }
+
+/// Why a folder switch wasn't sent.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SelectError {
+    /// The command queue is full; trying again in a moment can work.
+    Busy,
+    /// The vault worker has stopped; no switch can be made.
+    Stopped,
+}
+
+/// Shown once the worker has stopped, over the last snapshot it published.
+const WORKER_STOPPED: &str =
+    "The vault worker stopped, so this vault no longer refreshes. Restart Tapestry to open it again.";
 
 /// The UI only sends bounded commands and clones completed immutable snapshots.
 /// All filesystem, Store, Watch, and index work belongs to the worker thread.
 pub struct VaultHost {
     commands: SyncSender<Command>,
+    worker: thread::JoinHandle<()>,
     published: Arc<Mutex<VaultView>>,
     /// Folder switches sent, and those the worker has finished (opened or
     /// failed), so the UI can tell when its own request has settled.
@@ -141,7 +158,7 @@ impl VaultHost {
         let worker_published = Arc::clone(&published);
         let settled = Arc::new(AtomicU64::new(0));
         let worker_settled = Arc::clone(&settled);
-        thread::Builder::new()
+        let worker = thread::Builder::new()
             .name("tapestry-vault".into())
             .spawn(move || {
                 run_worker(
@@ -158,6 +175,7 @@ impl VaultHost {
             .expect("vault worker thread must start");
         Self {
             commands: command_tx,
+            worker,
             published,
             sent: AtomicU64::new(0),
             settled,
@@ -166,26 +184,36 @@ impl VaultHost {
         }
     }
 
+    /// What the worker last published. Once the worker has stopped (a
+    /// panic), the last snapshot stays with an error saying so, rather than
+    /// a shell that looks loaded but never refreshes.
     pub fn view(&self) -> VaultView {
-        self.published
+        // A panic while holding the lock poisons it; what it holds is still
+        // the last complete publish.
+        let mut view = self
+            .published
             .lock()
-            .map(|view| view.clone())
-            .unwrap_or(VaultView {
-                status: VaultStatus::Error("Vault worker state is unavailable.".into()),
-                snapshot: None,
-            })
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        if self.worker.is_finished() {
+            view.status = VaultStatus::Error(WORKER_STOPPED.into());
+        }
+        view
     }
 
     /// A full command queue returns immediately so an egui frame never waits.
     /// A sent switch returns its ticket: it has settled once `settled()`
     /// reaches it.
-    pub fn select_root(&self, path: PathBuf) -> Result<u64, PathBuf> {
+    pub fn select_root(&self, path: PathBuf) -> Result<u64, SelectError> {
         self.commands
             .try_send(Command::SelectRoot {
-                path: path.clone(),
+                path,
                 create_if_missing: false,
             })
-            .map_err(|_| path)?;
+            .map_err(|error| match error {
+                mpsc::TrySendError::Full(_) => SelectError::Busy,
+                mpsc::TrySendError::Disconnected(_) => SelectError::Stopped,
+            })?;
         Ok(self.sent.fetch_add(1, Ordering::SeqCst) + 1)
     }
 
@@ -298,6 +326,8 @@ fn run_worker(
                 settled.fetch_add(1, Ordering::SeqCst);
                 last_rescan = Instant::now();
             }
+            #[cfg(test)]
+            Ok(Command::Panic) => panic!("vault worker test panic"),
             Ok(Command::Rescan) => {
                 if let Some(active) = active.as_mut() {
                     refresh_and_repaint(active, &published, &ctx);
@@ -806,6 +836,29 @@ mod tests {
 
         drop(host);
         thread::sleep(POLL_INTERVAL + Duration::from_millis(20));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_stopped_worker_is_reported_not_called_busy() {
+        let root = temp_root("worker-stops");
+        std::fs::create_dir_all(&root).unwrap();
+        let host = VaultHost::start_with(
+            root.clone(),
+            false,
+            Duration::from_secs(60),
+            egui::Context::default(),
+        );
+        wait_for(&host, |view| matches!(view.status, VaultStatus::Ready));
+
+        host.commands.try_send(Command::Panic).unwrap();
+        let stopped = wait_for(&host, |view| {
+            matches!(&view.status, VaultStatus::Error(message) if message == WORKER_STOPPED)
+        });
+        assert!(stopped.snapshot.is_some(), "the last snapshot stays");
+        assert_eq!(host.select_root(root.clone()), Err(SelectError::Stopped));
+
+        drop(host);
         std::fs::remove_dir_all(root).unwrap();
     }
 
