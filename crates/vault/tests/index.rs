@@ -127,6 +127,7 @@ fn resolver_uses_obsidian_paths_and_surfaces_ambiguity() {
     for (source, path, expected) in [
         ("Welcome.md", "welcome.MD", "Welcome.md"),
         ("Welcome.md", "Leaf", "Sub/Deep/Leaf.md"),
+        ("Welcome.md", "Leaf.md", "Sub/Deep/Leaf.md"),
         ("Welcome.md", "Deep/Leaf", "Sub/Deep/Leaf.md"),
         ("Topic/Topic.md", "./Notes", "Topic/Notes.md"),
         ("Topic/Topic.md", "../Welcome", "Welcome.md"),
@@ -206,6 +207,7 @@ fn link_records_expose_blocks_descriptions_backlinks_and_short_paths() {
     assert_eq!(index.link_path("Topic/Notes.md"), "Topic/Notes");
     assert_eq!(index.link_path("Sub/Deep/Leaf.md"), "Leaf");
     assert_eq!(index.link_path("Welcome.md"), "Welcome");
+    assert_eq!(index.link_path("UPPER.MD"), "UPPER");
     assert_eq!(
         index
             .build_link("Topic/Notes.md", Some("topic-p"), "why", false)

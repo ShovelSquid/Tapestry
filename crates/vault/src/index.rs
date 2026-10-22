@@ -13,6 +13,14 @@ pub fn key(s: &str) -> String {
     s.to_lowercase()
 }
 
+fn strip_md(path: &str) -> &str {
+    if path.len() >= 3 && path[path.len() - 3..].eq_ignore_ascii_case(".md") {
+        &path[..path.len() - 3]
+    } else {
+        path
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Resolution {
     Resolved(String),
@@ -347,22 +355,7 @@ impl VaultIndex {
         self.block_owner.get(&key(id)).cloned().unwrap_or_default()
     }
     pub fn link_path(&self, target_rel: &str) -> String {
-        let stem = target_rel
-            .rsplit('/')
-            .next()
-            .unwrap_or(target_rel)
-            .strip_suffix(".md")
-            .or_else(|| {
-                target_rel.rsplit('/').next().unwrap_or(target_rel).get(
-                    ..target_rel
-                        .rsplit('/')
-                        .next()
-                        .unwrap_or(target_rel)
-                        .len()
-                        .saturating_sub(3),
-                )
-            })
-            .unwrap_or(target_rel);
+        let stem = strip_md(target_rel.rsplit('/').next().unwrap_or(target_rel));
         if self
             .by_stem
             .get(&key(stem))
@@ -370,10 +363,7 @@ impl VaultIndex {
         {
             stem.to_owned()
         } else {
-            target_rel
-                .strip_suffix(".md")
-                .unwrap_or(target_rel)
-                .to_owned()
+            strip_md(target_rel).to_owned()
         }
     }
     pub fn build_link(
