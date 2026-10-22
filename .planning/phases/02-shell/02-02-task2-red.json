@@ -1,0 +1,8 @@
+{
+  "command": "cargo test -p tapestry-canvas-app --offline shell::tests::fuzzy_palette_ranks_matching_labels_and_paths_deterministically -- --exact",
+  "exitCode": 101,
+  "targetTest": "shell::tests::fuzzy_palette_ranks_matching_labels_and_paths_deterministically",
+  "expected": "Fuzzy queries return matching entries in deterministic relevance order and no-match queries return no rows.",
+  "actual": "Assertion failed: fuzzy_rank returned [] for query opv instead of the Open vault command.",
+  "output": "not ok 1 - shell::tests::fuzzy_palette_ranks_matching_labels_and_paths_deterministically\n# tests 1\n# pass 0\n# fail 1\n"
+}

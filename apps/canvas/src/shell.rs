@@ -36,6 +36,40 @@ pub enum ExplorerPresentation {
     Ready,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PaletteGroup {
+    Simulation,
+    Tools,
+    Notes,
+    Folders,
+    Commands,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PaletteAction {
+    OpenSimulation,
+    OpenRules,
+    OpenFiles,
+    OpenTerminals,
+    OpenNotes,
+    OpenEditor(PathBuf),
+    Navigate(String),
+    OpenVault,
+    OpenExplorer,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PaletteEntry {
+    pub label: String,
+    pub full_path: Option<String>,
+    pub group: PaletteGroup,
+    pub action: PaletteAction,
+}
+
+pub fn fuzzy_rank(_query: &str, _entries: &[PaletteEntry]) -> Vec<usize> {
+    Vec::new()
+}
+
 #[derive(Debug, Clone)]
 pub struct ExplorerState {
     pub mode: ExplorerMode,
@@ -397,6 +431,33 @@ mod tests {
         assert_eq!(state.mode, ExplorerMode::Docked);
         assert_eq!(state.width, 336.0);
         assert_eq!(state.selected.as_deref(), Some("notes/a.md"));
+    }
+
+    #[test]
+    fn fuzzy_palette_ranks_matching_labels_and_paths_deterministically() {
+        let entries = vec![
+            PaletteEntry {
+                label: "Open vault…".into(),
+                full_path: None,
+                group: PaletteGroup::Commands,
+                action: PaletteAction::OpenVault,
+            },
+            PaletteEntry {
+                label: "Open explorer".into(),
+                full_path: None,
+                group: PaletteGroup::Commands,
+                action: PaletteAction::OpenExplorer,
+            },
+            PaletteEntry {
+                label: "Notebook".into(),
+                full_path: Some("research/Notebook.md".into()),
+                group: PaletteGroup::Notes,
+                action: PaletteAction::Navigate("research/Notebook.md".into()),
+            },
+        ];
+        assert_eq!(fuzzy_rank("opv", &entries), vec![0]);
+        assert_eq!(fuzzy_rank("notebook", &entries), vec![2]);
+        assert!(fuzzy_rank("zzz", &entries).is_empty());
     }
 }
 
