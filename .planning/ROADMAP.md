@@ -23,7 +23,7 @@ worlds, so it can be split at a plan boundary if needed without remapping any re
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Vault model** - Headless `crates/vault`: lossless frontmatter layout, `^id` blocks, described links, index, single writer, journal
+- [x] **Phase 1: Vault model** - Headless `crates/vault`: lossless frontmatter layout, `^id` blocks, described links, index, single writer, journal (completed 2026-10-22)
 - [ ] **Phase 2: Shell** - One infinite canvas + explorer + Cmd-K palette hosting every existing tool; egui_dock removed; vault open/remember
 - [ ] **Phase 3: Canvas & graph editing** - Pan/zoom, create/move/resize/edit cards, draw described connections, nested folder sub-worlds with zoom-to-fill
 - [ ] **Phase 4: Silent research** - Free pluggable search driven by what you write, arriving as linked, suggested source cards
@@ -34,7 +34,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 ### Phase 1: Vault model
 
-**Goal**: A vault of plain `.md` notes can be scanned, indexed, linked and written by a headless crate without ever corrupting a note, and every vault change is recorded so growth can be replayed later
+**Goal**: A vault of plain `.md` notes can be scanned, indexed, linked and written by a headless crate without corrupting notes; Tapestry-originated note, link, and card events are journaled for growth replay, while outside edits are detected by the watcher and fallback scan
 **Depends on**: Nothing (first phase)
 **Requirements**: VAULT-02, VAULT-03, VAULT-04, VAULT-05, VAULT-06, LINK-01, LINK-02, LINK-03, LINK-04, LINK-05
 **Success Criteria** (what must be TRUE):
@@ -45,7 +45,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   4. Links resolve across folders by Obsidian's rules (shortest unique path, folder-qualified when ambiguous), and the index answers source block to target note/block/description plus backlinks for a fixture vault
   5. Every write goes through one serialized atomic writer; a new note gets a `created:` stamp and each note/link/card event appends to the journal in the hidden folder; an outside edit to a fixture note (simulating Obsidian or git) is picked up by the watcher while the app's own writes are ignored; notes the app writes re-parse identically under an independent check of Obsidian's property, block-ref and alias grammar
 
-**Plans**: 4/5 plans executed
+**Plans**: 5/5 plans executed
 
 Plans:
 
@@ -53,7 +53,7 @@ Plans:
 - [x] 01-02-PLAN.md — Wikilink parser, `^id` anchors, described-link builder; ide.rs `wikilinks()` delegates (LINK-01, LINK-02, LINK-03)
 - [x] 01-03-PLAN.md — Read-only scan with skips/caps, computed placement, Obsidian link resolution + backlinks (VAULT-02, VAULT-03, LINK-04)
 - [x] 01-04-PLAN.md — Hardened atomic writer, every vault command, journal events, own-write classification (VAULT-05, VAULT-06, LINK-02, LINK-03)
-- [ ] 01-05-PLAN.md — FSEvents watcher + fallback rescan, independent Obsidian grammar check, read-only vault-check (VAULT-06, LINK-05)
+- [x] 01-05-PLAN.md — FSEvents watcher + fallback rescan, independent Obsidian grammar check, read-only vault-check (VAULT-06, LINK-05)
 
 **Planning notes**: Pure Rust, no egui. New crate follows the `crates/canvas` precedent. `ide::wikilinks` (ide.rs:1889) should delegate to the new parser. Watcher is `notify` + `notify-debouncer-full` plus a slow fallback scan; the app-side reaction to watcher events is wired in Phase 2. The real-Obsidian open check is logged to `.context/HUMAN-QUESTIONS.md` (#5), never blocking.
 
@@ -145,7 +145,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Vault model | 1/5 | In Progress|  |
+| 1. Vault model | 5/5 | Complete    | 2026-10-22 |
 | 2. Shell | 0/TBD | Not started | - |
 | 3. Canvas & graph editing | 0/TBD | Not started | - |
 | 4. Silent research | 0/TBD | Not started | - |

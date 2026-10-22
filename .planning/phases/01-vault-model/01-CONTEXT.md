@@ -7,7 +7,7 @@
 <domain>
 ## Phase Boundary
 
-A vault of plain `.md` notes can be scanned, indexed, linked and written by a headless crate (`crates/vault`, no egui) without ever corrupting a note, and every vault change is recorded so growth can be replayed later. Requirements: VAULT-02..06, LINK-01..05. No UI in this phase (the app-side vault host and watcher reaction come in Phase 2).
+A vault of plain `.md` notes can be scanned, indexed, linked and written by a headless crate (`crates/vault`, no egui) without ever corrupting a note. Tapestry-originated note, link, and card events are recorded for growth replay; outside edits are detected by the watcher and fallback scan but their note contents are not copied into the journal. Requirements: VAULT-02..06, LINK-01..05. No UI in this phase (the app-side vault host and watcher reaction come in Phase 2).
 
 </domain>
 
@@ -29,7 +29,7 @@ A vault of plain `.md` notes can be scanned, indexed, linked and written by a he
 
 ### Defaults chosen by the orchestrator (logged in .context/HUMAN-QUESTIONS.md; treat as decided)
 - Source cards are real `.md` notes with `source: auto`, `status: suggested`, provenance frontmatter, in a sources subfolder of the graph; never used as research input.
-- New notes get `created:`; vault events append to `<vault>/.tapestry/journal.jsonl`. Times for pre-existing notes labeled estimated.
+- New notes get `created:`; Tapestry-originated create, link, card, and legacy-estimate events append to `<vault>/.tapestry/journal.jsonl`. Outside file changes are detected but not snapshotted into the journal. Times for pre-existing notes are labeled estimated.
 - Vault logic lives in a new egui-free crate `crates/vault`; app-side edits to `main.rs` kept small (shared with other sessions). Never rename `Tab` variants (marks keys use their Debug strings).
 - Explorer docked left (`egui::Panel::left(..).resizable(true)`), closable, can float. Simulation tools (sim canvas + brushes + timeline + swarm) open as one composite view.
 - Moving notes between folders is out of scope (v2).

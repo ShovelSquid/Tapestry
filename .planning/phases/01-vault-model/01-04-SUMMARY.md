@@ -116,7 +116,7 @@ status: complete
 
 1. **Tasks 1–2: Atomic writer, journal, and every Store command** - `ea831d3`
 
-The two tasks were committed together because the command implementation and its integration tests share `store.rs` and `tests/store.rs`.
+The two tasks were committed together because the command implementation and its integration tests share the Store module and its test suite.
 
 **Plan metadata:** this SUMMARY will be committed separately.
 
@@ -126,7 +126,7 @@ The two tasks were committed together because the command implementation and its
 - `crates/vault/src/journal.rs` - note, estimate, link, and card event schema.
 - `crates/vault/src/lib.rs` - re-exports `Change`.
 - `crates/vault/tests/common/mod.rs` - deterministic scripted block ids.
-- `crates/vault/tests/store.rs` - safety, journal, and command integration tests.
+- `[crates/vault/tests/store.rs]` - safety, journal, and command integration tests.
 - `crates/vault/tests/tracer.rs` - expects the new estimate event before the first rewrite of a legacy note.
 
 ## Decisions Made

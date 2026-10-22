@@ -11,19 +11,19 @@ Defaults chosen for open questions: `.context/HUMAN-QUESTIONS.md`.
 ### Vault model (VAULT)
 
 - [ ] **VAULT-01**: User can open any folder as a vault; the app remembers the last one and defaults to `world/vault/` (created if missing)
-- [ ] **VAULT-02**: Every `.md` file in the vault is a note; every folder is a graph; `.obsidian/`, `.git/` and the app's hidden folder are ignored; symlinks are not followed
-- [ ] **VAULT-03**: A note's card position and size are read from YAML frontmatter `x`, `y`, `w`, `h`; notes without them get a computed placement that is not written until the user moves them (opening a vault never rewrites files)
+- [x] **VAULT-02**: Every `.md` file in the vault is a note; every folder is a graph; `.obsidian/`, `.git/` and the app's hidden folder are ignored; symlinks are not followed
+- [x] **VAULT-03**: A note's card position and size are read from YAML frontmatter `x`, `y`, `w`, `h`; notes without them get a computed placement that is not written until the user moves them (opening a vault never rewrites files)
 - [x] **VAULT-04**: Layout writes splice only the app-owned keys (`x`, `y`, `w`, `h`, `created`, `world-x`, `world-y`, `world-scale`) and leave every other byte of the file identical; a file whose frontmatter fails to parse is never rewritten
-- [ ] **VAULT-05**: Notes created by the app get a `created:` timestamp in frontmatter, and vault changes (note created, link added/removed, card kept/dismissed) are appended to an event journal in the app's hidden folder
-- [ ] **VAULT-06**: All note writes go through one serialized writer (atomic write); the file watcher picks up outside edits (Obsidian, git, editors) and ignores the app's own writes
+- [x] **VAULT-05**: Notes created by the app get a `created:` timestamp in frontmatter, and vault changes (note created, link added/removed, card kept/dismissed) are appended to an event journal in the app's hidden folder
+- [x] **VAULT-06**: All note writes go through one serialized writer (atomic write); the file watcher picks up outside edits (Obsidian, git, editors) and ignores the app's own writes
 
 ### Links (LINK)
 
-- [ ] **LINK-01**: The link parser reads `[[Note]]`, `[[Note|alias]]`, `[[Note#Heading]]`, `[[Note#^id]]` and `[[Folder/Note#^id|description]]`, with byte spans, ignoring code spans/fences and handling the table-escaped `\|`
-- [ ] **LINK-02**: The app can give a block (paragraph or list item) a stable `^id` anchor following Obsidian's rules (letters, digits, dashes; own line for tables/quotes/callouts), reusing an existing id if present
-- [ ] **LINK-03**: One builder writes described links `[[Note#^id|description]]`; drag-to-connect, `[[` autocomplete and keeping a proposal all use it
-- [ ] **LINK-04**: Links resolve across folders by Obsidian's rules (shortest unique path, folder-qualified when ambiguous); a link index maps source note + block → target note (+ block) + description, with backlinks
-- [ ] **LINK-05**: Vault files written by the app open cleanly in Obsidian (frontmatter shows as properties, block refs and aliases resolve)
+- [x] **LINK-01**: The link parser reads `[[Note]]`, `[[Note|alias]]`, `[[Note#Heading]]`, `[[Note#^id]]` and `[[Folder/Note#^id|description]]`, with byte spans, ignoring code spans/fences and handling the table-escaped `\|`
+- [x] **LINK-02**: The app can give a block (paragraph or list item) a stable `^id` anchor following Obsidian's rules (letters, digits, dashes; own line for tables/quotes/callouts), reusing an existing id if present
+- [x] **LINK-03**: One builder writes described links `[[Note#^id|description]]`; drag-to-connect, `[[` autocomplete and keeping a proposal all use it
+- [x] **LINK-04**: Links resolve across folders by Obsidian's rules (shortest unique path, folder-qualified when ambiguous); a link index maps source note + block → target note (+ block) + description, with backlinks
+- [x] **LINK-05**: Vault files written by the app open cleanly in Obsidian (frontmatter shows as properties, block refs and aliases resolve)
 
 ### Shell (SHELL)
 
@@ -93,16 +93,16 @@ Filled by roadmap creation (2026-10-21). Each requirement maps to exactly one ph
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | VAULT-01 | Phase 2 | Pending |
-| VAULT-02 | Phase 1 | Pending |
-| VAULT-03 | Phase 1 | Pending |
+| VAULT-02 | Phase 1 | Complete |
+| VAULT-03 | Phase 1 | Complete |
 | VAULT-04 | Phase 1 | Complete |
-| VAULT-05 | Phase 1 | Pending |
-| VAULT-06 | Phase 1 | Pending |
-| LINK-01 | Phase 1 | Pending |
-| LINK-02 | Phase 1 | Pending |
-| LINK-03 | Phase 1 | Pending |
-| LINK-04 | Phase 1 | Pending |
-| LINK-05 | Phase 1 | Pending |
+| VAULT-05 | Phase 1 | Complete |
+| VAULT-06 | Phase 1 | Complete |
+| LINK-01 | Phase 1 | Complete |
+| LINK-02 | Phase 1 | Complete |
+| LINK-03 | Phase 1 | Complete |
+| LINK-04 | Phase 1 | Complete |
+| LINK-05 | Phase 1 | Complete |
 | SHELL-01 | Phase 2 | Pending |
 | SHELL-02 | Phase 2 | Pending |
 | SHELL-03 | Phase 2 | Pending |
