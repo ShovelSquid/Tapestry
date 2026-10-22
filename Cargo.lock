@@ -3551,6 +3551,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tapestry-canvas",
+ "tapestry-vault",
  "tungstenite",
  "ureq",
  "vt100",

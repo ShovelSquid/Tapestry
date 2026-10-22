@@ -12,6 +12,7 @@ path = "src/main.rs"
 eframe = { version = "0.36.2", default-features = false, features = ["wgpu", "default_fonts", "wayland", "x11"] }
 glam = "0.34.1"
 tapestry-canvas = { version = "0.1.0", path = "../../crates/canvas" }
+tapestry-vault = { version = "0.1.0", path = "../../crates/vault" }
 png = "0.18.1"
 egui_dock = { version = "0.21.1", features = ["serde"] }
 egui_extras = { version = "0.36.2", default-features = false }

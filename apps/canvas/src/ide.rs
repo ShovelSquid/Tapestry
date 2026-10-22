@@ -1887,19 +1887,7 @@ fn read_entry(path: PathBuf, name: String) -> Entry {
 
 /// `[[Target]]`, `[[Target|shown]]`, `[[Target#heading]]` → `Target`.
 fn wikilinks(text: &str) -> Vec<String> {
-    let mut out = Vec::new();
-    let mut rest = text;
-    while let Some(i) = rest.find("[[") {
-        rest = &rest[i + 2..];
-        let Some(j) = rest.find("]]") else { break };
-        let inner = &rest[..j];
-        let target = inner.split(['|', '#']).next().unwrap_or("").trim();
-        if !target.is_empty() && !out.iter().any(|t: &String| t == target) {
-            out.push(target.to_owned());
-        }
-        rest = &rest[j + 2..];
-    }
-    out
+    tapestry_vault::links::targets(text)
 }
 
 fn stem(name: &str) -> &str {
