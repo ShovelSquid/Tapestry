@@ -17,43 +17,71 @@ pub struct ShellChords {
     pub exit_view: bool,
 }
 
-/// Remove Cmd-K and Cmd-Shift-W, with the text each press would type, from
-/// the raw events and report them.
-pub fn filter_shell_chords(events: &mut Vec<egui::Event>) -> ShellChords {
-    ShellChords {
-        open_palette: filter_palette_shortcut(events),
-        exit_view: false,
+/// A shell chord on a key event, and the text its press would type.
+fn chord(event: &egui::Event) -> Option<(Chord, bool)> {
+    let egui::Event::Key {
+        key,
+        pressed,
+        modifiers,
+        ..
+    } = event
+    else {
+        return None;
+    };
+    match key {
+        // Check the more specific modifier combination first.
+        egui::Key::W if modifiers.command && modifiers.shift => Some((Chord::ExitView, *pressed)),
+        egui::Key::K if modifiers.command && !modifiers.shift => {
+            Some((Chord::OpenPalette, *pressed))
+        }
+        _ => None,
     }
 }
 
-/// Consume Cmd-K before terminal input is drained and report that the palette
-/// should open during the current app frame.
-pub fn filter_palette_shortcut(events: &mut Vec<egui::Event>) -> bool {
-    let mut open_palette = false;
-    let mut discard_associated_text = false;
-    events.retain(|event| match event {
-        egui::Event::Key {
-            key: egui::Key::K,
-            pressed,
-            modifiers,
-            ..
-        } if modifiers.command => {
-            open_palette |= *pressed;
-            discard_associated_text = *pressed;
-            false
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Chord {
+    OpenPalette,
+    ExitView,
+}
+
+impl Chord {
+    fn letter(self) -> &'static str {
+        match self {
+            Self::OpenPalette => "k",
+            Self::ExitView => "w",
         }
-        egui::Event::Text(text)
-            if discard_associated_text && matches!(text.as_str(), "k" | "K") =>
-        {
-            discard_associated_text = false;
-            false
+    }
+}
+
+/// Remove Cmd-K and Cmd-Shift-W, with the text each press would type, from
+/// the raw events and report them.
+pub fn filter_shell_chords(events: &mut Vec<egui::Event>) -> ShellChords {
+    let mut found = ShellChords::default();
+    let mut pending_text: Option<Chord> = None;
+    events.retain(|event| {
+        if let Some((chord, pressed)) = chord(event) {
+            if pressed {
+                match chord {
+                    Chord::OpenPalette => found.open_palette = true,
+                    Chord::ExitView => found.exit_view = true,
+                }
+                pending_text = Some(chord);
+            } else {
+                pending_text = None;
+            }
+            return false;
         }
-        _ => {
-            discard_associated_text = false;
-            true
+        if let (Some(chord), egui::Event::Text(text)) = (pending_text, event) {
+            pending_text = None;
+            if text.eq_ignore_ascii_case(chord.letter()) {
+                return false;
+            }
+            return true;
         }
+        pending_text = None;
+        true
     });
-    open_palette
+    found
 }
 
 /// Who has the keyboard this frame.
@@ -80,27 +108,51 @@ pub enum EscapeRoute {
 
 /// Esc precedence: palette, then the focused owner or tool, then leaving the
 /// hosted view, then the graph's own cancel.
-pub fn route_escape(_destination: &Destination, _focus: KeyFocus) -> EscapeRoute {
-    EscapeRoute::Owner
+pub fn route_escape(destination: &Destination, focus: KeyFocus) -> EscapeRoute {
+    if focus.palette_open {
+        EscapeRoute::ClosePalette
+    } else if focus.owner_claims_keyboard || focus.tool_claims_escape {
+        EscapeRoute::Owner
+    } else if destination.is_hosted() {
+        EscapeRoute::ReturnToGraph
+    } else {
+        EscapeRoute::GraphCancel
+    }
 }
 
 /// Where the exit chord takes the window: from any hosted view back to the
 /// graph workspace.
-pub fn route_exit_chord(_destination: &Destination) -> Option<Destination> {
-    None
+pub fn route_exit_chord(destination: &Destination) -> Option<Destination> {
+    destination.is_hosted().then_some(Destination::Graph)
 }
 
 /// Space, digits, Delete, Cmd-Z, arrows and Home act on the simulation only
 /// while it shows and nothing else has the keyboard.
-pub fn simulation_keys_active(_destination: &Destination, _focus: KeyFocus) -> bool {
-    true
+pub fn simulation_keys_active(destination: &Destination, focus: KeyFocus) -> bool {
+    *destination == Destination::Simulation && !focus.palette_open && !focus.owner_claims_keyboard
 }
 
 /// While the palette is open it has the keyboard: take key, text, and
 /// clipboard events away from the views drawn under it, to hand back to the
 /// palette once they're drawn.
-pub fn withhold_keyboard(_events: &mut Vec<egui::Event>) -> Vec<egui::Event> {
-    Vec::new()
+pub fn withhold_keyboard(events: &mut Vec<egui::Event>) -> Vec<egui::Event> {
+    let mut held = Vec::new();
+    events.retain(|event| {
+        let keyboard = matches!(
+            event,
+            egui::Event::Key { .. }
+                | egui::Event::Text(_)
+                | egui::Event::Paste(_)
+                | egui::Event::Copy
+                | egui::Event::Cut
+                | egui::Event::Ime(_)
+        );
+        if keyboard {
+            held.push(event.clone());
+        }
+        !keyboard
+    });
+    held
 }
 
 #[cfg(test)]
@@ -128,7 +180,7 @@ mod tests {
             egui::Event::Text("k".into()),
             egui::Event::Text("x".into()),
         ];
-        assert!(filter_palette_shortcut(&mut events));
+        assert!(filter_shell_chords(&mut events).open_palette);
         assert_eq!(events, vec![egui::Event::Text("x".into())]);
     }
 
@@ -136,7 +188,7 @@ mod tests {
     fn plain_k_remains_available_to_the_terminal() {
         let plain = key(egui::Key::K, true, egui::Modifiers::NONE);
         let mut events = vec![plain.clone(), egui::Event::Text("k".into())];
-        assert!(!filter_palette_shortcut(&mut events));
+        assert_eq!(filter_shell_chords(&mut events), ShellChords::default());
         assert_eq!(events, vec![plain, egui::Event::Text("k".into())]);
     }
 
@@ -215,13 +267,22 @@ mod tests {
         let free = KeyFocus::default();
         let terminals = Destination::Terminals;
         assert_eq!(route_escape(&terminals, all), EscapeRoute::ClosePalette);
-        assert_eq!(route_escape(&Destination::Graph, all), EscapeRoute::ClosePalette);
+        assert_eq!(
+            route_escape(&Destination::Graph, all),
+            EscapeRoute::ClosePalette
+        );
         assert_eq!(route_escape(&terminals, owner), EscapeRoute::Owner);
         assert_eq!(route_escape(&Destination::Files, tool), EscapeRoute::Owner);
         assert_eq!(route_escape(&terminals, free), EscapeRoute::ReturnToGraph);
-        assert_eq!(route_escape(&Destination::Simulation, free), EscapeRoute::ReturnToGraph);
+        assert_eq!(
+            route_escape(&Destination::Simulation, free),
+            EscapeRoute::ReturnToGraph
+        );
         assert_eq!(route_escape(&Destination::Graph, owner), EscapeRoute::Owner);
-        assert_eq!(route_escape(&Destination::Graph, free), EscapeRoute::GraphCancel);
+        assert_eq!(
+            route_escape(&Destination::Graph, free),
+            EscapeRoute::GraphCancel
+        );
     }
 
     #[test]

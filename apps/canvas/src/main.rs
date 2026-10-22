@@ -332,6 +332,8 @@ struct App {
     vault_host: vault_host::VaultHost,
     explorer: shell::ExplorerState,
     palette: shell::PaletteState,
+    /// Shell chords taken out of this frame's raw input, applied in `ui`.
+    chords: shell_input::ShellChords,
     graph_camera: shell::GraphCamera,
     /// The notes pane: writing that isn't rules.
     notebook: notes::Notes,
@@ -421,6 +423,7 @@ impl App {
             vault_host,
             explorer: shell::ExplorerState::default(),
             palette: shell::PaletteState::default(),
+            chords: shell_input::ShellChords::default(),
             graph_camera: shell::GraphCamera::default(),
             notebook: notes::Notes::new(&world),
             highlights: highlight::Highlights::new(&cc.egui_ctx),
@@ -558,13 +561,76 @@ impl App {
         }
     }
 
-    fn keyboard(&mut self, ui: &egui::Ui) {
-        if self.palette.open && ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-            self.palette.open = false;
-            return;
+    /// Apply the shell chords the raw-input hook took out this frame.
+    fn apply_chords(&mut self) {
+        let chords = std::mem::take(&mut self.chords);
+        if chords.open_palette {
+            self.palette.open = true;
+            self.palette.focus_query = true;
         }
-        // A terminal with the keyboard gets every key, Space and Ctrl+Z too.
-        if ui.ctx().egui_wants_keyboard_input() || self.ide.terminal_active() {
+        if chords.exit_view
+            && let Some(next) = shell_input::route_exit_chord(&self.destination)
+        {
+            self.destination = next;
+        }
+    }
+
+    /// Who has the keyboard this frame, for the shell's one input policy.
+    fn key_focus(&self, ui: &egui::Ui) -> shell_input::KeyFocus {
+        shell_input::KeyFocus {
+            palette_open: self.palette.open,
+            // A text field, an opened editor or terminal card, or a terminal
+            // with the keyboard gets every key, Space and Ctrl+Z too.
+            owner_claims_keyboard: ui.ctx().egui_wants_keyboard_input()
+                || self.ide.terminal_active()
+                // An opened card counts only while its view shows.
+                || (self.ide.has_focus()
+                    && matches!(
+                        self.destination,
+                        shell::Destination::Files | shell::Destination::Terminals
+                    )),
+            // A picked keyframe is the simulation's own use for Esc.
+            tool_claims_escape: self.destination == shell::Destination::Simulation
+                && self.selected.is_some(),
+        }
+    }
+
+    /// Esc by the shell's precedence, then the simulation's own keys while
+    /// it's the hosted view and nothing else has the keyboard.
+    fn keyboard(&mut self, ui: &egui::Ui) {
+        let focus = self.key_focus(ui);
+        if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+            let consume = |ui: &egui::Ui| {
+                ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape));
+            };
+            match shell_input::route_escape(&self.destination, focus) {
+                shell_input::EscapeRoute::ClosePalette => {
+                    self.palette.open = false;
+                    consume(ui);
+                    return;
+                }
+                // The editor, terminal, or tool reads Esc itself.
+                shell_input::EscapeRoute::Owner => {}
+                shell_input::EscapeRoute::ReturnToGraph => {
+                    self.destination = shell::Destination::Graph;
+                    consume(ui);
+                    return;
+                }
+                shell_input::EscapeRoute::GraphCancel => {
+                    self.graph_camera.focus = None;
+                    consume(ui);
+                }
+            }
+        }
+        if !shell_input::simulation_keys_active(&self.destination, focus) {
+            // Marks sit over every view, so their undo works anywhere the
+            // keyboard is free.
+            if !focus.palette_open
+                && !focus.owner_claims_keyboard
+                && ui.input(|i| i.modifiers.command && i.key_pressed(egui::Key::Z))
+            {
+                self.marks.undo();
+            }
             return;
         }
         let idle = self.painting.is_none() && self.drag.is_none();
@@ -1585,10 +1651,11 @@ impl App {
 
 impl eframe::App for App {
     fn raw_input_hook(&mut self, _ctx: &egui::Context, raw: &mut egui::RawInput) {
-        if shell_input::filter_palette_shortcut(&mut raw.events) {
-            self.palette.open = true;
-            self.palette.focus_query = true;
-        }
+        // Before marks, and before any terminal drains the frame's events:
+        // a shell chord never reaches the PTY, as a key or as text.
+        let chords = shell_input::filter_shell_chords(&mut raw.events);
+        self.chords.open_palette |= chords.open_palette;
+        self.chords.exit_view |= chords.exit_view;
         let (tool, radius) = (self.tool(), self.radius);
         self.marks.intercept(raw, tool, radius);
     }
@@ -1610,7 +1677,14 @@ impl eframe::App for App {
         let selected = self.ide.term_selection();
         self.highlights
             .begin_frame(ui.ctx(), selected.as_ref(), self.ide.terminal_active());
+        self.apply_chords();
         self.keyboard(ui);
+        // The open palette has the keyboard: the views under it draw without
+        // it, and it gets it back once they're drawn.
+        let withheld = self
+            .palette
+            .open
+            .then(|| ui.input_mut(|i| shell_input::withhold_keyboard(&mut i.events)));
 
         let top = egui::Panel::top("top").show(ui, |ui| self.top_bar(ui));
         self.marks.keep_clear(top.response.rect);
@@ -1618,10 +1692,7 @@ impl eframe::App for App {
             egui::CentralPanel::default().show(ui, |ui| {
                 ui.horizontal(|ui| {
                     ui.add_space(8.0);
-                    let esc = ui.input(|i| i.key_pressed(egui::Key::Escape))
-                        && !self.ide.terminal_active()
-                        && !self.ide.has_focus();
-                    if quiet_link(ui, "back to the canvas", false).clicked() || esc {
+                    if quiet_link(ui, "back to the canvas", false).clicked() {
                         self.destination = shell::Destination::Graph;
                     }
                 });
@@ -1650,6 +1721,9 @@ impl eframe::App for App {
         }
         self.take_ide_handoffs();
 
+        if let Some(events) = withheld {
+            ui.input_mut(|i| i.events.extend(events));
+        }
         let editor_tabs: Vec<_> = self.ide.buffers.keys().cloned().collect();
         let entries = shell::palette_entries(&self.vault_host.view(), &editor_tabs);
         if let Some(action) = shell::palette(ui.ctx(), &mut self.palette, &entries) {
