@@ -140,6 +140,10 @@ struct ActiveVault {
     _watch: Watch,
 }
 
+fn change_requires_refresh(change: Change) -> bool {
+    matches!(change, Change::External | Change::Removed | Change::OwnEcho)
+}
+
 fn run_worker(
     initial_root: PathBuf,
     create_initial_if_missing: bool,
@@ -212,10 +216,7 @@ fn run_worker(
         if let Some(active) = active.as_mut() {
             let mut external = false;
             for path in changed_paths {
-                external |= matches!(
-                    active.store.classify(&path),
-                    Change::External | Change::Removed
-                );
+                external |= change_requires_refresh(active.store.classify(&path));
             }
             if external {
                 // Classification already updated Store's known hash; rescan
@@ -379,4 +380,28 @@ mod tests {
         std::fs::remove_dir_all(root).unwrap();
     }
 
+    #[test]
+    fn own_write_hash_classification_does_not_request_refresh() {
+        let root = std::env::temp_dir().join(format!(
+            "tapestry-own-echo-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let mut store = Store::open(&root).unwrap();
+        store
+            .apply(tapestry_vault::VaultCmd::CreateNote {
+                rel: "own.md".into(),
+                body: "Written by this app.\n".into(),
+            })
+            .unwrap();
+
+        let change = store.classify("own.md");
+        assert_eq!(change, Change::OwnEcho);
+        assert!(!change_requires_refresh(change));
+        std::fs::remove_dir_all(root).unwrap();
+    }
 }
