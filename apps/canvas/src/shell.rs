@@ -209,14 +209,33 @@ pub struct ShotSchedule {
     pub asked: bool,
 }
 
+/// The longest delay a screenshot run waits, a day: anything longer is a
+/// typo, and `Duration::from_secs_f64` must not overflow.
+const MAX_SHOT_DELAY: f64 = 86_400.0;
+
 impl ShotSchedule {
-    pub fn parse(_value: &str) -> Option<Self> {
-        None
+    /// `path:seconds`, split at the last colon so the path may hold one.
+    pub fn parse(value: &str) -> Option<Self> {
+        let (path, secs) = value.rsplit_once(':')?;
+        let secs: f64 = secs.trim().parse().ok()?;
+        if path.is_empty() || !secs.is_finite() || !(0.0..=MAX_SHOT_DELAY).contains(&secs) {
+            return None;
+        }
+        Some(Self {
+            path: path.to_owned(),
+            delay: std::time::Duration::from_secs_f64(secs),
+            asked: false,
+        })
     }
 
-    /// Whether to ask for the capture this frame, `elapsed` after startup.
-    pub fn take_due(&mut self, _elapsed: std::time::Duration) -> bool {
-        false
+    /// Whether to ask for the capture this frame, `elapsed` after startup:
+    /// once, as soon as the delay has passed.
+    pub fn take_due(&mut self, elapsed: std::time::Duration) -> bool {
+        if self.asked || elapsed < self.delay {
+            return false;
+        }
+        self.asked = true;
+        true
     }
 }
 
@@ -224,7 +243,7 @@ impl Destination {
     /// Simulation clock work runs only while the grouped Simulation view
     /// shows.
     pub fn runs_simulation_clock(&self) -> bool {
-        true
+        *self == Self::Simulation
     }
 }
 

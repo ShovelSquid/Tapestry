@@ -369,9 +369,12 @@ struct App {
     /// The keyframe picked on the timeline. What it made stays bright.
     selected: Option<KeyId>,
     drag: Option<Drag>,
-    /// `TAPESTRY_SHOT=path:seconds` saves the window at that canvas time
-    /// and quits, so the canvas can be checked without a person.
-    shot: Option<(String, Tick, bool)>,
+    /// `TAPESTRY_SHOT=path:seconds` saves the window that long after the
+    /// app starts, from whichever view shows, and quits, so the window can
+    /// be checked without a person.
+    shot: Option<shell::ShotSchedule>,
+    /// When the app started, for the screenshot's wall-clock delay.
+    started: std::time::Instant,
     hard: TextureHandle,
     soft: TextureHandle,
     /// The window's size and place last frame, and `window.json` as last
@@ -393,11 +396,14 @@ const BUDGET: std::time::Duration = std::time::Duration::from_millis(12);
 /// many ticks the playhead moves; it moves only while `running` (playing,
 /// with the canvas caught up).
 fn clock_step(
-    _destination: &shell::Destination,
+    destination: &shell::Destination,
     running: bool,
     clock: f32,
     dt: f32,
 ) -> Option<(f32, Tick)> {
+    if !destination.runs_simulation_clock() {
+        return None;
+    }
     if !running {
         return Some((0.0, 0));
     }
@@ -471,11 +477,10 @@ impl App {
             note_texts: std::collections::HashMap::new(),
             selected: None,
             drag: None,
-            shot: std::env::var("TAPESTRY_SHOT").ok().and_then(|v| {
-                let (path, secs) = v.rsplit_once(':')?;
-                let secs: f32 = secs.parse().ok()?;
-                Some((path.to_owned(), (secs * TICKS_PER_SECOND as f32) as Tick, false))
-            }),
+            shot: std::env::var("TAPESTRY_SHOT")
+                .ok()
+                .and_then(|v| shell::ShotSchedule::parse(&v)),
+            started: std::time::Instant::now(),
             hard: dot_texture(&cc.egui_ctx, "hard", 0.72),
             soft: dot_texture(&cc.egui_ctx, "soft", 0.0),
             window: (vec2(1480.0, 920.0), None),
@@ -711,19 +716,19 @@ impl App {
     /// Advance the playhead with real time (only once the canvas has caught
     /// up, so a heavy scene slows down instead of falling behind), then work
     /// the canvas out toward it within the frame's budget.
+    /// Nothing runs while the Simulation view is hidden: it picks up where
+    /// it stood when it shows again.
     fn run_clock(&mut self, ui: &egui::Ui) {
         let deadline = std::time::Instant::now() + BUDGET;
-        if self.playing && self.timeline.caught_up() {
-            self.clock += ui.input(|i| i.stable_dt).min(0.1);
-            let ticks = (self.clock / DT) as Tick;
-            if ticks > 0 {
-                self.clock -= ticks as f32 * DT;
-                let ticks = ticks.min(2);
-                self.timeline
-                    .set_playhead(self.timeline.playhead() + ticks);
-            }
-        } else {
-            self.clock = 0.0;
+        let running = self.playing && self.timeline.caught_up();
+        let dt = ui.input(|i| i.stable_dt);
+        let Some((clock, ticks)) = clock_step(&self.destination, running, self.clock, dt) else {
+            return;
+        };
+        self.clock = clock;
+        if ticks > 0 {
+            self.timeline
+                .set_playhead(self.timeline.playhead() + ticks);
         }
         self.timeline.catch_up(Some(deadline));
         if self.playing || !self.timeline.caught_up() {
@@ -1924,15 +1929,15 @@ impl App {
     }
 
     fn take_shot(&mut self, ui: &egui::Ui) {
-        let Some((path, at, asked)) = &mut self.shot else {
+        let Some(shot) = &mut self.shot else {
             return;
         };
-        if !*asked && self.timeline.tick() >= *at {
+        if shot.take_due(self.started.elapsed()) {
             self.playing = false;
-            *asked = true;
             ui.ctx()
                 .send_viewport_cmd(egui::ViewportCommand::Screenshot(Default::default()));
         }
+        let path = &shot.path;
         let image = ui.input(|i| {
             i.raw.events.iter().find_map(|e| match e {
                 egui::Event::Screenshot { image, .. } => Some(image.clone()),
