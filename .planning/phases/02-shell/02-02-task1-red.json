@@ -1,0 +1,8 @@
+{
+  "command": "cargo test -p tapestry-canvas-app --offline shell::tests::explorer_rows_lists_indexed_folders_before_notes -- --exact",
+  "exitCode": 101,
+  "targetTest": "shell::tests::explorer_rows_lists_indexed_folders_before_notes",
+  "expected": "The indexed folder rows are returned in stable sorted order.",
+  "actual": "Assertion failed: explorer_rows returned [] instead of the two indexed folders.",
+  "output": "not ok 1 - shell::tests::explorer_rows_lists_indexed_folders_before_notes\n# tests 1\n# pass 0\n# fail 1\n"
+}
