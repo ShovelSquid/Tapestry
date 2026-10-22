@@ -46,7 +46,7 @@ created: "2026-10-22"
 | 02-02 | 02 | 2 | SHELL-03 | — | Palette filters tools/notes/folders/commands and opens with terminal focus | unit + UI | `cargo test -p tapestry-canvas-app --offline palette` | ❌ Wave 0 | ⬜ pending |
 | 02-03 | 03 | 3 | SHELL-04 | — | Tool routing retains hidden view state and screenshot hook works | unit + smoke | `cargo test -p tapestry-canvas-app --offline tool_routing` | ❌ Wave 0 | ⬜ pending |
 | 02-03 | 03 | 3 | SHELL-05 | — | Esc precedence and shell shortcut filtering protect PTY and scope simulation keys | unit | `cargo test -p tapestry-canvas-app --offline input_router` | ❌ Wave 0 | ⬜ pending |
-| 02-03 | 03 | 3 | SHELL-06 | — | Explorer and palette selection map to the same navigation action | unit | `cargo test -p tapestry-canvas-app --offline navigation_action` | ❌ Wave 0 | ⬜ pending |
+| 02-02 | 02 | 2 | SHELL-06 | — | Explorer and palette selection map to the same navigation action | unit | `cargo test -p tapestry-canvas-app --offline navigation_action` | ❌ Wave 0 | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
