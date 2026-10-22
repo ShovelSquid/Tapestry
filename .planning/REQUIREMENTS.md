@@ -32,7 +32,7 @@ Defaults chosen for open questions: `.context/HUMAN-QUESTIONS.md`.
 - [x] **SHELL-03**: Cmd-K opens a fuzzy command palette listing every tool, note, folder and command
 - [x] **SHELL-04**: Every existing tool keeps working and opens full-window from the palette — Simulation (sim canvas + brushes + timeline + swarm), Rules, Files (spatial IDE), Terminals, Notes, editor tabs; highlight notes, tab notes and marks still work over any view
 - [x] **SHELL-05**: Esc returns from a tool to the canvas through one input router with a defined precedence; terminals get an exit chord that is never sent to the PTY; sim keyboard shortcuts only fire while the sim is shown
-- [x] **SHELL-06**: Selecting a note or folder in the explorer or palette flies the camera to it
+- [ ] **SHELL-06**: Selecting a note or folder in the explorer or palette flies the camera to it
 
 ### Canvas & graph editing (CANV)
 
@@ -108,7 +108,7 @@ Filled by roadmap creation (2026-10-21). Each requirement maps to exactly one ph
 | SHELL-03 | Phase 2 | Complete |
 | SHELL-04 | Phase 2 | Complete |
 | SHELL-05 | Phase 2 | Complete |
-| SHELL-06 | Phase 2 | Complete |
+| SHELL-06 | Phase 2 | Gaps Found |
 | CANV-01 | Phase 3 | Pending |
 | CANV-02 | Phase 3 | Pending |
 | CANV-03 | Phase 3 | Pending |
