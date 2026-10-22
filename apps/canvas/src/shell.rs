@@ -58,6 +58,64 @@ pub enum PaletteAction {
     OpenExplorer,
 }
 
+/// What fills the main window. The graph workspace is the default; every
+/// other destination hosts existing tool panes full-window. Kept apart from
+/// `Tab` so the tab variants and their Debug names (marks pane keys, synced
+/// layouts, `TAPESTRY_FILL`) never change.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum Destination {
+    #[default]
+    Graph,
+    /// The simulation canvas and swarm, the brushes, and the timeline together.
+    Simulation,
+    Rules,
+    Files,
+    Terminals,
+    Notes,
+    File(PathBuf),
+}
+
+/// Where a hosted pane sits inside its destination.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Region {
+    Left,
+    Bottom,
+    Center,
+}
+
+impl Destination {
+    /// The existing panes this destination draws, side panels first so the
+    /// center takes what remains.
+    pub fn regions(&self) -> Vec<(Region, crate::Tab)> {
+        Vec::new()
+    }
+
+    /// The destination that hosts `tab`.
+    pub fn from_tab(_tab: &crate::Tab) -> Self {
+        Self::Graph
+    }
+
+    /// The tab recorded for this destination in the synced layout.
+    pub fn primary_tab(&self) -> Option<crate::Tab> {
+        None
+    }
+
+    pub fn is_hosted(&self) -> bool {
+        false
+    }
+}
+
+/// `TAPESTRY_FILL=<name>`: a destination by its existing Tab Debug name.
+pub fn fill_destination(_name: &str) -> Option<Destination> {
+    None
+}
+
+/// Where a palette action takes the main window. Only the destination
+/// changes; tool owners live on the app and are never rebuilt here.
+pub fn route_palette_action(current: &Destination, _action: &PaletteAction) -> Destination {
+    current.clone()
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NavigationKind {
     Note,
@@ -1035,6 +1093,129 @@ mod tests {
         };
         assert!(!camera.navigate(&empty_view, target));
         assert_eq!(camera, previous);
+    }
+
+    fn tool_actions() -> Vec<(PaletteAction, Destination)> {
+        let file = PathBuf::from("/vault/drafts/open.md");
+        vec![
+            (PaletteAction::OpenSimulation, Destination::Simulation),
+            (PaletteAction::OpenRules, Destination::Rules),
+            (PaletteAction::OpenFiles, Destination::Files),
+            (PaletteAction::OpenTerminals, Destination::Terminals),
+            (PaletteAction::OpenNotes, Destination::Notes),
+            (
+                PaletteAction::OpenEditor(file.clone()),
+                Destination::File(file),
+            ),
+            (
+                PaletteAction::Navigate(NavigationTarget::new(NavigationKind::Note, "a.md")),
+                Destination::Graph,
+            ),
+            (PaletteAction::OpenVault, Destination::Graph),
+            (PaletteAction::OpenExplorer, Destination::Graph),
+        ]
+    }
+
+    #[test]
+    fn tool_routing_palette_actions_open_every_full_window_destination() {
+        for start in [Destination::Graph, Destination::Simulation, Destination::Terminals] {
+            for (action, expected) in tool_actions() {
+                assert_eq!(
+                    route_palette_action(&start, &action),
+                    expected,
+                    "{action:?} from {start:?}"
+                );
+                assert_eq!(expected.is_hosted(), expected != Destination::Graph);
+            }
+        }
+    }
+
+    #[test]
+    fn tool_routing_simulation_groups_canvas_brushes_and_timeline() {
+        use crate::Tab;
+        assert_eq!(
+            Destination::Simulation.regions(),
+            vec![
+                (Region::Left, Tab::Brushes),
+                (Region::Bottom, Tab::Timeline),
+                (Region::Center, Tab::Canvas),
+            ]
+        );
+        for (dest, tab) in [
+            (Destination::Rules, Tab::Rules),
+            (Destination::Files, Tab::Files),
+            (Destination::Terminals, Tab::Terminals),
+            (Destination::Notes, Tab::Notes),
+            (
+                Destination::File("/vault/a.md".into()),
+                Tab::File("/vault/a.md".into()),
+            ),
+        ] {
+            assert_eq!(dest.regions(), vec![(Region::Center, tab)]);
+        }
+        assert!(Destination::Graph.regions().is_empty());
+        for tab in [Tab::Canvas, Tab::Brushes, Tab::Timeline] {
+            assert_eq!(Destination::from_tab(&tab), Destination::Simulation);
+        }
+    }
+
+    #[test]
+    fn tool_routing_keeps_tab_debug_identities_for_marks_and_fill() {
+        use crate::Tab;
+        let names = [
+            (Tab::Canvas, "Canvas", Destination::Simulation),
+            (Tab::Brushes, "Brushes", Destination::Simulation),
+            (Tab::Rules, "Rules", Destination::Rules),
+            (Tab::Timeline, "Timeline", Destination::Simulation),
+            (Tab::Files, "Files", Destination::Files),
+            (Tab::Terminals, "Terminals", Destination::Terminals),
+            (Tab::Notes, "Notes", Destination::Notes),
+        ];
+        for (tab, name, dest) in names {
+            assert_eq!(format!("{tab:?}"), name);
+            assert_eq!(fill_destination(&name.to_lowercase()), Some(dest.clone()));
+            assert_eq!(Destination::from_tab(&tab), dest);
+        }
+        assert_eq!(
+            format!("{:?}", Tab::File("/vault/a.md".into())),
+            "File(\"/vault/a.md\")"
+        );
+        assert_eq!(fill_destination("nowhere"), None);
+        // The synced layout keeps recording an existing Tab per destination.
+        assert_eq!(Destination::Simulation.primary_tab(), Some(Tab::Canvas));
+        assert_eq!(Destination::Graph.primary_tab(), None);
+        assert_eq!(
+            Destination::File("/vault/a.md".into()).primary_tab(),
+            Some(Tab::File("/vault/a.md".into()))
+        );
+    }
+
+    #[test]
+    fn tool_routing_view_changes_preserve_state_owners() {
+        // Stand-ins for the owners App keeps across views: editor buffers,
+        // terminal sessions, and the simulation timeline.
+        let buffers = std::sync::Arc::new(std::collections::BTreeMap::from([(
+            PathBuf::from("/vault/drafts/open.md"),
+            "unsaved edit".to_owned(),
+        )]));
+        let terminals = std::sync::Arc::new(vec![7_u64, 9]);
+        let timeline = std::sync::Arc::new(42_u64);
+        let owners = (buffers.clone(), terminals.clone(), timeline.clone());
+
+        let mut destination = Destination::default();
+        let mut visited = Vec::new();
+        for (action, _) in tool_actions().into_iter().chain(tool_actions()) {
+            destination = route_palette_action(&destination, &action);
+            visited.push(destination.clone());
+        }
+        for (_, expected) in tool_actions() {
+            assert!(visited.contains(&expected), "never reached {expected:?}");
+        }
+        assert!(std::sync::Arc::ptr_eq(&owners.0, &buffers));
+        assert!(std::sync::Arc::ptr_eq(&owners.1, &terminals));
+        assert!(std::sync::Arc::ptr_eq(&owners.2, &timeline));
+        assert_eq!(buffers[&PathBuf::from("/vault/drafts/open.md")], "unsaved edit");
+        assert_eq!(*terminals, vec![7, 9]);
     }
 
     fn scanned(rel: &str) -> ScannedNote {

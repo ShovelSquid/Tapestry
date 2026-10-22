@@ -1,0 +1,8 @@
+{
+  "command": "cargo test -p tapestry-canvas-app --offline tool_routing",
+  "exitCode": 101,
+  "targetTest": "shell::tests::tool_routing_palette_actions_open_every_full_window_destination",
+  "expected": "OpenSimulation routes the main window to Destination::Simulation, and each other palette action reaches its full-window destination.",
+  "actual": "Assertion failed: route_palette_action returned Graph instead of Simulation (stub keeps the current destination). The other three tool_routing tests also fail on assertions: regions() is empty, fill_destination returns None, and the routing sequence never reaches a hosted destination.",
+  "output": "not ok 1 - shell::tests::tool_routing_palette_actions_open_every_full_window_destination\nnot ok 2 - shell::tests::tool_routing_simulation_groups_canvas_brushes_and_timeline\nnot ok 3 - shell::tests::tool_routing_keeps_tab_debug_identities_for_marks_and_fill\nnot ok 4 - shell::tests::tool_routing_view_changes_preserve_state_owners\n# tests 4\n# pass 0\n# fail 4\n"
+}
