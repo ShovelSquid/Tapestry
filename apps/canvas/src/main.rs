@@ -481,9 +481,16 @@ impl App {
                     &self.destination,
                     self.ide.has_focus(),
                 ),
-            // A picked keyframe is the simulation's own use for Esc.
-            tool_claims_escape: self.destination == shell::Destination::Simulation
-                && self.selected.is_some(),
+            // A picked keyframe, or a rule or note card being written,
+            // is the hosted tool's own use for Esc.
+            tool_claims_escape: shell_input::tool_claims_escape(
+                &self.destination,
+                shell_input::ToolEscape {
+                    keyframe_picked: self.selected.is_some(),
+                    rule_editing: self.editing.is_some(),
+                    note_editing: self.notebook.is_editing(),
+                },
+            ),
         }
     }
 

@@ -107,6 +107,11 @@ impl Notes {
         self.notes = notes;
     }
 
+    /// A note card is open for writing; it reads Esc itself to put it down.
+    pub fn is_editing(&self) -> bool {
+        self.editing.is_some()
+    }
+
     /// Every note: its file name, title and text, newest first.
     pub fn all(&self) -> Vec<(String, String, String)> {
         self.notes
