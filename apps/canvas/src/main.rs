@@ -168,6 +168,13 @@ fn fresh_start() -> bool {
     std::env::var_os("TAPESTRY_FRESH").is_some() || std::env::var_os("TAPESTRY_SHOT").is_some()
 }
 
+/// Whether `shell.json` is written: only when the shell changed, and never
+/// on a fresh or screenshot run, which shows the default shell rather than
+/// the saved one and so must not write it over the user's.
+fn shell_write_due(fresh: bool, text: &str, saved: &str) -> bool {
+    !fresh && !text.is_empty() && text != saved
+}
+
 /// Where the window sat, on this computer only: `window.json` in the state
 /// folder.
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -373,6 +380,8 @@ impl App {
     /// record, which is only read. The window opens on the graph workspace.
     fn reopen(&mut self) {
         if fresh_start() {
+            // A fresh run starts from the default shell and never writes it
+            // over the saved one (see `shell_write_due`).
             return;
         }
         let saved = ide::state_dir()
@@ -404,6 +413,14 @@ impl App {
         if let (Some(root), Some(here)) = (root, here) {
             self.ide.return_to(root, here);
         }
+        // What was just restored is already on disk: only a change is written.
+        self.shell_saved = self.shell_text();
+    }
+
+    /// The running shell as `shell.json` would hold it.
+    fn shell_text(&self) -> String {
+        let editors = self.ide.buffers.keys().cloned().collect();
+        shell::ShellState::capture(&self.explorer, self.ide.place(), editors).to_json()
     }
 
     /// Keep what changed: the shell, the folder's camera, the window. The
@@ -412,9 +429,8 @@ impl App {
         if self.shot.is_some() {
             return;
         }
-        let editors = self.ide.buffers.keys().cloned().collect();
-        let text = shell::ShellState::capture(&self.explorer, self.ide.place(), editors).to_json();
-        if !text.is_empty() && text != self.shell_saved {
+        let text = self.shell_text();
+        if shell_write_due(fresh_start(), &text, &self.shell_saved) {
             ide::save_state("shell.json", &text);
             self.shell_saved = text;
         }
@@ -1980,6 +1996,18 @@ mod tests {
             D::Notes,
             D::File("/vault/a.md".into()),
         ]
+    }
+
+    #[test]
+    fn fresh_runs_never_write_the_saved_shell() {
+        let default = shell::ShellState::default().to_json();
+        // A fresh run's first save would otherwise find a change against the
+        // empty baseline and write the default shell over the saved one.
+        assert!(!shell_write_due(true, &default, ""));
+        assert!(!shell_write_due(true, &default, "{\"older\":1}"));
+        assert!(shell_write_due(false, &default, ""));
+        assert!(!shell_write_due(false, &default, &default));
+        assert!(!shell_write_due(false, "", "x"));
     }
 
     #[test]
