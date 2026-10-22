@@ -1648,11 +1648,7 @@ impl eframe::App for App {
             }
             shell::workspace(ui, &view, &self.graph_camera);
         }
-        if std::mem::take(&mut self.ide.reveal_files)
-            && self.destination == shell::Destination::Terminals
-        {
-            self.destination = shell::Destination::Graph;
-        }
+        self.take_ide_handoffs();
 
         let editor_tabs: Vec<_> = self.ide.buffers.keys().cloned().collect();
         let entries = shell::palette_entries(&self.vault_host.view(), &editor_tabs);
@@ -1698,9 +1694,19 @@ impl eframe::App for App {
 
 impl App {
     fn palette_action(&mut self, action: shell::PaletteAction) {
-        let next = shell::route_palette_action(&self.destination, &action);
+        let mut next = shell::route_palette_action(&self.destination, &action);
         match action {
-            shell::PaletteAction::OpenEditor(path) => self.ide.show(path),
+            shell::PaletteAction::OpenEditor(path) => {
+                // Palette editor results are open buffers: select that
+                // buffer by its own path, and load it only if it's gone.
+                if !self.ide.buffers.contains_key(&path) {
+                    self.ide.show(path.clone());
+                }
+                next = shell::resolve_editor(&self.destination, &path, |p| {
+                    self.ide.buffers.contains_key(p)
+                });
+                self.keep_file_tab(&path);
+            }
             shell::PaletteAction::Navigate(target) => {
                 self.graph_camera.navigate(&self.vault_host.view(), target);
             }
@@ -1716,6 +1722,38 @@ impl App {
             | shell::PaletteAction::OpenNotes => {}
         }
         self.destination = next;
+    }
+
+    /// What the Ide asked of the window while it drew: a file wanting its
+    /// own editor, or a terminal bringing its files forward. Buffers and
+    /// terminal sessions stay with the Ide whichever view shows.
+    fn take_ide_handoffs(&mut self) {
+        let requests = std::mem::take(&mut self.ide.open_requests);
+        let reveal = std::mem::take(&mut self.ide.reveal_files);
+        if requests.is_empty() && !reveal {
+            return;
+        }
+        let buffers = &self.ide.buffers;
+        self.destination = shell::apply_ide_handoffs(&self.destination, &requests, reveal, |p| {
+            buffers.contains_key(p)
+        });
+        for path in &requests {
+            self.keep_file_tab(path);
+        }
+    }
+
+    /// Keep an open editor in the synced layout's tabs, so it reopens with
+    /// the window until the old layout record is retired.
+    fn keep_file_tab(&mut self, path: &std::path::Path) {
+        if !self.ide.buffers.contains_key(path) {
+            return;
+        }
+        let tab = Tab::File(path.to_path_buf());
+        if let Some(dock) = &mut self.dock
+            && dock.find_tab(&tab).is_none()
+        {
+            dock.push_to_first_leaf(tab);
+        }
     }
 
     /// The hosted destination's existing panes, full-window. Simulation puts

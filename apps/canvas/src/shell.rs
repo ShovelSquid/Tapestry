@@ -170,21 +170,32 @@ pub fn route_palette_action(_current: &Destination, action: &PaletteAction) -> D
 /// files brings Files forward. Buffers and terminals stay with the Ide.
 pub fn apply_ide_handoffs(
     current: &Destination,
-    _open_requests: &[PathBuf],
-    _reveal_files: bool,
-    _is_open: impl Fn(&std::path::Path) -> bool,
+    open_requests: &[PathBuf],
+    reveal_files: bool,
+    is_open: impl Fn(&std::path::Path) -> bool,
 ) -> Destination {
-    current.clone()
+    let mut next = current.clone();
+    if reveal_files && matches!(current, Destination::Terminals | Destination::Files) {
+        next = Destination::Files;
+    }
+    for path in open_requests {
+        next = resolve_editor(&next, path, &is_open);
+    }
+    next
 }
 
 /// The editor destination for an already open buffer, by its own path; a
 /// path with no buffer leaves the window where it is.
 pub fn resolve_editor(
     current: &Destination,
-    _path: &std::path::Path,
-    _is_open: impl Fn(&std::path::Path) -> bool,
+    path: &std::path::Path,
+    is_open: impl Fn(&std::path::Path) -> bool,
 ) -> Destination {
-    current.clone()
+    if is_open(path) {
+        Destination::File(path.to_path_buf())
+    } else {
+        current.clone()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
