@@ -90,6 +90,8 @@ pub struct Marks {
     pub fresh: bool,
     alt: bool,
     pointer: Option<Pos2>,
+    /// The command palette is open: Esc is its, before any brush's.
+    pub palette_open: bool,
 }
 
 impl Marks {
@@ -109,6 +111,7 @@ impl Marks {
             fresh: false,
             alt: false,
             pointer: None,
+            palette_open: false,
         }
     }
 
@@ -120,7 +123,7 @@ impl Marks {
             match &event {
                 egui::Event::ModifiersChanged(m) => self.alt = m.alt,
                 egui::Event::Key { modifiers, key, pressed, .. }
-                    if !(*key == egui::Key::Escape && *pressed && (self.anywhere || self.picked.is_some())) =>
+                    if !(*key == egui::Key::Escape && *pressed && self.takes_escape()) =>
                 {
                     self.alt = modifiers.alt
                 }
@@ -164,7 +167,7 @@ impl Marks {
                     key: egui::Key::Escape,
                     pressed: true,
                     ..
-                } if self.anywhere || self.picked.is_some() => {
+                } if self.takes_escape() => {
                     self.anywhere = false;
                     self.picked = None;
                     continue;
@@ -174,6 +177,13 @@ impl Marks {
             keep.push(event);
         }
         raw.events = keep;
+    }
+
+    /// Esc stops drawing anywhere and drops what the select brush picked,
+    /// unless the palette is open: by the shell's precedence its Esc comes
+    /// first.
+    fn takes_escape(&self) -> bool {
+        !self.palette_open && (self.anywhere || self.picked.is_some())
     }
 
     /// Whether a press here starts a mark.
@@ -553,5 +563,56 @@ fn save(marks: &[Mark]) {
     }
     if let Err(e) = std::fs::write(&path, lines) {
         eprintln!("couldn't keep marks: {e}");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn escape() -> egui::Event {
+        egui::Event::Key {
+            key: egui::Key::Escape,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        }
+    }
+
+    #[test]
+    fn open_palette_gets_esc_before_drawing_anywhere() {
+        let mut marks = Marks::new();
+        marks.anywhere = true;
+        marks.palette_open = true;
+        let mut raw = egui::RawInput { events: vec![escape()], ..Default::default() };
+        marks.intercept(&mut raw, Tool::Select, 4.0);
+        assert_eq!(raw.events, vec![escape()], "Esc reaches the palette");
+        assert!(marks.anywhere, "and drawing anywhere stays on");
+
+        // Palette closed: Esc stops drawing anywhere, as before.
+        marks.palette_open = false;
+        let mut raw = egui::RawInput { events: vec![escape()], ..Default::default() };
+        marks.intercept(&mut raw, Tool::Select, 4.0);
+        assert!(raw.events.is_empty());
+        assert!(!marks.anywhere);
+    }
+
+    #[test]
+    fn presses_on_kept_clear_overlays_never_start_a_mark() {
+        let mut marks = Marks::new();
+        marks.anywhere = true;
+        let palette = Rect::from_min_size(pos2(100.0, 72.0), egui::vec2(520.0, 300.0));
+        marks.keep_clear(palette);
+        marks.begin_frame();
+        let press = egui::Event::PointerButton {
+            pos: pos2(200.0, 120.0),
+            button: egui::PointerButton::Primary,
+            pressed: true,
+            modifiers: egui::Modifiers::NONE,
+        };
+        let mut raw = egui::RawInput { events: vec![press.clone()], ..Default::default() };
+        marks.intercept(&mut raw, Tool::Select, 4.0);
+        assert_eq!(raw.events, vec![press], "the click reaches the palette row");
     }
 }

@@ -1554,6 +1554,8 @@ impl eframe::App for App {
         let chords = shell_input::filter_shell_chords(&mut raw.events);
         self.chords.open_palette |= chords.open_palette;
         self.chords.exit_view |= chords.exit_view;
+        // An open palette, or one opening this frame, takes Esc first.
+        self.marks.palette_open = self.palette.open || self.chords.open_palette;
         let (tool, radius) = (self.tool(), self.radius);
         self.marks.intercept(raw, tool, radius);
     }
@@ -1620,6 +1622,7 @@ impl eframe::App for App {
             }
             shell::workspace(ui, &view, &self.graph_camera);
         }
+        let explorer_shows = !self.destination.is_hosted();
         self.take_ide_handoffs();
 
         if let Some(events) = withheld {
@@ -1629,6 +1632,15 @@ impl eframe::App for App {
         let entries = shell::palette_entries(&self.vault_host.view(), &editor_tabs);
         if let Some(action) = shell::palette(ui.ctx(), &mut self.palette, &entries) {
             self.palette_action(action);
+        }
+        // Clicks on the palette or the floating explorer never start a mark.
+        let overlays = shell::overlay_rects(
+            ui.ctx(),
+            &self.palette,
+            explorer_shows.then_some(&self.explorer),
+        );
+        for rect in overlays {
+            self.marks.keep_clear(rect);
         }
 
         // Over everything: the "+" over a selection. What it keeps is a note.

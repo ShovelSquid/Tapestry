@@ -564,6 +564,31 @@ fn palette_entry(label: &str, group: PaletteGroup, action: PaletteAction) -> Pal
     }
 }
 
+const PALETTE_ID: &str = "command-palette";
+const FLOATING_EXPLORER_ID: &str = "vault-explorer-floating";
+
+/// Where the shell's overlays sat this frame: the open palette, and the
+/// explorer when it floats over the graph. Presses there belong to them,
+/// not to marks or anything drawn beneath.
+pub fn overlay_rects(
+    ctx: &egui::Context,
+    palette: &PaletteState,
+    explorer: Option<&ExplorerState>,
+) -> Vec<egui::Rect> {
+    let mut ids = Vec::new();
+    if palette.open {
+        ids.push(PALETTE_ID);
+    }
+    if explorer.is_some_and(|e| e.mode == ExplorerMode::Floating) {
+        ids.push(FLOATING_EXPLORER_ID);
+    }
+    ctx.memory(|memory| {
+        ids.into_iter()
+            .filter_map(|id| memory.area_rect(egui::Id::new(id)))
+            .collect()
+    })
+}
+
 pub fn palette(
     ctx: &egui::Context,
     state: &mut PaletteState,
@@ -577,7 +602,7 @@ pub fn palette(
     let mut chosen = None;
     // The selection moved by keyboard this frame: scroll it into view.
     let mut moved = false;
-    egui::Area::new(egui::Id::new("command-palette"))
+    egui::Area::new(egui::Id::new(PALETTE_ID))
         .order(egui::Order::Foreground)
         .anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, 72.0))
         .show(ctx, |ui| {
@@ -1009,7 +1034,7 @@ pub fn explorer(
         ExplorerMode::Floating => {
             let mut open = true;
             let mut window = egui::Window::new("Explorer")
-                .id(egui::Id::new("vault-explorer-floating"))
+                .id(egui::Id::new(FLOATING_EXPLORER_ID))
                 .default_width(state.width)
                 .resizable(true)
                 .open(&mut open);

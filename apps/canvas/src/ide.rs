@@ -302,7 +302,11 @@ impl Ide {
                 .then(|| i.pointer.press_origin())
                 .flatten()
         });
-        if let Some(p) = press {
+        // A press on an overlay (the palette, a floating window, the "+")
+        // is that overlay's, not the terminal's under it.
+        if let Some(p) = press
+            && press_reaches_panes(ctx.layer_id_at(p))
+        {
             self.active_term = self
                 .last_term_hits
                 .iter()
@@ -2085,6 +2089,13 @@ fn seed_from_files(synced: &Synced) {
     }
 }
 
+/// Whether a press on this layer lands on the panes beneath every overlay,
+/// where terminals are drawn. Panels are background layers; windows and
+/// popups like the palette sit above them.
+fn press_reaches_panes(layer: Option<egui::LayerId>) -> bool {
+    layer.is_none_or(|layer| layer.order == egui::Order::Background)
+}
+
 /// `~/.local/state/tapestry` (or under `$XDG_STATE_HOME`).
 #[cfg(not(test))]
 pub(crate) fn state_dir() -> Option<PathBuf> {
@@ -2141,6 +2152,16 @@ fn restart(ctx: &egui::Context) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn presses_on_overlays_never_pick_the_terminal_beneath() {
+        assert!(press_reaches_panes(None));
+        assert!(press_reaches_panes(Some(egui::LayerId::background())));
+        for order in [egui::Order::Middle, egui::Order::Foreground, egui::Order::Tooltip] {
+            let overlay = egui::LayerId::new(order, egui::Id::new("command-palette"));
+            assert!(!press_reaches_panes(Some(overlay)), "{order:?}");
+        }
+    }
 
     #[test]
     fn state_writes_replace_the_file_whole_and_leave_no_temporary() {
